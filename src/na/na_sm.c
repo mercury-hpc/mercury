@@ -1081,8 +1081,8 @@ NA_SM_Host_id_get(na_sm_id_t *id)
 
     rc = snprintf(pathname, NA_SM_MAX_FILENAME, "%s/%s_%s/uuid.cfg",
         NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, username);
-    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret, NA_OVERFLOW,
-        "snprintf() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_OVERFLOW, "snprintf() failed, rc: %d", rc);
 
     uuid_config = fopen(pathname, "r");
     if (!uuid_config) {
@@ -1090,8 +1090,9 @@ NA_SM_Host_id_get(na_sm_id_t *id)
         uuid_generate(new_uuid);
 
         uuid_config = fopen(pathname, "w");
-        NA_CHECK_ERROR(uuid_config == NULL, done, ret, na_sm_errno_to_na(errno),
-            "Could not open %s for write (%s)", pathname, strerror(errno));
+        NA_CHECK_SUBSYS_ERROR(addr, uuid_config == NULL, done, ret,
+            na_sm_errno_to_na(errno), "Could not open %s for write (%s)",
+            pathname, strerror(errno));
         uuid_unparse(new_uuid, uuid_str);
         fprintf(uuid_config, "%s\n", uuid_str);
     } else {
@@ -1122,8 +1123,8 @@ NA_SM_Host_id_to_string(na_sm_id_t id, char *string)
 #else
     na_return_t ret = NA_SUCCESS;
     int rc = snprintf(string, NA_SM_HOST_ID_LEN + 1, "%ld", id);
-    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_HOST_ID_LEN + 1, done, ret, NA_OVERFLOW,
-        "snprintf() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > NA_SM_HOST_ID_LEN + 1, done, ret,
+        NA_OVERFLOW, "snprintf() failed, rc: %d", rc);
 
 done:
     return ret;
@@ -1139,8 +1140,8 @@ NA_SM_String_to_host_id(const char *string, na_sm_id_t *id)
 #else
     na_return_t ret = NA_SUCCESS;
     int rc = sscanf(string, "%ld", id);
-    NA_CHECK_ERROR(
-        rc != 1, done, ret, NA_PROTOCOL_ERROR, "sscanf() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 1, done, ret, NA_PROTOCOL_ERROR,
+        "sscanf() failed, rc: %d", rc);
 
 done:
     return ret;
@@ -1192,12 +1193,12 @@ na_sm_get_ptrace_scope_value(void)
     file = fopen("/proc/sys/kernel/yama/ptrace_scope", "r");
     if (file) {
         rc = fscanf(file, "%d", &val);
-        NA_CHECK_ERROR_NORET(
-            rc != 1, done, "Could not get value from ptrace_scope");
+        NA_CHECK_SUBSYS_ERROR_NORET(
+            cls, rc != 1, done, "Could not get value from ptrace_scope");
 
         rc = fclose(file);
-        NA_CHECK_ERROR_NORET(
-            rc != 0, done, "fclose() failed (%s)", strerror(errno));
+        NA_CHECK_SUBSYS_ERROR_NORET(
+            cls, rc != 0, done, "fclose() failed (%s)", strerror(errno));
     }
 
 done:
@@ -1284,7 +1285,7 @@ na_sm_shm_map(const char *name, na_size_t length, na_bool_t create)
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
 
     /* Check alignment */
-    NA_CHECK_WARNING(length / page_size * page_size != length,
+    NA_CHECK_SUBSYS_WARNING(mem, length / page_size * page_size != length,
         "Not aligned properly, page size=%zu bytes, length=%zu bytes",
         page_size, length);
 
@@ -1314,7 +1315,7 @@ na_sm_shm_cleanup(const char *fpath, const struct stat NA_UNUSED *sb,
 
         if (strncmp(shm_name + strlen(NA_SM_SHM_PREFIX "_"), username,
                 strlen(username)) == 0) {
-            NA_LOG_DEBUG("shm_unmap() %s", shm_name);
+            NA_LOG_SUBSYS_DEBUG(mem, "shm_unmap() %s", shm_name);
             ret = hg_mem_shm_unmap(shm_name, NULL, 0);
         }
     }
@@ -1447,8 +1448,8 @@ na_sm_string_to_addr(const char *str, pid_t *pid, na_uint8_t *id)
      *   <protocol>://<host string>
      */
     name = strdup(str);
-    NA_CHECK_ERROR(
-        name == NULL, done, ret, NA_NOMEM, "Could not duplicate string");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, name == NULL, done, ret, NA_NOMEM, "Could not duplicate string");
 
     if (strstr(name, ":") != NULL) {
         strtok_r(name, ":", &short_name);
@@ -1478,14 +1479,14 @@ na_sm_region_open(const char *username, pid_t pid, na_uint8_t id,
     /* Generate SHM object name */
     rc = NA_SM_GEN_SHM_NAME(
         shm_name, NA_SM_MAX_FILENAME, username, (int) pid, id);
-    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret, NA_OVERFLOW,
-        "NA_SM_GEN_SHM_NAME() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_OVERFLOW, "NA_SM_GEN_SHM_NAME() failed, rc: %d", rc);
 
     /* Open SHM object */
-    NA_LOG_DEBUG("shm_map() %s", shm_name);
+    NA_LOG_SUBSYS_DEBUG(cls, "shm_map() %s", shm_name);
     na_sm_region = (struct na_sm_region *) na_sm_shm_map(
         shm_name, sizeof(struct na_sm_region), create);
-    NA_CHECK_ERROR(na_sm_region == NULL, done, ret, NA_NODEV,
+    NA_CHECK_SUBSYS_ERROR(cls, na_sm_region == NULL, done, ret, NA_NODEV,
         "Could not map new SM region (%s)", shm_name);
 
     if (create) {
@@ -1533,15 +1534,15 @@ na_sm_region_close(const char *username, pid_t pid, na_uint8_t id,
     if (remove) {
         int rc = NA_SM_GEN_SHM_NAME(
             shm_name, NA_SM_MAX_FILENAME, username, (int) pid, id);
-        NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
             NA_OVERFLOW, "NA_SM_GEN_SHM_NAME() failed, rc: %d", rc);
         shm_name_ptr = shm_name;
     }
 
-    NA_LOG_DEBUG("shm_unmap() %s", shm_name_ptr);
+    NA_LOG_SUBSYS_DEBUG(cls, "shm_unmap() %s", shm_name_ptr);
     ret = na_sm_shm_unmap(shm_name_ptr, region, sizeof(struct na_sm_region));
-    NA_CHECK_NA_ERROR(
-        done, ret, "Could not unmap SM region (%s)", shm_name_ptr);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        cls, done, ret, "Could not unmap SM region (%s)", shm_name_ptr);
 
 done:
     return ret;
@@ -1564,12 +1565,12 @@ na_sm_sock_open(
     socket_type |= SOCK_NONBLOCK;
 #endif
     fd = socket(AF_UNIX, socket_type, 0);
-    NA_CHECK_ERROR(fd == -1, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(cls, fd == -1, error, ret, na_sm_errno_to_na(errno),
         "socket() failed (%s)", strerror(errno));
 
 #ifndef SOCK_NONBLOCK
     rc = fcntl(fd, F_SETFL, O_NONBLOCK);
-    NA_CHECK_ERROR(rc == -1, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(cls, rc == -1, error, ret, na_sm_errno_to_na(errno),
         "fcntl() failed (%s)", strerror(errno));
 #endif
 
@@ -1579,13 +1580,14 @@ na_sm_sock_open(
         /* Generate named socket path */
         rc = NA_SM_GEN_SOCK_PATH(
             pathname, NA_SM_MAX_FILENAME, username, pid, id);
-        NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, error, ret,
-            NA_OVERFLOW, "NA_SM_GEN_SOCK_PATH() failed, rc: %d", rc);
+        NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > NA_SM_MAX_FILENAME, error,
+            ret, NA_OVERFLOW, "NA_SM_GEN_SOCK_PATH() failed, rc: %d", rc);
 
         memset(&addr, 0, sizeof(struct sockaddr_un));
         addr.sun_family = AF_UNIX;
-        NA_CHECK_ERROR(strlen(pathname) + strlen(NA_SM_SOCK_NAME) >
-                           sizeof(addr.sun_path) - 1,
+        NA_CHECK_SUBSYS_ERROR(cls,
+            strlen(pathname) + strlen(NA_SM_SOCK_NAME) >
+                sizeof(addr.sun_path) - 1,
             error, ret, NA_OVERFLOW,
             "Exceeds maximum AF UNIX socket path length");
         strcpy(addr.sun_path, pathname);
@@ -1593,16 +1595,16 @@ na_sm_sock_open(
 
         /* Create path */
         ret = na_sm_sock_path_create(pathname);
-        NA_CHECK_NA_ERROR(
-            error, ret, "Could not create socket path (%s)", pathname);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not create socket path (%s)", pathname);
         created_sock_path = NA_TRUE;
 
         /* Bind and create named socket */
-        NA_LOG_DEBUG("bind() %s", addr.sun_path);
+        NA_LOG_SUBSYS_DEBUG(cls, "bind() %s", addr.sun_path);
         rc = bind(
             fd, (const struct sockaddr *) &addr, (socklen_t) SUN_LEN(&addr));
-        NA_CHECK_ERROR(rc == -1, error, ret, na_sm_errno_to_na(errno),
-            "bind() failed (%s)", strerror(errno));
+        NA_CHECK_SUBSYS_ERROR(cls, rc == -1, error, ret,
+            na_sm_errno_to_na(errno), "bind() failed (%s)", strerror(errno));
     }
 
     *sock = fd;
@@ -1612,11 +1614,12 @@ na_sm_sock_open(
 error:
     if (fd != -1) {
         rc = close(fd);
-        NA_CHECK_ERROR_DONE(rc == -1, "close() failed (%s)", strerror(errno));
+        NA_CHECK_SUBSYS_ERROR_DONE(
+            cls, rc == -1, "close() failed (%s)", strerror(errno));
     }
     if (created_sock_path) {
         na_return_t err_ret = na_sm_sock_path_remove(pathname);
-        NA_CHECK_ERROR_DONE(err_ret != NA_SUCCESS,
+        NA_CHECK_SUBSYS_ERROR_DONE(cls, err_ret != NA_SUCCESS,
             "na_sm_remove_sock_path() failed (%s)", pathname);
     }
 
@@ -1631,9 +1634,9 @@ na_sm_sock_close(
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    NA_LOG_DEBUG("Closing sock %d", sock);
+    NA_LOG_SUBSYS_DEBUG(cls, "Closing sock %d", sock);
     rc = close(sock);
-    NA_CHECK_ERROR(rc == -1, done, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(cls, rc == -1, done, ret, na_sm_errno_to_na(errno),
         "close() failed (%s)", strerror(errno));
 
     if (remove) {
@@ -1643,19 +1646,20 @@ na_sm_sock_close(
         /* Generate named socket path */
         rc = NA_SM_GEN_SOCK_PATH(
             pathname, NA_SM_MAX_FILENAME, username, pid, id);
-        NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
             NA_OVERFLOW, "NA_SM_GEN_SOCK_PATH() failed, rc: %d", rc);
 
         strcpy(addr.sun_path, pathname);
         strcat(addr.sun_path, NA_SM_SOCK_NAME);
 
-        NA_LOG_DEBUG("unlink() %s", addr.sun_path);
+        NA_LOG_SUBSYS_DEBUG(cls, "unlink() %s", addr.sun_path);
         rc = unlink(addr.sun_path);
-        NA_CHECK_ERROR(rc == -1, done, ret, na_sm_errno_to_na(errno),
-            "unlink() failed (%s)", strerror(errno));
+        NA_CHECK_SUBSYS_ERROR(cls, rc == -1, done, ret,
+            na_sm_errno_to_na(errno), "unlink() failed (%s)", strerror(errno));
 
         ret = na_sm_sock_path_remove(pathname);
-        NA_CHECK_NA_ERROR(done, ret, "Could not remove %s path", pathname);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, done, ret, "Could not remove %s path", pathname);
     }
 
 done:
@@ -1671,8 +1675,8 @@ na_sm_sock_path_create(const char *pathname)
     na_return_t ret = NA_SUCCESS;
 
     dup_path = strdup(pathname);
-    NA_CHECK_ERROR(
-        dup_path == NULL, done, ret, NA_NOMEM, "Could not dup pathname");
+    NA_CHECK_SUBSYS_ERROR(
+        cls, dup_path == NULL, done, ret, NA_NOMEM, "Could not dup pathname");
     path_ptr = dup_path;
 
     /* Skip leading '/' */
@@ -1692,9 +1696,9 @@ na_sm_sock_path_create(const char *pathname)
         strcat(stat_path, current);
         if (stat(stat_path, &sb) == -1) {
             int rc;
-            NA_LOG_DEBUG("mkdir %s", stat_path);
+            NA_LOG_SUBSYS_DEBUG(cls, "mkdir %s", stat_path);
             rc = mkdir(stat_path, 0775);
-            NA_CHECK_ERROR(rc == -1 && errno != EEXIST, done, ret,
+            NA_CHECK_SUBSYS_ERROR(cls, rc == -1 && errno != EEXIST, done, ret,
                 na_sm_errno_to_na(errno), "Could not create directory: %s (%s)",
                 stat_path, strerror(errno));
         }
@@ -1721,7 +1725,7 @@ na_sm_sock_path_remove(const char *pathname)
     path_ptr = strrchr(dup_path, '/');
     while (path_ptr) {
         *path_ptr = '\0';
-        NA_LOG_DEBUG("rmdir %s", dup_path);
+        NA_LOG_SUBSYS_DEBUG(cls, "rmdir %s", dup_path);
         if (rmdir(dup_path) == -1) {
             /* Silently ignore */
         }
@@ -1750,7 +1754,7 @@ na_sm_event_create(const char NA_UNUSED *username, pid_t NA_UNUSED pid,
 
 #ifdef HG_UTIL_HAS_SYSEVENTFD_H
     fd = hg_event_create();
-    NA_CHECK_ERROR(fd == -1, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(ctx, fd == -1, error, ret, na_sm_errno_to_na(errno),
         "hg_event_create() failed");
 #else
     char fifo_name[NA_SM_MAX_FILENAME] = {'\0'};
@@ -1763,26 +1767,26 @@ na_sm_event_create(const char NA_UNUSED *username, pid_t NA_UNUSED pid,
      */
     rc = NA_SM_GEN_FIFO_NAME(
         fifo_name, NA_SM_MAX_FILENAME, username, pid, id, pair_index, pair);
-    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, error, ret, NA_OVERFLOW,
-        "NA_SM_GEN_FIFO_NAME() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(ctx, rc < 0 || rc > NA_SM_MAX_FILENAME, error, ret,
+        NA_OVERFLOW, "NA_SM_GEN_FIFO_NAME() failed, rc: %d", rc);
 
     /* Create FIFO */
-    NA_LOG_DEBUG("mkfifo() %s", fifo_name);
+    NA_LOG_SUBSYS_DEBUG("mkfifo() %s", fifo_name);
     rc = mkfifo(fifo_name, S_IRUSR | S_IWUSR);
-    NA_CHECK_ERROR(rc == -1, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(ctx, rc == -1, error, ret, na_sm_errno_to_na(errno),
         "mkfifo() failed (%s)", strerror(errno));
 
     /* Open FIFO (RDWR for convenience) */
     fd = open(fifo_name, O_RDWR);
-    NA_CHECK_ERROR(fd == -1, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(ctx, fd == -1, error, ret, na_sm_errno_to_na(errno),
         "open() failed (%s)", strerror(errno));
 
     /* Set FIFO to be non-blocking */
     rc = fcntl(fd, F_SETFL, O_NONBLOCK);
-    NA_CHECK_ERROR(rc == -1, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(ctx, rc == -1, error, ret, na_sm_errno_to_na(errno),
         "fcntl() failed (%s)", strerror(errno));
 #endif
-    NA_LOG_DEBUG("Created event %d", fd);
+    NA_LOG_SUBSYS_DEBUG(ctx, "Created event %d", fd);
 
     *event = fd;
 
@@ -1792,7 +1796,8 @@ error:
 #ifndef HG_UTIL_HAS_SYSEVENTFD_H
     if (fd != -1) {
         rc = close(fd);
-        NA_CHECK_ERROR_DONE(rc == -1, "close() failed (%s)", strerror(errno));
+        NA_CHECK_SUBSYS_ERROR_DONE(
+            ctx, rc == -1, "close() failed (%s)", strerror(errno));
     }
 #endif
 
@@ -1808,14 +1813,14 @@ na_sm_event_destroy(const char NA_UNUSED *username, pid_t NA_UNUSED pid,
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    NA_LOG_DEBUG("Closing event %d", event);
+    NA_LOG_SUBSYS_DEBUG(ctx, "Closing event %d", event);
 #ifdef HG_UTIL_HAS_SYSEVENTFD_H
     rc = hg_event_destroy(event);
-    NA_CHECK_ERROR(rc == HG_UTIL_FAIL, done, ret, na_sm_errno_to_na(errno),
-        "hg_event_destroy() failed");
+    NA_CHECK_SUBSYS_ERROR(ctx, rc == HG_UTIL_FAIL, done, ret,
+        na_sm_errno_to_na(errno), "hg_event_destroy() failed");
 #else
     rc = close(event);
-    NA_CHECK_ERROR(rc == -1, done, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(ctx, rc == -1, done, ret, na_sm_errno_to_na(errno),
         "close() failed (%s)", strerror(errno));
 
     if (remove) {
@@ -1823,13 +1828,13 @@ na_sm_event_destroy(const char NA_UNUSED *username, pid_t NA_UNUSED pid,
 
         rc = NA_SM_GEN_FIFO_NAME(
             fifo_name, NA_SM_MAX_FILENAME, username, pid, id, pair_index, pair);
-        NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_CHECK_SUBSYS_ERROR(ctx, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
             NA_OVERFLOW, "NA_SM_GEN_FIFO_NAME() failed, rc: %d", rc);
 
-        NA_LOG_DEBUG("unlink() %s", fifo_name);
+        NA_LOG_SUBSYS_DEBUG(ctx, "unlink() %s", fifo_name);
         rc = unlink(fifo_name);
-        NA_CHECK_ERROR(rc == -1, done, ret, na_sm_errno_to_na(errno),
-            "unlink() failed (%s)", strerror(errno));
+        NA_CHECK_SUBSYS_ERROR(ctx, rc == -1, done, ret,
+            na_sm_errno_to_na(errno), "unlink() failed (%s)", strerror(errno));
     }
 #endif
 
@@ -1846,15 +1851,15 @@ na_sm_event_set(int event)
     int rc;
 
     rc = hg_event_set(event);
-    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
-        "hg_event_set() failed");
+    NA_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, done, ret,
+        na_sm_errno_to_na(errno), "hg_event_set() failed");
 #else
     uint64_t count = 1;
     ssize_t s;
 
     s = write(event, &count, sizeof(uint64_t));
-    NA_CHECK_ERROR(s != sizeof(uint64_t), done, ret, na_sm_errno_to_na(errno),
-        "write() failed (%s)", strerror(errno));
+    NA_CHECK_SUBSYS_ERROR(ctx, s != sizeof(uint64_t), done, ret,
+        na_sm_errno_to_na(errno), "write() failed (%s)", strerror(errno));
 #endif
 
 done:
@@ -1870,8 +1875,8 @@ na_sm_event_get(int event, na_bool_t *signaled)
     int rc;
 
     rc = hg_event_get(event, (hg_util_bool_t *) signaled);
-    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
-        "hg_event_get() failed");
+    NA_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, done, ret,
+        na_sm_errno_to_na(errno), "hg_event_get() failed");
 #else
     uint64_t count = 1;
     ssize_t s;
@@ -1882,7 +1887,7 @@ na_sm_event_get(int event, na_bool_t *signaled)
             *signaled = NA_FALSE;
             goto done;
         } else
-            NA_GOTO_ERROR(done, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_ERROR(ctx, done, ret, na_sm_errno_to_na(errno),
                 "read() failed (%s)", strerror(errno));
     }
 
@@ -1902,8 +1907,8 @@ na_sm_poll_register(hg_poll_set_t *poll_set, int fd, void *ptr)
     int rc;
 
     rc = hg_poll_add(poll_set, fd, &event);
-    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
-        "hg_poll_add() failed");
+    NA_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, done, ret,
+        na_sm_errno_to_na(errno), "hg_poll_add() failed");
 
 done:
     return ret;
@@ -1917,8 +1922,8 @@ na_sm_poll_deregister(hg_poll_set_t *poll_set, int fd)
     int rc;
 
     rc = hg_poll_remove(poll_set, fd);
-    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
-        "hg_poll_remove() failed");
+    NA_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, done, ret,
+        na_sm_errno_to_na(errno), "hg_poll_remove() failed");
 
 done:
     return ret;
@@ -1963,8 +1968,8 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     /* Create addr hash-table */
     na_sm_endpoint->addr_map.map =
         hg_hash_table_new(na_sm_addr_key_hash, na_sm_addr_key_equal);
-    NA_CHECK_ERROR(na_sm_endpoint->addr_map.map == NULL, error, ret, NA_NOMEM,
-        "hg_hash_table_new() failed");
+    NA_CHECK_SUBSYS_ERROR(cls, na_sm_endpoint->addr_map.map == NULL, error, ret,
+        NA_NOMEM, "hg_hash_table_new() failed");
     hg_hash_table_register_free_functions(
         na_sm_endpoint->addr_map.map, free, free);
     hg_thread_rwlock_init(&na_sm_endpoint->addr_map.lock);
@@ -1972,41 +1977,44 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     if (listen) {
         /* If we're listening, create a new shm region */
         ret = na_sm_region_open(username, pid, id, NA_TRUE, &shared_region);
-        NA_CHECK_NA_ERROR(error, ret, "Could not open shared-memory region");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not open shared-memory region");
 
         /* Reserve queue pair for loopback */
         ret = na_sm_queue_pair_reserve(shared_region, &queue_pair_idx);
-        NA_CHECK_NA_ERROR(error, ret, "Could not reserve queue pair");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not reserve queue pair");
         queue_pair_reserved = NA_TRUE;
     }
 
     if (!no_wait) {
         /* Create poll set to wait for events */
         na_sm_endpoint->poll_set = hg_poll_create();
-        NA_CHECK_ERROR(na_sm_endpoint->poll_set == NULL, error, ret,
+        NA_CHECK_SUBSYS_ERROR(cls, na_sm_endpoint->poll_set == NULL, error, ret,
             na_sm_errno_to_na(errno), "Cannot create poll set");
         hg_atomic_incr32(&na_sm_endpoint->nofile);
 
         /* Create endpoint sock */
         ret = na_sm_sock_open(username, pid, id, listen, &na_sm_endpoint->sock);
-        NA_CHECK_NA_ERROR(error, ret, "Could not open sock");
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open sock");
         hg_atomic_incr32(&na_sm_endpoint->nofile);
 
         if (listen) {
             na_sm_endpoint->sock_poll_type = NA_SM_POLL_SOCK;
-            NA_LOG_DEBUG(
-                "Registering sock %d for polling", na_sm_endpoint->sock);
+            NA_LOG_SUBSYS_DEBUG(
+                cls, "Registering sock %d for polling", na_sm_endpoint->sock);
             /* Add sock to poll set (ony required if we're listening) */
             ret = na_sm_poll_register(na_sm_endpoint->poll_set,
                 na_sm_endpoint->sock, &na_sm_endpoint->sock_poll_type);
-            NA_CHECK_NA_ERROR(error, ret, "Could not add sock to poll set");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, error, ret, "Could not add sock to poll set");
             sock_registered = NA_TRUE;
         }
 
         /* Create local tx signaling event */
         tx_notify = hg_event_create();
-        NA_CHECK_ERROR(tx_notify == -1, error, ret, na_sm_errno_to_na(errno),
-            "hg_event_create() failed");
+        NA_CHECK_SUBSYS_ERROR(cls, tx_notify == -1, error, ret,
+            na_sm_errno_to_na(errno), "hg_event_create() failed");
         hg_atomic_incr32(&na_sm_endpoint->nofile);
     } else {
         na_sm_endpoint->sock = -1;
@@ -2014,7 +2022,8 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
     /* Allocate source address */
     ret = na_sm_addr_create(pid, id, NA_FALSE, &na_sm_endpoint->source_addr);
-    NA_CHECK_NA_ERROR(error, ret, "Could not allocate source address");
+    NA_CHECK_SUBSYS_NA_ERROR(
+        cls, error, ret, "Could not allocate source address");
 
     if (listen) {
         na_sm_endpoint->source_addr->queue_pair_idx = queue_pair_idx;
@@ -2030,10 +2039,12 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     if (!no_wait) {
         na_sm_endpoint->source_addr->tx_notify = tx_notify;
         na_sm_endpoint->source_addr->tx_poll_type = NA_SM_POLL_TX_NOTIFY;
-        NA_LOG_DEBUG("Registering tx notify %d for polling", tx_notify);
+        NA_LOG_SUBSYS_DEBUG(
+            cls, "Registering tx notify %d for polling", tx_notify);
         ret = na_sm_poll_register(na_sm_endpoint->poll_set, tx_notify,
             &na_sm_endpoint->source_addr->tx_poll_type);
-        NA_CHECK_NA_ERROR(error, ret, "Could not add tx notify to poll set");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not add tx notify to poll set");
     }
 
     return ret;
@@ -2048,13 +2059,14 @@ error:
     if (sock_registered) {
         err_ret = na_sm_poll_deregister(
             na_sm_endpoint->poll_set, na_sm_endpoint->sock);
-        NA_CHECK_ERROR_DONE(
-            err_ret != NA_SUCCESS, "na_sm_poll_deregister() failed");
+        NA_CHECK_SUBSYS_ERROR_DONE(
+            cls, err_ret != NA_SUCCESS, "na_sm_poll_deregister() failed");
     }
     if (na_sm_endpoint->sock > 0) {
         err_ret =
             na_sm_sock_close(username, pid, id, listen, na_sm_endpoint->sock);
-        NA_CHECK_ERROR_DONE(err_ret != NA_SUCCESS, "na_sm_sock_close() failed");
+        NA_CHECK_SUBSYS_ERROR_DONE(
+            cls, err_ret != NA_SUCCESS, "na_sm_sock_close() failed");
         hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
     if (na_sm_endpoint->poll_set) {
@@ -2103,8 +2115,11 @@ na_sm_endpoint_close(
             HG_LIST_REMOVE(na_sm_addr, entry);
 
             /* Destroy remaining addresses */
-            ret = na_sm_addr_destroy(na_sm_endpoint, username, na_sm_addr);
-            NA_CHECK_NA_ERROR(done, ret, "Could not remove address");
+            if (na_sm_addr != source_addr) {
+                ret = na_sm_addr_destroy(na_sm_endpoint, username, na_sm_addr);
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    cls, done, ret, "Could not remove address");
+            }
 
             na_sm_addr = next;
         }
@@ -2112,35 +2127,35 @@ na_sm_endpoint_close(
         empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
         hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
     }
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Poll addr list should be empty");
 
     /* Check that unexpected message queue is empty */
     hg_thread_spin_lock(&na_sm_endpoint->unexpected_msg_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_msg_queue.queue);
     hg_thread_spin_unlock(&na_sm_endpoint->unexpected_msg_queue.lock);
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Unexpected msg queue should be empty");
 
     /* Check that unexpected op queue is empty */
     hg_thread_spin_lock(&na_sm_endpoint->unexpected_op_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_op_queue.queue);
     hg_thread_spin_unlock(&na_sm_endpoint->unexpected_op_queue.lock);
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Unexpected op queue should be empty");
 
     /* Check that expected op queue is empty */
     hg_thread_spin_lock(&na_sm_endpoint->expected_op_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->expected_op_queue.queue);
     hg_thread_spin_unlock(&na_sm_endpoint->expected_op_queue.lock);
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Expected op queue should be empty");
 
     /* Check that retry op queue is empty */
     hg_thread_spin_lock(&na_sm_endpoint->retry_op_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
     hg_thread_spin_unlock(&na_sm_endpoint->retry_op_queue.lock);
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Retry op queue should be empty");
 
     if (source_addr) {
@@ -2150,17 +2165,19 @@ na_sm_endpoint_close(
 
             ret = na_sm_region_close(username, source_addr->pid,
                 source_addr->id, NA_TRUE, source_addr->shared_region);
-            NA_CHECK_NA_ERROR(done, ret, "na_sm_region_close() failed");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, done, ret, "na_sm_region_close() failed");
         }
         if (source_addr->tx_notify > 0) {
             int rc;
 
             ret = na_sm_poll_deregister(
                 na_sm_endpoint->poll_set, source_addr->tx_notify);
-            NA_CHECK_NA_ERROR(done, ret, "na_sm_poll_deregister() failed");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, done, ret, "na_sm_poll_deregister() failed");
 
             rc = hg_event_destroy(source_addr->tx_notify);
-            NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
+            NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, done, ret,
                 na_sm_errno_to_na(errno), "hg_event_destroy() failed");
             hg_atomic_decr32(&na_sm_endpoint->nofile);
         }
@@ -2168,11 +2185,13 @@ na_sm_endpoint_close(
             if (na_sm_endpoint->listen) {
                 ret = na_sm_poll_deregister(
                     na_sm_endpoint->poll_set, na_sm_endpoint->sock);
-                NA_CHECK_NA_ERROR(done, ret, "na_sm_poll_deregister() failed");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    cls, done, ret, "na_sm_poll_deregister() failed");
             }
             ret = na_sm_sock_close(username, source_addr->pid, source_addr->id,
                 na_sm_endpoint->listen, na_sm_endpoint->sock);
-            NA_CHECK_NA_ERROR(done, ret, "na_sm_sock_close() failed");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, done, ret, "na_sm_sock_close() failed");
             hg_atomic_decr32(&na_sm_endpoint->nofile);
 
             na_sm_endpoint->sock = -1;
@@ -2183,7 +2202,7 @@ na_sm_endpoint_close(
 
     if (na_sm_endpoint->poll_set) {
         int rc = hg_poll_destroy(na_sm_endpoint->poll_set);
-        NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
+        NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, done, ret,
             na_sm_errno_to_na(errno), "hg_poll_destroy() failed");
         hg_atomic_decr32(&na_sm_endpoint->nofile);
 
@@ -2197,8 +2216,9 @@ na_sm_endpoint_close(
     }
 
     /* Check that all fds have been freed */
-    NA_CHECK_ERROR(hg_atomic_get32(&na_sm_endpoint->nofile) != 0, done, ret,
-        NA_BUSY, "File descriptors remain opened on this endpoint (nofile=%d)",
+    NA_CHECK_SUBSYS_ERROR(cls, hg_atomic_get32(&na_sm_endpoint->nofile) != 0,
+        done, ret, NA_BUSY,
+        "File descriptors remain opened on this endpoint (nofile=%d)",
         hg_atomic_get32(&na_sm_endpoint->nofile));
 
     /* Destroy mutexes */
@@ -2243,8 +2263,8 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
 #ifdef NA_HAS_DEBUG
                 char buf[65] = {'\0'};
                 available = hg_atomic_get64(&na_sm_region->available.val[j]);
-                NA_LOG_DEBUG("Reserved pair index %u\n### Available: %s",
-                    (i + (j * 64)),
+                NA_LOG_SUBSYS_DEBUG(addr,
+                    "Reserved pair index %u\n### Available: %s", (i + (j * 64)),
                     lltoa((hg_util_uint64_t) available, buf, 2));
 #endif
                 *index = (na_uint8_t)(i + (j * 64));
@@ -2264,7 +2284,7 @@ static NA_INLINE void
 na_sm_queue_pair_release(struct na_sm_region *na_sm_region, na_uint8_t index)
 {
     hg_atomic_or64(&na_sm_region->available.val[index / 64], 1LL << index % 64);
-    NA_LOG_DEBUG("Released pair index %u", index);
+    NA_LOG_SUBSYS_DEBUG(addr, "Released pair index %u", index);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2305,24 +2325,25 @@ na_sm_addr_map_insert(struct na_sm_map *na_sm_map, na_uint64_t key,
 
     /* Allocate new key */
     key_ptr = (hg_hash_table_key_t) malloc(sizeof(na_uint64_t));
-    NA_CHECK_ERROR(key_ptr == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(addr, key_ptr == NULL, error, ret, NA_NOMEM,
         "Cannot allocate memory for new addr key");
     *((na_uint64_t *) key_ptr) = key;
 
     /* Allocate new value */
     value = (hg_hash_table_value_t) malloc(sizeof(struct na_sm_addr *));
-    NA_CHECK_ERROR(value == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(addr, value == NULL, error, ret, NA_NOMEM,
         "cannot allocate memory for pointer to address");
 
     /* Insert new value */
     rc = hg_hash_table_insert(na_sm_map->map, key_ptr, value);
-    NA_CHECK_ERROR(
-        rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
     inserted = NA_TRUE;
 
     /* This is a new address, look it up */
     ret = insert_cb(arg, &na_sm_addr);
-    NA_CHECK_NA_ERROR(error, ret, "Could not execute insertion callback");
+    NA_CHECK_SUBSYS_NA_ERROR(
+        addr, error, ret, "Could not execute insertion callback");
 
     *((struct na_sm_addr **) value) = na_sm_addr;
 
@@ -2336,7 +2357,7 @@ done:
 error:
     if (inserted) {
         rc = hg_hash_table_remove(na_sm_map->map, key_ptr);
-        NA_CHECK_ERROR_DONE(rc == 0, "Could not remove key");
+        NA_CHECK_SUBSYS_ERROR_DONE(addr, rc == 0, "Could not remove key");
     } else {
         free(value);
         free(key_ptr);
@@ -2356,7 +2377,7 @@ na_sm_addr_lookup_insert_cb(void *arg, struct na_sm_addr **addr)
 
     /* Allocate address */
     ret = na_sm_addr_create(args->pid, args->id, NA_FALSE, &na_sm_addr);
-    NA_CHECK_NA_ERROR(done, ret, "Could not allocate address");
+    NA_CHECK_SUBSYS_NA_ERROR(addr, done, ret, "Could not allocate address");
 
     *addr = na_sm_addr;
 
@@ -2374,7 +2395,7 @@ na_sm_addr_create(
 
     /* Allocate new addr */
     na_sm_addr = (struct na_sm_addr *) malloc(sizeof(struct na_sm_addr));
-    NA_CHECK_ERROR(na_sm_addr == NULL, done, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(addr, na_sm_addr == NULL, done, ret, NA_NOMEM,
         "Could not allocate NA SM addr");
     memset(na_sm_addr, 0, sizeof(struct na_sm_addr));
     na_sm_addr->unexpected = unexpected;
@@ -2404,7 +2425,8 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
     if (na_sm_addr->shared_region) {
         ret = na_sm_addr_release(na_sm_endpoint, username, na_sm_addr);
-        NA_CHECK_NA_ERROR(done, ret, "Could not release NA SM addr");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, done, ret, "Could not release NA SM addr");
     }
 
     free(na_sm_addr);
@@ -2426,14 +2448,16 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     if (!na_sm_addr->shared_region) {
         ret = na_sm_region_open(username, na_sm_addr->pid, na_sm_addr->id,
             NA_FALSE, &na_sm_addr->shared_region);
-        NA_CHECK_NA_ERROR(error, ret, "Could not open shared-memory region");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, error, ret, "Could not open shared-memory region");
     }
 
     /* Reserve queue pair */
     if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESERVED)) {
         ret = na_sm_queue_pair_reserve(
             na_sm_addr->shared_region, &na_sm_addr->queue_pair_idx);
-        NA_CHECK_NA_ERROR(error, ret, "Could not reserve queue pair");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, error, ret, "Could not reserve queue pair");
         hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_RESERVED);
 
         na_sm_addr->tx_queue =
@@ -2450,7 +2474,8 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     cmd_hdr.hdr.id = na_sm_endpoint->source_addr->id & 0xff;
     cmd_hdr.hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff;
 
-    NA_LOG_DEBUG("Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
+    NA_LOG_SUBSYS_DEBUG(addr,
+        "Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
         cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id, cmd_hdr.hdr.pair_idx,
         cmd_hdr.val);
 
@@ -2458,7 +2483,8 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_CMD_PUSHED)) {
         rc = na_sm_cmd_queue_push(
             &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
-        NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+        NA_CHECK_SUBSYS_ERROR(
+            addr, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
         hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_CMD_PUSHED);
     }
 
@@ -2468,7 +2494,8 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         if (na_sm_addr->tx_notify < 0) {
             ret = na_sm_event_create(username, na_sm_addr->pid, na_sm_addr->id,
                 na_sm_addr->queue_pair_idx, 't', &na_sm_addr->tx_notify);
-            NA_CHECK_NA_ERROR(error, ret, "Could not create event");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not create event");
             hg_atomic_incr32(&na_sm_endpoint->nofile);
         }
 
@@ -2476,18 +2503,19 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         if (na_sm_addr->rx_notify < 0) {
             ret = na_sm_event_create(username, na_sm_addr->pid, na_sm_addr->id,
                 na_sm_addr->queue_pair_idx, 'r', &na_sm_addr->rx_notify);
-            NA_CHECK_NA_ERROR(error, ret, "Could not create event");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not create event");
             hg_atomic_incr32(&na_sm_endpoint->nofile);
 
             na_sm_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
-            NA_LOG_DEBUG(
-                "Registering rx notify %d for polling", na_sm_addr->rx_notify);
+            NA_LOG_SUBSYS_DEBUG(addr, "Registering rx notify %d for polling",
+                na_sm_addr->rx_notify);
 
             /* Add remote rx notify to poll set */
             ret = na_sm_poll_register(na_sm_endpoint->poll_set,
                 na_sm_addr->rx_notify, &na_sm_addr->rx_poll_type);
-            NA_CHECK_NA_ERROR(
-                error, ret, "Could not add rx notify to poll set");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not add rx notify to poll set");
         }
 
         /* Send events to remote process */
@@ -2498,7 +2526,8 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             if (unlikely(ret == NA_AGAIN))
                 return ret;
             else
-                NA_CHECK_NA_ERROR(error, ret, "Could not send addr events");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    addr, error, ret, "Could not send addr events");
         }
     }
 
@@ -2525,8 +2554,8 @@ error:
                 err_ret = na_sm_event_destroy(username, na_sm_addr->pid,
                     na_sm_addr->id, na_sm_addr->queue_pair_idx, 't', NA_TRUE,
                     na_sm_addr->tx_notify);
-                NA_CHECK_ERROR_DONE(
-                    err_ret != NA_SUCCESS, "na_sm_event_destroy() failed");
+                NA_CHECK_SUBSYS_ERROR_DONE(addr, err_ret != NA_SUCCESS,
+                    "na_sm_event_destroy() failed");
                 hg_atomic_decr32(&na_sm_endpoint->nofile);
                 na_sm_addr->tx_notify = -1;
             }
@@ -2534,8 +2563,8 @@ error:
                 err_ret = na_sm_event_destroy(username, na_sm_addr->pid,
                     na_sm_addr->id, na_sm_addr->queue_pair_idx, 'r', NA_TRUE,
                     na_sm_addr->rx_notify);
-                NA_CHECK_ERROR_DONE(
-                    err_ret != NA_SUCCESS, "na_sm_event_destroy() failed");
+                NA_CHECK_SUBSYS_ERROR_DONE(addr, err_ret != NA_SUCCESS,
+                    "na_sm_event_destroy() failed");
                 hg_atomic_decr32(&na_sm_endpoint->nofile);
                 na_sm_addr->rx_notify = -1;
             }
@@ -2543,8 +2572,8 @@ error:
 
         err_ret = na_sm_region_close(username, na_sm_addr->pid, na_sm_addr->id,
             NA_FALSE, na_sm_addr->shared_region);
-        NA_CHECK_ERROR_DONE(
-            err_ret != NA_SUCCESS, "Could not close shared-memory region");
+        NA_CHECK_SUBSYS_ERROR_DONE(addr, err_ret != NA_SUCCESS,
+            "Could not close shared-memory region");
         na_sm_addr->shared_region = NULL;
     }
 
@@ -2576,44 +2605,50 @@ na_sm_addr_release(struct na_sm_endpoint *na_sm_endpoint, const char *username,
              * effort to clean up resources) */
             ret = na_sm_addr_event_send(na_sm_endpoint->sock, username,
                 na_sm_addr->pid, na_sm_addr->id, cmd_hdr, -1, -1, NA_TRUE);
-            NA_CHECK_NA_ERROR(done, ret, "Could not send addr events");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, done, ret, "Could not send addr events");
         } else {
             na_bool_t rc;
 
-            NA_LOG_DEBUG("Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8
-                         " val=%lu",
+            NA_LOG_SUBSYS_DEBUG(addr,
+                "Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
                 cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id,
                 cmd_hdr.hdr.pair_idx, cmd_hdr.val);
 
             /* Push cmd to cmd queue */
             rc = na_sm_cmd_queue_push(
                 &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
-            NA_CHECK_ERROR(rc == NA_FALSE, done, ret, NA_AGAIN, "Full queue");
+            NA_CHECK_SUBSYS_ERROR(
+                addr, rc == NA_FALSE, done, ret, NA_AGAIN, "Full queue");
         }
 
         /* Close shared-memory region */
         ret = na_sm_region_close(username, na_sm_addr->pid, na_sm_addr->id,
             NA_FALSE, na_sm_addr->shared_region);
-        NA_CHECK_NA_ERROR(done, ret, "Could not close shared-memory region");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, done, ret, "Could not close shared-memory region");
     }
 
     if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_destroy(username, na_sm_addr->pid, na_sm_addr->id,
             na_sm_addr->queue_pair_idx, 't', !na_sm_addr->unexpected,
             na_sm_addr->tx_notify);
-        NA_CHECK_NA_ERROR(done, ret, "na_sm_event_destroy() failed");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, done, ret, "na_sm_event_destroy() failed");
         hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
 
     if (na_sm_addr->rx_notify > 0) {
         ret = na_sm_poll_deregister(
             na_sm_endpoint->poll_set, na_sm_addr->rx_notify);
-        NA_CHECK_NA_ERROR(done, ret, "na_sm_poll_deregister() failed");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, done, ret, "na_sm_poll_deregister() failed");
 
         ret = na_sm_event_destroy(username, na_sm_addr->pid, na_sm_addr->id,
             na_sm_addr->queue_pair_idx, 'r', !na_sm_addr->unexpected,
             na_sm_addr->rx_notify);
-        NA_CHECK_NA_ERROR(done, ret, "na_sm_event_destroy() failed");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, done, ret, "na_sm_event_destroy() failed");
         hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
 
@@ -2650,8 +2685,8 @@ na_sm_addr_event_send(int sock, const char *username, pid_t pid, na_uint8_t id,
 
     rc = NA_SM_GEN_SOCK_PATH(
         addr.sun_path, NA_SM_MAX_FILENAME, username, pid, id);
-    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret, NA_OVERFLOW,
-        "NA_SM_GEN_SOCK_PATH() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_OVERFLOW, "NA_SM_GEN_SOCK_PATH() failed, rc: %d", rc);
     strcat(addr.sun_path, NA_SM_SOCK_NAME);
 
     /* Set address of destination */
@@ -2687,8 +2722,9 @@ na_sm_addr_event_send(int sock, const char *username, pid_t pid, na_uint8_t id,
         if (unlikely(nsend == -1 && errno == ETOOMANYREFS))
             ret = NA_AGAIN;
         else
-            NA_CHECK_ERROR(nsend == -1, done, ret, na_sm_errno_to_na(errno),
-                "sendmsg() failed (%s)", strerror(errno));
+            NA_CHECK_SUBSYS_ERROR(addr, nsend == -1, done, ret,
+                na_sm_errno_to_na(errno), "sendmsg() failed (%s)",
+                strerror(errno));
     }
 
 done:
@@ -2735,7 +2771,7 @@ na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
             *received = NA_FALSE;
             goto done;
         } else
-            NA_GOTO_ERROR(done, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_ERROR(addr, done, ret, na_sm_errno_to_na(errno),
                 "recvmsg() failed (% s)", strerror(errno));
     }
 
@@ -2785,8 +2821,8 @@ na_sm_buf_reserve(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int *index)
 #ifdef NA_HAS_DEBUG
             char buf[65] = {'\0'};
             available = hg_atomic_get64(&na_sm_copy_buf->available.val);
-            NA_LOG_DEBUG("Reserved bit index %u\n### Available: %s", i,
-                lltoa((hg_util_uint64_t) available, buf, 2));
+            NA_LOG_SUBSYS_DEBUG(msg, "Reserved bit index %u\n### Available: %s",
+                i, lltoa((hg_util_uint64_t) available, buf, 2));
 #endif
             *index = i;
             return NA_SUCCESS;
@@ -2803,7 +2839,7 @@ static NA_INLINE void
 na_sm_buf_release(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int index)
 {
     hg_atomic_or64(&na_sm_copy_buf->available.val, 1LL << index);
-    NA_LOG_DEBUG("Released bit index %u", index);
+    NA_LOG_SUBSYS_DEBUG(msg, "Released bit index %u", index);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2833,7 +2869,7 @@ na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id)
     struct na_sm_op_queue *retry_op_queue =
         &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
 
-    NA_LOG_DEBUG("Pushing %p for retry", na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_sm_op_id);
 
     /* Push op ID to retry queue */
     hg_thread_spin_lock(&retry_op_queue->lock);
@@ -2927,11 +2963,11 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
      * if something is still in the queues */
     rc = hg_poll_wait(
         na_sm_endpoint->poll_set, timeout, NA_SM_MAX_EVENTS, events, &nevents);
-    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
-        "hg_poll_wait() failed");
+    NA_CHECK_SUBSYS_ERROR(poll, rc != HG_UTIL_SUCCESS, done, ret,
+        na_sm_errno_to_na(errno), "hg_poll_wait() failed");
 
     if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
-        NA_LOG_DEBUG("Interrupted");
+        NA_LOG_SUBSYS_DEBUG(poll, "Interrupted");
         *progressed_ptr = NA_FALSE;
         return ret;
     }
@@ -2944,33 +2980,37 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
 
         switch (*(na_sm_poll_type_t *) events[i].data.ptr) {
             case NA_SM_POLL_SOCK:
-                NA_LOG_DEBUG("NA_SM_POLL_SOCK event");
+                NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_SOCK event");
                 ret = na_sm_progress_sock(
                     na_sm_endpoint, username, &progressed_notify);
-                NA_CHECK_NA_ERROR(done, ret, "Could not progress sock");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    poll, done, ret, "Could not progress sock");
                 break;
             case NA_SM_POLL_TX_NOTIFY:
-                NA_LOG_DEBUG("NA_SM_POLL_TX_NOTIFY event");
+                NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_TX_NOTIFY event");
                 poll_addr = container_of(
                     events[i].data.ptr, struct na_sm_addr, tx_poll_type);
                 ret = na_sm_progress_tx_notify(poll_addr, &progressed_notify);
-                NA_CHECK_NA_ERROR(done, ret, "Could not progress tx notify");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    poll, done, ret, "Could not progress tx notify");
                 break;
             case NA_SM_POLL_RX_NOTIFY:
-                NA_LOG_DEBUG("NA_SM_POLL_RX_NOTIFY event");
+                NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_RX_NOTIFY event");
                 poll_addr = container_of(
                     events[i].data.ptr, struct na_sm_addr, rx_poll_type);
 
                 ret = na_sm_progress_rx_notify(poll_addr, &progressed_notify);
-                NA_CHECK_NA_ERROR(done, ret, "Could not progress rx notify");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    poll, done, ret, "Could not progress rx notify");
 
                 ret = na_sm_progress_rx_queue(
                     na_sm_endpoint, poll_addr, &progressed_rx);
-                NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    poll, done, ret, "Could not progress rx queue");
 
                 break;
             default:
-                NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
+                NA_GOTO_SUBSYS_ERROR(poll, done, ret, NA_INVALID_ARG,
                     "Operation type %d not supported",
                     *(na_sm_poll_type_t *) events[i].data.ptr);
         }
@@ -3002,7 +3042,8 @@ na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
         ret =
             na_sm_progress_rx_queue(na_sm_endpoint, poll_addr, &progressed_rx);
-        NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            poll, done, ret, "Could not progress rx queue");
         progressed |= progressed_rx;
 
         hg_thread_spin_lock(&poll_addr_list->lock);
@@ -3015,7 +3056,8 @@ na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
         ret =
             na_sm_progress_cmd_queue(na_sm_endpoint, username, &progressed_cmd);
-        NA_CHECK_NA_ERROR(done, ret, "Could not progress cmd queue");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            poll, done, ret, "Could not progress cmd queue");
         progressed |= progressed_cmd;
     }
 
@@ -3037,7 +3079,7 @@ na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     /* Attempt to receive addr info (events, queue index) */
     ret = na_sm_addr_event_recv(
         na_sm_endpoint->sock, &cmd_hdr, &tx_notify, &rx_notify, progressed);
-    NA_CHECK_NA_ERROR(done, ret, "Could not recv addr events");
+    NA_CHECK_SUBSYS_NA_ERROR(addr, done, ret, "Could not recv addr events");
 
     if (*progressed) {
         if (tx_notify > 0)
@@ -3049,7 +3091,7 @@ na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         /* Process received cmd, TODO would be nice to use cmd queue */
         ret = na_sm_process_cmd(
             na_sm_endpoint, username, cmd_hdr, tx_notify, rx_notify);
-        NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
+        NA_CHECK_SUBSYS_NA_ERROR(addr, done, ret, "Could not process cmd");
     }
 
 done:
@@ -3072,7 +3114,7 @@ na_sm_progress_cmd_queue(struct na_sm_endpoint *na_sm_endpoint,
     }
 
     ret = na_sm_process_cmd(na_sm_endpoint, username, cmd_hdr, -1, -1);
-    NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
+    NA_CHECK_SUBSYS_NA_ERROR(addr, done, ret, "Could not process cmd");
 
 done:
     return ret;
@@ -3085,7 +3127,8 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_LOG_DEBUG("Processing cmd with %d from %d/%" SCNu8 "/%" SCNu8 " val=%lu",
+    NA_LOG_SUBSYS_DEBUG(addr,
+        "Processing cmd with %d from %d/%" SCNu8 "/%" SCNu8 " val=%lu",
         cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id & 0xff,
         cmd_hdr.hdr.pair_idx & 0xff, cmd_hdr.val);
 
@@ -3096,8 +3139,8 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             /* Allocate source address */
             ret = na_sm_addr_create(
                 (pid_t) cmd_hdr.hdr.pid, cmd_hdr.hdr.id, NA_TRUE, &na_sm_addr);
-            NA_CHECK_NA_ERROR(
-                done, ret, "Could not allocate unexpected address");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, done, ret, "Could not allocate unexpected address");
 
             na_sm_addr->shared_region =
                 na_sm_endpoint->source_addr->shared_region;
@@ -3119,13 +3162,14 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
             if (na_sm_endpoint->poll_set && (na_sm_addr->rx_notify > 0)) {
                 na_sm_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
-                NA_LOG_DEBUG("Registering rx notify %d for polling",
+                NA_LOG_SUBSYS_DEBUG(addr,
+                    "Registering rx notify %d for polling",
                     na_sm_addr->rx_notify);
                 /* Add remote rx notify to poll set */
                 ret = na_sm_poll_register(na_sm_endpoint->poll_set,
                     na_sm_addr->rx_notify, &na_sm_addr->rx_poll_type);
-                NA_CHECK_NA_ERROR(
-                    done, ret, "Could not add rx notify to poll set");
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    addr, done, ret, "Could not add rx notify to poll set");
             }
 
             /* Unexpected addresses are always resolved */
@@ -3157,7 +3201,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
             if (!found) {
                 /* Silently ignore if not found */
-                NA_LOG_DEBUG(
+                NA_LOG_SUBSYS_DEBUG(addr,
                     "Could not find address for PID=%d, ID=%u, pair_index=%u",
                     cmd_hdr.hdr.pid, cmd_hdr.hdr.id, cmd_hdr.hdr.pair_idx);
                 break;
@@ -3167,8 +3211,8 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
                 /* Cannot free yet */
                 break;
 
-            NA_LOG_DEBUG("Freeing addr for PID=%d, ID=%d", na_sm_addr->pid,
-                na_sm_addr->id);
+            NA_LOG_SUBSYS_DEBUG(addr, "Freeing addr for PID=%d, ID=%d",
+                na_sm_addr->pid, na_sm_addr->id);
 
             /* Remove address from list of addresses to poll */
             hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
@@ -3177,14 +3221,14 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
             /* Destroy source address */
             ret = na_sm_addr_destroy(na_sm_endpoint, username, na_sm_addr);
-            NA_CHECK_NA_ERROR(
-                done, ret, "Could not allocate unexpected address");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, done, ret, "Could not allocate unexpected address");
 
             break;
         }
         default:
-            NA_GOTO_ERROR(
-                done, ret, NA_INVALID_ARG, "Unknown type of operation");
+            NA_GOTO_SUBSYS_ERROR(
+                poll, done, ret, NA_INVALID_ARG, "Unknown type of operation");
     }
 
 done:
@@ -3201,10 +3245,10 @@ na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
     /* TODO we should be able to safely remove EFD_SEMAPHORE behavior */
     /* Local notification only */
     rc = hg_event_get(poll_addr->tx_notify, (hg_util_bool_t *) progressed);
-    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
-        "Could not get completion notification");
+    NA_CHECK_SUBSYS_ERROR(msg, rc != HG_UTIL_SUCCESS, done, ret,
+        na_sm_errno_to_na(errno), "Could not get completion notification");
 
-    NA_LOG_DEBUG("Progressed tx notify %d", poll_addr->tx_notify);
+    NA_LOG_SUBSYS_DEBUG(msg, "Progressed tx notify %d", poll_addr->tx_notify);
 
 done:
     return ret;
@@ -3219,9 +3263,10 @@ na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
     /* TODO we should be able to safely remove EFD_SEMAPHORE behavior */
     /* Remote notification only */
     ret = na_sm_event_get(poll_addr->rx_notify, progressed);
-    NA_CHECK_NA_ERROR(done, ret, "Could not get completion notification");
+    NA_CHECK_SUBSYS_NA_ERROR(
+        msg, done, ret, "Could not get completion notification");
 
-    NA_LOG_DEBUG("Progressed rx notify %d", poll_addr->rx_notify);
+    NA_LOG_SUBSYS_DEBUG(msg, "Progressed rx notify %d", poll_addr->rx_notify);
 
 done:
     return ret;
@@ -3241,25 +3286,25 @@ na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
         goto done;
     }
 
-    NA_LOG_DEBUG("Found msg in queue");
+    NA_LOG_SUBSYS_DEBUG(msg, "Found msg in queue");
 
     /* Process expected and unexpected messages */
     switch (msg_hdr.hdr.type) {
         case NA_CB_SEND_UNEXPECTED:
             ret = na_sm_process_unexpected(&na_sm_endpoint->unexpected_op_queue,
                 poll_addr, msg_hdr, &na_sm_endpoint->unexpected_msg_queue);
-            NA_CHECK_NA_ERROR(
-                done, ret, "Could not make progress on unexpected msg");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                msg, done, ret, "Could not make progress on unexpected msg");
             break;
         case NA_CB_SEND_EXPECTED:
             ret = na_sm_process_expected(
                 &na_sm_endpoint->expected_op_queue, poll_addr, msg_hdr);
-            NA_CHECK_NA_ERROR(
-                done, ret, "Could not make progress on expected msg");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                msg, done, ret, "Could not make progress on expected msg");
             break;
         default:
-            NA_GOTO_ERROR(
-                done, ret, NA_INVALID_ARG, "Unknown type of operation");
+            NA_GOTO_SUBSYS_ERROR(
+                poll, done, ret, NA_INVALID_ARG, "Unknown type of operation");
     }
 
     *progressed = NA_TRUE;
@@ -3278,7 +3323,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    NA_LOG_DEBUG("Processing unexpected msg");
+    NA_LOG_SUBSYS_DEBUG(msg, "Processing unexpected msg");
 
     /* Pop op ID from queue */
     hg_thread_spin_lock(&unexpected_op_queue->lock);
@@ -3308,14 +3353,14 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
 
         /* Complete operation (no need to notify) */
         ret = na_sm_complete(na_sm_op_id, 0);
-        NA_CHECK_NA_ERROR(done, ret, "Could not complete operation");
+        NA_CHECK_SUBSYS_NA_ERROR(op, done, ret, "Could not complete operation");
     } else {
         /* If no error and message arrived, keep a copy of the struct in
          * the unexpected message queue (should rarely happen) */
         na_sm_unexpected_info = (struct na_sm_unexpected_info *) malloc(
             sizeof(struct na_sm_unexpected_info));
-        NA_CHECK_ERROR(na_sm_unexpected_info == NULL, done, ret, NA_NOMEM,
-            "Could not allocate unexpected info");
+        NA_CHECK_SUBSYS_ERROR(msg, na_sm_unexpected_info == NULL, done, ret,
+            NA_NOMEM, "Could not allocate unexpected info");
 
         na_sm_unexpected_info->na_sm_addr = poll_addr;
         na_sm_unexpected_info->buf_size = (na_size_t) msg_hdr.hdr.buf_size;
@@ -3323,8 +3368,8 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
 
         /* Allocate buf */
         na_sm_unexpected_info->buf = malloc(na_sm_unexpected_info->buf_size);
-        NA_CHECK_ERROR(na_sm_unexpected_info->buf == NULL, error, ret, NA_NOMEM,
-            "Could not allocate na_sm_unexpected_info buf");
+        NA_CHECK_SUBSYS_ERROR(msg, na_sm_unexpected_info->buf == NULL, error,
+            ret, NA_NOMEM, "Could not allocate na_sm_unexpected_info buf");
 
         /* Copy buffer */
         na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
@@ -3359,7 +3404,7 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    NA_LOG_DEBUG("Processing expected msg");
+    NA_LOG_SUBSYS_DEBUG(msg, "Processing expected msg");
 
     /* Try to match addr/tag */
     hg_thread_spin_lock(&expected_op_queue->lock);
@@ -3374,8 +3419,8 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
     }
     hg_thread_spin_unlock(&expected_op_queue->lock);
 
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
     /* Cannot have an already completed operation ID, TODO add sanity check */
 
     na_sm_op_id->info.msg.actual_buf_size = msg_hdr.hdr.buf_size;
@@ -3391,7 +3436,7 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
 
     /* Complete operation */
     ret = na_sm_complete(na_sm_op_id, 0);
-    NA_CHECK_NA_ERROR(done, ret, "Could not complete operation");
+    NA_CHECK_SUBSYS_NA_ERROR(op, done, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -3418,7 +3463,7 @@ na_sm_process_retries(
         if (!na_sm_op_id)
             break;
 
-        NA_LOG_DEBUG("Attempting to retry %p", na_sm_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", na_sm_op_id);
 
         /* Attempt to resolve address first */
         if (!(hg_atomic_get32(&na_sm_op_id->na_sm_addr->status) &
@@ -3465,18 +3510,20 @@ na_sm_process_retries(
         msg_hdr.hdr.tag = na_sm_op_id->info.msg.tag;
 
         rc = na_sm_msg_queue_push(na_sm_op_id->na_sm_addr->tx_queue, msg_hdr);
-        NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+        NA_CHECK_SUBSYS_ERROR(
+            msg, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
 
         /* Notify remote if notifications are enabled */
         if (na_sm_op_id->na_sm_addr->tx_notify > 0) {
             ret = na_sm_event_set(na_sm_op_id->na_sm_addr->tx_notify);
-            NA_CHECK_NA_ERROR(
-                error, ret, "Could not send completion notification");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                msg, error, ret, "Could not send completion notification");
         }
 
         /* Immediate completion, add directly to completion queue. */
         ret = na_sm_complete(na_sm_op_id, 0);
-        NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            op, error, ret, "Could not complete operation");
     } while (1);
 
     return ret;
@@ -3508,7 +3555,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
     if (status & NA_SM_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        NA_LOG_DEBUG("Operation ID %p was canceled", na_sm_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p was canceled", na_sm_op_id);
         callback_info->ret = NA_CANCELED;
     } else
         callback_info->ret = NA_SUCCESS;
@@ -3540,7 +3587,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
         case NA_CB_GET:
             break;
         default:
-            NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
+            NA_GOTO_SUBSYS_ERROR(op, done, ret, NA_INVALID_ARG,
                 "Operation type %d not supported", callback_info->type);
     }
 
@@ -3550,7 +3597,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
     /* Notify local completion */
     if (notify > 0) {
         int rc = hg_event_set(notify);
-        NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
+        NA_CHECK_SUBSYS_ERROR(op, rc != HG_UTIL_SUCCESS, done, ret,
             na_sm_errno_to_na(errno), "Could not signal completion");
     }
 
@@ -3564,8 +3611,9 @@ na_sm_release(void *arg)
 {
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) arg;
 
-    NA_CHECK_WARNING(na_sm_op_id && (!(hg_atomic_get32(&na_sm_op_id->status) &
-                                        NA_SM_OP_COMPLETED)),
+    NA_CHECK_SUBSYS_WARNING(op,
+        na_sm_op_id &&
+            (!(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED)),
         "Releasing resources from an uncompleted operation");
 
     if (na_sm_op_id->na_sm_addr) {
@@ -3624,24 +3672,24 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     /* Get username */
     username = getlogin_safe();
-    NA_CHECK_ERROR(username == NULL, error, ret, na_sm_errno_to_na(errno),
-        "Could not query login name");
+    NA_CHECK_SUBSYS_ERROR(cls, username == NULL, error, ret,
+        na_sm_errno_to_na(errno), "Could not query login name");
 
     /* Reset errno */
     errno = 0;
 
     /* Check RLIMIT_NOFILE */
     rc = getrlimit(RLIMIT_NOFILE, &rlimit);
-    NA_CHECK_ERROR(rc != 0, error, ret, na_sm_errno_to_na(errno),
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_sm_errno_to_na(errno),
         "getrlimit() failed (%s)", strerror(errno));
 
-    NA_LOG_DEBUG(
-        "RLIMIT_NOFILE is: %d, max %d", rlimit.rlim_cur, rlimit.rlim_max);
+    NA_LOG_SUBSYS_DEBUG(
+        cls, "RLIMIT_NOFILE is: %d, max %d", rlimit.rlim_cur, rlimit.rlim_max);
 
     /* Initialize private data */
     na_class->plugin_class = malloc(sizeof(struct na_sm_class));
-    NA_CHECK_ERROR(na_class->plugin_class == NULL, error, ret, NA_NOMEM,
-        "Could not allocate SM private class");
+    NA_CHECK_SUBSYS_ERROR(cls, na_class->plugin_class == NULL, error, ret,
+        NA_NOMEM, "Could not allocate SM private class");
     memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
 #ifdef NA_SM_HAS_CMA
     NA_SM_CLASS(na_class)->iov_max = (na_size_t) sysconf(_SC_IOV_MAX);
@@ -3652,17 +3700,17 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     /* Copy username */
     NA_SM_CLASS(na_class)->username = strdup(username);
-    NA_CHECK_ERROR(NA_SM_CLASS(na_class)->username == NULL, error, ret,
-        NA_NOMEM, "Could not dup username");
+    NA_CHECK_SUBSYS_ERROR(cls, NA_SM_CLASS(na_class)->username == NULL, error,
+        ret, NA_NOMEM, "Could not dup username");
 
-    NA_LOG_DEBUG(
-        "Opening new endpoint for %s with PID=%d, ID=%u", username, pid, id);
+    NA_LOG_SUBSYS_DEBUG(cls, "Opening new endpoint for %s with PID=%d, ID=%u",
+        username, pid, id);
 
     /* Open endpoint */
     ret = na_sm_endpoint_open(&NA_SM_CLASS(na_class)->endpoint, username, pid,
         id & 0xff, listen, no_wait, (na_uint32_t) rlimit.rlim_cur);
-    NA_CHECK_NA_ERROR(
-        error, ret, "Could not open endpoint for PID=%d, ID=%u", pid, id);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        cls, error, ret, "Could not open endpoint for PID=%d, ID=%u", pid, id);
 
     return ret;
 
@@ -3685,12 +3733,13 @@ na_sm_finalize(na_class_t *na_class)
     if (!na_class->plugin_class)
         goto done;
 
-    NA_LOG_DEBUG("Closing endpoint for %s", NA_SM_CLASS(na_class)->username);
+    NA_LOG_SUBSYS_DEBUG(
+        cls, "Closing endpoint for %s", NA_SM_CLASS(na_class)->username);
 
     /* Close endpoint */
     ret = na_sm_endpoint_close(
         &NA_SM_CLASS(na_class)->endpoint, NA_SM_CLASS(na_class)->username);
-    NA_CHECK_NA_ERROR(done, ret, "Could not close endpoint");
+    NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "Could not close endpoint");
 
     free(NA_SM_CLASS(na_class)->username);
     free(na_class->plugin_class);
@@ -3708,7 +3757,7 @@ na_sm_context_create(
     na_return_t ret = NA_SUCCESS;
 
     *context = malloc(sizeof(struct na_sm_context));
-    NA_CHECK_ERROR(*context == NULL, done, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(ctx, *context == NULL, done, ret, NA_NOMEM,
         "Could not allocate SM private context");
 
 done:
@@ -3734,19 +3783,19 @@ na_sm_cleanup(void)
 
     rc = snprintf(pathname, NA_SM_MAX_FILENAME, "%s/%s_%s", NA_SM_TMP_DIRECTORY,
         NA_SM_SHM_PREFIX, username);
-    NA_CHECK_ERROR_NORET(rc < 0 || rc > NA_SM_MAX_FILENAME, done,
+    NA_CHECK_SUBSYS_ERROR_NORET(cls, rc < 0 || rc > NA_SM_MAX_FILENAME, done,
         "snprintf() failed, rc: %d", rc);
 
     /* We need to remove all files first before being able to remove the
      * directories */
     rc = nftw(pathname, na_sm_sock_path_cleanup, NA_SM_CLEANUP_NFDS,
         FTW_PHYS | FTW_DEPTH);
-    NA_CHECK_WARNING(
-        rc != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
+    NA_CHECK_SUBSYS_WARNING(
+        cls, rc != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
 
     rc = nftw(NA_SM_SHM_PATH, na_sm_shm_cleanup, NA_SM_CLEANUP_NFDS, FTW_PHYS);
-    NA_CHECK_WARNING(
-        rc != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
+    NA_CHECK_SUBSYS_WARNING(
+        cls, rc != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
 
 done:
     return;
@@ -3759,8 +3808,8 @@ na_sm_op_create(na_class_t *na_class)
     struct na_sm_op_id *na_sm_op_id = NULL;
 
     na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    NA_CHECK_ERROR_NORET(
-        na_sm_op_id == NULL, done, "Could not allocate NA SM operation ID");
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        op, na_sm_op_id == NULL, done, "Could not allocate NA SM operation ID");
     memset(na_sm_op_id, 0, sizeof(struct na_sm_op_id));
 
     na_sm_op_id->na_class = na_class;
@@ -3783,7 +3832,7 @@ na_sm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to free OP ID that was not completed");
 
@@ -3806,9 +3855,10 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 
     /* Extra info from string */
     ret = na_sm_string_to_addr(name, &pid, &id);
-    NA_CHECK_NA_ERROR(done, ret, "Could not convert string to address");
+    NA_CHECK_SUBSYS_NA_ERROR(
+        addr, done, ret, "Could not convert string to address");
 
-    NA_LOG_DEBUG("Lookup addr for PID=%d, ID=%d", pid, id);
+    NA_LOG_SUBSYS_DEBUG(addr, "Lookup addr for PID=%d, ID=%d", pid, id);
 
     /* Generate key */
     addr_key = na_sm_addr_to_key(pid, id);
@@ -3819,17 +3869,18 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         struct na_sm_lookup_args args = {.pid = pid, .id = id};
         na_return_t na_ret;
 
-        NA_LOG_DEBUG("Addess was not found, attempting to insert it (key=%lu)",
+        NA_LOG_SUBSYS_DEBUG(addr,
+            "Addess was not found, attempting to insert it (key=%lu)",
             (long unsigned int) addr_key);
 
         /* Insert new entry and create new address if needed */
         na_ret = na_sm_addr_map_insert(&na_sm_endpoint->addr_map, addr_key,
             na_sm_addr_lookup_insert_cb, &args, &na_sm_addr);
-        NA_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_EXIST, done, ret,
-            na_ret, "Could not insert new address");
+        NA_CHECK_SUBSYS_ERROR(addr, na_ret != NA_SUCCESS && na_ret != NA_EXIST,
+            done, ret, na_ret, "Could not insert new address");
     } else {
-        NA_LOG_DEBUG(
-            "Addess was found (key=%lu)", (long unsigned int) addr_key);
+        NA_LOG_SUBSYS_DEBUG(
+            addr, "Addess was found (key=%lu)", (long unsigned int) addr_key);
     }
 
     /* Increment refcount */
@@ -3856,8 +3907,8 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
         /* Cannot free yet */
         goto done;
 
-    NA_LOG_DEBUG(
-        "Freeing addr for PID=%d, ID=%d", na_sm_addr->pid, na_sm_addr->id);
+    NA_LOG_SUBSYS_DEBUG(addr, "Freeing addr for PID=%d, ID=%d", na_sm_addr->pid,
+        na_sm_addr->id);
 
     /* Remove address from list of addresses to poll */
     hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
@@ -3866,7 +3917,7 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
 
     ret = na_sm_addr_destroy(
         na_sm_endpoint, NA_SM_CLASS(na_class)->username, na_sm_addr);
-    NA_CHECK_NA_ERROR(done, ret, "Could not destroy address");
+    NA_CHECK_SUBSYS_NA_ERROR(addr, done, ret, "Could not destroy address");
 
 done:
     return ret;
@@ -3935,13 +3986,13 @@ na_sm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
 
     rc = snprintf(addr_string, NA_SM_MAX_FILENAME, "sm://%d/%" SCNu8,
         na_sm_addr->pid, na_sm_addr->id);
-    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret, NA_OVERFLOW,
-        "snprintf() failed, rc: %d", rc);
+    NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
+        NA_OVERFLOW, "snprintf() failed, rc: %d", rc);
 
     string_len = strlen(addr_string);
     if (buf) {
-        NA_CHECK_ERROR(string_len >= *buf_size, done, ret, NA_OVERFLOW,
-            "Buffer size too small to copy addr");
+        NA_CHECK_SUBSYS_ERROR(addr, string_len >= *buf_size, done, ret,
+            NA_OVERFLOW, "Buffer size too small to copy addr");
         strcpy(buf, addr_string);
     }
     *buf_size = string_len + 1;
@@ -3969,7 +4020,7 @@ na_sm_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
     na_size_t len = sizeof(na_sm_addr->pid) + sizeof(na_sm_addr->id);
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(buf_size < len, done, ret, NA_OVERFLOW,
+    NA_CHECK_SUBSYS_ERROR(addr, buf_size < len, done, ret, NA_OVERFLOW,
         "Buffer size too small for serializing address");
 
     /* Encode PID */
@@ -3996,7 +4047,7 @@ na_sm_addr_deserialize(
     na_uint64_t addr_key;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(buf_size < len, done, ret, NA_OVERFLOW,
+    NA_CHECK_SUBSYS_ERROR(addr, buf_size < len, done, ret, NA_OVERFLOW,
         "Buffer size too small for serializing address");
 
     /* Decode PID */
@@ -4012,8 +4063,8 @@ na_sm_addr_deserialize(
     /* Lookup addr from hash table */
     na_sm_addr = na_sm_addr_map_lookup(
         &NA_SM_CLASS(na_class)->endpoint.addr_map, addr_key);
-    NA_CHECK_ERROR(
-        na_sm_addr == NULL, done, ret, NA_NOENTRY, "Could not find address");
+    NA_CHECK_SUBSYS_ERROR(addr, na_sm_addr == NULL, done, ret, NA_NOENTRY,
+        "Could not find address");
 
     /* Increment refcount */
     hg_atomic_incr32(&na_sm_addr->ref_count);
@@ -4060,13 +4111,13 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     na_bool_t rc;
 
-    NA_CHECK_ERROR(buf_size > NA_SM_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds unexpected size, %d", buf_size);
+    NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, done, ret,
+        NA_OVERFLOW, "Exceeds unexpected size, %d", buf_size);
 
     /* Check op_id */
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
@@ -4093,7 +4144,8 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
             na_sm_op_retry(na_class, na_sm_op_id);
             return NA_SUCCESS;
         } else
-            NA_CHECK_NA_ERROR(error, ret, "Could not resolve address");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not resolve address");
     }
 
     /* Try to reserve buffer atomically */
@@ -4117,18 +4169,20 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     msg_hdr.hdr.tag = tag;
 
     rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
-    NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
 
     /* Notify remote if notifications are enabled */
     if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_set(na_sm_addr->tx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not send completion notification");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not send completion notification");
     }
 
     /* Immediate completion, add directly to completion queue. */
     ret = na_sm_complete(
         na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+    NA_CHECK_SUBSYS_NA_ERROR(op, error, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -4154,13 +4208,13 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(buf_size > NA_SM_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds unexpected size, %d", buf_size);
+    NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, done, ret,
+        NA_OVERFLOW, "Exceeds unexpected size, %d", buf_size);
 
     /* Check op_id */
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
@@ -4194,7 +4248,8 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
         ret = na_sm_complete(na_sm_op_id,
             NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            op, error, ret, "Could not complete operation");
     } else {
         struct na_sm_op_queue *unexpected_op_queue =
             &NA_SM_CLASS(na_class)->endpoint.unexpected_op_queue;
@@ -4234,13 +4289,13 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     na_bool_t rc;
 
-    NA_CHECK_ERROR(buf_size > NA_SM_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds expected size, %d", buf_size);
+    NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, done, ret,
+        NA_OVERFLOW, "Exceeds expected size, %d", buf_size);
 
     /* Check op_id */
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
@@ -4267,7 +4322,8 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
             na_sm_op_retry(na_class, na_sm_op_id);
             return NA_SUCCESS;
         } else
-            NA_CHECK_NA_ERROR(error, ret, "Could not resolve address");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not resolve address");
     }
 
     /* Try to reserve buffer atomically */
@@ -4291,18 +4347,20 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     msg_hdr.hdr.tag = tag;
 
     rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
-    NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
 
     /* Notify remote if notifications are enabled */
     if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_set(na_sm_addr->tx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not send completion notification");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not send completion notification");
     }
 
     /* Immediate completion, add directly to completion queue. */
     ret = na_sm_complete(
         na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+    NA_CHECK_SUBSYS_NA_ERROR(op, error, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -4329,13 +4387,13 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) source_addr;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(buf_size > NA_SM_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds expected size, %d", buf_size);
+    NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, done, ret,
+        NA_OVERFLOW, "Exceeds expected size, %d", buf_size);
 
     /* Check op_id */
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
@@ -4375,7 +4433,7 @@ na_sm_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     /* Allocate memory handle */
     na_sm_mem_handle =
         (struct na_sm_mem_handle *) calloc(1, sizeof(struct na_sm_mem_handle));
-    NA_CHECK_ERROR(na_sm_mem_handle == NULL, done, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(mem, na_sm_mem_handle == NULL, done, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
 
     na_sm_mem_handle->iov.s[0].iov_base = buf;
@@ -4402,7 +4460,7 @@ na_sm_mem_handle_create_segments(na_class_t *na_class,
     na_return_t ret = NA_SUCCESS;
     na_size_t i;
 
-    NA_CHECK_WARNING(segment_count == 1, "Segment count is 1");
+    NA_CHECK_SUBSYS_WARNING(mem, segment_count == 1, "Segment count is 1");
 
     /* Check that we do not exceed IOV_MAX */
     NA_CHECK_SUBSYS_ERROR(fatal, segment_count > NA_SM_CLASS(na_class)->iov_max,
@@ -4412,15 +4470,15 @@ na_sm_mem_handle_create_segments(na_class_t *na_class,
     /* Allocate memory handle */
     na_sm_mem_handle =
         (struct na_sm_mem_handle *) calloc(1, sizeof(struct na_sm_mem_handle));
-    NA_CHECK_ERROR(na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(mem, na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
 
     if (segment_count > NA_SM_IOV_STATIC_MAX) {
         /* Allocate IOVs */
         na_sm_mem_handle->iov.d =
             (struct iovec *) calloc(segment_count, sizeof(struct iovec));
-        NA_CHECK_ERROR(na_sm_mem_handle->iov.d == NULL, error, ret, NA_NOMEM,
-            "Could not allocate iovec");
+        NA_CHECK_SUBSYS_ERROR(mem, na_sm_mem_handle->iov.d == NULL, error, ret,
+            NA_NOMEM, "Could not allocate iovec");
 
         iov = na_sm_mem_handle->iov.d;
     } else
@@ -4520,7 +4578,7 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 
     na_sm_mem_handle =
         (struct na_sm_mem_handle *) malloc(sizeof(struct na_sm_mem_handle));
-    NA_CHECK_ERROR(na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(mem, na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
     na_sm_mem_handle->iov.d = NULL;
 
@@ -4533,8 +4591,8 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
         /* Allocate IOV */
         na_sm_mem_handle->iov.d = (struct iovec *) malloc(
             na_sm_mem_handle->info.iovcnt * sizeof(struct iovec));
-        NA_CHECK_ERROR(na_sm_mem_handle->iov.d == NULL, error, ret, NA_NOMEM,
-            "Could not allocate segment array");
+        NA_CHECK_SUBSYS_ERROR(mem, na_sm_mem_handle->iov.d == NULL, error, ret,
+            NA_NOMEM, "Could not allocate segment array");
 
         iov = na_sm_mem_handle->iov.d;
     } else
@@ -4588,27 +4646,27 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 #endif
 
 #if !defined(NA_SM_HAS_CMA) && !defined(__APPLE__)
-    NA_GOTO_ERROR(
+    NA_GOTO_SUBSYS_ERROR(
         done, ret, NA_OPNOTSUPPORTED, "Not implemented for this platform");
 #endif
 
     switch (na_sm_mem_handle_remote->info.flags) {
         case NA_MEM_READ_ONLY:
-            NA_GOTO_ERROR(done, ret, NA_PERMISSION,
+            NA_GOTO_SUBSYS_ERROR(rma, done, ret, NA_PERMISSION,
                 "Registered memory requires write permission");
             break;
         case NA_MEM_WRITE_ONLY:
         case NA_MEM_READWRITE:
             break;
         default:
-            NA_GOTO_ERROR(
-                done, ret, NA_INVALID_ARG, "Invalid memory access flag");
+            NA_GOTO_SUBSYS_ERROR(
+                rma, done, ret, NA_INVALID_ARG, "Invalid memory access flag");
     }
 
     /* Check op_id */
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
@@ -4632,8 +4690,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         if (liovcnt > NA_SM_IOV_STATIC_MAX) {
             local_trans_iov.d =
                 (struct iovec *) malloc(liovcnt * sizeof(struct iovec));
-            NA_CHECK_ERROR(local_trans_iov.d == NULL, error, ret, NA_NOMEM,
-                "Could not allocate iovec");
+            NA_CHECK_SUBSYS_ERROR(rma, local_trans_iov.d == NULL, error, ret,
+                NA_NOMEM, "Could not allocate iovec");
 
             liov = local_trans_iov.d;
         } else
@@ -4658,8 +4716,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         if (riovcnt > NA_SM_IOV_STATIC_MAX) {
             remote_trans_iov.d =
                 (struct iovec *) malloc(riovcnt * sizeof(struct iovec));
-            NA_CHECK_ERROR(remote_trans_iov.d == NULL, error, ret, NA_NOMEM,
-                "Could not allocate iovec");
+            NA_CHECK_SUBSYS_ERROR(rma, remote_trans_iov.d == NULL, error, ret,
+                NA_NOMEM, "Could not allocate iovec");
 
             riov = remote_trans_iov.d;
         } else
@@ -4689,11 +4747,11 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
                 " for more details.",
                 strerror(errno));
         } else
-            NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_ERROR(rma, error, ret, na_sm_errno_to_na(errno),
                 "process_vm_writev() failed (%s)", strerror(errno));
     }
-    NA_CHECK_ERROR((na_size_t) nwrite != length, error, ret, NA_MSGSIZE,
-        "Wrote %ld bytes, was expecting %lu bytes", nwrite, length);
+    NA_CHECK_SUBSYS_ERROR(rma, (na_size_t) nwrite != length, error, ret,
+        NA_MSGSIZE, "Wrote %ld bytes, was expecting %lu bytes", nwrite, length);
 #elif defined(__APPLE__)
     kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
     NA_CHECK_SUBSYS_ERROR(fatal, kret != KERN_SUCCESS, error, ret,
@@ -4707,8 +4765,9 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     kret = mach_vm_write(remote_task, (mach_vm_address_t) riov[0].iov_base,
         (mach_vm_address_t) liov[0].iov_base, (mach_msg_type_number_t) length);
-    NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
-        "mach_vm_write() failed (%s)", mach_error_string(kret));
+    NA_CHECK_SUBSYS_ERROR(rma, kret != KERN_SUCCESS, error, ret,
+        NA_PROTOCOL_ERROR, "mach_vm_write() failed (%s)",
+        mach_error_string(kret));
 #endif
 
     /* Free before adding to completion queue */
@@ -4722,7 +4781,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Immediate completion */
     ret = na_sm_complete(
         na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+    NA_CHECK_SUBSYS_NA_ERROR(op, error, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -4774,27 +4833,27 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 #endif
 
 #if !defined(NA_SM_HAS_CMA) && !defined(__APPLE__)
-    NA_GOTO_ERROR(
+    NA_GOTO_SUBSYS_ERROR(
         done, ret, NA_OPNOTSUPPORTED, "Not implemented for this platform");
 #endif
 
     switch (na_sm_mem_handle_remote->info.flags) {
         case NA_MEM_WRITE_ONLY:
-            NA_GOTO_ERROR(done, ret, NA_PERMISSION,
+            NA_GOTO_SUBSYS_ERROR(rma, done, ret, NA_PERMISSION,
                 "Registered memory requires read permission");
             break;
         case NA_MEM_READ_ONLY:
         case NA_MEM_READWRITE:
             break;
         default:
-            NA_GOTO_ERROR(
-                done, ret, NA_INVALID_ARG, "Invalid memory access flag");
+            NA_GOTO_SUBSYS_ERROR(
+                rma, done, ret, NA_INVALID_ARG, "Invalid memory access flag");
     }
 
     /* Check op_id */
-    NA_CHECK_ERROR(
-        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
-    NA_CHECK_ERROR(
+    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
@@ -4818,8 +4877,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         if (liovcnt > NA_SM_IOV_STATIC_MAX) {
             local_trans_iov.d =
                 (struct iovec *) malloc(liovcnt * sizeof(struct iovec));
-            NA_CHECK_ERROR(local_trans_iov.d == NULL, error, ret, NA_NOMEM,
-                "Could not allocate iovec");
+            NA_CHECK_SUBSYS_ERROR(rma, local_trans_iov.d == NULL, error, ret,
+                NA_NOMEM, "Could not allocate iovec");
 
             liov = local_trans_iov.d;
         } else
@@ -4844,8 +4903,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         if (riovcnt > NA_SM_IOV_STATIC_MAX) {
             remote_trans_iov.d =
                 (struct iovec *) malloc(riovcnt * sizeof(struct iovec));
-            NA_CHECK_ERROR(remote_trans_iov.d == NULL, error, ret, NA_NOMEM,
-                "Could not allocate iovec");
+            NA_CHECK_SUBSYS_ERROR(rma, remote_trans_iov.d == NULL, error, ret,
+                NA_NOMEM, "Could not allocate iovec");
 
             riov = remote_trans_iov.d;
         } else
@@ -4874,8 +4933,9 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
                 " for more details.",
                 strerror(errno));
         } else
-            NA_CHECK_ERROR(nread < 0, error, ret, na_sm_errno_to_na(errno),
-                "process_vm_readv() failed (%s)", strerror(errno));
+            NA_CHECK_SUBSYS_ERROR(rma, nread < 0, error, ret,
+                na_sm_errno_to_na(errno), "process_vm_readv() failed (%s)",
+                strerror(errno));
     }
 #elif defined(__APPLE__)
     kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
@@ -4891,12 +4951,13 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     kret = mach_vm_read_overwrite(remote_task,
         (mach_vm_address_t) riov[0].iov_base, length,
         (mach_vm_address_t) liov[0].iov_base, &nread);
-    NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
-        "mach_vm_read_overwrite() failed (%s)", mach_error_string(kret));
+    NA_CHECK_SUBSYS_ERROR(rma, kret != KERN_SUCCESS, error, ret,
+        NA_PROTOCOL_ERROR, "mach_vm_read_overwrite() failed (%s)",
+        mach_error_string(kret));
 #endif
 #if defined(NA_SM_HAS_CMA) || defined(__APPLE__)
-    NA_CHECK_ERROR((na_size_t) nread != length, error, ret, NA_MSGSIZE,
-        "Read %ld bytes, was expecting %lu bytes", nread, length);
+    NA_CHECK_SUBSYS_ERROR(rma, (na_size_t) nread != length, error, ret,
+        NA_MSGSIZE, "Read %ld bytes, was expecting %lu bytes", nread, length);
 #endif
 
     /* Free before adding to completion queue */
@@ -4910,7 +4971,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Immediate completion */
     ret = na_sm_complete(
         na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+    NA_CHECK_SUBSYS_NA_ERROR(op, error, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -4937,8 +4998,8 @@ na_sm_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 
     if (NA_SM_CLASS(na_class)->endpoint.poll_set) {
         fd = hg_poll_get_fd(NA_SM_CLASS(na_class)->endpoint.poll_set);
-        NA_CHECK_ERROR_NORET(
-            fd == -1, done, "Could not get poll fd from poll set");
+        NA_CHECK_SUBSYS_ERROR_NORET(
+            poll, fd == -1, done, "Could not get poll fd from poll set");
     }
 
 done:
@@ -4995,18 +5056,19 @@ na_sm_progress(
             /* Make blocking progress */
             ret = na_sm_poll_wait(context, na_sm_endpoint, username,
                 (unsigned int) (remaining * 1000.0), &progressed);
-            NA_CHECK_NA_ERROR(
-                error, ret, "Could not make blocking progress on context");
+            NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
+                "Could not make blocking progress on context");
         } else {
             /* Make non-blocking progress */
             ret = na_sm_poll(na_sm_endpoint, username, &progressed);
-            NA_CHECK_NA_ERROR(
-                error, ret, "Could not make non-blocking progress on context");
+            NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
+                "Could not make non-blocking progress on context");
         }
 
         /* Process retries */
         ret = na_sm_process_retries(na_sm_endpoint, username);
-        NA_CHECK_NA_ERROR(error, ret, "Could not process retried msgs");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            poll, error, ret, "Could not process retried msgs");
 
         if (progressed)
             return NA_SUCCESS;
@@ -5037,7 +5099,7 @@ na_sm_cancel(
         NA_SM_OP_COMPLETED)
         goto done;
 
-    NA_LOG_DEBUG("Canceling operation ID %p", na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", na_sm_op_id);
 
     switch (na_sm_op_id->completion_data.callback_info.type) {
         case NA_CB_RECV_UNEXPECTED:
@@ -5060,7 +5122,7 @@ na_sm_cancel(
             /* Nothing */
             break;
         default:
-            NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
+            NA_GOTO_SUBSYS_ERROR(op, done, ret, NA_INVALID_ARG,
                 "Operation type %d not supported",
                 na_sm_op_id->completion_data.callback_info.type);
     }
@@ -5081,7 +5143,8 @@ na_sm_cancel(
         if (canceled) {
             ret = na_sm_complete(na_sm_op_id,
                 NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-            NA_CHECK_NA_ERROR(done, ret, "Could not complete operation");
+            NA_CHECK_SUBSYS_NA_ERROR(
+                op, done, ret, "Could not complete operation");
         }
     }
 
