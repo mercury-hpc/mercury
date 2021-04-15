@@ -2644,17 +2644,24 @@ retry:
         free(addr);
         goto retry;
     }
-    NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "fi_getname() failed, rc: %d (%s), addrlen: %zu", rc, fi_strerror(-rc),
-        addrlen);
-
+    /* Assign first to clean up properly on error */
     na_ofi_addr->addr = addr;
     na_ofi_addr->addrlen = addrlen;
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
+        "fi_getname() failed, rc: %d (%s), addrlen: %zu", rc, fi_strerror(-rc),
+        na_ofi_addr->addrlen);
 
     /* Get URI from address */
     ret = na_ofi_get_uri(na_ofi_domain, na_ofi_addr->addr, &na_ofi_addr->uri);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not get URI from endpoint address");
+
+    /* Lookup/insert self address so that we can use it to send to ourself */
+    ret = na_ofi_addr_ht_lookup(na_ofi_domain,
+        na_ofi_prov_addr_format[na_ofi_domain->prov_type], na_ofi_addr->addr,
+        na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        addr, error, ret, "na_ofi_addr_ht_lookup(%s) failed", na_ofi_addr->uri);
 
     /* TODO check address size */
     *na_ofi_addr_ptr = na_ofi_addr;
@@ -2662,8 +2669,8 @@ retry:
     return ret;
 
 error:
-    free(addr);
-    free(na_ofi_addr);
+    if (na_ofi_addr)
+        na_ofi_addr_decref(na_ofi_addr);
 
     return ret;
 }
@@ -4271,11 +4278,8 @@ out:
     return ret;
 
 error:
-    if (na_ofi_addr) {
-        free(na_ofi_addr->addr);
-        free(na_ofi_addr->uri);
-        free(na_ofi_addr);
-    }
+    if (na_ofi_addr)
+        na_ofi_addr_decref(na_ofi_addr);
     return ret;
 }
 
@@ -4514,8 +4518,8 @@ out:
     return ret;
 
 error:
-    free(na_ofi_addr->addr);
-    free(na_ofi_addr);
+    if (na_ofi_addr)
+        na_ofi_addr_decref(na_ofi_addr);
     return ret;
 }
 
