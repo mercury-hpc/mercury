@@ -178,7 +178,6 @@ struct na_bmi_class {
     struct na_bmi_map addr_map;                 /* Address map */
     struct na_bmi_addr_queue addr_queue;        /* Addr queue */
     hg_thread_mutex_t test_unexpected_mutex;    /* Mutex */
-    char pref_anyip[16];                        /* for INADDR_ANY */
     char *protocol_name;                        /* Protocol used */
     char *listen_addr;                          /* Listen addr */
     struct na_bmi_addr *src_addr;               /* Source address */
@@ -1172,12 +1171,14 @@ na_bmi_initialize(
 {
     char method_list[NA_BMI_ADDR_NAME_MAX] = {'\0'},
          listen_addr[NA_BMI_ADDR_NAME_MAX] = {'\0'},
-         my_hostname[NA_BMI_ADDR_NAME_MAX] = {'\0'};
+         my_hostname[NA_BMI_ADDR_NAME_MAX] = {'\0'},
+         pref_anyip[16] = {'\0'}; /* for INADDR_ANY */
     char *method_list_p = NULL, *listen_addr_p = NULL;
     int flag = (listen) ? (BMI_INIT_SERVER | BMI_TCP_BIND_SPECIFIC) : 0,
         port = 0;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret, i;
+    na_bool_t anyaddr = NA_FALSE;
 
     /* Allocate private data */
     na_class->plugin_class = malloc(sizeof(struct na_bmi_class));
@@ -1186,6 +1187,8 @@ na_bmi_initialize(
 
     memset(na_class->plugin_class, 0, sizeof(struct na_bmi_class));
     NA_BMI_CLASS(na_class)->protocol_name = strdup(na_info->protocol_name);
+    NA_CHECK_ERROR(NA_BMI_CLASS(na_class)->protocol_name == NULL, error, ret,
+        NA_NOMEM, "Could not dup protocol name");
 
     HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.queue);
     hg_thread_spin_init(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.lock);
@@ -1262,17 +1265,6 @@ na_bmi_initialize(
             snprintf(my_hostname, sizeof(my_hostname), "0.0.0.0");
         }
 
-        /* Pick a default port */
-        if (!port)
-            desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s",
-                na_info->protocol_name, my_hostname);
-        else
-            desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s:%d",
-                na_info->protocol_name, my_hostname, port);
-
-        NA_CHECK_ERROR(desc_len > NA_BMI_ADDR_NAME_MAX, error, ret, NA_OVERFLOW,
-            "Exceeding max addr name");
-
         /* get pref IP addr by subnet for INADDR_ANY */
         if (strcmp(my_hostname, "0.0.0.0") == 0) {
             uint32_t subnet = 0, netmask = 0;
@@ -1283,22 +1275,55 @@ na_bmi_initialize(
                 NA_CHECK_NA_ERROR(
                     error, ret, "BMI_initialize() failed - NA_Parse_subnet");
             }
-            ret = na_ip_pref_addr(
-                subnet, netmask, NA_BMI_CLASS(na_class)->pref_anyip);
+            ret = na_ip_pref_addr(subnet, netmask, pref_anyip);
             NA_CHECK_NA_ERROR(
                 error, ret, "BMI_initialize() failed - NA_Pref_ipaddr");
+            anyaddr = NA_TRUE;
         }
-    }
 
-    /* Keep listen_addr and port */
-    NA_BMI_CLASS(na_class)->listen_addr =
-        (listen) ? strdup(listen_addr_p) : NULL;
-    NA_BMI_CLASS(na_class)->port = port;
+        /* Pick a default port */
+        if (!port)
+            desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s",
+                na_info->protocol_name, my_hostname);
+        else
+            desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s:%d",
+                na_info->protocol_name, my_hostname, port);
+
+        NA_CHECK_ERROR(desc_len > NA_BMI_ADDR_NAME_MAX, error, ret, NA_OVERFLOW,
+            "Exceeding max addr name");
+    }
 
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list_p, listen_addr_p, flag);
     NA_CHECK_ERROR(
         bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_initialize() failed");
+
+    /* Resolve listen info that will be used for self address */
+    if (listen) {
+        int desc_len = 0;
+
+        if (port <= 0) {
+            /* if port was not specified, then we need to query BMI */
+            BMI_get_info(0, BMI_TCP_GET_PORT, &port);
+        }
+
+        desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s:%d",
+            na_info->protocol_name, anyaddr ? pref_anyip : my_hostname, port);
+        NA_CHECK_ERROR(desc_len > NA_BMI_ADDR_NAME_MAX, error, ret, NA_OVERFLOW,
+            "Exceeding max addr name");
+
+        /* Resolve src addr */
+        bmi_ret = BMI_addr_lookup(
+            &NA_BMI_CLASS(na_class)->src_addr->bmi_addr, listen_addr);
+        NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+            "BMI_addr_lookup() failed");
+
+        /* Keep listen_addr and port */
+        NA_BMI_CLASS(na_class)->listen_addr = strdup(listen_addr_p);
+        NA_CHECK_ERROR(NA_BMI_CLASS(na_class)->listen_addr == NULL, error, ret,
+            NA_NOMEM, "Could not dup listen addr");
+        NA_BMI_CLASS(na_class)->port = port;
+    }
 
     /* Initialize atomic op */
     hg_atomic_set32(&NA_BMI_CLASS(na_class)->rma_tag, NA_BMI_RMA_TAG);
@@ -1603,9 +1628,6 @@ na_bmi_addr_to_string(
     const char *bmi_rev_addr;
     na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
-    int listen_port = 0;
-    char *anyaddr;
-    int preflen;
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
@@ -1613,31 +1635,6 @@ na_bmi_addr_to_string(
         bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
         NA_CHECK_ERROR(bmi_rev_addr == NULL, done, ret, NA_OPNOTSUPPORTED,
             "Cannot convert addr to string if not listening");
-
-        /* if port was not specified, then we'll need to query BMI and
-         * append it to the listen_addr to produce something resolvable
-         * by remote peers
-         */
-        if (NA_BMI_CLASS(na_class)->port <= 0) {
-            BMI_get_info(0, BMI_TCP_GET_PORT, &listen_port);
-            snprintf(full_rev_addr, NA_BMI_ADDR_NAME_MAX + 3, "%s:%d",
-                bmi_rev_addr, listen_port);
-            /* populate state; we can reuse this next time without querying
-             * BMI or manipulating strings
-             */
-            free(NA_BMI_CLASS(na_class)->listen_addr);
-            NA_BMI_CLASS(na_class)->listen_addr = strdup(full_rev_addr);
-            NA_BMI_CLASS(na_class)->port = listen_port;
-            bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
-        }
-        anyaddr = strstr(bmi_rev_addr, "://0.0.0.0:");
-        if (anyaddr) { /* can't advertise inaddr_any */
-            preflen = (int) (anyaddr - bmi_rev_addr);
-            snprintf(full_rev_addr, sizeof(full_rev_addr), "%.*s://%s:%s",
-                preflen, bmi_rev_addr, NA_BMI_CLASS(na_class)->pref_anyip,
-                anyaddr + sizeof("://0.0.0.0:") - 1);
-            bmi_rev_addr = full_rev_addr;
-        }
     } else {
         if (na_bmi_addr->unexpected) {
             int desc_len = 0;
