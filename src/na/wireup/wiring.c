@@ -1205,11 +1205,11 @@ wireup_once(wiring_t *wiring)
     wireup_expire_transition(wiring, now);
     wireup_wakeup_transition(wiring, now);
 
-    /* Reclaim requests for any transmissions / endpoint closures. */
-    (void)wiring_requests_check_status(wiring);
-
     if ((rdesc = rxpool_next(rxpool)) == NULL)
         return 0;
+
+    /* Reclaim requests for any transmissions / endpoint closures. */
+    (void)wiring_requests_check_status(wiring);
 
     if (rdesc->status != UCS_OK) {
         hlog_fast(wireup_rx, "%s: receive error, %s, exiting.",
