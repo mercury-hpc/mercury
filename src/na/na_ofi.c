@@ -3924,7 +3924,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_CHECK_SUBSYS_WARNING(cls, no_wait != priv->domain->no_wait,
         "Requested no_wait=%d, domain no_wait=%d", no_wait,
         priv->domain->no_wait);
-    priv->no_wait = no_wait;
+    priv->no_wait = priv->domain->no_wait || no_wait;
 
     /* Set context limits */
     NA_CHECK_SUBSYS_ERROR(fatal, context_max > priv->domain->context_max, out,
