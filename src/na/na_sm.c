@@ -20,6 +20,7 @@
 #include "mercury_mem.h"
 #include "mercury_poll.h"
 #include "mercury_queue.h"
+#include "mercury_thread_mutex.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
@@ -239,6 +240,7 @@ typedef enum na_sm_poll_type {
 
 /* Address */
 struct na_sm_addr {
+    hg_thread_mutex_t resolve_lock;     /* Lock to resolve address */
     HG_LIST_ENTRY(na_sm_addr) entry;    /* Entry in poll list */
     struct na_sm_region *shared_region; /* Shared-memory region */
     struct na_sm_msg_queue *tx_queue;   /* Pointer to shared tx queue */
@@ -612,6 +614,12 @@ static na_return_t
 na_sm_addr_map_insert(struct na_sm_map *na_sm_map, na_uint64_t key,
     na_return_t (*insert_cb)(void *, struct na_sm_addr **), void *arg,
     struct na_sm_addr **addr);
+
+/**
+ * Remove addr key from map.
+ */
+static na_return_t
+na_sm_addr_map_remove(struct na_sm_map *na_sm_map, na_uint64_t key);
 
 /**
  * Reserve new queue pair and send event signals to target.
@@ -2205,6 +2213,7 @@ na_sm_endpoint_close(
                 source_addr->id, NA_TRUE, source_addr->shared_region);
             NA_CHECK_SUBSYS_NA_ERROR(
                 cls, done, ret, "na_sm_region_close() failed");
+            source_addr->shared_region = NULL;
         }
         if (source_addr->tx_notify > 0) {
             int rc;
@@ -2247,7 +2256,10 @@ na_sm_endpoint_close(
 
             na_sm_endpoint->sock = -1;
         }
-        free(source_addr);
+        ret = na_sm_addr_destroy(
+            na_sm_endpoint, username, na_sm_endpoint->source_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, done, ret, "Could not destroy source address");
         na_sm_endpoint->source_addr = NULL;
     }
 
@@ -2420,6 +2432,27 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_sm_addr_map_remove(struct na_sm_map *na_sm_map, na_uint64_t key)
+{
+    hg_hash_table_key_t key_ptr = (hg_hash_table_key_t) &key;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    hg_thread_rwlock_wrlock(&na_sm_map->lock);
+    if (hg_hash_table_lookup(na_sm_map->map, key_ptr) == HG_HASH_TABLE_NULL)
+        goto unlock;
+
+    rc = hg_hash_table_remove(na_sm_map->map, key_ptr);
+    NA_CHECK_SUBSYS_ERROR_DONE(addr, rc == 0, "Could not remove key");
+
+unlock:
+    hg_thread_rwlock_release_wrlock(&na_sm_map->lock);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_sm_addr_lookup_insert_cb(void *arg, struct na_sm_addr **addr)
 {
     struct na_sm_lookup_args *args = (struct na_sm_lookup_args *) arg;
@@ -2452,6 +2485,7 @@ na_sm_addr_create(
     na_sm_addr->unexpected = unexpected;
     hg_atomic_init32(&na_sm_addr->ref_count, 1);
     hg_atomic_init32(&na_sm_addr->status, 0);
+    hg_thread_mutex_init(&na_sm_addr->resolve_lock);
 
     /* Assign PID/ID */
     na_sm_addr->pid = pid;
@@ -2480,6 +2514,19 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             addr, done, ret, "Could not release NA SM addr");
     }
 
+    /* Only remove addresses from lookups */
+    if (!na_sm_addr->unexpected && na_sm_addr != na_sm_endpoint->source_addr) {
+        na_uint64_t addr_key;
+
+        /* Generate key */
+        addr_key = na_sm_addr_to_key(na_sm_addr->pid, na_sm_addr->id);
+
+        ret = na_sm_addr_map_remove(&na_sm_endpoint->addr_map, addr_key);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, done, ret, "Could not remove NA SM addr from map");
+    }
+
+    hg_thread_mutex_destroy(&na_sm_addr->resolve_lock);
     free(na_sm_addr);
 
 done:
@@ -2494,6 +2541,10 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
     na_return_t ret = NA_SUCCESS;
     int rc;
+
+    /* Nothing to do */
+    if (hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)
+        return NA_SUCCESS;
 
     /* Open shm region */
     if (!na_sm_addr->shared_region) {
@@ -2570,16 +2621,14 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         }
 
         /* Send events to remote process */
-        if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)) {
-            ret = na_sm_addr_event_send(na_sm_endpoint->sock, username,
-                na_sm_addr->pid, na_sm_addr->id, cmd_hdr, na_sm_addr->tx_notify,
-                na_sm_addr->rx_notify, NA_FALSE);
-            if (unlikely(ret == NA_AGAIN))
-                return ret;
-            else
-                NA_CHECK_SUBSYS_NA_ERROR(
-                    addr, error, ret, "Could not send addr events");
-        }
+        ret = na_sm_addr_event_send(na_sm_endpoint->sock, username,
+            na_sm_addr->pid, na_sm_addr->id, cmd_hdr, na_sm_addr->tx_notify,
+            na_sm_addr->rx_notify, NA_FALSE);
+        if (unlikely(ret == NA_AGAIN))
+            return ret;
+        else
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not send addr events");
     }
 
     hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_RESOLVED);
@@ -3273,7 +3322,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             /* Destroy source address */
             ret = na_sm_addr_destroy(na_sm_endpoint, username, na_sm_addr);
             NA_CHECK_SUBSYS_NA_ERROR(
-                addr, done, ret, "Could not allocate unexpected address");
+                addr, done, ret, "Could not destroy unexpected address");
 
             break;
         }
@@ -3519,8 +3568,10 @@ na_sm_process_retries(
         /* Attempt to resolve address first */
         if (!(hg_atomic_get32(&na_sm_op_id->na_sm_addr->status) &
                 NA_SM_ADDR_RESOLVED)) {
+            hg_thread_mutex_lock(&na_sm_op_id->na_sm_addr->resolve_lock);
             ret = na_sm_addr_resolve(
                 na_sm_endpoint, username, na_sm_op_id->na_sm_addr);
+            hg_thread_mutex_unlock(&na_sm_op_id->na_sm_addr->resolve_lock);
             if (unlikely(ret == NA_AGAIN))
                 return NA_SUCCESS;
         }
@@ -3926,7 +3977,7 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         na_return_t na_ret;
 
         NA_LOG_SUBSYS_DEBUG(addr,
-            "Addess was not found, attempting to insert it (key=%lu)",
+            "Address was not found, attempting to insert it (key=%lu)",
             (long unsigned int) addr_key);
 
         /* Insert new entry and create new address if needed */
@@ -3936,7 +3987,7 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
             done, ret, na_ret, "Could not insert new address");
     } else {
         NA_LOG_SUBSYS_DEBUG(
-            addr, "Addess was found (key=%lu)", (long unsigned int) addr_key);
+            addr, "Address was found (key=%lu)", (long unsigned int) addr_key);
     }
 
     /* Increment refcount */
@@ -3955,21 +4006,27 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) addr;
     na_return_t ret = NA_SUCCESS;
+    hg_util_int32_t ref_count;
+    na_bool_t resolved = NA_FALSE;
 
     if (!na_sm_addr)
         goto done;
 
-    if (hg_atomic_decr32(&na_sm_addr->ref_count))
-        /* Cannot free yet */
+    ref_count = hg_atomic_decr32(&na_sm_addr->ref_count);
+    resolved = hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED;
+    if (ref_count > 0 && !(ref_count == 1 && !resolved))
+        /* Cannot free yet unless this address was not resolved */
         goto done;
 
     NA_LOG_SUBSYS_DEBUG(addr, "Freeing addr for PID=%d, ID=%d", na_sm_addr->pid,
         na_sm_addr->id);
 
-    /* Remove address from list of addresses to poll */
-    hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-    HG_LIST_REMOVE(na_sm_addr, entry);
-    hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
+    if (resolved) {
+        /* Remove address from list of addresses to poll */
+        hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
+        HG_LIST_REMOVE(na_sm_addr, entry);
+        hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
+    }
 
     ret = na_sm_addr_destroy(
         na_sm_endpoint, NA_SM_CLASS(na_class)->username, na_sm_addr);
@@ -4194,8 +4251,10 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Attempt to resolve address first if not resolved */
     if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)) {
+        hg_thread_mutex_lock(&na_sm_addr->resolve_lock);
         ret = na_sm_addr_resolve(&NA_SM_CLASS(na_class)->endpoint,
             NA_SM_CLASS(na_class)->username, na_sm_addr);
+        hg_thread_mutex_unlock(&na_sm_addr->resolve_lock);
         if (unlikely(ret == NA_AGAIN)) {
             na_sm_op_retry(na_class, na_sm_op_id);
             return NA_SUCCESS;
@@ -4377,8 +4436,11 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
     /* Attempt to resolve address first if not resolved */
     if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)) {
+        /* Make sure only one thread at a time resolves the address */
+        hg_thread_mutex_lock(&na_sm_addr->resolve_lock);
         ret = na_sm_addr_resolve(&NA_SM_CLASS(na_class)->endpoint,
             NA_SM_CLASS(na_class)->username, na_sm_addr);
+        hg_thread_mutex_unlock(&na_sm_addr->resolve_lock);
         if (unlikely(ret == NA_AGAIN)) {
             na_sm_op_retry(na_class, na_sm_op_id);
             return NA_SUCCESS;
