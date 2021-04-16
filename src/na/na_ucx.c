@@ -665,6 +665,9 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
       .field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE
     , .thread_mode = UCS_THREAD_MODE_MULTI
     };
+    ucp_worker_attr_t worker_actuals = {
+      .field_mask = UCP_WORKER_ATTR_FIELD_THREAD_MODE
+    };
     ucp_address_t *uaddr;
     na_ucx_addr_t *self;
     uint64_t expflag;
@@ -675,6 +678,21 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
 
     if (status != UCS_OK)
         return NA_PROTOCOL_ERROR;   // arbitrary choice
+
+    status = ucp_worker_query(nctx->worker, &worker_actuals);
+
+    if (status != UCS_OK) {
+        NA_LOG_ERROR("ucp_worker_query: %s", ucs_status_string(status));
+        goto cleanup_worker;
+    }
+
+    if ((worker_actuals.field_mask & UCP_WORKER_ATTR_FIELD_THREAD_MODE) == 0 ||
+        (worker_actuals.thread_mode != UCS_THREAD_MODE_SERIALIZED &&
+         worker_actuals.thread_mode != UCS_THREAD_MODE_MULTI)) {
+        NA_LOG_ERROR(
+            "UCP worker thread mode unknown, not serialized, or not multi");
+        goto cleanup_worker;
+    }
 
     status = ucp_worker_get_address(nctx->worker, &uaddr, &uaddrlen);
     if (status != UCS_OK) {
