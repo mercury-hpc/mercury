@@ -27,7 +27,7 @@ enum {
 struct _wire {
     timeout_link_t tlink[timo_nlinks];
     const wire_state_t *state;
-    ucp_ep_h ep;        // Endpoint connected to remote
+    ucp_ep_h ep;        /* Endpoint connected to this wire's remote peer */
     wireup_msg_t *msg;  /* In initial state, the request to be
                          * (re)transmitted.  In all other states,
                          * NULL.
