@@ -1755,6 +1755,7 @@ na_ofi_provider_check(
             /* The provider is there at least; follow normal error
              * handling path rather than printing a special message.
              */
+            fi_freeinfo(providers);
             return;
         }
         if (!prev ||
@@ -1770,8 +1771,9 @@ na_ofi_provider_check(
     avail = calloc(avail_len + 1, 1);
     if (!avail) {
         /* This function is best effort; don't further obfuscate root error
-         * with an memory allocation problem.  Just return.
+         * with a memory allocation problem.  Just return.
          */
+        fi_freeinfo(providers);
         return;
     }
 
@@ -1781,7 +1783,7 @@ na_ofi_provider_check(
             strcmp(prev->fabric_attr->prov_name, cur->fabric_attr->prov_name)) {
             /* construct comma delimited list */
             strcat(avail, cur->fabric_attr->prov_name);
-            strcat(avail, ",");
+            strcat(avail, " ");
         }
         prev = cur;
     }
@@ -1799,6 +1801,7 @@ na_ofi_provider_check(
         na_ofi_prov_name[prov_type], avail);
 
     free(avail);
+    fi_freeinfo(providers);
 
     return;
 }
