@@ -816,10 +816,10 @@ wiring_create(ucp_worker_h worker, size_t request_size,
 static wstorage_t *
 wiring_enlarge(wiring_t *wiring)
 {
-    void **assoc = wiring->assoc;
-    wstorage_t *st = wiring->storage;
+    void **nassoc, ** const oassoc = wiring->assoc;
+    wstorage_t *nst, * const ost = wiring->storage;
     const size_t hdrsize = sizeof(wstorage_t),
-                 osize = hdrsize + st->nwires * sizeof(wire_t);
+                 osize = hdrsize + ost->nwires * sizeof(wire_t);
     const size_t proto_nsize = twice_or_max(osize) - hdrsize;
     const sender_id_t nwires = (sender_id_t)MIN(SENDER_ID_MAX - 1,
                                    (proto_nsize - hdrsize) / sizeof(wire_t));
