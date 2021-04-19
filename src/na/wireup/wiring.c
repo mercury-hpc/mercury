@@ -762,7 +762,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
 
     for (i = 0; i < nwires; i++) {
         st->wire[i] = (wire_t){
-              .next_free = i + 1
+              .next = i + 1
             , .state = &state[WIRE_S_FREE]
             , .tlink = {{.prev = i, .next = i, .due = 0},
                         {.prev = i, .next = i, .due = 0}}
@@ -770,7 +770,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
             , .id = sender_id_nil};
     }
 
-    st->wire[nwires - 1].next_free = sender_id_nil;
+    st->wire[nwires - 1].next = sender_id_nil;
     st->first_free = 0;
 
     for (which = 0; which < timo_nlinks; which++)
@@ -822,30 +822,39 @@ wiring_enlarge(wiring_t *wiring)
     if (nsize <= osize)
         return NULL;
 
-    st = realloc(st, nsize);
-    assoc = realloc(assoc, nwires * sizeof(*assoc));
-
-    if (st == NULL || assoc == NULL)
+    if ((nst = malloc(nsize)) == NULL)
         return NULL;
 
-    for (i = st->nwires; i < nwires; i++) {
-        assoc[i] = NULL;
-        st->wire[i] = (wire_t){
-              .next_free = i + 1
+    if ((nassoc = malloc(nwires * sizeof(*nassoc))) == NULL) {
+        free(nst);
+        return NULL;
+    }
+
+    memcpy(nst, ost, osize);
+    memcpy(nassoc, oassoc, ost->nwires * sizeof(*nassoc));
+
+    for (i = ost->nwires; i < nwires; i++) {
+        nassoc[i] = NULL;
+        nst->wire[i] = (wire_t){
+              .next = i + 1
             , .state = &state[WIRE_S_FREE]
             , .tlink = {{.prev = i, .next = i, .due = 0},
                         {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
             , .id = sender_id_nil};
     }
-    st->wire[nwires - 1].next_free = st->first_free;
-    st->first_free = st->nwires;
-    st->nwires = nwires;
 
-    wiring->assoc = assoc;
-    wiring->storage = st;
+    nst->wire[nwires - 1].next = ost->first_free;
+    nst->first_free = ost->nwires;
+    nst->nwires = nwires;
 
-    return st;
+    wiring->assoc = nassoc;
+    wiring->storage = nst;
+
+    free(oassoc);
+    free(ost);
+
+    return nst;
 }
 
 static uint64_t

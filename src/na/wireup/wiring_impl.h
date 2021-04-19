@@ -33,8 +33,10 @@ struct _wire {
                          * NULL.
                          */
     size_t msglen;
-    sender_id_t next_free;
-    sender_id_t id;     // Sender ID assigned by remote
+    sender_id_t next;   /* ID of next closed wire or next free wire, depending
+                         * which list this wire is on.
+                         */
+    sender_id_t id;     /* Sender ID assigned by this wire's remote peer */
     wire_event_cb_t cb;
     void *cb_arg;
 };
@@ -214,8 +216,8 @@ wiring_free_get(wstorage_t *storage)
         timeout_link_t * wiring_debug_used link = &w->tlink[which];
         assert(link->next == id && link->prev == id);
     }
-    storage->first_free = w->next_free;
-    w->next_free = sender_id_nil;
+    storage->first_free = w->next;
+    w->next = sender_id_nil;
 
     return id;
 }
@@ -225,7 +227,7 @@ wiring_free_put(wstorage_t *storage, sender_id_t id)
 {
     assert(id != sender_id_nil);
 
-    storage->wire[id].next_free = storage->first_free;
+    storage->wire[id].next = storage->first_free;
     storage->first_free = id;
 }
 
