@@ -174,13 +174,10 @@ out:
 }
 
 static void
-wireup_transition(wiring_t *wiring, wire_t *w, const wire_state_t *nstate)
+wireup_storage_transition(wstorage_t *st, wire_t *w, const wire_state_t *nstate)
 {
-    wstorage_t *st = wiring->storage;
     const wire_state_t *ostate;
     bool reset_cb;
-
-    wiring_assert_locked(wiring);
 
     ostate = w->state;
     w->state = nstate;
@@ -210,6 +207,16 @@ wireup_transition(wiring_t *wiring, wire_t *w, const wire_state_t *nstate)
         w->cb = NULL;
         w->cb_arg = NULL;
     }
+}
+
+static void
+wireup_transition(wiring_t *wiring, wire_t *w, const wire_state_t *nstate)
+{
+    wstorage_t *st = wiring->storage;
+
+    wiring_assert_locked(wiring);
+
+    wireup_storage_transition(st, w, nstate);
 }
 
 static void
