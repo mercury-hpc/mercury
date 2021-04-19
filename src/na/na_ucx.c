@@ -1617,7 +1617,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
          */
         (void)na_ucx_addr_free(cache->ctx->na_class, owner);
 
-        goto release;
+        return true;
     }
 
     hlog_fast(wire_life, "%s: established", __func__);
@@ -1659,7 +1659,6 @@ wire_event_callback(wire_event_info_t info, void *arg)
     cache->sender_id = info.sender_id;
     address_wire_write_end(aseq);
 
-release:
     return true;
 }
 
