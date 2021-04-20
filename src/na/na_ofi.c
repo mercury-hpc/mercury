@@ -165,6 +165,10 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_GNI_IFACE_DEFAULT       "ipogif0"
 #define NA_OFI_GNI_UDREG_REG_LIMIT     (2048)
 
+/* Address pool (enabled by default, comment out to disable) */
+#define NA_OFI_HAS_ADDR_POOL
+#define NA_OFI_ADDR_POOL_COUNT (64)
+
 /* Memory pool (enabled by default, comment out to disable) */
 #define NA_OFI_HAS_MEM_POOL
 #define NA_OFI_MEM_BLOCK_COUNT (256)
@@ -248,14 +252,15 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Address */
 struct na_ofi_addr {
-    struct na_ofi_domain *domain; /* Domain                   */
-    void *addr;                   /* Native address           */
-    na_size_t addrlen;            /* Native address len       */
-    char *uri;                    /* Generated URI            */
-    fi_addr_t fi_addr;            /* FI address               */
-    na_uint64_t ht_key;           /* Key in hash-table        */
-    hg_atomic_int32_t refcount;   /* Reference counter        */
-    na_bool_t remove;             /* Remove from AV on free   */
+    HG_QUEUE_ENTRY(na_ofi_addr) entry; /* Entry in addr pool        */
+    struct na_ofi_class *class;        /* Class                    */
+    void *addr;                        /* Native address            */
+    na_size_t addrlen;                 /* Native address len        */
+    char *uri;                         /* Generated URI             */
+    fi_addr_t fi_addr;                 /* FI address                */
+    na_uint64_t ht_key;                /* Key in hash-table         */
+    hg_atomic_int32_t refcount;        /* Reference counter         */
+    na_bool_t remove;                  /* Remove from AV on free    */
 };
 
 /* SIN address */
@@ -441,9 +446,11 @@ struct na_ofi_mem_pool {
 /* Private data */
 struct na_ofi_class {
     hg_thread_mutex_t mutex;                 /* Mutex (for verbs prov)   */
+    HG_QUEUE_HEAD(na_ofi_addr) addr_pool;    /* Addr pool head           */
     HG_QUEUE_HEAD(na_ofi_mem_pool) buf_pool; /* Msg buf pool head        */
     struct na_ofi_domain *domain;            /* Domain pointer           */
     struct na_ofi_endpoint *endpoint;        /* Endpoint pointer         */
+    hg_thread_spin_t addr_pool_lock;         /* Addr pool lock           */
     hg_thread_spin_t buf_pool_lock;          /* Buf pool lock            */
     na_size_t unexpected_size_max;           /* Max unexpected size      */
     na_size_t expected_size_max;             /* Max expected size        */
@@ -492,13 +499,13 @@ na_ofi_domain_unlock(struct na_ofi_domain *domain);
  * Uses Scalable endpoints (SEP).
  */
 static NA_INLINE na_bool_t
-na_ofi_with_sep(const na_class_t *na_class);
+na_ofi_with_sep(const struct na_ofi_class *na_ofi_class);
 
 /**
  * Requires message header with address info.
  */
 static NA_INLINE na_bool_t
-na_ofi_with_msg_hdr(const na_class_t *na_class);
+na_ofi_with_msg_hdr(const struct na_ofi_domain *na_ofi_domain);
 
 /**
  * Get provider type encoded in string.
@@ -655,12 +662,10 @@ static na_return_t
 na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
 
 /**
- * Get EP address.
+ * Resolve EP src address.
  */
 static na_return_t
-na_ofi_get_ep_addr(struct na_ofi_domain *na_ofi_domain,
-    struct na_ofi_endpoint *na_ofi_endpoint,
-    struct na_ofi_addr **na_ofi_addr_ptr);
+na_ofi_endpoint_resolve_src_addr(struct na_ofi_class *na_ofi_class);
 
 /**
  * Get EP URI.
@@ -676,10 +681,16 @@ na_ofi_get_uri(
     struct na_ofi_domain *na_ofi_domain, const void *addr, char **uri_ptr);
 
 /**
- * Allocate address.
+ * Create address.
  */
 static struct na_ofi_addr *
-na_ofi_addr_alloc(struct na_ofi_domain *na_ofi_domain);
+na_ofi_addr_create(struct na_ofi_class *na_ofi_class);
+
+/**
+ * Destroy address.
+ */
+static void
+na_ofi_addr_destroy(struct na_ofi_addr *na_ofi_addr);
 
 /**
  * Increment address refcount.
@@ -690,8 +701,15 @@ na_ofi_addr_addref(struct na_ofi_addr *na_ofi_addr);
 /**
  * Decrement address refcount.
  */
-static NA_INLINE void
+static void
 na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr);
+
+/**
+ * Retrieve address from pool.
+ */
+static na_return_t
+na_ofi_addr_pool_get(
+    struct na_ofi_class *na_ofi_class, struct na_ofi_addr **na_ofi_addr_ptr);
 
 #ifdef NA_OFI_HAS_MEM_POOL
 
@@ -699,29 +717,29 @@ na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr);
  * Create memory pool.
  */
 static struct na_ofi_mem_pool *
-na_ofi_mem_pool_create(
-    na_class_t *na_class, na_size_t block_size, na_size_t block_count);
+na_ofi_mem_pool_create(struct na_ofi_domain *na_ofi_domain,
+    na_size_t block_size, na_size_t block_count);
 
 /**
  * Destroy memory pool.
  */
 static void
-na_ofi_mem_pool_destroy(
-    na_class_t *na_class, struct na_ofi_mem_pool *na_ofi_mem_pool);
+na_ofi_mem_pool_destroy(struct na_ofi_domain *na_ofi_domain,
+    struct na_ofi_mem_pool *na_ofi_mem_pool);
 
 /**
  * Allocate memory pool and register memory.
  */
 static void *
 na_ofi_mem_pool_alloc(
-    na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl);
+    struct na_ofi_class *na_ofi_class, na_size_t size, struct fid_mr **mr_hdl);
 
 /**
  * Free memory pool and release memory.
  */
 static void
 na_ofi_mem_pool_free(
-    na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
+    struct na_ofi_class *na_ofi_class, void *mem_ptr, struct fid_mr *mr_hdl);
 
 #endif
 
@@ -729,13 +747,15 @@ na_ofi_mem_pool_free(
  * Allocate memory for transfers.
  */
 static NA_INLINE void *
-na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl);
+na_ofi_mem_alloc(struct na_ofi_domain *na_ofi_domain, na_size_t size,
+    struct fid_mr **mr_hdl);
 
 /**
  * Free memory.
  */
 static NA_INLINE void
-na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
+na_ofi_mem_free(
+    struct na_ofi_domain *na_ofi_domain, void *mem_ptr, struct fid_mr *mr_hdl);
 
 /**
  * Get IOV index and offset pair from an absolute offset.
@@ -773,8 +793,8 @@ na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
  * Do RMA operation (put/get).
  */
 static na_return_t
-na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t op,
-    na_cb_t callback, void *arg,
+na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
+    na_cb_type_t op, na_cb_t callback, void *arg,
     ssize_t (*fi_rma_op)(
         struct fid_ep *ep, const struct fi_msg_rma *msg, uint64_t flags),
     na_uint64_t fi_rma_flags, struct na_ofi_mem_handle *na_ofi_mem_handle_local,
@@ -796,7 +816,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
  * Process event from CQ.
  */
 static na_return_t
-na_ofi_cq_process_event(na_class_t *na_class,
+na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
     const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
     void *err_addr, size_t err_addrlen);
 
@@ -810,7 +830,7 @@ na_ofi_cq_process_send_event(struct na_ofi_op_id *na_ofi_op_id);
  * Recv unexpected operation events.
  */
 static na_return_t
-na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
+na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
     struct na_ofi_op_id *na_ofi_op_id, fi_addr_t src_addr, void *src_err_addr,
     size_t src_err_addrlen, uint64_t tag, size_t len);
 
@@ -1242,20 +1262,16 @@ na_ofi_domain_unlock(struct na_ofi_domain *domain)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
-na_ofi_with_sep(const na_class_t *na_class)
+na_ofi_with_sep(const struct na_ofi_class *na_ofi_class)
 {
-    struct na_ofi_endpoint *ep = NA_OFI_CLASS(na_class)->endpoint;
-
-    return ep->sep;
+    return na_ofi_class->endpoint->sep;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
-na_ofi_with_msg_hdr(const na_class_t *na_class)
+na_ofi_with_msg_hdr(const struct na_ofi_domain *na_ofi_domain)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
-
-    return (na_ofi_prov_flags[domain->prov_type] & NA_OFI_SOURCE_MSG);
+    return na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_SOURCE_MSG;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1692,16 +1708,18 @@ static na_return_t
 na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
     void **addr_ptr, na_size_t *addrlen_ptr)
 {
-    void *addr = NULL;
-    size_t addrlen = na_ofi_domain->fi_prov->src_addrlen;
+    void *addr = *addr_ptr;
+    size_t addrlen = (size_t) *addrlen_ptr;
     na_bool_t retried = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
 retry:
-    addr = malloc(addrlen);
-    NA_CHECK_SUBSYS_ERROR(addr, addr == NULL, error, ret, NA_NOMEM,
-        "Could not allocate %zu bytes for address", addrlen);
+    if (addr == NULL && addrlen > 0) {
+        addr = malloc(addrlen);
+        NA_CHECK_SUBSYS_ERROR(addr, addr == NULL, error, ret, NA_NOMEM,
+            "Could not allocate %zu bytes for address", addrlen);
+    }
 
     /* Lookup address from AV */
     na_ofi_domain_lock(na_ofi_domain);
@@ -1710,6 +1728,7 @@ retry:
     if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
         retried = NA_TRUE;
         free(addr);
+        addr = NULL;
         goto retry;
     }
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
@@ -1721,7 +1740,8 @@ retry:
     return ret;
 
 error:
-    free(addr);
+    if (*addr_ptr == NULL)
+        free(addr);
     return ret;
 }
 
@@ -2612,7 +2632,8 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     }
 
     if (na_ofi_endpoint->src_addr)
-        na_ofi_addr_decref(na_ofi_endpoint->src_addr);
+        na_ofi_addr_destroy(na_ofi_endpoint->src_addr);
+
     free(na_ofi_endpoint);
 
 out:
@@ -2621,59 +2642,61 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_get_ep_addr(struct na_ofi_domain *na_ofi_domain,
-    struct na_ofi_endpoint *na_ofi_endpoint,
-    struct na_ofi_addr **na_ofi_addr_ptr)
+na_ofi_endpoint_resolve_src_addr(struct na_ofi_class *na_ofi_class)
 {
     struct na_ofi_addr *na_ofi_addr = NULL;
-    void *addr = NULL;
-    size_t addrlen = na_ofi_domain->fi_prov->src_addrlen;
+    size_t addrlen = 0;
     na_bool_t retried = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    na_ofi_addr = na_ofi_addr_alloc(na_ofi_domain);
+    na_ofi_addr = na_ofi_addr_create(na_ofi_class);
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, error, ret, NA_NOMEM,
-        "Could not allocate NA OFI addr");
+        "na_ofi_addr_create() failed");
+    addrlen = na_ofi_addr->addrlen;
 
 retry:
-    addr = malloc(addrlen);
-    NA_CHECK_SUBSYS_ERROR(
-        addr, addr == NULL, error, ret, NA_NOMEM, "Could not allocate addr");
+    if (na_ofi_addr->addr == NULL && na_ofi_addr->addrlen > 0) {
+        na_ofi_addr->addr = malloc(addrlen);
+        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr->addr == NULL, error, ret,
+            NA_NOMEM, "Could not allocate addr");
+    }
 
-    rc = fi_getname(&na_ofi_endpoint->fi_ep->fid, addr, &addrlen);
+    rc = fi_getname(
+        &na_ofi_class->endpoint->fi_ep->fid, na_ofi_addr->addr, &addrlen);
     if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
         retried = NA_TRUE;
-        free(addr);
+        free(na_ofi_addr->addr);
+        na_ofi_addr->addr = NULL;
+        na_ofi_addr->addrlen = addrlen;
         goto retry;
     }
-    /* Assign first to clean up properly on error */
-    na_ofi_addr->addr = addr;
-    na_ofi_addr->addrlen = addrlen;
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_getname() failed, rc: %d (%s), addrlen: %zu", rc, fi_strerror(-rc),
         na_ofi_addr->addrlen);
 
     /* Get URI from address */
-    ret = na_ofi_get_uri(na_ofi_domain, na_ofi_addr->addr, &na_ofi_addr->uri);
+    ret = na_ofi_get_uri(
+        na_ofi_class->domain, na_ofi_addr->addr, &na_ofi_addr->uri);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not get URI from endpoint address");
 
     /* Lookup/insert self address so that we can use it to send to ourself */
-    ret = na_ofi_addr_ht_lookup(na_ofi_domain,
-        na_ofi_prov_addr_format[na_ofi_domain->prov_type], na_ofi_addr->addr,
-        na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+    ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
+        na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+        na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr,
+        &na_ofi_addr->ht_key);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "na_ofi_addr_ht_lookup(%s) failed", na_ofi_addr->uri);
 
     /* TODO check address size */
-    *na_ofi_addr_ptr = na_ofi_addr;
+    na_ofi_class->endpoint->src_addr = na_ofi_addr;
 
     return ret;
 
 error:
     if (na_ofi_addr)
-        na_ofi_addr_decref(na_ofi_addr);
+        na_ofi_addr_destroy(na_ofi_addr);
 
     return ret;
 }
@@ -2725,7 +2748,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static struct na_ofi_addr *
-na_ofi_addr_alloc(struct na_ofi_domain *na_ofi_domain)
+na_ofi_addr_create(struct na_ofi_class *na_ofi_class)
 {
     struct na_ofi_addr *na_ofi_addr;
 
@@ -2733,15 +2756,27 @@ na_ofi_addr_alloc(struct na_ofi_domain *na_ofi_domain)
     NA_CHECK_SUBSYS_ERROR_NORET(
         addr, na_ofi_addr == NULL, out, "Could not allocate addr");
 
-    /* Keep reference to domain */
-    na_ofi_addr->domain = na_ofi_domain;
-    hg_atomic_incr32(&na_ofi_domain->refcount);
+    na_ofi_addr->addrlen = na_ofi_class->domain->fi_prov->src_addrlen;
+
+    /* Keep reference to class/domain */
+    na_ofi_addr->class = na_ofi_class;
+    hg_atomic_incr32(&na_ofi_addr->class->domain->refcount);
 
     /* One refcount for the caller to hold until addr_free */
     hg_atomic_init32(&na_ofi_addr->refcount, 1);
 
 out:
     return na_ofi_addr;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_addr_destroy(struct na_ofi_addr *na_ofi_addr)
+{
+    na_ofi_domain_close(na_ofi_addr->class->domain);
+    free(na_ofi_addr->uri);
+    free(na_ofi_addr->addr);
+    free(na_ofi_addr);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2752,7 +2787,7 @@ na_ofi_addr_addref(struct na_ofi_addr *na_ofi_addr)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE void
+static void
 na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
 {
     /* If there are more references, return */
@@ -2764,20 +2799,66 @@ na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
     if (na_ofi_addr->remove) {
         NA_LOG_SUBSYS_DEBUG(addr, "fi_addr=%" SCNx64 " ht_key=%" SCNx64,
             na_ofi_addr->fi_addr, na_ofi_addr->ht_key);
-        na_ofi_addr_ht_remove(
-            na_ofi_addr->domain, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+        na_ofi_addr_ht_remove(na_ofi_addr->class->domain, &na_ofi_addr->fi_addr,
+            &na_ofi_addr->ht_key);
     }
-    na_ofi_domain_close(na_ofi_addr->domain);
-    free(na_ofi_addr->addr);
+
+#ifdef NA_OFI_HAS_ADDR_POOL
+    /* Reset refcount to 1 */
+    hg_atomic_set32(&na_ofi_addr->refcount, 1);
+
+    /* Free URI if it was allocated */
     free(na_ofi_addr->uri);
-    free(na_ofi_addr);
+    na_ofi_addr->uri = NULL;
+
+    /* Free addr info */
+    free(na_ofi_addr->addr);
+    na_ofi_addr->addr = NULL;
+
+    /* Push address back to addr pool */
+    hg_thread_spin_lock(&na_ofi_addr->class->addr_pool_lock);
+    HG_QUEUE_PUSH_TAIL(&na_ofi_addr->class->addr_pool, na_ofi_addr, entry);
+    hg_thread_spin_unlock(&na_ofi_addr->class->addr_pool_lock);
+#else
+    na_ofi_addr_destroy(na_ofi_addr);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_addr_pool_get(
+    struct na_ofi_class *na_ofi_class, struct na_ofi_addr **na_ofi_addr_ptr)
+{
+    struct na_ofi_addr *na_ofi_addr = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+#ifdef NA_OFI_HAS_ADDR_POOL
+    hg_thread_spin_lock(&na_ofi_class->addr_pool_lock);
+    na_ofi_addr = HG_QUEUE_FIRST(&na_ofi_class->addr_pool);
+    if (na_ofi_addr) {
+        HG_QUEUE_POP_HEAD(&na_ofi_class->addr_pool, entry);
+        hg_thread_spin_unlock(&na_ofi_class->addr_pool_lock);
+    } else {
+        hg_thread_spin_unlock(&na_ofi_class->addr_pool_lock);
+#endif
+        na_ofi_addr = na_ofi_addr_create(na_ofi_class);
+        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, out, ret, NA_NOMEM,
+            "na_ofi_addr_create() failed");
+#ifdef NA_OFI_HAS_ADDR_POOL
+    }
+#endif
+
+    *na_ofi_addr_ptr = na_ofi_addr;
+
+out:
+    return ret;
 }
 
 #ifdef NA_OFI_HAS_MEM_POOL
 /*---------------------------------------------------------------------------*/
 static struct na_ofi_mem_pool *
-na_ofi_mem_pool_create(
-    na_class_t *na_class, na_size_t block_size, na_size_t block_count)
+na_ofi_mem_pool_create(struct na_ofi_domain *na_ofi_domain,
+    na_size_t block_size, na_size_t block_count)
 {
     struct na_ofi_mem_pool *na_ofi_mem_pool = NULL;
     na_size_t pool_size =
@@ -2787,7 +2868,7 @@ na_ofi_mem_pool_create(
     na_size_t i;
 
     na_ofi_mem_pool = (struct na_ofi_mem_pool *) na_ofi_mem_alloc(
-        na_class, pool_size, &mr_hdl);
+        na_ofi_domain, pool_size, &mr_hdl);
     NA_CHECK_SUBSYS_ERROR_NORET(mem, na_ofi_mem_pool == NULL, out,
         "Could not allocate %d bytes", (int) pool_size);
 
@@ -2810,17 +2891,17 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_mem_pool_destroy(
-    na_class_t *na_class, struct na_ofi_mem_pool *na_ofi_mem_pool)
+na_ofi_mem_pool_destroy(struct na_ofi_domain *na_ofi_domain,
+    struct na_ofi_mem_pool *na_ofi_mem_pool)
 {
-    na_ofi_mem_free(na_class, na_ofi_mem_pool, na_ofi_mem_pool->mr_hdl);
+    na_ofi_mem_free(na_ofi_domain, na_ofi_mem_pool, na_ofi_mem_pool->mr_hdl);
     hg_thread_spin_destroy(&na_ofi_mem_pool->node_list_lock);
 }
 
 /*---------------------------------------------------------------------------*/
 static void *
 na_ofi_mem_pool_alloc(
-    na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
+    struct na_ofi_class *na_ofi_class, na_size_t size, struct fid_mr **mr_hdl)
 {
     struct na_ofi_mem_pool *na_ofi_mem_pool;
     struct na_ofi_mem_node *na_ofi_mem_node;
@@ -2829,28 +2910,27 @@ na_ofi_mem_pool_alloc(
 
 retry:
     /* Check whether we can get a block from one of the pools */
-    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-    HG_QUEUE_FOREACH (
-        na_ofi_mem_pool, &NA_OFI_CLASS(na_class)->buf_pool, entry) {
+    hg_thread_spin_lock(&na_ofi_class->buf_pool_lock);
+    HG_QUEUE_FOREACH (na_ofi_mem_pool, &na_ofi_class->buf_pool, entry) {
         hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
         found = !HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list);
         hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
         if (found)
             break;
     }
-    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+    hg_thread_spin_unlock(&na_ofi_class->buf_pool_lock);
 
     /* If not, allocate and register a new pool */
     if (!found) {
-        na_ofi_mem_pool = na_ofi_mem_pool_create(na_class,
-            na_ofi_msg_get_max_unexpected_size(na_class),
+        na_ofi_mem_pool = na_ofi_mem_pool_create(na_ofi_class->domain,
+            MAX(na_ofi_class->unexpected_size_max,
+                na_ofi_class->expected_size_max),
             NA_OFI_MEM_BLOCK_COUNT);
         NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_pool == NULL, out, mem_ptr, NULL,
             "Could not create new pool");
-        hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-        HG_QUEUE_PUSH_TAIL(
-            &NA_OFI_CLASS(na_class)->buf_pool, na_ofi_mem_pool, entry);
-        hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+        hg_thread_spin_lock(&na_ofi_class->buf_pool_lock);
+        HG_QUEUE_PUSH_TAIL(&na_ofi_class->buf_pool, na_ofi_mem_pool, entry);
+        hg_thread_spin_unlock(&na_ofi_class->buf_pool_lock);
     }
 
     NA_CHECK_SUBSYS_ERROR(mem, size > na_ofi_mem_pool->block_size, out, mem_ptr,
@@ -2874,16 +2954,16 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
+na_ofi_mem_pool_free(
+    struct na_ofi_class *na_ofi_class, void *mem_ptr, struct fid_mr *mr_hdl)
 {
     struct na_ofi_mem_pool *na_ofi_mem_pool;
     struct na_ofi_mem_node *na_ofi_mem_node =
         container_of(mem_ptr, struct na_ofi_mem_node, block);
 
     /* Put the node back to the pool */
-    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-    HG_QUEUE_FOREACH (
-        na_ofi_mem_pool, &NA_OFI_CLASS(na_class)->buf_pool, entry) {
+    hg_thread_spin_lock(&na_ofi_class->buf_pool_lock);
+    HG_QUEUE_FOREACH (na_ofi_mem_pool, &na_ofi_class->buf_pool, entry) {
         /* If MR handle is NULL, it does not really matter which pool we push
          * the node back to.
          */
@@ -2895,16 +2975,16 @@ na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
             break;
         }
     }
-    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+    hg_thread_spin_unlock(&na_ofi_class->buf_pool_lock);
 }
 
 #endif
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void *
-na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
+na_ofi_mem_alloc(
+    struct na_ofi_domain *na_ofi_domain, na_size_t size, struct fid_mr **mr_hdl)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
 
@@ -2915,10 +2995,10 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
     memset(mem_ptr, 0, size);
 
     /* Register memory if FI_MR_LOCAL is set and provider uses it */
-    if (domain->fi_prov->domain_attr->mr_mode & FI_MR_LOCAL) {
+    if (na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_LOCAL) {
         int rc;
 
-        rc = fi_mr_reg(domain->fi_domain, mem_ptr, size,
+        rc = fi_mr_reg(na_ofi_domain->fi_domain, mem_ptr, size,
             FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV | FI_READ |
                 FI_WRITE,
             0 /* offset */, 0 /* requested key */, 0 /* flags */, mr_hdl,
@@ -2927,9 +3007,9 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
             hg_mem_aligned_free(mem_ptr);
             NA_GOTO_SUBSYS_ERROR(mem, out, mem_ptr, NULL,
                 "fi_mr_reg() failed, rc: %d (%s), mr_reg_count: %d", rc,
-                fi_strerror(-rc), hg_atomic_get32(domain->mr_reg_count));
+                fi_strerror(-rc), hg_atomic_get32(na_ofi_domain->mr_reg_count));
         }
-        hg_atomic_incr32(domain->mr_reg_count);
+        hg_atomic_incr32(na_ofi_domain->mr_reg_count);
     }
 
 out:
@@ -2938,14 +3018,15 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
+na_ofi_mem_free(
+    struct na_ofi_domain *na_ofi_domain, void *mem_ptr, struct fid_mr *mr_hdl)
 {
     /* Release MR handle is there was any */
     if (mr_hdl) {
         int rc = fi_close(&mr_hdl->fid);
         NA_CHECK_SUBSYS_ERROR_NORET(mem, rc != 0, out,
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        hg_atomic_decr32(NA_OFI_CLASS(na_class)->domain->mr_reg_count);
+        hg_atomic_decr32(na_ofi_domain->mr_reg_count);
     }
 
 out:
@@ -3054,8 +3135,8 @@ na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t cb_type,
-    na_cb_t callback, void *arg,
+na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
+    na_cb_type_t cb_type, na_cb_t callback, void *arg,
     ssize_t (*fi_rma_op)(
         struct fid_ep *ep, const struct fi_msg_rma *msg, uint64_t flags),
     na_uint64_t fi_rma_flags, struct na_ofi_mem_handle *na_ofi_mem_handle_local,
@@ -3160,7 +3241,7 @@ na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t cb_type,
     /* Post the OFI RMA operation */
     rc = fi_rma_op(ctx->fi_tx, &fi_msg_rma, fi_rma_flags);
     if (unlikely(rc == -FI_EAGAIN)) {
-        if (NA_OFI_CLASS(na_class)->no_retry)
+        if (na_ofi_class->no_retry)
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
         else {
@@ -3313,7 +3394,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_process_event(na_class_t *na_class,
+na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
     const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
     void *src_err_addr, size_t src_err_addrlen)
 {
@@ -3333,7 +3414,7 @@ na_ofi_cq_process_event(na_class_t *na_class,
         NA_CHECK_SUBSYS_NA_ERROR(msg, out, ret, "Could not process send event");
     } else if (cq_event->flags & FI_RECV) {
         if (cq_event->tag & NA_OFI_UNEXPECTED_TAG) {
-            ret = na_ofi_cq_process_recv_unexpected_event(na_class,
+            ret = na_ofi_cq_process_recv_unexpected_event(na_ofi_class,
                 na_ofi_op_id, src_addr, src_err_addr, src_err_addrlen,
                 cq_event->tag, cq_event->len);
             NA_CHECK_SUBSYS_NA_ERROR(
@@ -3380,11 +3461,10 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
+na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
     struct na_ofi_op_id *na_ofi_op_id, fi_addr_t src_addr, void *src_err_addr,
     size_t src_err_addrlen, uint64_t tag, size_t len)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     na_cb_type_t cb_type = na_ofi_op_id->completion_data.callback_info.type;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -3395,30 +3475,32 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
     NA_CHECK_SUBSYS_ERROR(msg, (tag & ~NA_OFI_UNEXPECTED_TAG) > NA_OFI_MAX_TAG,
         out, ret, NA_OVERFLOW, "Invalid tag value %llu", tag);
 
-    /* Allocate new address */
-    na_ofi_addr = na_ofi_addr_alloc(domain);
-    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, out, ret, NA_NOMEM,
-        "na_ofi_addr_alloc() failed");
+    /* Retrieve new address from pool to prevent allocation */
+    ret = na_ofi_addr_pool_get(na_ofi_class, &na_ofi_addr);
+    NA_CHECK_SUBSYS_NA_ERROR(addr, out, ret, "na_ofi_addr_pool_get() failed");
     /* Unexpected addresses do not need to set addr/addrlen info, fi_av_lookup()
      * can be used when needed. */
 
     /* Use src_addr when available */
-    if ((na_ofi_prov_extra_caps[domain->prov_type] & FI_SOURCE) &&
+    if ((na_ofi_prov_extra_caps[na_ofi_class->domain->prov_type] & FI_SOURCE) &&
         src_addr != FI_ADDR_UNSPEC)
         na_ofi_addr->fi_addr = src_addr;
     else if (src_err_addr && src_err_addrlen) { /* addr from error info */
         /* We do not need to keep a copy of src_err_addr */
-        ret = na_ofi_addr_ht_lookup(domain,
-            na_ofi_prov_addr_format[domain->prov_type], src_err_addr,
-            src_err_addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+        ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
+            na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+            src_err_addr, src_err_addrlen, &na_ofi_addr->fi_addr,
+            &na_ofi_addr->ht_key);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "na_ofi_addr_ht_lookup() failed");
-    } else if (na_ofi_with_msg_hdr(na_class)) { /* addr from msg header */
+    } else if (na_ofi_with_msg_hdr(
+                   na_ofi_class->domain)) { /* addr from msg header */
         /* We do not need to keep a copy of msg header */
-        ret = na_ofi_addr_ht_lookup(domain,
-            na_ofi_prov_addr_format[domain->prov_type],
+        ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
+            na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
             na_ofi_op_id->info.msg.buf.ptr,
-            na_ofi_prov_addr_size(na_ofi_prov_addr_format[domain->prov_type]),
+            na_ofi_prov_addr_size(
+                na_ofi_prov_addr_format[na_ofi_class->domain->prov_type]),
             &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "na_ofi_addr_ht_lookup() failed");
@@ -3782,6 +3864,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 #endif
     na_return_t ret = NA_SUCCESS;
     enum na_ofi_prov_type prov_type;
+#ifdef NA_OFI_HAS_ADDR_POOL
+    int i;
+#endif
 
     NA_LOG_SUBSYS_DEBUG(cls,
         "Entering na_ofi_initialize() class_name %s, protocol_name %s,"
@@ -3917,6 +4002,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_thread_spin_init(&priv->buf_pool_lock);
     HG_QUEUE_INIT(&priv->buf_pool);
 
+    /* Initialize addr pool */
+    hg_thread_spin_init(&priv->addr_pool_lock);
+    HG_QUEUE_INIT(&priv->addr_pool);
+
     /* Create/Open domain */
     ret = na_ofi_domain_open(
         prov_type, domain_name_ptr, auth_key, no_wait, &priv->domain);
@@ -3948,13 +4037,12 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
 #ifdef NA_OFI_HAS_MEM_POOL
     /* Register initial mempool */
-    na_ofi_mem_pool = na_ofi_mem_pool_create(na_class,
-        na_ofi_msg_get_max_unexpected_size(na_class), NA_OFI_MEM_BLOCK_COUNT);
+    na_ofi_mem_pool = na_ofi_mem_pool_create(priv->domain,
+        MAX(priv->unexpected_size_max, priv->expected_size_max),
+        NA_OFI_MEM_BLOCK_COUNT);
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_mem_pool == NULL, out, ret, NA_NOMEM,
         "Could not create memory pool with %d blocks", NA_OFI_MEM_BLOCK_COUNT);
-    hg_thread_spin_lock(&priv->buf_pool_lock);
     HG_QUEUE_PUSH_TAIL(&priv->buf_pool, na_ofi_mem_pool, entry);
-    hg_thread_spin_unlock(&priv->buf_pool_lock);
 #endif
 
     /* Cache IOV max */
@@ -3966,11 +4054,18 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, out, ret, "Could not create endpoint for %s", resolve_name);
 
+#ifdef NA_OFI_HAS_ADDR_POOL
+    /* Create pool of addresses */
+    for (i = 0; i < NA_OFI_ADDR_POOL_COUNT; i++) {
+        struct na_ofi_addr *na_ofi_addr = na_ofi_addr_create(priv);
+        HG_QUEUE_PUSH_TAIL(&priv->addr_pool, na_ofi_addr, entry);
+    }
+#endif
+
     /* Get address from endpoint */
-    ret = na_ofi_get_ep_addr(
-        priv->domain, priv->endpoint, &priv->endpoint->src_addr);
+    ret = na_ofi_endpoint_resolve_src_addr(priv);
     NA_CHECK_SUBSYS_NA_ERROR(
-        cls, out, ret, "Could not get address from endpoint");
+        cls, out, ret, "Could not resolve endpoint src address");
 
 out:
     if (ret != NA_SUCCESS) {
@@ -3994,6 +4089,17 @@ na_ofi_finalize(na_class_t *na_class)
     if (priv == NULL)
         goto out;
 
+#ifdef NA_OFI_HAS_ADDR_POOL
+    /* Free addresses */
+    while (!HG_QUEUE_IS_EMPTY(&priv->addr_pool)) {
+        struct na_ofi_addr *na_ofi_addr = HG_QUEUE_FIRST(&priv->addr_pool);
+        HG_QUEUE_POP_HEAD(&priv->addr_pool, entry);
+
+        na_ofi_addr_destroy(na_ofi_addr);
+    }
+#endif
+    hg_thread_spin_destroy(&priv->addr_pool_lock);
+
     /* Close endpoint */
     if (priv->endpoint) {
         ret = na_ofi_endpoint_close(priv->endpoint);
@@ -4009,10 +4115,10 @@ na_ofi_finalize(na_class_t *na_class)
             HG_QUEUE_FIRST(&priv->buf_pool);
         HG_QUEUE_POP_HEAD(&priv->buf_pool, entry);
 
-        na_ofi_mem_pool_destroy(na_class, na_ofi_mem_pool);
+        na_ofi_mem_pool_destroy(priv->domain, na_ofi_mem_pool);
     }
 #endif
-    hg_thread_spin_destroy(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+    hg_thread_spin_destroy(&priv->buf_pool_lock);
 
     /* Close domain */
     if (priv->domain) {
@@ -4050,7 +4156,7 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
     /* If not using SEP, just point to endpoint objects */
     hg_thread_mutex_lock(&priv->mutex);
 
-    if (!na_ofi_with_sep(na_class)) {
+    if (!na_ofi_with_sep(priv)) {
         ctx->fi_tx = ep->fi_ep;
         ctx->fi_rx = ep->fi_ep;
         ctx->fi_cq = ep->fi_cq;
@@ -4129,7 +4235,7 @@ out:
 
 error:
     hg_thread_mutex_unlock(&priv->mutex);
-    if (na_ofi_with_sep(na_class) && ctx->retry_op_queue) {
+    if (na_ofi_with_sep(priv) && ctx->retry_op_queue) {
         hg_thread_mutex_destroy(&ctx->retry_op_queue->mutex);
         free(ctx->retry_op_queue);
     }
@@ -4146,7 +4252,7 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    if (na_ofi_with_sep(na_class)) {
+    if (na_ofi_with_sep(priv)) {
         na_bool_t empty;
 
         /* Check that retry op queue is empty */
@@ -4255,9 +4361,8 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         name);
 
     /* Allocate addr */
-    na_ofi_addr = na_ofi_addr_alloc(domain);
-    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, error, ret, NA_NOMEM,
-        "na_ofi_addr_alloc() failed");
+    ret = na_ofi_addr_pool_get(NA_OFI_CLASS(na_class), &na_ofi_addr);
+    NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "na_ofi_addr_pool_get() failed");
     na_ofi_addr->uri = strdup(name);
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr->uri == NULL, error, ret, NA_NOMEM,
         "strdup() of URI failed");
@@ -4343,13 +4448,13 @@ na_ofi_addr_cmp(
 
     /* If we don't have the addr, look it up from AV */
     if (!na_ofi_addr1->addr) {
-        na_return_t na_ret = na_ofi_av_lookup(na_ofi_addr1->domain,
+        na_return_t na_ret = na_ofi_av_lookup(na_ofi_addr1->class->domain,
             na_ofi_addr1->fi_addr, &na_ofi_addr1->addr, &na_ofi_addr1->addrlen);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, out, na_ret, "Could not get addr from AV");
     }
     if (!na_ofi_addr2->addr) {
-        na_return_t na_ret = na_ofi_av_lookup(na_ofi_addr2->domain,
+        na_return_t na_ret = na_ofi_av_lookup(na_ofi_addr2->class->domain,
             na_ofi_addr2->fi_addr, &na_ofi_addr2->addr, &na_ofi_addr2->addrlen);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, out, na_ret, "Could not get addr from AV");
@@ -4400,14 +4505,15 @@ na_ofi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
 
         /* If we don't have the addr either, look it up from AV */
         if (!na_ofi_addr->addr) {
-            ret = na_ofi_av_lookup(na_ofi_addr->domain, na_ofi_addr->fi_addr,
-                &na_ofi_addr->addr, &na_ofi_addr->addrlen);
+            ret = na_ofi_av_lookup(na_ofi_addr->class->domain,
+                na_ofi_addr->fi_addr, &na_ofi_addr->addr,
+                &na_ofi_addr->addrlen);
             NA_CHECK_SUBSYS_NA_ERROR(
                 addr, out, ret, "Could not get addr from AV");
         }
 
         ret = na_ofi_get_uri(
-            na_ofi_addr->domain, na_ofi_addr->addr, &na_ofi_addr->uri);
+            na_ofi_addr->class->domain, na_ofi_addr->addr, &na_ofi_addr->uri);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, out, ret, "Could not get URI for address");
     }
@@ -4439,7 +4545,7 @@ na_ofi_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t addr)
             "Addr is not initialized");
 
         /* If we don't have the addr, look it up from AV */
-        ret = na_ofi_av_lookup(na_ofi_addr->domain, na_ofi_addr->fi_addr,
+        ret = na_ofi_av_lookup(na_ofi_addr->class->domain, na_ofi_addr->fi_addr,
             &na_ofi_addr->addr, &na_ofi_addr->addrlen);
         NA_CHECK_SUBSYS_ERROR_NORET(
             addr, ret != NA_SUCCESS, out, "Could not get addr from AV");
@@ -4466,7 +4572,7 @@ na_ofi_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
             ret, NA_ADDRNOTAVAIL, "Addr is not initialized");
 
         /* If we don't have the addr, look it up from AV */
-        ret = na_ofi_av_lookup(na_ofi_addr->domain, na_ofi_addr->fi_addr,
+        ret = na_ofi_av_lookup(na_ofi_addr->class->domain, na_ofi_addr->fi_addr,
             &na_ofi_addr->addr, &na_ofi_addr->addrlen);
         NA_CHECK_SUBSYS_NA_ERROR(addr, out, ret, "Could not get addr from AV");
     }
@@ -4495,9 +4601,8 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate addr */
-    na_ofi_addr = na_ofi_addr_alloc(domain);
-    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, out, ret, NA_NOMEM,
-        "na_ofi_addr_alloc() failed");
+    ret = na_ofi_addr_pool_get(NA_OFI_CLASS(na_class), &na_ofi_addr);
+    NA_CHECK_SUBSYS_NA_ERROR(addr, out, ret, "na_ofi_addr_pool_get() failed");
     memcpy(&na_ofi_addr->addrlen, p, sizeof(na_ofi_addr->addrlen));
     p += sizeof(na_ofi_addr->addrlen);
 
@@ -4544,7 +4649,7 @@ na_ofi_msg_get_max_expected_size(const na_class_t *na_class)
 static NA_INLINE na_size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
-    if (na_ofi_with_msg_hdr(na_class)) {
+    if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)->domain)) {
         return na_ofi_prov_addr_size(
             na_ofi_prov_addr_format[NA_OFI_CLASS(na_class)->domain->prov_type]);
     } else
@@ -4566,11 +4671,11 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     void *mem_ptr = NULL;
 
 #ifdef NA_OFI_HAS_MEM_POOL
-    mem_ptr = na_ofi_mem_pool_alloc(na_class, size, &mr_hdl);
+    mem_ptr = na_ofi_mem_pool_alloc(NA_OFI_CLASS(na_class), size, &mr_hdl);
     NA_CHECK_SUBSYS_ERROR_NORET(
         mem, mem_ptr == NULL, out, "Could not allocate buffer from pool");
 #else
-    mem_ptr = na_ofi_mem_alloc(na_class, size, &mr_hdl);
+    mem_ptr = na_ofi_mem_alloc(NA_OFI_CLASS(na_class)->domain, size, &mr_hdl);
     NA_CHECK_SUBSYS_ERROR_NORET(
         mem, mem_ptr == NULL, out, "Could not allocate %d bytes", (int) size);
 #endif
@@ -4587,9 +4692,9 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
     struct fid_mr *mr_hdl = plugin_data;
 
 #ifdef NA_OFI_HAS_MEM_POOL
-    na_ofi_mem_pool_free(na_class, buf, mr_hdl);
+    na_ofi_mem_pool_free(NA_OFI_CLASS(na_class), buf, mr_hdl);
 #else
-    na_ofi_mem_free(na_class, buf, mr_hdl);
+    na_ofi_mem_free(NA_OFI_CLASS(na_class)->domain, buf, mr_hdl);
 #endif
 
     return NA_SUCCESS;
@@ -4599,15 +4704,14 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 static na_return_t
 na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
 {
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     na_return_t ret = NA_SUCCESS;
 
     /*
      * For those providers that don't support FI_SOURCE/FI_SOURCE_ERR, insert
      * the msg header to piggyback the source address for unexpected message.
      */
-    if (na_ofi_with_msg_hdr(na_class)) {
-        struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-
+    if (na_ofi_with_msg_hdr(priv->domain)) {
         NA_CHECK_SUBSYS_ERROR(msg, buf_size < priv->endpoint->src_addr->addrlen,
             out, ret, NA_OVERFLOW, "Buffer size too small to copy addr");
         memcpy(buf, priv->endpoint->src_addr->addr,
@@ -5205,10 +5309,11 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 {
     na_return_t ret = NA_SUCCESS;
 
-    ret = na_ofi_rma(na_class, context, NA_CB_PUT, callback, arg, fi_writemsg,
-        NA_OFI_PUT_COMPLETION, (struct na_ofi_mem_handle *) local_mem_handle,
-        local_offset, (struct na_ofi_mem_handle *) remote_mem_handle,
-        remote_offset, length, (struct na_ofi_addr *) remote_addr, remote_id,
+    ret = na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_PUT, callback, arg,
+        fi_writemsg, NA_OFI_PUT_COMPLETION,
+        (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
+        (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
+        (struct na_ofi_addr *) remote_addr, remote_id,
         (struct na_ofi_op_id *) op_id);
     NA_CHECK_SUBSYS_NA_ERROR(rma, out, ret, "Could not post RMA put");
 
@@ -5226,10 +5331,11 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 {
     na_return_t ret = NA_SUCCESS;
 
-    ret = na_ofi_rma(na_class, context, NA_CB_GET, callback, arg, fi_readmsg,
-        NA_OFI_GET_COMPLETION, (struct na_ofi_mem_handle *) local_mem_handle,
-        local_offset, (struct na_ofi_mem_handle *) remote_mem_handle,
-        remote_offset, length, (struct na_ofi_addr *) remote_addr, remote_id,
+    ret = na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_GET, callback, arg,
+        fi_readmsg, NA_OFI_GET_COMPLETION,
+        (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
+        (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
+        (struct na_ofi_addr *) remote_addr, remote_id,
         (struct na_ofi_op_id *) op_id);
     NA_CHECK_SUBSYS_NA_ERROR(rma, out, ret, "Could not post RMA get");
 
@@ -5348,8 +5454,8 @@ na_ofi_progress(
             poll, error, ret, "Could not read events from context CQ");
 
         for (i = 0; i < actual_count; i++) {
-            ret = na_ofi_cq_process_event(na_class, &cq_events[i], src_addrs[i],
-                src_err_addr_ptr, src_err_addrlen);
+            ret = na_ofi_cq_process_event(NA_OFI_CLASS(na_class), &cq_events[i],
+                src_addrs[i], src_err_addr_ptr, src_err_addrlen);
             NA_CHECK_SUBSYS_NA_ERROR(
                 poll, error, ret, "Could not process event");
         }
