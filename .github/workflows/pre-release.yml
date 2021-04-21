@@ -1,0 +1,52 @@
+name: Pre-release
+
+on:
+  push:
+    tags:
+      - 'v*rc*'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Extract version number
+        id: get_version
+        # Skip refs/tags/v
+        run: echo ::set-output name=version::$(echo ${GITHUB_REF:11})
+
+      - name: Create Build Environment
+        run: cmake -E make_directory ${{github.workspace}}/build
+
+      - name: Configure CMake
+        shell: bash
+        working-directory: ${{github.workspace}}/build
+        run: |
+          cmake $GITHUB_WORKSPACE
+          make package_source
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: mercury ${{ steps.get_version.outputs.version }}
+          body_path: Documentation/CHANGES.md
+          draft: true
+          prerelease: true
+
+      - name: Upload tarball to release
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{github.workspace}}/build/mercury-${{ steps.get_version.outputs.version }}.tar.bz2
+          asset_name: mercury-${{ steps.get_version.outputs.version }}.tar.bz2
+          asset_content_type: application/x-bzip2

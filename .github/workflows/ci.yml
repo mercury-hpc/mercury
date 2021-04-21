@@ -13,29 +13,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
-        ref: ${{ github.event.pull_request.head.sha }}
-        submodules: true
+      - name: Checkout source
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: true
 
-    - name: Install package dependencies
-      run: sudo apt-get install -y clang-format-10
+      - name: Install package dependencies
+        run: sudo apt-get install -y clang-format-10
 
-    - name: Set git configuration
-      run: git config --global clangFormat.binary clang-format-10
+      - name: Set git configuration
+        run: git config --global clangFormat.binary clang-format-10
 
-    - name: Check formatting (push to feature branch)
-      if: github.ref != 'refs/heads/master' && github.event_name == 'push'
-      run: Testing/script/gh_format.sh origin/master
+      - name: Check formatting (push to feature branch)
+        if: github.ref != 'refs/heads/master' && github.event_name == 'push'
+        run: Testing/script/gh_format.sh origin/master
 
-    - name: Check formatting (push to master branch or pull request merge)
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: Testing/script/gh_format.sh ${{ github.event.before }}
+      - name: Check formatting (push to master branch or pull request merge)
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        run: Testing/script/gh_format.sh ${{ github.event.before }}
 
-    - name: Check formatting (pull request)
-      if: github.event_name == 'pull_request'
-      run: Testing/script/gh_format.sh origin/${{ github.base_ref }}
+      - name: Check formatting (pull request)
+        if: github.event_name == 'pull_request'
+        run: Testing/script/gh_format.sh origin/${{ github.base_ref }}
 
   build-and-test:
     # The CMake configure and build commands are platform agnostic and should work equally
@@ -50,20 +51,20 @@ jobs:
         compiler: [gcc, clang]
         libs: [shared]
         include:
-           - os: ubuntu-latest
-             build_type: Debug
-             compiler: gcc
-             libs: static
+          - os: ubuntu-latest
+            build_type: Debug
+            compiler: gcc
+            libs: static
         exclude:
-           # Exclude sanitizer builds with clang
-           - build_type: Asan
-             compiler: clang
-           - build_type: Tsan
-             compiler: clang
-           - build_type: Ubsan
-             compiler: clang
-           - os: macos-latest
-             compiler: gcc
+          # Exclude sanitizer builds with clang
+          - build_type: Asan
+            compiler: clang
+          - build_type: Tsan
+            compiler: clang
+          - build_type: Ubsan
+            compiler: clang
+          - os: macos-latest
+            compiler: gcc
 
     runs-on: ${{ matrix.os }}
 
@@ -75,50 +76,50 @@ jobs:
       INSTALL_DIR: install
 
     steps:
-    - uses: actions/checkout@v2
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        submodules: true
+      - name: Checkout source
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: true
 
-    - name: Install package dependencies
-      run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh
+      - name: Install package dependencies
+        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh
 
-    - name: Restore cached dependencies
-      uses: actions/cache@v2
-      id: cache-deps
-      with:
-        path: ${{ runner.temp }}/${{ env.INSTALL_DIR }}
-        key: ${{ runner.os }}-${{ matrix.build_type }}-${{ hashFiles('Testing/script/gh_install_deps.sh') }}-deps
+      - name: Restore cached dependencies
+        uses: actions/cache@v2
+        id: cache-deps
+        with:
+          path: ${{ runner.temp }}/${{ env.INSTALL_DIR }}
+          key: ${{ runner.os }}-${{ matrix.build_type }}-${{ hashFiles('Testing/script/gh_install_deps.sh') }}-deps
 
-    - name: Install dependencies (skip if cached)
-      if: steps.cache-deps.outputs.cache-hit != 'true'
-      run: Testing/script/gh_install_deps.sh
+      - name: Install dependencies (skip if cached)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: Testing/script/gh_install_deps.sh
 
-    - name: Update
-      run: Testing/script/gh_ctest.sh update
+      - name: Update
+        run: Testing/script/gh_ctest.sh update
 
-    - name: Configure
-      run: Testing/script/gh_ctest.sh configure
+      - name: Configure
+        run: Testing/script/gh_ctest.sh configure
 
-    - name: Build
-      run: Testing/script/gh_ctest.sh build
+      - name: Build
+        run: Testing/script/gh_ctest.sh build
 
-    - name: Test
-      run: Testing/script/gh_ctest.sh test
+      - name: Test
+        run: Testing/script/gh_ctest.sh test
 
-    - name: Coverage (Debug build only)
-      if: matrix.build_type == 'Debug' && matrix.compiler == 'gcc'
-      run: Testing/script/gh_ctest.sh coverage
+      - name: Coverage (Debug build only)
+        if: matrix.build_type == 'Debug' && matrix.compiler == 'gcc'
+        run: Testing/script/gh_ctest.sh coverage
 
-    - name: Address Sanitizer (Asan build only)
-      if: matrix.build_type == 'Asan'
-      run: Testing/script/gh_ctest.sh memcheck
+      - name: Address Sanitizer (Asan build only)
+        if: matrix.build_type == 'Asan'
+        run: Testing/script/gh_ctest.sh memcheck
 
-    - name: Thread Sanitizer (Tsan build only)
-      if: matrix.build_type == 'Tsan'
-      run: Testing/script/gh_ctest.sh memcheck
+      - name: Thread Sanitizer (Tsan build only)
+        if: matrix.build_type == 'Tsan'
+        run: Testing/script/gh_ctest.sh memcheck
 
-    - name: Undefined Behavior Sanitizer (Ubsan build only)
-      if: matrix.build_type == 'Ubsan'
-      run: Testing/script/gh_ctest.sh memcheck
-
+      - name: Undefined Behavior Sanitizer (Ubsan build only)
+        if: matrix.build_type == 'Ubsan'
+        run: Testing/script/gh_ctest.sh memcheck
