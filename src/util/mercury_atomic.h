@@ -31,12 +31,27 @@ typedef OPA_int_t hg_atomic_int32_t;
 typedef OPA_ptr_t hg_atomic_int64_t; /* OPA has only limited 64-bit support */
 #    define HG_ATOMIC_VAR_INIT(x) OPA_PTR_T_INITIALIZER(x)
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
-#    include <stdatomic.h>
+#    ifndef __cplusplus
+#        include <stdatomic.h>
 typedef atomic_int hg_atomic_int32_t;
-#    if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
+#        if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
 typedef atomic_long hg_atomic_int64_t;
-#    else
+#        else
 typedef atomic_llong hg_atomic_int64_t;
+#        endif
+#    else
+#        include <atomic>
+typedef std::atomic_int hg_atomic_int32_t;
+#        if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
+typedef std::atomic_long hg_atomic_int64_t;
+#        else
+typedef std::atomic_llong hg_atomic_int64_t;
+#        endif
+using std::atomic_fetch_add_explicit;
+using std::atomic_thread_fence;
+using std::memory_order_acq_rel;
+using std::memory_order_acquire;
+using std::memory_order_release;
 #    endif
 #    define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
 #elif defined(__APPLE__)
@@ -495,7 +510,7 @@ hg_atomic_incr64(hg_atomic_int64_t *ptr)
 #if defined(_WIN32)
     ret = InterlockedIncrementNoFence64(&ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = atomic_fetch_add_explicit(ptr, 1, memory_order_acq_rel) + 1;
+    ret = atomic_fetch_add_explicit(ptr, 1L, memory_order_acq_rel) + 1;
 #elif defined(__APPLE__)
     ret = OSAtomicIncrement64(&ptr->value);
 #else
@@ -517,7 +532,7 @@ hg_atomic_decr64(hg_atomic_int64_t *ptr)
 #if defined(_WIN32)
     ret = InterlockedDecrementNoFence64(&ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = atomic_fetch_sub_explicit(ptr, 1, memory_order_acq_rel) - 1;
+    ret = atomic_fetch_sub_explicit(ptr, 1L, memory_order_acq_rel) - 1;
 #elif defined(__APPLE__)
     ret = OSAtomicDecrement64(&ptr->value);
 #else
