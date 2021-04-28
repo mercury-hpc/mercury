@@ -723,9 +723,6 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
     if (!hg_hash_table_insert(nuclass->addr_tbl, self, self))
         goto cleanup_self;
 
-    /* TBD add a callback for wires initiated by our peers and register
-     * the wire<->address relation in our table.
-     */
     if (!wiring_init(&nctx->wiring, nctx->worker, nuclass->request_size,
             &nuclass->lkb, wire_accept_callback, nctx))
         goto cleanup_tbl;
@@ -784,7 +781,7 @@ na_ucx_check_protocol(const char NA_UNUSED *protocol_name)
      * configuration using ucp_config_modify(), and then try to
      * ucp_init() with the new configuration.  If ucp_init() fails,
      * then the protocol is unsupported.  If ucp_init() passes, the
-     * protocol it probably supproted, however, UCP sometimes requires
+     * protocol it probably supported, however, UCP sometimes requires
      * at least *two* protocols to be enabled.  E.g., I can run my UCP
      * test program with `UCX_TLS=tcp,cma ./wires`, but a `wires` client
      * started with `UCX_TLS=cma` will rapidly fail.
