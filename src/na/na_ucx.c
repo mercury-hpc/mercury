@@ -191,6 +191,9 @@ typedef struct _op_txinfo {
     HG_QUEUE_ENTRY(na_op_id) link;
 } op_txinfo_t;
 
+struct na_ucx_class;
+typedef struct na_ucx_class na_ucx_class_t;
+
 struct na_op_id {
     struct na_cb_completion_data completion_data;
     na_context_t *na_ctx;
@@ -229,7 +232,7 @@ struct _na_ucx_context {
     na_uint8_t id;
 };
 
-typedef struct _na_ucx_class {
+struct na_ucx_class {
     wiring_lock_bundle_t lkb;
     hg_thread_mutex_t wiring_api_lock;
     ucp_context_h uctx;
@@ -240,7 +243,7 @@ typedef struct _na_ucx_class {
     hg_hash_table_t *addr_tbl;  /* All addresses, deduplicated. */
     na_ucx_context_t context;   /* The solitary context. */
     hg_atomic_int32_t ncontexts;/* Always 1, for now. */
-} na_ucx_class_t;
+};
 
 typedef struct _na_ucx_header {
     sender_id_t sender_id;
