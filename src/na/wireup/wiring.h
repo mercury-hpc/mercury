@@ -52,7 +52,8 @@ typedef struct _wire_id {
 
 typedef enum {
   wire_ev_estd = 0
-, wire_ev_died
+, wire_ev_closed
+, wire_ev_reclaimed
 } wire_event_t;
 
 typedef struct _wire_event_info {
@@ -83,87 +84,45 @@ typedef struct wiring_request {
     wiring_request_t *next;
 } wiring_request_t;
 
-#if 0
+struct wiring_ref;
+typedef struct wiring_ref wiring_ref_t;
+
+struct wiring_ref {
+    volatile bool wiring_atomic busy;
+    volatile uint64_t wiring_atomic epoch;
+    wiring_ref_t *next;
+    void (*reclaim)(wiring_ref_t *);
+};
+
 typedef struct wiring_garbage_bin {
-    uint64_t times_locked;
-    uint64_t times_unlocked;
-    enum {
-      wiring_garbage_empty = 0
-    , wiring_garbage_tables
-    , wiring_garbage_wires
-    , wiring_garbage_both
-    } content;
-    struct {
-        sender_id_t first_free;
-        uint32_t nfreed;
-    } wires;
-    struct {
-        void **assoc;
-        wstorage_t *storage;
-    } table;
+    sender_id_t first_closed;
+    void **assoc;
+    wstorage_t *storage;
+    wiring_ref_t * volatile wiring_atomic first_ref;
 } wiring_garbage_bin_t;
 
 typedef struct wiring_garbage_schedule {
-    /* readers consume the bins, writers produce them. */
-    uint64_t consumer, producer;
-    /* The wire_t storage and the associated-data table will
-     * not be reallocated more than 64 times during a program's
+    /* a writer both initiates new epochs and reclaims resources connected
+     * with prior epochs.  first <= last, always.  If first < last, then
+     * there are resources to reclaim in the circular buffer `last - first`
+     * circular-buffer bins starting at bin[first % NELTS(bin)].
+     */
+    struct {
+        volatile uint64_t wiring_atomic first, last;
+    } epoch;
+    struct {
+        volatile uint64_t wiring_atomic prev, next;
+    } work_available;
+    /* The wire_t storage and the associated-data table cannot
+     * be reallocated more than 64 times during a program's
      * lifetime, because the size of each doubles with each reallocation
      * and we do not expect for 2^64 bytes to be available for
      * either.  So 64 bins should be enough to hold all of the
-     * garbage related to those reallocations.
-     *
-     * TBD mention endpoint garbage collection
+     * garbage related to those reallocations.  64 additional bins
+     * are for chains of closed wires whose reclamation is deferred.
      */
     wiring_garbage_bin_t bin[128];
 } wiring_garbage_schedule_t;
-
-static void
-wiring_garbage_init(wiring_garbage_schedule_t *sched)
-{
-    int i;
-    for (i = 0; i < NELTS(sched->bin); i++) {
-        sched->bin[i] = (wiring_garbage_bin_t){
-          .times_locked = 0
-        , .times_unlocked = 0
-        , .wires = {.first_free = sender_id_nil, .nfreed = 0}
-        , .table = {.assoc = NULL, .storage = NULL}
-        };
-    }
-    sched->consumer = sched->producer = 0;
-}
-
-static inline wiring_garbage_bin_t *
-wiring_read_lock(wiring_t *wiring)
-{
-    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
-
-}
-
-/* Callers are responsible for serializing wiring_read_lock() and
- * wiring_read_unlock() calls.
- *
- * The expectation is that each na_context_t belongs to one
- * thread, and only na_context_t "methods" call _lock/_unlock.
- */
-static inline void
-wiring_read_unlock(wiring_t *wiring, wiring_garbage_bin_t *bin)
-{
-    ++bin->times_unlocked;
-
-    assert(bin->times_unlocked <= bin->times_locked);
-
-    if (bin->times_unlocked != bin->times_locked)
-        return;
-
-    if (bin->wires.nfreed == 0 && bin->table.storage == NULL)
-        return;
-
-    if (bin->table.storage != NULL) {
-    }
-}
-
-#endif
 
 struct _wiring {
     wiring_lock_bundle_t lkb;
@@ -180,6 +139,7 @@ struct _wiring {
     wiring_request_t *req_outst_head;    // ucp_request_t's outstanding
     wiring_request_t **req_outst_tailp;  // ucp_request_ts outstanding
     wiring_request_t *req_free_head;     // ucp_request_t free list
+    wiring_garbage_schedule_t garbage_sched;
 };
 
 #define wire_id_nil (wire_id_t){.id = sender_id_nil}
@@ -203,9 +163,15 @@ void wiring_lock(wiring_t *);
 void wiring_unlock(wiring_t *);
 void wiring_assert_locked_impl(wiring_t *, const char *, int);
 
-#define wiring_assert_locked(_wiring)                       \
-do {                                                        \
-    wiring_assert_locked_impl(_wiring, __FILE__, __LINE__); \
+void wiring_ref_init(wiring_t *, wiring_ref_t *,
+    void (*reclaim)(wiring_ref_t *));
+
+#define wiring_assert_locked(wiring)                            \
+do {                                                            \
+    wiring_t *wal_wiring = (wiring);                            \
+    if (wal_wiring->lkb.assert_locked == NULL)                  \
+        break;                                                  \
+    wiring_assert_locked_impl(wal_wiring, __FILE__, __LINE__);  \
 } while (0)
 
 extern void * const wire_data_nil;
@@ -214,6 +180,58 @@ static inline bool
 wire_is_valid(wire_id_t wid)
 {
     return wid.id != sender_id_nil;
+}
+
+/* Callers are responsible for serializing wiring_ref_get() and
+ * wiring_ref_put() calls affecting the same `ref`.
+ */
+static inline void
+wiring_ref_get(wiring_t *wiring, wiring_ref_t *ref)
+{
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+    const uint64_t last = sched->epoch.last;
+
+    assert(!ref->busy);
+
+    ref->busy = true;
+
+    if (ref->epoch == last)
+        return;
+
+    ref->epoch = last;
+    atomic_fetch_add_explicit(&sched->work_available.next, 1,
+                              memory_order_release);
+}
+
+static inline void
+wiring_ref_put(wiring_t *wiring, wiring_ref_t *ref)
+{
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+    const uint64_t last = sched->epoch.last;
+
+    assert(ref->busy);
+
+    ref->busy = false;
+
+    if (ref->epoch == last)
+        return;
+
+    ref->epoch = last;
+    atomic_fetch_add_explicit(&sched->work_available.next, 1,
+                              memory_order_release);
+}
+
+static inline void
+wiring_ref_free(wiring_t *wiring, wiring_ref_t *ref)
+{
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+
+    assert(!ref->busy);
+
+    ref->epoch = UINT64_MAX;
+
+    atomic_fetch_add_explicit(&sched->work_available.next, 1,
+                              memory_order_release);
 }
 
 #endif /* _WIRES_H_ */

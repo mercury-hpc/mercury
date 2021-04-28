@@ -202,6 +202,8 @@ struct na_op_id {
         op_rxinfo_t rx;
         op_txinfo_t tx;
     } info;
+    wiring_ref_t ref;
+    na_ucx_class_t *nucl;
 };
 
 struct _na_ucx_context {
@@ -554,6 +556,7 @@ na_ucx_addr_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
     return memcmp(addr1->addr, addr2->addr, addr1->addrlen) == 0;
 }
 
+#if 0
 static void
 na_ucx_wiring_lock(wiring_t NA_UNUSED *wiring, void *arg)
 {
@@ -584,6 +587,7 @@ na_ucx_wiring_assert_locked(wiring_t NA_UNUSED *wiring, void *arg)
     }
     return true;
 }
+#endif
 
 static void *
 wire_accept_callback(wire_accept_info_t info, void *arg,
@@ -881,9 +885,9 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
 
     nuclass->lkb = (wiring_lock_bundle_t){
       .arg = &nuclass->wiring_api_lock
-    , .lock = na_ucx_wiring_lock
-    , .unlock = na_ucx_wiring_unlock
-    , .assert_locked = na_ucx_wiring_assert_locked
+    , .lock = NULL
+    , .unlock = NULL
+    , .assert_locked = NULL
     };
 
     nuclass->request_size = uctx_attrs.request_size;
@@ -1241,10 +1245,21 @@ na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
     return NA_SUCCESS;
 }
 
+static void
+op_ref_reclaim(wiring_ref_t *ref)
+{
+    na_op_id_t *op = (na_op_id_t *)((char *)ref - offsetof(na_op_id_t, ref));
+
+    hlog_fast(op_life, "%s: destroyed op %p", __func__, (void *)op);
+
+    header_free(op->nucl->request_size, alignof(*op), op);
+}
+
 static na_op_id_t *
 na_ucx_op_create(na_class_t NA_UNUSED *na_class)
 {
-    const na_ucx_class_t *nucl = na_ucx_class_const(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(na_class);
+    wiring_t *wiring = &nucl->context.wiring;
     na_op_id_t *id;
 
     id = header_alloc(nucl->request_size, alignof(*id), sizeof(*id));
@@ -1258,6 +1273,8 @@ na_ucx_op_create(na_class_t NA_UNUSED *na_class)
     hg_atomic_set32(&id->status, op_s_complete);
     id->completion_data.plugin_callback = op_id_release;
     id->completion_data.plugin_callback_args = id;
+    wiring_ref_init(wiring, &id->ref, op_ref_reclaim);
+    id->nucl = nucl;
 
     hlog_fast(op_life, "%s: created op %p", __func__, (void *)id);
 
@@ -1265,11 +1282,11 @@ na_ucx_op_create(na_class_t NA_UNUSED *na_class)
 }
 
 static na_return_t
-na_ucx_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *id)
+na_ucx_op_destroy(na_class_t *na_class, na_op_id_t *id)
 {
-    const na_ucx_class_t *nucl = na_ucx_class_const(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(na_class);
 
-    header_free(nucl->request_size, alignof(*id), id);
+    wiring_ref_free(&nucl->context.wiring, &id->ref);
 
     hlog_fast(op_life, "%s: destroyed op %p", __func__, (void *)id);
 
@@ -1286,6 +1303,7 @@ recv_callback(void *request, ucs_status_t status,
     , .tag = 0
     };
     na_op_id_t *op = request;
+    na_ucx_context_t *nuctx = op->na_ctx->plugin_context;
     struct na_cb_info *cbinfo = &op->completion_data.callback_info;
     struct na_cb_info_recv_unexpected *recv_unexpected =
         &cbinfo->info.recv_unexpected;
@@ -1305,7 +1323,6 @@ recv_callback(void *request, ucs_status_t status,
     }
 
     if (status == UCS_OK) {
-        na_ucx_context_t *nuctx = op->na_ctx->plugin_context;
         sender_id_t sender_id;
         const void * NA_DEBUG_LOG_USED buf = op->info.rx.buf;
         na_addr_t source;
@@ -1381,6 +1398,8 @@ recv_callback(void *request, ucs_status_t status,
         cbinfo->ret = NA_PROTOCOL_ERROR;
     }
 
+    wiring_ref_put(&nuctx->wiring, &op->ref);
+
     na_cb_completion_add(op->na_ctx, &op->completion_data);
     hlog_fast(op_life_noisy, "%s: enqueued completion for op %p",
         __func__, (void *)op);
@@ -1390,6 +1409,7 @@ static void
 send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
 {
     na_op_id_t *op = request;
+    na_ucx_context_t *nuctx = op->na_ctx->plugin_context;
     struct na_cb_info *cbinfo = &op->completion_data.callback_info;
     const op_status_t expected_status =
         (status == UCS_ERR_CANCELED) ? op_s_canceled : op_s_underway;
@@ -1414,6 +1434,7 @@ send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
     else
         cbinfo->ret = NA_PROTOCOL_ERROR;
 
+    wiring_ref_put(&nuctx->wiring, &op->ref);
     na_cb_completion_add(op->na_ctx, &op->completion_data);
 
     hlog_fast(op_life_noisy,
@@ -1509,7 +1530,7 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
 }
 
 static void
-tagged_send(const void *buf, na_size_t buf_size,
+tagged_send(na_ucx_context_t *nuctx, const void *buf, na_size_t buf_size,
     ucp_ep_h ep, sender_id_t sender_id, uint64_t tag, na_op_id_t *op)
 {
     const ucp_request_param_t tx_params = {
@@ -1565,6 +1586,7 @@ tagged_send(const void *buf, na_size_t buf_size,
         get_octet(buf, buf_size, 60), get_octet(buf, buf_size, 61),
         get_octet(buf, buf_size, 62), get_octet(buf, buf_size, 63));
 
+    wiring_ref_get(&nuctx->wiring, &op->ref);
     request = ucp_tag_send_nbx(ep, buf, buf_size, tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
@@ -1573,12 +1595,14 @@ tagged_send(const void *buf, na_size_t buf_size,
         hlog_fast(op_life, "%s: failed op %p", __func__, (void *)op);
         hg_atomic_set32(&op->status, op_s_complete);
         op->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
+        wiring_ref_put(&nuctx->wiring, &op->ref);
         na_cb_completion_add(op->na_ctx, &op->completion_data);
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
         hlog_fast(op_life, "%s: completed op %p", __func__, (void *)op);
         hg_atomic_set32(&op->status, op_s_complete);
         op->completion_data.callback_info.ret = NA_SUCCESS;
+        wiring_ref_put(&nuctx->wiring, &op->ref);
         na_cb_completion_add(op->na_ctx, &op->completion_data);
     } else {
         hlog_fast(op_life, "%s: posted op %p", __func__, (void *)op);
@@ -1595,12 +1619,13 @@ wire_event_callback(wire_event_info_t info, void *arg)
 
     hlog_fast(wire_life, "%s: enter cache %p", __func__, (void *)cache);
 
-    assert(info.event == wire_ev_estd || info.event == wire_ev_died);
+    assert(info.event == wire_ev_estd || info.event == wire_ev_closed ||
+           info.event == wire_ev_reclaimed);
 
     wiring_assert_locked(&cache->ctx->wiring);
 
-    if (info.event == wire_ev_died) {
-        hlog_fast(wire_life, "%s: died", __func__);
+    if (info.event == wire_ev_closed) {
+        hlog_fast(wire_life, "%s: closed", __func__);
 
         aseq = address_wire_write_begin(cache);
         cache->sender_id = sender_id_nil;
@@ -1610,8 +1635,15 @@ wire_event_callback(wire_event_info_t info, void *arg)
 
         assert(HG_QUEUE_IS_EMPTY(&cache->deferrals));
 
-        /* This address is not taking part in wireup any longer,
-         * so decrease the reference count that we increased when
+        return true;
+    }
+
+    if (info.event == wire_ev_reclaimed) {
+        hlog_fast(wire_life, "%s: reclaimed", __func__);
+
+        /* No in-flight wireup operations will reference this wire
+         * so it has been reclaimed.  Now the address can be reclaimed
+         * safely, too.  Decrease the reference count that we increased when
          * either the local host initiated wireup or the local host
          * accepted the remote's wireup request.
          */
@@ -1635,7 +1667,8 @@ wire_event_callback(wire_event_info_t info, void *arg)
         if (hg_atomic_cas32(&op->status, op_s_deferred, op_s_underway)) {
             hlog_fast(op_life,
                 "%s:     op %p deferred -> underway", __func__, (void *)op);
-            tagged_send(buf, buf_size, info.ep, info.sender_id, tag, op);
+            tagged_send(cache->ctx, buf, buf_size, info.ep, info.sender_id,
+                tag, op);
         } else if (hg_atomic_cas32(&op->status, op_s_canceled,
                                                    op_s_complete)) {
             hlog_fast(op_life,
@@ -1742,7 +1775,7 @@ na_ucx_msg_send(na_context_t *context,
      */
     if (cached_ctx == context->plugin_context && sender_id != sender_id_nil) {
         op_id->status = op_s_underway;
-        tagged_send(buf, buf_size, ep, sender_id, tag, op_id);
+        tagged_send(cached_ctx, buf, buf_size, ep, sender_id, tag, op_id);
         return NA_SUCCESS;
     }
 
@@ -1785,7 +1818,7 @@ na_ucx_msg_send(na_context_t *context,
         }
     } else if ((sender_id = cache->sender_id) != sender_id_nil) {
         op_id->status = op_s_underway;
-        tagged_send(buf, buf_size, ep, sender_id, tag, op_id);
+        tagged_send(cached_ctx, buf, buf_size, ep, sender_id, tag, op_id);
         ret = NA_SUCCESS;
         goto release;
     } else if (!wire_is_valid(cache->wire_id)) {
@@ -1873,12 +1906,15 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
     op->completion_data.callback = callback;
     op->completion_data.callback_info.arg = arg;
 
+    wiring_ref_get(&nuctx->wiring, &op->ref);
+
     request =
         ucp_tag_recv_nbx(worker, buf, buf_size, tag, tagmask, &recv_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         NA_LOG_ERROR("ucp_tag_recv_nbx: %s",
             ucs_status_string(UCS_PTR_STATUS(request)));
+        wiring_ref_put(&nuctx->wiring, &op->ref);
         hlog_fast(op_life, "%s: failed op %p", __func__, (void *)op);
         op->status = op_s_complete;
         return NA_PROTOCOL_ERROR;
