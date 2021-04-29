@@ -960,16 +960,15 @@ na_ucx_context_destroy(na_class_t *nacl, void *context)
 
     hlog_fast(ctx, "%s: enter context %p", __func__, (void *)context);
 
-    if (context != &nucl->context ||
-        !hg_atomic_cas32(&nucl->ncontexts, 1, 0))
+    if (context != &nucl->context || !hg_atomic_cas32(&nucl->ncontexts, 1, 0))
         return NA_NOENTRY;
 
     return NA_SUCCESS;
 }
 
 static na_return_t
-na_ucx_addr_to_string(na_class_t NA_UNUSED *nacl, char *buf,
-    na_size_t *buflenp, na_addr_t _addr)
+na_ucx_addr_to_string(na_class_t NA_UNUSED *nacl,
+    char *buf, na_size_t *buflenp, na_addr_t _addr)
 {
     na_ucx_addr_t *addr = _addr;
     const char *delim = "";
@@ -1093,7 +1092,8 @@ addr_incref(na_ucx_addr_t *addr, const char *reason)
 }
 
 static NA_INLINE na_return_t
-na_ucx_addr_dup(na_class_t NA_UNUSED *nacl, na_addr_t _addr, na_addr_t *new_addr)
+na_ucx_addr_dup(na_class_t NA_UNUSED *nacl, na_addr_t _addr,
+    na_addr_t *new_addr)
 {
     na_ucx_addr_t *addr = _addr;
 
@@ -1934,12 +1934,12 @@ na_ucx_msg_recv_unexpected(na_class_t NA_UNUSED *nacl, na_context_t *ctx,
 }
 
 static na_return_t
-na_ucx_msg_send_expected(na_class_t NA_UNUSED *nacl, na_context_t *context,
+na_ucx_msg_send_expected(na_class_t NA_UNUSED *nacl, na_context_t *ctx,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    return na_ucx_msg_send(context, callback, arg,
+    return na_ucx_msg_send(ctx, callback, arg,
         buf, buf_size, dest_addr, tag, NA_CB_SEND_EXPECTED, op_id);
 }
 
@@ -2073,8 +2073,8 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *nacl, na_mem_handle_t mh)
 }
 
 static na_return_t
-na_ucx_mem_handle_serialize(na_class_t *nacl, void *_buf,
-    na_size_t buf_size, na_mem_handle_t mh)
+na_ucx_mem_handle_serialize(na_class_t *nacl, void *_buf, na_size_t buf_size,
+    na_mem_handle_t mh)
 {
     const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
     char *buf = _buf;
@@ -2123,8 +2123,8 @@ na_ucx_mem_handle_serialize(na_class_t *nacl, void *_buf,
 }
 
 static na_return_t
-na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *nacl,
-    na_mem_handle_t *mhp, const void *buf, na_size_t buf_size)
+na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *nacl, na_mem_handle_t *mhp,
+    const void *buf, na_size_t buf_size)
 {
     na_mem_handle_header_t hdr;
     na_mem_handle_t mh;
