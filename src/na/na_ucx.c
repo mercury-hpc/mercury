@@ -209,7 +209,7 @@ struct na_op_id {
 struct _na_ucx_context {
     wiring_t wiring;
     ucp_worker_h worker;
-    na_class_t *na_class;
+    na_class_t *nacl;
     na_ucx_addr_t *self;
     /* (app.tag, app.tagmask) describes the tag space reserved for
      * the application.  The wireup tag space is excluded.
@@ -471,15 +471,15 @@ op_id_release(void *arg)
 }
 
 static inline const na_ucx_class_t *
-na_ucx_class_const(const na_class_t *na_class)
+na_ucx_class_const(const na_class_t *nacl)
 {
-    return na_class->plugin_class;
+    return nacl->plugin_class;
 }
 
 static inline na_ucx_class_t *
-na_ucx_class(na_class_t *na_class)
+na_ucx_class(na_class_t *nacl)
 {
-    return na_class->plugin_class;
+    return nacl->plugin_class;
 }
 
 /* Return `x` rotated by 4 bits plus `x`.  Think of the result of
@@ -619,7 +619,7 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
     };
     memcpy(&taddr->addr[0], info.addr, info.addrlen);
 
-    addr = na_ucx_addr_dedup(nuctx->na_class, taddr);
+    addr = na_ucx_addr_dedup(nuctx->nacl, taddr);
 
     /* If we found a duplicate, then update its wire ID, sender ID, and
      * endpoint.
@@ -671,7 +671,7 @@ na_ucx_context_teardown(na_ucx_context_t *nctx, na_class_t *nacl)
 }
 
 static na_return_t
-na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
+na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
 {
     ucp_worker_params_t worker_params = {
       .field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE
@@ -686,7 +686,7 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
     size_t uaddrlen;
     ucs_status_t status;
 
-    status = ucp_worker_create(nuclass->uctx, &worker_params, &nctx->worker);
+    status = ucp_worker_create(nucl->uctx, &worker_params, &nctx->worker);
 
     if (status != UCS_OK)
         return NA_PROTOCOL_ERROR;   // arbitrary choice
@@ -724,11 +724,11 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
 
     nctx->self = self;
 
-    if (!hg_hash_table_insert(nuclass->addr_tbl, self, self))
+    if (!hg_hash_table_insert(nucl->addr_tbl, self, self))
         goto cleanup_self;
 
-    if (!wiring_init(&nctx->wiring, nctx->worker, nuclass->request_size,
-            &nuclass->lkb, wire_accept_callback, nctx))
+    if (!wiring_init(&nctx->wiring, nctx->worker, nucl->request_size,
+            &nucl->lkb, wire_accept_callback, nctx))
         goto cleanup_tbl;
 
     wireup_app_tag(&nctx->wiring, &nctx->app.tag, &nctx->app.tagmask);
@@ -745,7 +745,7 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
     ucp_worker_release_address(nctx->worker, uaddr);
     return NA_SUCCESS;
 cleanup_tbl:
-    hg_hash_table_remove(nuclass->addr_tbl, self);
+    hg_hash_table_remove(nucl->addr_tbl, self);
 cleanup_self:
     free(self);
 cleanup_addr:
@@ -756,17 +756,17 @@ cleanup_worker:
 }
 
 static na_addr_t
-na_ucx_addr_dedup(na_class_t *na_class, na_addr_t addr)
+na_ucx_addr_dedup(na_class_t *nacl, na_addr_t addr)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
     na_ucx_addr_t *dupaddr;
 
-    dupaddr = hg_hash_table_lookup(nuclass->addr_tbl, addr);
+    dupaddr = hg_hash_table_lookup(nucl->addr_tbl, addr);
     if (dupaddr != HG_HASH_TABLE_NULL) {
         free(addr);
-        (void)na_ucx_addr_dup(na_class, dupaddr, &addr);
+        (void)na_ucx_addr_dup(nacl, dupaddr, &addr);
     } else {
-        hg_hash_table_insert(nuclass->addr_tbl, addr, addr);
+        hg_hash_table_insert(nucl->addr_tbl, addr, addr);
     }
     return addr;
 }
@@ -807,7 +807,7 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
     , .features = UCP_FEATURE_TAG | UCP_FEATURE_RMA
     , .request_size = sizeof(rxdesc_t)
     };
-    na_ucx_class_t *nuclass;
+    na_ucx_class_t *nucl;
     ucp_config_t *config;
     na_return_t ret;
     ucs_status_t status;
@@ -828,22 +828,22 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
 
     hlog_fast(nacl, "%s: enter nacl %p", __func__, (void *)nacl);
 
-    nuclass = malloc(sizeof(*nuclass));
+    nucl = malloc(sizeof(*nucl));
 
-    if (nuclass == NULL) {
+    if (nucl == NULL) {
         NA_LOG_ERROR("Could not allocate NA private data class");
         return NA_NOMEM;
     }
 
-    *nuclass = (na_ucx_class_t){.uctx = NULL, .addr_tbl = NULL};
+    *nucl = (na_ucx_class_t){.uctx = NULL, .addr_tbl = NULL};
 
-    nacl->plugin_class = nuclass;
+    nacl->plugin_class = nucl;
 
-    nuclass->addr_tbl = hg_hash_table_new(na_ucx_addr_hash, na_ucx_addr_equal);
+    nucl->addr_tbl = hg_hash_table_new(na_ucx_addr_hash, na_ucx_addr_equal);
 
-    if (nuclass->addr_tbl == NULL) {
+    if (nucl->addr_tbl == NULL) {
         NA_LOG_ERROR("Could not allocate address table");
-        free(nuclass);
+        free(nucl);
         ret = NA_NOMEM;
         goto cleanup;
     }
@@ -856,7 +856,7 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
 
     // TBD create a rxpool_ucp_init() that augments global_params with
     // the necessary request_size?
-    status = ucp_init(&global_params, config, &nuclass->uctx);
+    status = ucp_init(&global_params, config, &nucl->uctx);
 
     ucp_config_release(config);
 
@@ -867,7 +867,7 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
     }
 
     uctx_attrs.field_mask = UCP_ATTR_FIELD_REQUEST_SIZE;
-    status = ucp_context_query(nuclass->uctx, &uctx_attrs);
+    status = ucp_context_query(nucl->uctx, &uctx_attrs);
 
     if (status != UCS_OK) {
         NA_LOG_ERROR("ucp_context_query: %s", ucs_status_string(status));
@@ -881,27 +881,27 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
         goto cleanup;
     }
 
-    nuclass->wiring_api_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER;
+    nucl->wiring_api_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER;
 
-    nuclass->lkb = (wiring_lock_bundle_t){
-      .arg = &nuclass->wiring_api_lock
+    nucl->lkb = (wiring_lock_bundle_t){
+      .arg = &nucl->wiring_api_lock
     , .lock = NULL
     , .unlock = NULL
     , .assert_locked = NULL
     };
 
-    nuclass->request_size = uctx_attrs.request_size;
+    nucl->request_size = uctx_attrs.request_size;
 
-    if ((ret = na_ucx_context_init(&nuclass->context, nuclass)) != NA_SUCCESS) {
+    if ((ret = na_ucx_context_init(&nucl->context, nucl)) != NA_SUCCESS) {
         NA_LOG_ERROR("Could not initialize UCX context");
         goto cleanup;
     }
 
-    assert(nuclass == na_ucx_class(nacl));
+    assert(nucl == na_ucx_class(nacl));
 #if 0
-    nuclass->no_wait = no_wait;
-    nuclass->context_max = context_max;
-    nuclass->contexts = 0;
+    nucl->no_wait = no_wait;
+    nucl->context_max = context_max;
+    nucl->contexts = 0;
 #endif
     return NA_SUCCESS;
 cleanup:
@@ -912,39 +912,39 @@ cleanup:
 static na_return_t
 na_ucx_finalize(na_class_t *nacl)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(nacl);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
 
     hlog_fast(nacl, "%s: enter nacl %p", __func__, (void *)nacl);
 
-    if (nuclass == NULL)
+    if (nucl == NULL)
         return NA_SUCCESS;
 
-    na_ucx_context_teardown(&nuclass->context, nacl);
+    na_ucx_context_teardown(&nucl->context, nacl);
 
     nacl->plugin_class = NULL;
-    if (nuclass->uctx != NULL) {
-        ucp_cleanup(nuclass->uctx);
-        nuclass->uctx = NULL;
+    if (nucl->uctx != NULL) {
+        ucp_cleanup(nucl->uctx);
+        nucl->uctx = NULL;
     }
-    if (nuclass->addr_tbl != NULL) {
-        hg_hash_table_free(nuclass->addr_tbl);
-        nuclass->addr_tbl = NULL;
+    if (nucl->addr_tbl != NULL) {
+        hg_hash_table_free(nucl->addr_tbl);
+        nucl->addr_tbl = NULL;
     }
-    free(nuclass);
+    free(nucl);
     return NA_SUCCESS;
 }
 
 static na_return_t
-na_ucx_context_create(na_class_t *na_class, void **context, na_uint8_t id)
+na_ucx_context_create(na_class_t *nacl, void **context, na_uint8_t id)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
-    na_ucx_context_t *ctx = &nuclass->context;
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
+    na_ucx_context_t *ctx = &nucl->context;
 
-    if (!hg_atomic_cas32(&nuclass->ncontexts, 0, 1))
+    if (!hg_atomic_cas32(&nucl->ncontexts, 0, 1))
         return NA_NOMEM;
 
     ctx->id = id;
-    ctx->na_class = na_class;
+    ctx->nacl = nacl;
 
     *context = ctx;
 
@@ -954,21 +954,21 @@ na_ucx_context_create(na_class_t *na_class, void **context, na_uint8_t id)
 }
 
 static na_return_t
-na_ucx_context_destroy(na_class_t *na_class, void *context)
+na_ucx_context_destroy(na_class_t *nacl, void *context)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
 
     hlog_fast(ctx, "%s: enter context %p", __func__, (void *)context);
 
-    if (context != &nuclass->context ||
-        !hg_atomic_cas32(&nuclass->ncontexts, 1, 0))
+    if (context != &nucl->context ||
+        !hg_atomic_cas32(&nucl->ncontexts, 1, 0))
         return NA_NOENTRY;
 
     return NA_SUCCESS;
 }
 
 static na_return_t
-na_ucx_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
+na_ucx_addr_to_string(na_class_t NA_UNUSED *nacl, char *buf,
     na_size_t *buflenp, na_addr_t _addr)
 {
     na_ucx_addr_t *addr = _addr;
@@ -1007,8 +1007,7 @@ na_ucx_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
 }
 
 static na_return_t
-na_ucx_addr_lookup(na_class_t *na_class, const char * const name,
-    na_addr_t *addrp)
+na_ucx_addr_lookup(na_class_t *nacl, const char * const name, na_addr_t *addrp)
 {
     na_ucx_addr_t *addr;
     size_t buflen = 0, noctets;
@@ -1057,7 +1056,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char * const name,
 
 out:
     addr->addrlen = buflen;
-    *addrp = na_ucx_addr_dedup(na_class, addr);
+    *addrp = na_ucx_addr_dedup(nacl, addr);
 
     hlog_fast(addr, "exit lookup %s, %p, refs %" PRId32, name,
         (void *)*addrp, (*addrp)->refcount);
@@ -1066,8 +1065,7 @@ out:
 }
 
 static na_bool_t
-na_ucx_addr_cmp(
-    na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
+na_ucx_addr_cmp(na_class_t NA_UNUSED *nacl, na_addr_t addr1, na_addr_t addr2)
 {
     return addr1 == addr2;
 }
@@ -1095,8 +1093,7 @@ addr_incref(na_ucx_addr_t *addr, const char *reason)
 }
 
 static NA_INLINE na_return_t
-na_ucx_addr_dup(
-    na_class_t NA_UNUSED *na_class, na_addr_t _addr, na_addr_t *new_addr)
+na_ucx_addr_dup(na_class_t NA_UNUSED *nacl, na_addr_t _addr, na_addr_t *new_addr)
 {
     na_ucx_addr_t *addr = _addr;
 
@@ -1108,11 +1105,11 @@ na_ucx_addr_dup(
 }
 
 static NA_INLINE na_return_t
-na_ucx_addr_free(na_class_t *na_class, na_addr_t _addr)
+na_ucx_addr_free(na_class_t *nacl, na_addr_t _addr)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
     na_ucx_addr_t *addr = _addr;
-    wiring_t *wiring = &nuclass->context.wiring;
+    wiring_t *wiring = &nucl->context.wiring;
     int NA_DEBUG_USED found;
 
     hlog_fast(addr, "freeing addr %p", (void *)_addr);
@@ -1122,9 +1119,9 @@ na_ucx_addr_free(na_class_t *na_class, na_addr_t _addr)
 
     hlog_fast(addr, "destroying addr %p", (void *)_addr);
 
-    assert(addr != nuclass->context.self);
+    assert(addr != nucl->context.self);
 
-    found = hg_hash_table_remove(nuclass->addr_tbl, addr);
+    found = hg_hash_table_remove(nucl->addr_tbl, addr);
 
     assert(found);
 
@@ -1139,29 +1136,29 @@ na_ucx_addr_free(na_class_t *na_class, na_addr_t _addr)
 }
 
 static NA_INLINE na_return_t
-na_ucx_addr_set_remove(na_class_t NA_UNUSED *na_class, na_addr_t NA_UNUSED addr)
+na_ucx_addr_set_remove(na_class_t NA_UNUSED *nacl, na_addr_t NA_UNUSED addr)
 {
     return NA_SUCCESS;
 }
 
 static NA_INLINE na_return_t
-na_ucx_addr_self(na_class_t *na_class, na_addr_t *addrp)
+na_ucx_addr_self(na_class_t *nacl, na_addr_t *addrp)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
 
-    return na_ucx_addr_dup(na_class, nuclass->context.self, addrp);
+    return na_ucx_addr_dup(nacl, nucl->context.self, addrp);
 }
 
 static NA_INLINE na_bool_t
-na_ucx_addr_is_self(na_class_t *na_class, na_addr_t addr)
+na_ucx_addr_is_self(na_class_t *nacl, na_addr_t addr)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
 
-    return nuclass->context.self == addr;
+    return nucl->context.self == addr;
 }
 
 static NA_INLINE na_size_t
-na_ucx_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t _addr)
+na_ucx_addr_get_serialize_size(na_class_t NA_UNUSED *nacl, na_addr_t _addr)
 {
     na_ucx_addr_t *addr = _addr;
 
@@ -1169,7 +1166,7 @@ na_ucx_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t _addr)
 }
 
 static na_return_t
-na_ucx_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
+na_ucx_addr_serialize(na_class_t NA_UNUSED *nacl, void *buf,
     na_size_t buf_size, na_addr_t _addr)
 {
     na_ucx_addr_t *addr = _addr;
@@ -1195,7 +1192,7 @@ na_ucx_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
 }
 
 static na_return_t
-na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
+na_ucx_addr_deserialize(na_class_t *nacl, na_addr_t *addrp, const void *buf,
     na_size_t buf_size)
 {
     uint16_t addrlen;
@@ -1238,7 +1235,7 @@ na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
     };
     memcpy(&addr->addr[0], (const char *)buf + sizeof(addrlen), addrlen);
 
-    *addrp = na_ucx_addr_dedup(na_class, addr);
+    *addrp = na_ucx_addr_dedup(nacl, addr);
 
     hlog_fast(addr, "exit deserialize buf %p addr %p", buf, (void *)*addrp);
 
@@ -1256,9 +1253,9 @@ op_ref_reclaim(wiring_ref_t *ref)
 }
 
 static na_op_id_t *
-na_ucx_op_create(na_class_t NA_UNUSED *na_class)
+na_ucx_op_create(na_class_t NA_UNUSED *nacl)
 {
-    na_ucx_class_t *nucl = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
     wiring_t *wiring = &nucl->context.wiring;
     na_op_id_t *id;
 
@@ -1282,9 +1279,9 @@ na_ucx_op_create(na_class_t NA_UNUSED *na_class)
 }
 
 static na_return_t
-na_ucx_op_destroy(na_class_t *na_class, na_op_id_t *id)
+na_ucx_op_destroy(na_class_t *nacl, na_op_id_t *id)
 {
-    na_ucx_class_t *nucl = na_ucx_class(na_class);
+    na_ucx_class_t *nucl = na_ucx_class(nacl);
 
     wiring_ref_free(&nucl->context.wiring, &id->ref);
 
@@ -1442,7 +1439,7 @@ send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
 }
 
 static na_return_t
-na_ucx_progress(na_class_t NA_UNUSED *na_class,
+na_ucx_progress(na_class_t NA_UNUSED *nacl,
     na_context_t *context, unsigned int timeout_ms)
 {
     na_ucx_context_t *nuctx = context->plugin_context;
@@ -1490,7 +1487,7 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
 }
 
 static na_return_t
-na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_ucx_cancel(na_class_t NA_UNUSED *nacl, na_context_t *context,
     na_op_id_t *op)
 {
     na_ucx_context_t *ctx = context->plugin_context;
@@ -1647,7 +1644,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
          * either the local host initiated wireup or the local host
          * accepted the remote's wireup request.
          */
-        (void)na_ucx_addr_free(cache->ctx->na_class, owner);
+        (void)na_ucx_addr_free(cache->ctx->nacl, owner);
 
         return true;
     }
@@ -1867,7 +1864,7 @@ release:
 }
 
 static na_return_t
-na_ucx_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
+na_ucx_msg_send_unexpected(na_class_t NA_UNUSED *nacl,
     na_context_t *context, na_cb_t callback, void *arg,
     const void *buf, na_size_t buf_size, void NA_UNUSED *plugin_data,
     na_addr_t dest_addr, na_uint8_t NA_UNUSED dest_id, na_tag_t tag,
@@ -1926,7 +1923,7 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
 }
 
 static na_return_t
-na_ucx_msg_recv_unexpected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
+na_ucx_msg_recv_unexpected(na_class_t NA_UNUSED *nacl, na_context_t *ctx,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_op_id_t *op_id)
 {
@@ -1937,7 +1934,7 @@ na_ucx_msg_recv_unexpected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
 }
 
 static na_return_t
-na_ucx_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_ucx_msg_send_expected(na_class_t NA_UNUSED *nacl, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
@@ -1947,7 +1944,7 @@ na_ucx_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 }
 
 static na_return_t
-na_ucx_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
+na_ucx_msg_recv_expected(na_class_t NA_UNUSED *nacl, na_context_t *ctx,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t NA_UNUSED source_addr,
     na_uint8_t NA_UNUSED source_id, na_tag_t proto_tag, na_op_id_t *op_id)
@@ -1964,7 +1961,7 @@ na_ucx_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
 }
 
 static na_return_t
-na_ucx_mem_handle_create(na_class_t *na_class, void *buf,
+na_ucx_mem_handle_create(na_class_t *nacl, void *buf,
     na_size_t buf_size, unsigned long NA_UNUSED flags, na_mem_handle_t *mhp)
 {
     const ucp_mem_map_params_t params = {
@@ -1973,7 +1970,7 @@ na_ucx_mem_handle_create(na_class_t *na_class, void *buf,
     , .address = buf
     , .length = buf_size
     };
-    const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
+    const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
     ucs_status_t status;
     na_mem_handle_t mh;
 
@@ -1984,7 +1981,7 @@ na_ucx_mem_handle_create(na_class_t *na_class, void *buf,
 
     hg_atomic_set32(&mh->kind, na_ucx_mem_local);
     mh->handle.local.buf = buf;
-    status = ucp_mem_map(nuclass->uctx, &params, &mh->handle.local.mh);
+    status = ucp_mem_map(nucl->uctx, &params, &mh->handle.local.mh);
 
     if (status != UCS_OK) {
         free(mh);
@@ -1996,16 +1993,16 @@ na_ucx_mem_handle_create(na_class_t *na_class, void *buf,
 }
 
 static na_return_t
-na_ucx_mem_handle_free(na_class_t *na_class, na_mem_handle_t mh)
+na_ucx_mem_handle_free(na_class_t *nacl, na_mem_handle_t mh)
 {
-    const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
+    const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
     ucs_status_t status;
 
     hlog_fast(memh, "%s: memory handle %p", __func__, (void *)mh);
 
     switch (hg_atomic_get32(&mh->kind)) {
     case na_ucx_mem_local:
-        status = ucp_mem_unmap(nuclass->uctx, mh->handle.local.mh);
+        status = ucp_mem_unmap(nucl->uctx, mh->handle.local.mh);
         free(mh);
         return (status == UCS_OK) ? NA_SUCCESS : NA_PROTOCOL_ERROR;
     case na_ucx_mem_unpacked_remote:
@@ -2022,14 +2019,14 @@ na_ucx_mem_handle_free(na_class_t *na_class, na_mem_handle_t mh)
 }
 
 static NA_INLINE na_size_t
-na_ucx_mem_handle_get_max_segments(const na_class_t NA_UNUSED *na_class)
+na_ucx_mem_handle_get_max_segments(const na_class_t NA_UNUSED *nacl)
 {
     return 1;
 }
 
 /* This is a no-op for UCP but we do check the arguments. */
 static na_return_t
-na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
+na_ucx_mem_register(na_class_t NA_UNUSED *nacl, na_mem_handle_t mh)
 {
     hlog_fast(memh, "%s: memory handle %p", __func__, (void *)mh);
 
@@ -2042,7 +2039,7 @@ na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 
 /* This is a no-op for UCP but we do check the arguments. */
 static na_return_t
-na_ucx_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mh)
+na_ucx_mem_deregister(na_class_t NA_UNUSED *nacl, na_mem_handle_t NA_UNUSED mh)
 {
     hlog_fast(memh, "%s: memory handle %p", __func__, (void *)mh);
 
@@ -2050,9 +2047,9 @@ na_ucx_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED 
 }
 
 static NA_INLINE na_size_t
-na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
+na_ucx_mem_handle_get_serialize_size(na_class_t *nacl, na_mem_handle_t mh)
 {
-    const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
+    const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
     ucs_status_t status;
     void *ptr;
     const size_t hdrlen = sizeof(na_mem_handle_header_t);
@@ -2064,7 +2061,7 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
         return 0;   // ok for error?
     }
 
-    status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &ptr, &paylen);
+    status = ucp_rkey_pack(nucl->uctx, mh->handle.local.mh, &ptr, &paylen);
     if (status != UCS_OK)
         return 0;   // ok for error?
     ucp_rkey_buffer_release(ptr);
@@ -2076,10 +2073,10 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
 }
 
 static na_return_t
-na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
+na_ucx_mem_handle_serialize(na_class_t *nacl, void *_buf,
     na_size_t buf_size, na_mem_handle_t mh)
 {
-    const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
+    const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
     char *buf = _buf;
     void *rkey;
     const size_t hdrlen = sizeof(na_mem_handle_header_t);
@@ -2099,7 +2096,7 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
         return NA_INVALID_ARG;
     }
 
-    status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &rkey, &paylen);
+    status = ucp_rkey_pack(nucl->uctx, mh->handle.local.mh, &rkey, &paylen);
     if (status != UCS_OK) {
         NA_LOG_ERROR("ucp_rkey_pack failed %s", ucs_status_string(status));
         return NA_PROTOCOL_ERROR;   // ok for error?
@@ -2126,7 +2123,7 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
 }
 
 static na_return_t
-na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
+na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *nacl,
     na_mem_handle_t *mhp, const void *buf, na_size_t buf_size)
 {
     na_mem_handle_header_t hdr;
@@ -2300,7 +2297,7 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
 }
 
 static na_return_t
-na_ucx_put(na_class_t NA_UNUSED *na_class, na_context_t *ctx, na_cb_t callback,
+na_ucx_put(na_class_t NA_UNUSED *nacl, na_context_t *ctx, na_cb_t callback,
     void *arg, na_mem_handle_t local_mh, na_offset_t local_offset,
     na_mem_handle_t remote_mh, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
@@ -2311,7 +2308,7 @@ na_ucx_put(na_class_t NA_UNUSED *na_class, na_context_t *ctx, na_cb_t callback,
 }
 
 static na_return_t
-na_ucx_get(na_class_t NA_UNUSED *na_class, na_context_t *ctx, na_cb_t callback,
+na_ucx_get(na_class_t NA_UNUSED *nacl, na_context_t *ctx, na_cb_t callback,
     void *arg, na_mem_handle_t local_mh, na_offset_t local_offset,
     na_mem_handle_t remote_mh, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
@@ -2323,13 +2320,13 @@ na_ucx_get(na_class_t NA_UNUSED *na_class, na_context_t *ctx, na_cb_t callback,
 
 #if 0
 static NA_INLINE int
-na_ucx_poll_get_fd(na_class_t *na_class, na_context_t *ctx)
+na_ucx_poll_get_fd(na_class_t *nacl, na_context_t *ctx)
 {
     return NA_PROTOCOL_ERROR;
 }
 
 static NA_INLINE na_bool_t
-na_ucx_poll_try_wait(na_class_t *na_class, na_context_t *ctx)
+na_ucx_poll_try_wait(na_class_t *nacl, na_context_t *ctx)
 {
     return NA_PROTOCOL_ERROR;
 }
@@ -2348,11 +2345,11 @@ na_ucx_msg_get_max_size(const na_class_t NA_UNUSED *cl)
 }
 
 static NA_INLINE na_tag_t
-na_ucx_msg_get_max_tag(const na_class_t *na_class)
+na_ucx_msg_get_max_tag(const na_class_t *nacl)
 {
-    const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
+    const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
     const na_tag_t maxtag =
-        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuclass->context.msg.tagmask));
+        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nucl->context.msg.tagmask));
 
     assert(maxtag >= 3);
 
