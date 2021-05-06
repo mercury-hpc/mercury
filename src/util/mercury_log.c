@@ -20,8 +20,10 @@
 /****************/
 
 /* Make sure it executes first */
-#ifndef HG_UTIL_CONSTRUCTOR_1
+#ifdef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
 #    define HG_UTIL_CONSTRUCTOR_1 __attribute__((constructor(101)))
+#else
+#    define HG_UTIL_CONSTRUCTOR_1
 #endif
 
 /* Max number of subsystems that can be tracked */
@@ -114,6 +116,11 @@ static FILE *hg_log_streams_g[HG_LOG_LEVEL_MAX] = {NULL};
 #ifdef HG_UTIL_HAS_LOG_COLOR
 static const char *const hg_log_colors_g[] = {
     "", HG_LOG_RED, HG_LOG_MAGENTA, HG_LOG_BLUE, HG_LOG_BLUE, ""};
+#endif
+
+/* Init */
+#ifndef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
+static hg_util_bool_t hg_log_init_g = HG_UTIL_FALSE;
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -360,6 +367,14 @@ hg_log_set_stream_error(FILE *stream)
 void
 hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 {
+#ifndef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
+    if (!hg_log_init_g) {
+        /* Set here to prevent infinite loop */
+        hg_log_init_g = HG_UTIL_TRUE;
+        hg_log_init();
+    }
+#endif
+
     hg_log_outlet_update_level(hg_log_outlet);
 
     /* Inherit debug log if not set and parent has one */
