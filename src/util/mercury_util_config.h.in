@@ -90,6 +90,12 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 #    define HG_UTIL_PRIVATE
 #endif
 
+/* Define if has __attribute__((constructor)) */
+#cmakedefine HG_UTIL_HAS_ATTR_CONSTRUCTOR
+
+/* Define if has __attribute__((constructor(priority))) */
+#cmakedefine HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
+
 /* Define if has 'clock_gettime()' */
 #cmakedefine HG_UTIL_HAS_CLOCK_GETTIME
 
