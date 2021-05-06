@@ -15,9 +15,28 @@ set(MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
+include(CheckCSourceCompiles)
 include(CheckIncludeFiles)
 include(CheckSymbolExists)
 include(CheckTypeSize)
+
+# Check for __attribute__((constructor))
+check_c_source_compiles(
+  "
+  static void test_constructor(void) __attribute__((constructor));
+  int main(void) {return 0;}
+  "
+  HG_UTIL_HAS_ATTR_CONSTRUCTOR
+)
+
+# Check for __attribute__((constructor(priority)))
+check_c_source_compiles(
+  "
+  static void test_constructor(void) __attribute__((constructor(101)));
+  int main(void) {return 0;}
+  "
+  HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
+)
 
 # Threads
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
