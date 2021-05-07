@@ -79,8 +79,16 @@ rxpool_init(rxpool_t *rxpool, ucp_worker_h worker,
 {
     size_t i;
     const size_t buflen = (*next_buflen)(0);
-    const size_t qlen = roundup_to_power_of_2(nelts);
+    /* The queue needs to have capacity for all `nelts` elements,
+     * but `hg_atomic_queue_alloc(qlen)` has room for only `qlen - 1`,
+     * so round up `nelts + 1` instead of `nelts` to get the smallest
+     * `qlen` that's large enough.
+     */
+    const size_t qlen = roundup_to_power_of_2(nelts + 1);
     assert(buflen > 0);
+
+    hlog_fast(rxpool, "%s: %zu elements, max queue length %zu", __func__,
+        nelts, qlen);
 
     TAILQ_INIT(&rxpool->alldesc);
 
