@@ -209,6 +209,20 @@ rxpool_destroy(rxpool_t *rxpool)
     free(rxpool);
 }
 
+static rxdesc_t *
+rxpool_pop(rxpool_t *rxpool)
+{
+    rxdesc_t *rdesc = hg_atomic_queue_pop_sc(rxpool->complete);
+
+    if (rdesc == NULL)
+        return NULL;
+
+    hlog_fast(rxpool, "%s: popped completed desc %p tag %" PRIx64, __func__,
+        (void *)rdesc, rdesc->sender_tag);
+
+    return rdesc;
+}
+
 /* Return the next completed Rx descriptor in the pool or NULL if
  * there are none.  The caller should check the error status
  * before trying to use the Rx buffer.
@@ -218,7 +232,7 @@ rxpool_destroy(rxpool_t *rxpool)
 rxdesc_t *
 rxpool_next(rxpool_t *rxpool)
 {
-    rxdesc_t *rdesc = hg_atomic_queue_pop_sc(rxpool->complete);
+    rxdesc_t *rdesc = rxpool_pop(rxpool);
 
     if (rdesc == NULL)
         return NULL;
