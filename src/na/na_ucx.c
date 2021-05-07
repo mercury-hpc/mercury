@@ -2270,6 +2270,8 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     op->completion_data.callback = callback;
     op->completion_data.callback_info.arg = arg;
 
+    wiring_ref_get(&nuctx->wiring, &op->ref);
+
     if (put) {
         request = ucp_put_nbx(
             ep, local_mh->handle.local.buf + local_offset, length,
@@ -2287,12 +2289,14 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
             ucs_status_string(UCS_PTR_STATUS(request)));
         hlog_fast(op_life, "%s: failed %s op %p", __func__, put ? "put" : "get",
             (void *)op);
+        wiring_ref_put(&nuctx->wiring, &op->ref);
         hg_atomic_set32(&op->status, op_s_complete);
         return NA_PROTOCOL_ERROR;
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
         hlog_fast(op_life, "%s: completed %s op %p", __func__,
             put ? "put" : "get", (void *)op);
+        wiring_ref_put(&nuctx->wiring, &op->ref);
         hg_atomic_set32(&op->status, op_s_complete);
         op->completion_data.callback_info.ret = NA_SUCCESS;
         na_cb_completion_add(op->na_ctx, &op->completion_data);
