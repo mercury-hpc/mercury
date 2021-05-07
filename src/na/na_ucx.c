@@ -1320,20 +1320,25 @@ recv_callback(void *request, ucs_status_t status,
     }
 
     if (status == UCS_OK) {
-        sender_id_t sender_id;
+        wire_id_t wire_id;
         const void * NA_DEBUG_LOG_USED buf = op->info.rx.buf;
+        void *data;
         na_addr_t source;
 
         // XXX use standard endianness
-        memcpy(&sender_id, op->info.rx.buf, sizeof(sender_id));
+        memcpy(&wire_id.id, op->info.rx.buf, sizeof(wire_id.id));
 
-        if (cbinfo->type == NA_CB_RECV_UNEXPECTED) {
-            source = wire_get_data(&nuctx->wiring,
-                                   (wire_id_t){.id = sender_id});
-            assert(source != wire_data_nil);
-            addr_incref(source, "sender address");
-        } else
+        if (cbinfo->type != NA_CB_RECV_UNEXPECTED) {
             source = NULL;
+        } else if ((data = wire_get_data(&nuctx->wiring, wire_id)) ==
+                 wire_data_nil) {
+            *recv_unexpected = recv_unexpected_errinfo;
+            cbinfo->ret = NA_PROTOCOL_ERROR;
+            goto out;
+        } else {
+            source = data;
+            addr_incref(source, "sender address");
+        }
 
         assert((info->sender_tag & nuctx->app.tagmask) == nuctx->app.tag);
 
@@ -1395,6 +1400,7 @@ recv_callback(void *request, ucs_status_t status,
         cbinfo->ret = NA_PROTOCOL_ERROR;
     }
 
+out:
     wiring_ref_put(&nuctx->wiring, &op->ref);
 
     na_cb_completion_add(op->na_ctx, &op->completion_data);
@@ -1624,12 +1630,6 @@ wire_event_callback(wire_event_info_t info, void *arg)
     if (info.event == wire_ev_closed) {
         hlog_fast(wire_life, "%s: closed", __func__);
 
-        aseq = address_wire_write_begin(cache);
-        cache->sender_id = sender_id_nil;
-        cache->wire_id = wire_id_nil;
-        cache->ep = NULL;
-        address_wire_write_end(aseq);
-
         assert(HG_QUEUE_IS_EMPTY(&cache->deferrals));
 
         return true;
@@ -1639,7 +1639,15 @@ wire_event_callback(wire_event_info_t info, void *arg)
         hlog_fast(wire_life, "%s: reclaimed", __func__);
 
         /* No in-flight wireup operations will reference this wire
-         * so it has been reclaimed.  Now the address can be reclaimed
+         * so it has been reclaimed.
+         */
+        aseq = address_wire_write_begin(cache);
+        cache->sender_id = sender_id_nil;
+        cache->wire_id = wire_id_nil;
+        cache->ep = NULL;
+        address_wire_write_end(aseq);
+
+        /* Now the address can be reclaimed
          * safely, too.  Decrease the reference count that we increased when
          * either the local host initiated wireup or the local host
          * accepted the remote's wireup request.
