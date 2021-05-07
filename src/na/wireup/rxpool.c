@@ -241,9 +241,6 @@ rxpool_next(rxpool_t *rxpool)
         rdesc->status != UCS_ERR_CANCELED)
         return rdesc;
 
-    /* TBD Loop here while a truncated or cancelled descriptor is at
-     * the head of the FIFO.
-     */
     return rxpool_next_slow(rxpool, rdesc);
 }
 
@@ -293,6 +290,9 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
 
     nbuflen = rxpool->initbuflen;
 
+    /* Loop while a truncated or cancelled descriptor is at
+     * the head of the FIFO.
+     */
     do {
         size_t buflen = head->buflen;
         void * const buf = head->buf, *nbuf;
@@ -320,7 +320,7 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
 
         rxdesc_setup(rxpool, nbuf, nbuflen, head);
         free(buf);
-    } while ((head = hg_atomic_queue_pop_sc(rxpool->complete)) != NULL &&
+    } while ((head = rxpool_pop(rxpool)) != NULL &&
              (head->status == UCS_ERR_MESSAGE_TRUNCATED ||
               head->status == UCS_ERR_CANCELED));
 
