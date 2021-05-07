@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <err.h>
+#include <inttypes.h> /* PRI?64 */
 #include <limits.h> /* UINT_MAX */
 #include <pthread.h>
 #include <stdalign.h> /* alignof */
@@ -36,7 +37,11 @@ rxdesc_callback(void *request, ucs_status_t status,
         break;
     }
 
-    hg_atomic_queue_push(rxpool->complete, desc);
+    hlog_fast(rxpool, "%s: pushing completed desc %p tag %" PRIx64, __func__,
+        (void *)desc, desc->sender_tag);
+
+    if (hg_atomic_queue_push(rxpool->complete, desc) == HG_UTIL_FAIL)
+        errx(EXIT_FAILURE, "%s: push failed", __func__);
 }
 
 rxpool_t *
