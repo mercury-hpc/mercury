@@ -986,8 +986,10 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     , .request = wiring_free_request_get(wiring)
     };
 
-    if (tx_params.request == NULL)
-        goto free_wire;
+    if (tx_params.request == NULL) {
+        hlog_fast(wireup_tx, "%s: failed, no requests free", __func__);
+        goto close_wire;
+    }
 
     request = ucp_tag_send_nbx(ep, msg, msglen, tag, &tx_params);
 
@@ -995,7 +997,7 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
         hlog_fast(wireup_tx, "%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
         wiring_free_request_put(wiring, tx_params.request);
-        goto free_wire;
+        goto close_wire;
     } else if (request == UCS_OK) {
         hlog_fast(wireup_tx, "%s: sent immediately", __func__);
         wiring_free_request_put(wiring, tx_params.request);
@@ -1013,6 +1015,10 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
             &w->cb, &w->cb_arg);
     }
     return w;
+close_wire:
+    wiring_close_wire(wiring, w);
+    free(msg);
+    return NULL;
 free_wire:
     wiring_free_put(st, id);
 free_msg:
