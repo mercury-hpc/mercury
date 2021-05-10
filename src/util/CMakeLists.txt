@@ -182,52 +182,10 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.c
 )
 
-#----------------------------------------------------------------------------
-# Libraries
-#----------------------------------------------------------------------------
-
-# Clean up system include path first
-foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
-  if(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES)
-    list(REMOVE_ITEM MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES ${item})
-  endif()
-endforeach()
-
-# UTIL
-add_library(mercury_util ${MERCURY_UTIL_SRCS})
-if(THREADS_HAVE_PTHREAD_ARG)
-  target_compile_options(mercury_util PUBLIC "${CMAKE_THREAD_LIBS_INIT}")
-endif()
-target_include_directories(mercury_util
-  PUBLIC "$<BUILD_INTERFACE:${MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES}>"
-          $<INSTALL_INTERFACE:${MERCURY_INSTALL_INCLUDE_INTERFACE}>
-)
-target_include_directories(mercury_util
-  SYSTEM PUBLIC ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-)
-target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
-mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(mercury_util)
-endif()
-
-#---------------------------------------------------------------------------
-# Add Target(s) to CMake Install
-#---------------------------------------------------------------------------
-install(
-  TARGETS
-    mercury_util
-  EXPORT
-    ${MERCURY_EXPORTED_TARGETS}
-  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
-)
-
-#-----------------------------------------------------------------------------
-# Specify project header files to be installed
-#-----------------------------------------------------------------------------
-set(MERCURY_HEADERS
+#------------------------------------------------------------------------------
+# Specify project public header files to be installed
+#------------------------------------------------------------------------------
+set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
@@ -249,18 +207,61 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.h
-  )
+)
 
-#-----------------------------------------------------------------------------
-# Add file(s) to CMake Install
-#-----------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# Specify project private header files
+#------------------------------------------------------------------------------
+set(MERCURY_UTIL_PRIVATE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
+)
+
+#----------------------------------------------------------------------------
+# Libraries
+#----------------------------------------------------------------------------
+
+# Clean up system include path first
+foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
+  if(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES)
+    list(REMOVE_ITEM MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES ${item})
+  endif()
+endforeach()
+
+# UTIL
+add_library(mercury_util ${MERCURY_UTIL_SRCS}
+  ${MERCURY_UTIL_PRIVATE_HEADERS} ${MERCURY_UTIL_PUBLIC_HEADERS}
+)
+if(THREADS_HAVE_PTHREAD_ARG)
+  target_compile_options(mercury_util PUBLIC "${CMAKE_THREAD_LIBS_INIT}")
+endif()
+target_include_directories(mercury_util
+  PUBLIC "$<BUILD_INTERFACE:${MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES}>"
+          $<INSTALL_INTERFACE:${MERCURY_INSTALL_INCLUDE_INTERFACE}>
+)
+target_include_directories(mercury_util
+  SYSTEM PUBLIC ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
+)
+target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
+mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(mercury_util)
+endif()
+set_target_properties(mercury_util PROPERTIES
+  PUBLIC_HEADER "${MERCURY_UTIL_PUBLIC_HEADERS}"
+)
+
+#---------------------------------------------------------------------------
+# Add Target(s) to CMake Install
+#---------------------------------------------------------------------------
 install(
-  FILES
-    ${MERCURY_HEADERS}
-  DESTINATION
-    ${MERCURY_INSTALL_INCLUDE_DIR}
-  COMPONENT
-    headers
+  TARGETS
+    mercury_util
+  EXPORT
+    ${MERCURY_EXPORTED_TARGETS}
+  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${MERCURY_INSTALL_INCLUDE_DIR}
+  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
 )
 
 #------------------------------------------------------------------------------
