@@ -31,7 +31,7 @@ HLOG_OUTLET_SHORT_DEFN(wireup_noisy, all);
 HLOG_OUTLET_SHORT_DEFN(wireup, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wireup_rx, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wireup_tx, wireup_noisy);
-HLOG_OUTLET_SHORT_DEFN(wireup_ep, wireup_noisy);
+HLOG_OUTLET_SHORT_DEFN(wireup_ep, wireup_tx);
 HLOG_OUTLET_SHORT_DEFN(wireup_req, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wire_state, wireup);
 HLOG_OUTLET_SHORT_DEFN(reclaim, wireup);
