@@ -985,7 +985,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
         st->thead[which].first = st->thead[which].last = sender_id_nil;
 
     wiring->rxpool = rxpool_create(worker, next_buflen, request_size,
-        TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
+        TAG_CHNL_WIREUP, TAG_CHNL_MASK, 32);
 
     if (wiring->rxpool == NULL) {
         wiring_teardown(wiring, true);
