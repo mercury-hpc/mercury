@@ -330,6 +330,7 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     w->msglen = 0;
     wiring_expiration_remove(st, w);
     wiring_expiration_put(st, w, getnanos() + timeout_interval);
+    /* TBD assert that we're not on the wakeup queue already? */
     wiring_wakeup_put(st, w, getnanos() + keepalive_interval);
 
     return &state[WIRE_S_LIVE];
@@ -389,10 +390,14 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
     const sender_id_t id = wire_index(st, w);
 
+    hlog_fast(wireup_tx, "%s: enter", __func__);
+
     wiring_assert_locked(wiring);
 
-    if ((msg = zalloc(sizeof(*msg))) == NULL)
+    if ((msg = zalloc(sizeof(*msg))) == NULL) {
+        hlog_fast(wireup_tx, "%s: failed, no memory", __func__);
         return w->state;
+    }
 
     *msg = (wireup_msg_t){.op = OP_KEEPALIVE, .sender_id = id, .addrlen = 0};
 
@@ -416,9 +421,11 @@ send_keepalive(wiring_t *wiring, wire_t *w)
         wiring_free_request_put(wiring, tx_params.request);
         free(msg);
     } else if (request == UCS_OK) {
+        hlog_fast(wireup_tx, "%s: sent immediately", __func__);
         wiring_free_request_put(wiring, tx_params.request);
         free(msg);
     } else {
+        hlog_fast(wireup_tx, "%s: enqueued send", __func__);
         wiring_outst_request_put(wiring, tx_params.request);
     }
 
@@ -931,14 +938,22 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
 
     wiring_assert_locked(wiring);
 
-    if ((msg = zalloc(msglen)) == NULL)
+    if ((msg = zalloc(msglen)) == NULL) {
+        hlog_fast(wireup_tx, "%s: failed, no memory", __func__);
         return NULL;
+    }
 
     if ((id = wiring_free_get(st)) == sender_id_nil) {
-        if ((st = wiring_enlarge(wiring)) == NULL)
+        if ((st = wiring_enlarge(wiring)) == NULL) {
+            hlog_fast(wireup, "%s.%d: failed, no free wire",
+                __func__, __LINE__);
             goto free_msg;
-        if ((id = wiring_free_get(st)) == sender_id_nil)
+        }
+        if ((id = wiring_free_get(st)) == sender_id_nil) {
+            hlog_fast(wireup, "%s.%d: failed, no free wire",
+                __func__, __LINE__);
             goto free_msg;
+        }
     }
 
     w = &st->wire[id];
@@ -976,9 +991,11 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
         wiring_free_request_put(wiring, tx_params.request);
         goto free_wire;
     } else if (request == UCS_OK) {
+        hlog_fast(wireup_tx, "%s: sent immediately", __func__);
         wiring_free_request_put(wiring, tx_params.request);
         free(msg);
     } else {
+        hlog_fast(wireup_tx, "%s: enqueued send", __func__);
         wiring_outst_request_put(wiring, tx_params.request);
     }
 
@@ -1152,12 +1169,13 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
     const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
     wireup_op_t op;
 
+    hlog_fast(wireup_rx, "%s: %zu-byte message", __func__, buflen);
+
     assert((sender_tag & TAG_CHNL_MASK) == TAG_CHNL_WIREUP);
 
     if (buflen < hdrlen) {
-        hlog_fast(wireup_rx,
-            "%s: dropping %zu-byte message, shorter than header", __func__,
-            buflen);
+        hlog_fast(wireup_rx, "%s: message shorter than header, dropping",
+            __func__);
         return;
     }
 
@@ -1177,9 +1195,7 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
     }
 
     if (buflen < offsetof(wireup_msg_t, addr[0]) + msg->addrlen) {
-        hlog_fast(wireup_rx,
-            "%s: %zu-byte message, address truncated, dropping",
-            __func__, buflen);
+        hlog_fast(wireup_rx, "%s: address truncated, dropping", __func__);
         return;
     }
 
@@ -1214,13 +1230,12 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
        (const void *)&msg->addr[0], msg->addrlen);
 
     if (w == NULL) {
-        hlog_fast(wireup_rx,
-            "%s: failed to prepare & send wireup response", __func__);
+        hlog_fast(wireup_rx, "%s: failed to prepare & send wireup response",
+            __func__);
         return;
     }
 
-    hlog_fast(wireup_rx,
-        "%s: my sender id %td, remote sender id %" PRIuSENDER, __func__,
+    hlog_fast(wireup_rx, "%s: wire %td, sender id %" PRIuSENDER, __func__,
         w - &wiring->storage->wire[0], w->id);
 }
 
