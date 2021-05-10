@@ -1338,7 +1338,6 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
     if (!wireup_send(wiring, w)) {
-        wiring_assert_locked(wiring);
         w->state = &state[WIRE_S_CLOSING];
         wiring_close_wire(wiring, w);
         return (wire_id_t){.id = sender_id_nil};
