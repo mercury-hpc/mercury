@@ -35,6 +35,8 @@ HLOG_OUTLET_SHORT_DEFN(wireup_ep, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wireup_req, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wire_state, wireup);
 HLOG_OUTLET_SHORT_DEFN(reclaim, wireup);
+HLOG_OUTLET_SHORT_DEFN(timeout_noisy, all);
+HLOG_OUTLET_SHORT_DEFN(timeout, timeout_noisy);
 
 static char wire_no_data;
 void * const wire_data_nil = &wire_no_data;
@@ -268,8 +270,12 @@ wireup_wakeup_transition(wiring_t *wiring, uint64_t now)
     wiring_assert_locked(wiring);
 
     while ((w = wiring_wakeup_peek(st)) != NULL) {
-        if (w->tlink[timo_wakeup].due > now)
+        if (w->tlink[timo_wakeup].due > now) {
+            hlog_fast(timeout_noisy,
+                "%s: stop at wire %td due in %" PRIu64 "ns", __func__,
+                w - &st->wire[0], w->tlink[timo_wakeup].due - now);
             break;
+        }
         wiring_wakeup_remove(st, w);
         hlog_fast(wire_state, "%s: wire %td woke", __func__, w - &st->wire[0]);
         wireup_transition(wiring, w, (*w->state->wakeup)(wiring, w));
