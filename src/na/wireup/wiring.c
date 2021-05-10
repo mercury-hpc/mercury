@@ -80,7 +80,8 @@ static void wiring_free_request_put(wiring_t *, wiring_request_t *);
 static bool wiring_requests_check_status(wiring_t *);
 static void wiring_requests_discard(wiring_t *);
 static void wiring_garbage_init(wiring_garbage_schedule_t *);
-static void wiring_reclaim(wiring_t *);
+static bool wiring_reclaim(wiring_t *, bool);
+static void wiring_closing_put(wiring_t *, sender_id_t);
 
 static wiring_ref_t reclaimed_bin_sentinel;
 
@@ -302,20 +303,17 @@ next_buflen(size_t buflen)
 }
 
 static void
-wiring_close_wire(wiring_t *wiring, wire_t *w)
+wiring_finalize_wire(wiring_t *wiring, wire_t *w)
 {
-    wstorage_t *st = wiring->storage;
-    sender_id_t id = wire_index(st, w);
     wireup_msg_t *msg;
     ucp_ep_h ep;
 
-    wiring_assert_locked(wiring);
-
-    assert(id < st->nwires);
-
-    wiring->assoc[id] = NULL;
+    /* w->msg will not be NULL if `w` made the ->CLOSED transition
+     * while a transmission was pending.
+     */
     if ((msg = w->msg) != NULL) {
         w->msg = NULL;
+        w->msglen = 0;
         free(msg);
     }
     if ((ep = w->ep) != NULL) {
@@ -326,8 +324,10 @@ wiring_close_wire(wiring_t *wiring, wire_t *w)
         , .request = wiring_free_request_get(wiring)
         };
 
-        if (close_params.request == NULL)
-            goto out;
+        if (close_params.request == NULL) {
+            // TBD count/log non-critical error
+            return;
+        }
 
         w->ep = NULL;
         request = ucp_ep_close_nbx(ep, &close_params);
@@ -346,12 +346,24 @@ wiring_close_wire(wiring_t *wiring, wire_t *w)
                 __func__, (void *)request);
         }
     }
-out:
+}
+
+static void
+wiring_close_wire(wiring_t *wiring, wire_t *w)
+{
+    wstorage_t *st = wiring->storage;
+    sender_id_t id = wire_index(st, w);
+
+    wiring_assert_locked(wiring);
+
+    assert(id < st->nwires);
+
+    wiring->assoc[id] = NULL;   /* TBD move to _finalize_wire? */
+
     w->id = sender_id_nil;
-    w->msglen = 0;
     wiring_expiration_remove(st, w);
     wiring_wakeup_remove(st, w);
-    wiring_free_put(st, id);
+    wiring_closing_put(wiring, id);
 }
 
 static void
@@ -728,6 +740,10 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     while (wiring_requests_check_status(wiring))
         (void)ucp_worker_progress(wiring->worker);
 
+    // no outstanding ops should hold onto garbage.
+    if (!wiring_reclaim(wiring, true))
+        hlog_fast(reclaim, "%s: could not reclaim everything", __func__);
+
     wiring_requests_discard(wiring);
 
     free(st);
@@ -965,6 +981,8 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     }
     wiring->storage = st;
     wiring->assoc = assoc;
+    wiring->once.last = UINT64_MAX;
+    wiring->once.longest_interval = 0;
 
     st->nwires = nwires;
 
@@ -1016,6 +1034,32 @@ wiring_create(ucp_worker_h worker, size_t request_size,
     return wiring;
 }
 
+static void
+wiring_garbage_add(wiring_t *wiring, wstorage_t *storage, void **assoc)
+{
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+    uint64_t last;
+    wiring_garbage_bin_t *bin;
+
+    wiring_assert_locked(wiring);
+
+    hlog_fast(reclaim, "%s: adding storage %p assoc %p", __func__,
+        (void *)storage, (void *)assoc);
+
+    while ((last = sched->epoch.last) - sched->epoch.first == NELTS(sched->bin))
+        wiring_reclaim(wiring, false);
+
+    bin = &sched->bin[last];
+
+    assert(bin->assoc == NULL && bin->storage == NULL);
+    bin->storage = storage;
+    bin->assoc = assoc;
+    sched->epoch.last = last + 1;
+
+    atomic_fetch_add_explicit(&sched->work_available.next, 1,
+                              memory_order_release);
+}
+
 static wstorage_t *
 wiring_enlarge(wiring_t *wiring)
 {
@@ -1063,8 +1107,7 @@ wiring_enlarge(wiring_t *wiring)
     wiring->assoc = nassoc;
     wiring->storage = nst;
 
-    free(oassoc);
-    free(ost);
+    wiring_garbage_add(wiring, ost, oassoc);
 
     return nst;
 }
@@ -1432,34 +1475,48 @@ wireup_once(wiring_t *wiring)
 {
     rxpool_t *rxpool = wiring->rxpool;
     rxdesc_t *rdesc;
-    uint64_t now = getnanos();
+    uint64_t now = getnanos(), ival;
 
     wiring_assert_locked(wiring);
 
-    wireup_expire_transition(wiring, now);
+    ival = (now < wiring->once.last) ? 0 : now - wiring->once.last;
+
+    if (ival > wiring->once.longest_interval) {
+        hlog_fast(timeout, "%s: longest wireup_once() interval, "
+            "%" PRIu64 " -> %" PRIu64,
+            __func__, wiring->once.longest_interval, ival);
+        wiring->once.longest_interval = ival;
+    }
+
+    wiring->once.last = now;
+
     wireup_wakeup_transition(wiring, now);
 
-    if ((rdesc = rxpool_next(rxpool)) == NULL)
-        return 0;
+    rdesc = rxpool_next(rxpool);
+
+    if (rdesc != NULL) {
+        if (rdesc->status != UCS_OK) {
+            hlog_fast(wireup_rx, "%s: receive error, %s, exiting.",
+                __func__, ucs_status_string(rdesc->status));
+            return -1;
+        }
+
+        hlog_fast(wireup_rx,
+            "%s: received %zu-byte message tagged %" PRIu64 ", processing...",
+            __func__, rdesc->rxlen, rdesc->sender_tag);
+        wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
+
+        rxdesc_release(rxpool, rdesc);
+    }
+
+    wireup_expire_transition(wiring, getnanos());
 
     /* Reclaim requests for any transmissions / endpoint closures. */
     (void)wiring_requests_check_status(wiring);
 
-    wiring_reclaim(wiring);
+    wiring_reclaim(wiring, false);
 
-    if (rdesc->status != UCS_OK) {
-        hlog_fast(wireup_rx, "%s: receive error, %s, exiting.",
-            __func__, ucs_status_string(rdesc->status));
-        return -1;
-    }
-
-    hlog_fast(wireup_rx,
-        "%s: received %zu-byte message tagged %" PRIu64 ", processing...",
-        __func__, rdesc->rxlen, rdesc->sender_tag);
-    wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
-
-    rxdesc_release(rxpool, rdesc);
-    return 1;
+    return (rdesc != NULL) ? 1 : 0;
 }
 
 /* Store at `maskp` and `atagp` the mask and tag that wireup reserves
@@ -1562,86 +1619,124 @@ wiring_ref_holds_epoch(const wiring_ref_t *ref, uint64_t epoch_in_past)
     return ref->busy;
 }
 
-static void
-wiring_reclaim(wiring_t *wiring)
+static bool
+wiring_reclaim_bin_for_epoch(wiring_t *wiring,
+    uint64_t epoch, uint64_t last_epoch)
 {
     wstorage_t *st = wiring->storage;
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
-    uint64_t epoch;
     const size_t nbins = NELTS(sched->bin);
+    wiring_garbage_bin_t *bin = &sched->bin[epoch % nbins];
+    sender_id_t id, next_id;
+    wiring_ref_t *ref;
+
+    while ((ref = bin->first_ref) != NULL) {
+        wiring_garbage_bin_t *newbin;
+
+        if (wiring_ref_holds_epoch(ref, epoch)) {
+            hlog_fast(reclaim, "%s: ref %p holds epoch %" PRIu64,
+                __func__, (void *)ref, epoch);
+            break;
+        }
+
+        if (!atomic_compare_exchange_weak(&bin->first_ref, &ref, ref->next))
+            continue;
+
+        newbin = &sched->bin[last_epoch % nbins];
+        if (ref->epoch == UINT64_MAX) {
+            hlog_fast(reclaim, "%s: reclaiming ref %p", __func__, (void *)ref);
+            wiring_ref_reclaim(ref);
+            continue;
+        }
+
+        hlog_fast(reclaim, "%s: moving ref %p, bin %td -> %td",
+            __func__, (void *)ref, bin - &sched->bin[0],
+            newbin - &sched->bin[0]);
+
+        ref->next = newbin->first_ref;
+        while (!atomic_compare_exchange_weak(&newbin->first_ref,
+                                             &ref->next, ref))
+            ;   // do nothing
+    }
+
+    if (ref != NULL)
+        return false;
+
+    for (id = bin->first_closed; id != sender_id_nil; id = next_id) {
+        wire_t *w = &st->wire[id];
+        next_id = st->wire[id].next;
+
+        hlog_fast(reclaim, "%s: finalizing wire %p", __func__, (void *)w);
+        wiring_finalize_wire(wiring, w);
+        wireup_transition(wiring, w, &state[WIRE_S_FREE]);
+
+        hlog_fast(reclaim, "%s: freeing wire %" PRIuSENDER, __func__, id);
+        wiring_free_put(st, id);
+    }
+    bin->first_closed = sender_id_nil;
+    if (bin->storage != NULL) {
+        hlog_fast(reclaim, "%s: reclaiming wstorage_t %p",
+            __func__, (void *)bin->storage);
+        free(bin->storage);
+        bin->storage = NULL;
+    }
+    if (bin->assoc != NULL) {
+        hlog_fast(reclaim, "%s: reclaiming assoc. data %p",
+            __func__, (void *)bin->assoc);
+        free(bin->assoc);
+        bin->assoc = NULL;
+    }
+
+    bin->first_ref = &reclaimed_bin_sentinel;
+    return true;
+}
+
+static void
+wiring_closing_put(wiring_t *wiring, sender_id_t id)
+{
+    wstorage_t *st = wiring->storage;
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+    const size_t nbins = NELTS(sched->bin);
+    const uint64_t epoch = sched->epoch.last;
+    wiring_garbage_bin_t *bin = &sched->bin[epoch % nbins];
+    wire_t *w = &st->wire[id];
+
+    wiring_assert_locked(wiring);
+
+    w->next = bin->first_closed;
+    bin->first_closed = id;
+}
+
+static bool
+wiring_reclaim(wiring_t *wiring, bool finalize)
+{
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+    uint64_t epoch;
     const uint64_t first = sched->epoch.first, last = sched->epoch.last;
+
+#if 0
+    if (sched->work_available.prev == sched->work_available.next && !finalize)
+        return true;
+    else
+        hlog_fast(reclaim, "%s: there is work to do", __func__);
+#endif
+
+    assert(sched->work_available.prev <= sched->work_available.next);
 
     wiring_assert_locked(wiring);
 
     for (epoch = first; epoch != last; epoch++) {
-        wiring_garbage_bin_t *bin = &sched->bin[epoch % nbins];
-        sender_id_t id, next_id;
-        wiring_ref_t *ref;
-
         hlog_fast(reclaim, "%s: reclaiming epoch %" PRIu64
             " in [%" PRIu64 ", %" PRIu64 "]", __func__, epoch, first, last);
 
-        while ((ref = bin->first_ref) != NULL) {
-            wiring_garbage_bin_t *newbin;
-
-            if (wiring_ref_holds_epoch(ref, epoch))
-                break;
-
-            if (!atomic_compare_exchange_weak(&bin->first_ref, &ref, ref->next))
-                continue;
-
-            newbin = &sched->bin[last % nbins];
-            if (ref->epoch == UINT64_MAX) {
-                hlog_fast(reclaim, "%s: reclaiming ref %p",
-                    __func__, (void *)ref);
-                wiring_ref_reclaim(ref);
-                continue;
-            }
-
-            hlog_fast(reclaim, "%s: moving ref %p, bin %td -> %td",
-                __func__, (void *)ref, bin - &sched->bin[0],
-                newbin - &sched->bin[0]);
-
-            ref->next = newbin->first_ref;
-            while (!atomic_compare_exchange_weak(&newbin->first_ref,
-                                                 &ref->next, ref))
-                ;   // do nothing
-        }
-
-        if (ref != NULL)
-            break;
-
-        for (id = bin->first_closed; id != sender_id_nil; id = next_id) {
-            wire_t *w = &st->wire[id];
-            next_id = st->wire[id].next;
-
-            /* w->msg will not be NULL if `w` made a ->CLOSED transition
-             * while a transmission was pending.
-             */
-            if (w->msg != NULL) {
-                free(w->msg);
-                w->msg = NULL;
-            }
-            wireup_transition(wiring, w, &state[WIRE_S_FREE]);
-
-            wiring_free_put(st, id);
-        }
-        bin->first_closed = sender_id_nil;
-        if (bin->storage != NULL) {
-            hlog_fast(reclaim, "%s: reclaiming wstorage_t %p",
-                __func__, (void *)bin->storage);
-            free(bin->storage);
-            bin->storage = NULL;
-        }
-        if (bin->assoc != NULL) {
-            hlog_fast(reclaim, "%s: reclaiming assoc. data %p",
-                __func__, (void *)bin->assoc);
-            free(bin->assoc);
-            bin->assoc = NULL;
-        }
-
-        bin->first_ref = &reclaimed_bin_sentinel;
+        wiring_reclaim_bin_for_epoch(wiring, epoch, last);
     }
     if (sched->epoch.first != epoch)
         sched->epoch.first = epoch;
+    sched->work_available.prev = sched->work_available.next;
+    if (!finalize)
+        return true;
+    if (sched->epoch.first < sched->epoch.last)
+        return false;
+    return wiring_reclaim_bin_for_epoch(wiring, epoch, epoch);
 }

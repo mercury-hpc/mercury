@@ -140,6 +140,10 @@ struct _wiring {
     wiring_request_t **req_outst_tailp;  // ucp_request_ts outstanding
     wiring_request_t *req_free_head;     // ucp_request_t free list
     wiring_garbage_schedule_t garbage_sched;
+    struct {
+        uint64_t last;
+        uint64_t longest_interval;
+    } once;
 };
 
 #define wire_id_nil (wire_id_t){.id = sender_id_nil}
