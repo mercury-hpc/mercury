@@ -369,7 +369,27 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
   set(CPACK_SOURCE_GENERATOR "TBZ2")
   set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE}-${MERCURY_VERSION_FULL})
-  set(CPACK_SOURCE_IGNORE_FILES "build/;.vscode/;.git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
+  set(CPACK_SOURCE_IGNORE_FILES
+    # Files specific to version control
+    "/\\\\.git/"
+    "/\\\\.git$"
+    "/\\\\.gitattributes$"
+    "/\\\\.github/"
+    "/\\\\.gitignore$"
+    "/\\\\.gitmodules$"
+
+    # IDE files
+    "/\\\\.vscode/"
+
+    # Build
+    "/build/"
+
+    # Temporary files
+    "\\\\.swp$"
+    "\\\\.#"
+    "/#"
+    "~$"
+  )
   set(CPACK_SOURCE_STRIP_FILES "")
   include(CPack)
 endif()
