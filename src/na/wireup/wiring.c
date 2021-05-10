@@ -416,8 +416,11 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     , .request = wiring_free_request_get(wiring)
     };
 
-    if (tx_params.request == NULL)
+    if (tx_params.request == NULL) {
+        hlog_fast(wireup_tx, "%s: failed, no requests free", __func__);
+        free(msg);
         return w->state;
+    }
 
     request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
