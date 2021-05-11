@@ -8,10 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "mercury_core_header.h"
 #include "mercury_error.h"
 
@@ -24,6 +20,9 @@
 #else
 #    include <arpa/inet.h>
 #endif
+
+#include <stdlib.h>
+#include <string.h>
 
 /****************/
 /* Local Macros */
@@ -211,7 +210,9 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
         HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, hg_uint16_t, op);
         HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
             HG_CHECKSUM_ERROR,
-            "checksum 0x%04" PRIx16 " does not match (expected 0x%04" PRIx16 "!)", header->hash.header, h_hash_header);
+            "checksum 0x%04" PRIx16 " does not match (expected 0x%04" PRIx16
+            "!)",
+            header->hash.header, h_hash_header);
     }
 #endif
 
@@ -260,7 +261,9 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
         HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, hg_uint16_t, op);
         HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
             HG_CHECKSUM_ERROR,
-            "checksum 0x%04" PRIx16 " does not match (expected 0x%04" PRIx16 "!)", header->hash.header, h_hash_header);
+            "checksum 0x%04" PRIx16 " does not match (expected 0x%04" PRIx16
+            "!)",
+            header->hash.header, h_hash_header);
     }
 #endif
 

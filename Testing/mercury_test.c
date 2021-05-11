@@ -16,9 +16,6 @@
 #    include <mercury_test_drc.h>
 #endif
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 /****************/

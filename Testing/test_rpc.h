@@ -14,6 +14,9 @@
 #include "mercury_macros.h"
 #include "mercury_proc_string.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+
 typedef struct {
     hg_uint64_t cookie;
 } rpc_handle_t;

@@ -13,7 +13,6 @@
 
 #include "mercury_types.h"
 
-#include <stdlib.h>
 #include <string.h>
 #ifdef HG_HAS_XDR
 #    include <limits.h>

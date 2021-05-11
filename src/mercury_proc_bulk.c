@@ -8,8 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>   /* PRIu64 */
-
 #include "mercury_proc_bulk.h"
 #include "mercury_bulk_proc.h"
 #include "mercury_error.h"
