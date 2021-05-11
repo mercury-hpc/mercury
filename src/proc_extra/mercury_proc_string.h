@@ -14,8 +14,6 @@
 #include "mercury_proc.h"
 #include "mercury_string_object.h"
 
-#include <string.h>
-
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/

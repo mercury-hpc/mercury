@@ -10,9 +10,6 @@
 
 #include "mercury_test.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
 /****************/
 /* Local Macros */
 /****************/

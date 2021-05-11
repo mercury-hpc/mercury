@@ -13,7 +13,9 @@
 
 #include "na_config.h"
 
-#include <mercury_log.h>
+#include "mercury_log.h"
+
+#include <inttypes.h>
 
 /* Default log outlet */
 extern NA_PRIVATE HG_LOG_OUTLET_DECL(na);

@@ -88,11 +88,6 @@ typedef hg_uint8_t hg_bool_t;
 #    define HG_FALLTHROUGH()
 #endif
 
-#if defined(__GNUC__)
-#   define HG_PRINTF_LIKE(_fmt,_firstarg)    \
-    __attribute__((format(printf, _fmt, _firstarg)))
-#endif
-
 /* Shared libraries */
 #cmakedefine HG_BUILD_SHARED_LIBS
 #ifdef HG_BUILD_SHARED_LIBS

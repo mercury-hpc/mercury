@@ -10,8 +10,6 @@
 
 #include "mercury_test_drc.h"
 
-#include <stdlib.h>
-
 extern void
 hg_test_parse_options(
     int argc, char *argv[], struct hg_test_info *hg_test_info);
