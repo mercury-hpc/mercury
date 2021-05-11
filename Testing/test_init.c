@@ -13,9 +13,6 @@
 #include "mercury_atomic.h"
 #include "mercury_thread.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
 #define HG_TEST_MAX_ADDR_LEN 256
 
 struct hg_test_lookup_arg {

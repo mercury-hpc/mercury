@@ -8,10 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-
 #include "mercury_test.h"
 
 /****************/
@@ -632,7 +628,8 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
         rpc_open_handle_m[i].cookie = i;
         rpc_open_in_struct.path = rpc_open_path;
         rpc_open_in_struct.handle = rpc_open_handle_m[i];
-        HG_TEST_LOG_DEBUG(" %d Forwarding rpc_open, op id: %" PRIu64 "...", i, rpc_id);
+        HG_TEST_LOG_DEBUG(
+            " %d Forwarding rpc_open, op id: %" PRIu64 "...", i, rpc_id);
         forward_cb_args_m[i].request = request_m[i];
         forward_cb_args_m[i].rpc_handle = &rpc_open_handle_m[i];
 again:

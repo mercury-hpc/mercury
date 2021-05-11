@@ -12,13 +12,14 @@
 #define MERCURY_ERROR_H
 
 #include "mercury_config.h"
+#include "mercury_log.h"
+
+#include <inttypes.h>
 
 /*****************/
 /* Public Macros */
 /*****************/
 
-/* Default error macro */
-#include <mercury_log.h>
 #define HG_LOG_ERROR(...)   HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_WARNING(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef HG_HAS_DEBUG

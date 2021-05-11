@@ -10,9 +10,6 @@
 
 #include "mercury_test.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
 extern hg_id_t hg_test_nested1_id_g;
 
 static hg_return_t

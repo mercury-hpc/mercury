@@ -525,7 +525,7 @@ NA_Op_create(na_class_t *na_class)
 
     ret = na_class->ops->op_create(na_class);
 
-    NA_LOG_SUBSYS_DEBUG(op, "Created new OP ID (%p)", ret);
+    NA_LOG_SUBSYS_DEBUG(op, "Created new OP ID (%p)", (void *) ret);
 
 done:
     return ret;
@@ -549,7 +549,7 @@ NA_Op_destroy(na_class_t *na_class, na_op_id_t *op_id)
     NA_CHECK_SUBSYS_ERROR(op, na_class->ops->op_destroy == NULL, done, ret,
         NA_OPNOTSUPPORTED, "op_destroy plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(op, "Destroying OP ID (%p)", op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Destroying OP ID (%p)", (void *) op_id);
 
     ret = na_class->ops->op_destroy(na_class, op_id);
 
@@ -593,7 +593,7 @@ NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 
     ret = na_class->ops->addr_lookup(na_class, short_name, addr);
 
-    NA_LOG_SUBSYS_DEBUG(addr, "Created new address (%p)", *addr);
+    NA_LOG_SUBSYS_DEBUG(addr, "Created new address (%p)", (void *) *addr);
 
 done:
     free(name_string);
@@ -617,7 +617,7 @@ NA_Addr_free(na_class_t *na_class, na_addr_t addr)
     NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_free == NULL, done, ret,
         NA_OPNOTSUPPORTED, "addr_free plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(addr, "Freeing address (%p)", addr);
+    NA_LOG_SUBSYS_DEBUG(addr, "Freeing address (%p)", (void *) addr);
 
     ret = na_class->ops->addr_free(na_class, addr);
 
@@ -664,7 +664,7 @@ NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 
     ret = na_class->ops->addr_self(na_class, addr);
 
-    NA_LOG_SUBSYS_DEBUG(addr, "Created new self address (%p)", *addr);
+    NA_LOG_SUBSYS_DEBUG(addr, "Created new self address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -690,7 +690,8 @@ NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr)
 
     ret = na_class->ops->addr_dup(na_class, addr, new_addr);
 
-    NA_LOG_SUBSYS_DEBUG(addr, "Dup'ed address (%p) to (%p)", addr, *new_addr);
+    NA_LOG_SUBSYS_DEBUG(
+        addr, "Dup'ed address (%p) to (%p)", (void *) addr, (void *) *new_addr);
 
 done:
     return ret;
@@ -718,7 +719,7 @@ NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
     ret = na_class->ops->addr_cmp(na_class, addr1, addr2);
 
     NA_LOG_SUBSYS_DEBUG(addr, "Compared addresses (%p) and (%p), result: %d",
-        addr1, addr2, ret);
+        (void *) addr1, (void *) addr2, ret);
 
 done:
     return ret;
@@ -772,8 +773,8 @@ NA_Addr_to_string(
     *buf_size = buf_size_used + plugin_buf_size;
 
     NA_LOG_SUBSYS_DEBUG(addr,
-        "Generated string (%s) from address (%p), buf_size=%zu", buf_ptr, addr,
-        *buf_size);
+        "Generated string (%s) from address (%p), buf_size=%zu", buf_ptr,
+        (void *) addr, *buf_size);
 
 done:
     return ret;
@@ -801,7 +802,7 @@ NA_Addr_serialize(
         ret, NA_OPNOTSUPPORTED,
         "addr_serialize plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(addr, "Serializing address (%p)", addr);
+    NA_LOG_SUBSYS_DEBUG(addr, "Serializing address (%p)", (void *) addr);
 
     ret = na_class->ops->addr_serialize(na_class, buf, buf_size, addr);
 
@@ -833,7 +834,8 @@ NA_Addr_deserialize(
 
     ret = na_class->ops->addr_deserialize(na_class, addr, buf, buf_size);
 
-    NA_LOG_SUBSYS_DEBUG(addr, "Deserialized into new address (%p)", *addr);
+    NA_LOG_SUBSYS_DEBUG(
+        addr, "Deserialized into new address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -978,7 +980,7 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
 
     NA_LOG_SUBSYS_DEBUG(mem,
         "Created new mem handle (%p), buf (%p), buf_size (%zu), flags (%lu)",
-        *mem_handle, buf, buf_size, flags);
+        (void *) *mem_handle, buf, buf_size, flags);
 
 done:
     return ret;
@@ -1010,7 +1012,7 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
 
     NA_LOG_SUBSYS_DEBUG(mem,
         "Created new mem handle (%p) with %zu segments, flags (%lu)",
-        *mem_handle, segment_count, flags);
+        (void *) *mem_handle, segment_count, flags);
 
 done:
     return ret;
@@ -1033,7 +1035,7 @@ NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
         ret, NA_OPNOTSUPPORTED,
         "mem_handle_free plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(mem, "Freeing mem handle (%p)", mem_handle);
+    NA_LOG_SUBSYS_DEBUG(mem, "Freeing mem handle (%p)", (void *) mem_handle);
 
     ret = na_class->ops->mem_handle_free(na_class, mem_handle);
 
@@ -1058,7 +1060,8 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         /* Optional */
         ret = na_class->ops->mem_register(na_class, mem_handle);
 
-        NA_LOG_SUBSYS_DEBUG(mem, "Registered mem handle (%p)", mem_handle);
+        NA_LOG_SUBSYS_DEBUG(
+            mem, "Registered mem handle (%p)", (void *) mem_handle);
     }
 
 done:
@@ -1108,7 +1111,8 @@ NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
         done, ret, NA_OPNOTSUPPORTED,
         "mem_handle_serialize plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(mem, "Serializing mem handle (%p)", mem_handle);
+    NA_LOG_SUBSYS_DEBUG(
+        mem, "Serializing mem handle (%p)", (void *) mem_handle);
 
     ret = na_class->ops->mem_handle_serialize(
         na_class, buf, buf_size, mem_handle);
@@ -1142,7 +1146,8 @@ NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
     ret = na_class->ops->mem_handle_deserialize(
         na_class, mem_handle, buf, buf_size);
 
-    NA_LOG_SUBSYS_DEBUG(mem, "Deserialized into mem handle (%p)", *mem_handle);
+    NA_LOG_SUBSYS_DEBUG(
+        mem, "Deserialized into mem handle (%p)", (void *) *mem_handle);
 
 done:
     return ret;
@@ -1173,7 +1178,7 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
     if (na_class->ops->na_poll_try_wait)
         return na_class->ops->na_poll_try_wait(na_class, context);
 
-    NA_LOG_SUBSYS_DEBUG(poll, "Safe to wait on context (%p)", context);
+    NA_LOG_SUBSYS_DEBUG(poll, "Safe to wait on context (%p)", (void *) context);
 
     return NA_TRUE;
 
@@ -1204,8 +1209,8 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     NA_CHECK_SUBSYS_ERROR(poll, na_class->ops->progress == NULL, done, ret,
         NA_OPNOTSUPPORTED, "progress plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(
-        poll, "Entering progress on context (%p) for %u ms", context, timeout);
+    NA_LOG_SUBSYS_DEBUG(poll, "Entering progress on context (%p) for %u ms",
+        (void *) context, timeout);
 
 #ifdef NA_HAS_MULTI_PROGRESS
     hg_atomic_incr32(&na_private_context->progressing);
@@ -1414,7 +1419,7 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
     NA_CHECK_SUBSYS_ERROR(op, na_class->ops->cancel == NULL, done, ret,
         NA_OPNOTSUPPORTED, "cancel plugin callback is not defined");
 
-    NA_LOG_SUBSYS_DEBUG(op, "Canceling op ID (%p)", op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling op ID (%p)", (void *) op_id);
 
     ret = na_class->ops->cancel(na_class, context, op_id);
 

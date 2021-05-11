@@ -8,10 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "mercury_core.h"
 #include "mercury_private.h"
 
@@ -32,6 +28,9 @@
 #ifdef NA_HAS_SM
 #    include <na_sm.h>
 #endif
+
+#include <stdlib.h>
+#include <string.h>
 
 /****************/
 /* Local Macros */
@@ -1208,8 +1207,8 @@ hg_core_context_destroy(struct hg_core_private_context *context)
 #ifdef HG_HAS_DEBUG
         hg_thread_spin_lock(&context->created_list_lock);
         HG_LIST_FOREACH (hg_core_handle, &context->created_list, created)
-            HG_LOG_DEBUG("Handle (%p) was not destroyed",
-	        (void *)hg_core_handle);
+            HG_LOG_DEBUG(
+                "Handle (%p) was not destroyed", (void *) hg_core_handle);
         hg_thread_spin_unlock(&context->created_list_lock);
 #endif
         ret = HG_BUSY;
@@ -2138,7 +2137,7 @@ hg_core_create(struct hg_core_private_context *context, na_class_t *na_class,
         HG_CHECK_HG_ERROR(error, ret, "Error in HG handle create callback");
     }
 
-    HG_LOG_DEBUG("Created new handle (%p)", (void *)hg_core_handle);
+    HG_LOG_DEBUG("Created new handle (%p)", (void *) hg_core_handle);
 
     *hg_core_handle_ptr = hg_core_handle;
 
@@ -2164,7 +2163,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
     /* Repost handle if we were listening, otherwise destroy it */
     if (hg_core_handle->repost &&
         !HG_CORE_HANDLE_CONTEXT(hg_core_handle)->finalizing) {
-        HG_LOG_DEBUG("Reposting handle (%p)", (void *)hg_core_handle);
+        HG_LOG_DEBUG("Reposting handle (%p)", (void *) hg_core_handle);
 
         /* Repost handle */
         ret = hg_core_reset_post(hg_core_handle);
@@ -2172,7 +2171,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
 
         /* TODO handle error */
     } else {
-        HG_LOG_DEBUG("Freeing handle (%p)", (void *)hg_core_handle);
+        HG_LOG_DEBUG("Freeing handle (%p)", (void *) hg_core_handle);
 
         /* Free extra data here if needed */
         if (HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_release)
@@ -2573,7 +2572,7 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle)
         "Could not post unexpected recv for input buffer (%s)",
         NA_Error_to_string(na_ret));
 
-    HG_LOG_DEBUG("Posted handle (%p)", (void *)hg_core_handle);
+    HG_LOG_DEBUG("Posted handle (%p)", (void *) hg_core_handle);
 
     return ret;
 
@@ -2984,7 +2983,7 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *)hg_core_handle);
+        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
@@ -3041,7 +3040,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *)hg_core_handle);
+        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
@@ -3094,8 +3093,8 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             na_cb_info_recv_unexpected->actual_buf_size;
 
         HG_LOG_DEBUG("Processing input for handle %p, tag=%u, buf_size=%zu",
-            (void *)hg_core_handle, hg_core_handle->tag,
-	    hg_core_handle->in_buf_used);
+            (void *) hg_core_handle, hg_core_handle->tag,
+            hg_core_handle->in_buf_used);
 
         /* Process input information */
         ret = hg_core_process_input(hg_core_handle, &completed);
@@ -3149,10 +3148,9 @@ hg_core_process_input(
             ? hg_core_no_respond_self
             : hg_core_no_respond_na;
 
-    HG_LOG_DEBUG(
-        "Processed input for handle %p, ID=%" PRIu64
-        ", cookie=%" PRIu8 ", no_response=%d",
-        (void *)hg_core_handle, hg_core_handle->core_handle.info.id,
+    HG_LOG_DEBUG("Processed input for handle %p, ID=%" PRIu64 ", cookie=%" PRIu8
+                 ", no_response=%d",
+        (void *) hg_core_handle, hg_core_handle->core_handle.info.id,
         hg_core_handle->cookie, hg_core_handle->no_response);
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
@@ -3160,9 +3158,8 @@ hg_core_process_input(
         HG_CHECK_ERROR(!HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire,
             done, ret, HG_OPNOTSUPPORTED,
             "No callback defined for acquiring more data");
-        HG_LOG_DEBUG(
-            "Must acquire more input data for handle %p",
-	        (void *)hg_core_handle);
+        HG_LOG_DEBUG("Must acquire more input data for handle %p",
+            (void *) hg_core_handle);
 #ifdef HG_HAS_COLLECT_STATS
         /* Increment counter */
         hg_core_stat_incr(&hg_core_rpc_extra_count_g);
@@ -3194,7 +3191,7 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *)hg_core_handle);
+        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
@@ -3228,7 +3225,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *)hg_core_handle);
+        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
@@ -3252,7 +3249,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
         hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
     } else {
         HG_LOG_DEBUG("Processing output for handle %p, tag=%u",
-	    (void *)hg_core_handle, hg_core_handle->tag);
+            (void *) hg_core_handle, hg_core_handle->tag);
 
         /* Process output information */
         ret = hg_core_process_output(
@@ -3287,7 +3284,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
     /* Parse flags */
 
     HG_LOG_DEBUG("Processed output for handle %p, ID=%" PRIu64 ", ret=%d",
-        (void *)hg_core_handle, hg_core_handle->core_handle.info.id,
+        (void *) hg_core_handle, hg_core_handle->core_handle.info.id,
         hg_core_handle->ret);
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
@@ -3296,7 +3293,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
             done, ret, HG_OPNOTSUPPORTED,
             "No callback defined for acquiring more data");
         HG_LOG_DEBUG("Must acquire more input data for handle %p",
-	    (void *)hg_core_handle);
+            (void *) hg_core_handle);
 
         ret = HG_CORE_HANDLE_CLASS(hg_core_handle)
                   ->more_data_acquire((hg_core_handle_t) hg_core_handle,
@@ -3373,7 +3370,7 @@ hg_core_send_ack_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *)hg_core_handle);
+        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
@@ -3407,7 +3404,7 @@ hg_core_recv_ack_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *)hg_core_handle);
+        HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
@@ -3587,11 +3584,11 @@ hg_core_complete(hg_core_handle_t handle)
     if (status & HG_CORE_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        HG_LOG_DEBUG("Handle %p was canceled", (void *)hg_core_handle);
+        HG_LOG_DEBUG("Handle %p was canceled", (void *) hg_core_handle);
         hg_core_handle->ret = HG_CANCELED;
     } else if (status & HG_CORE_OP_ERRORED) {
         /* If it was errored, set callback ret accordingly */
-        HG_LOG_DEBUG("Handle %p is errored", (void *)hg_core_handle);
+        HG_LOG_DEBUG("Handle %p is errored", (void *) hg_core_handle);
         hg_core_handle->ret = HG_NA_ERROR;
     }
 
@@ -4208,7 +4205,7 @@ HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
     HG_CHECK_ERROR_NORET(
         hg_core_class == NULL, done, "Cannot initialize HG core layer");
 
-    HG_LOG_DEBUG("Initialized core class (%p)", (void *)hg_core_class);
+    HG_LOG_DEBUG("Initialized core class (%p)", (void *) hg_core_class);
 
 done:
     return (hg_core_class_t *) hg_core_class;
@@ -4227,7 +4224,7 @@ HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
     HG_CHECK_ERROR_NORET(
         hg_core_class == NULL, done, "Cannot initialize HG core layer");
 
-    HG_LOG_DEBUG("Initialized core class (%p)", (void *)hg_core_class);
+    HG_LOG_DEBUG("Initialized core class (%p)", (void *) hg_core_class);
 
 done:
     return (hg_core_class_t *) hg_core_class;
@@ -4239,7 +4236,7 @@ HG_Core_finalize(hg_core_class_t *hg_core_class)
 {
     hg_return_t ret;
 
-    HG_LOG_DEBUG("Finalizing core class (%p)", (void *)hg_core_class);
+    HG_LOG_DEBUG("Finalizing core class (%p)", (void *) hg_core_class);
 
     ret = hg_core_finalize((struct hg_core_private_class *) hg_core_class);
     HG_CHECK_HG_ERROR(done, ret, "Cannot finalize HG core layer");
@@ -4290,7 +4287,7 @@ HG_Core_context_create(hg_core_class_t *hg_core_class)
     ret = hg_core_context_create(hg_core_class, 0, &context);
     HG_CHECK_HG_ERROR(done, ret, "Could not create context");
 
-    HG_LOG_DEBUG("Created new context (%p)", (void *)context);
+    HG_LOG_DEBUG("Created new context (%p)", (void *) context);
 
 done:
     return (hg_core_context_t *) context;
@@ -4310,7 +4307,7 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     ret = hg_core_context_create(hg_core_class, id, &context);
     HG_CHECK_HG_ERROR(done, ret, "Could not create context");
 
-    HG_LOG_DEBUG("Created new context (%p)", (void *)context);
+    HG_LOG_DEBUG("Created new context (%p)", (void *) context);
 
 done:
     return (hg_core_context_t *) context;
@@ -4322,7 +4319,7 @@ HG_Core_context_destroy(hg_core_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_LOG_DEBUG("Destroying context (%p)", (void *)context);
+    HG_LOG_DEBUG("Destroying context (%p)", (void *) context);
 
     ret = hg_core_context_destroy((struct hg_core_private_context *) context);
     HG_CHECK_HG_ERROR(done, ret, "Could not destroy context");
@@ -4366,8 +4363,8 @@ HG_Core_context_post(hg_core_context_t *context)
                         ->request_post_init;
     HG_CHECK_ERROR(request_count == 0, error, ret, HG_INVALID_ARG,
         "Request count must be greater than 0");
-    HG_LOG_DEBUG("Posting %u requests on context (%p)", request_count,
-        (void *)context);
+    HG_LOG_DEBUG(
+        "Posting %u requests on context (%p)", request_count, (void *) context);
 
     ret = hg_core_context_post((struct hg_core_private_context *) context,
         context->core_class->na_class, context->na_context, request_count);
@@ -4383,8 +4380,8 @@ HG_Core_context_post(hg_core_context_t *context)
     }
 #endif
 
-    HG_LOG_DEBUG("Posted %u handles on context (%p)", request_count,
-        (void *)context);
+    HG_LOG_DEBUG(
+        "Posted %u handles on context (%p)", request_count, (void *) context);
 
     return ret;
 
@@ -4586,7 +4583,7 @@ HG_Core_addr_lookup1(hg_core_context_t *context, hg_core_cb_t callback,
     HG_CHECK_HG_ERROR(error, ret, "Could not lookup address");
 
     HG_LOG_DEBUG("Created new address (%p)",
-	(void *)hg_core_op_id->info.lookup.hg_core_addr);
+        (void *) hg_core_op_id->info.lookup.hg_core_addr);
 
     /* Add callback to completion queue */
     hg_completion_entry = &hg_core_op_id->hg_completion_entry;
@@ -4628,7 +4625,7 @@ HG_Core_addr_lookup2(
         name, (struct hg_core_private_addr **) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
 
-    HG_LOG_DEBUG("Created new address (%p)", (void *)*addr);
+    HG_LOG_DEBUG("Created new address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -4640,7 +4637,7 @@ HG_Core_addr_free(hg_core_addr_t addr)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_LOG_DEBUG("Freeing address (%p)", (void *)addr);
+    HG_LOG_DEBUG("Freeing address (%p)", (void *) addr);
 
     ret = hg_core_addr_free((struct hg_core_private_addr *) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not free address");
@@ -4680,7 +4677,7 @@ HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
         (struct hg_core_private_addr **) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not get self address");
 
-    HG_LOG_DEBUG("Created new self address (%p)", (void *)*addr);
+    HG_LOG_DEBUG("Created new self address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -4701,8 +4698,8 @@ HG_Core_addr_dup(hg_core_addr_t addr, hg_core_addr_t *new_addr)
         (struct hg_core_private_addr **) new_addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not duplicate address");
 
-    HG_LOG_DEBUG("Duped address (%p) to address (%p)",
-        (void *)addr, (void *)*new_addr);
+    HG_LOG_DEBUG("Duped address (%p) to address (%p)", (void *) addr,
+        (void *) *new_addr);
 
 done:
     return ret;
@@ -4743,8 +4740,8 @@ HG_Core_addr_to_string(char *buf, hg_size_t *buf_size, hg_core_addr_t addr)
     HG_CHECK_HG_ERROR(done, ret, "Could not convert address to string");
 
     if (buf) {
-        HG_LOG_DEBUG("Generated string \"%s\" from address (%p)", buf,
-	    (void *)addr);
+        HG_LOG_DEBUG(
+            "Generated string \"%s\" from address (%p)", buf, (void *) addr);
     }
 
 done:
@@ -4763,8 +4760,8 @@ HG_Core_addr_get_serialize_size(hg_core_addr_t addr, unsigned long flags)
     ret = hg_core_addr_get_serialize_size(
         (struct hg_core_private_addr *) addr, flags & 0xff);
 
-    HG_LOG_DEBUG("Serialize size is %zu bytes for address (%p)", ret,
-        (void *)addr);
+    HG_LOG_DEBUG(
+        "Serialize size is %zu bytes for address (%p)", ret, (void *) addr);
 
 done:
     return ret;
@@ -4784,7 +4781,7 @@ HG_Core_addr_serialize(
     HG_CHECK_ERROR(addr == HG_CORE_ADDR_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG core address");
 
-    HG_LOG_DEBUG("Serializing address (%p)", (void *)addr);
+    HG_LOG_DEBUG("Serializing address (%p)", (void *) addr);
 
     ret = hg_core_addr_serialize(
         buf, buf_size, flags & 0xff, (struct hg_core_private_addr *) addr);
@@ -4815,7 +4812,7 @@ HG_Core_addr_deserialize(hg_core_class_t *hg_core_class, hg_core_addr_t *addr,
             (struct hg_core_private_addr **) addr, buf, buf_size);
     HG_CHECK_HG_ERROR(done, ret, "Could not deserialize address");
 
-    HG_LOG_DEBUG("Deserialized into new address (%p)", (void *)*addr);
+    HG_LOG_DEBUG("Deserialized into new address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -4839,8 +4836,8 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     HG_CHECK_ERROR(handle == NULL, done, ret, HG_INVALID_ARG,
         "NULL pointer to HG core handle");
 
-    HG_LOG_DEBUG("Creating new handle with ID=%" PRIu64 ", address=%p",
-        id, (void *)addr);
+    HG_LOG_DEBUG("Creating new handle with ID=%" PRIu64 ", address=%p", id,
+        (void *) addr);
 
     /* Determine which NA class/context to use */
 #ifdef NA_HAS_SM
@@ -4874,7 +4871,7 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
         goto error;
     HG_CHECK_HG_ERROR(error, ret, "Could not set new RPC info to handle");
 
-    HG_LOG_DEBUG("Created new handle (%p)", (void *)hg_core_handle);
+    HG_LOG_DEBUG("Created new handle (%p)", (void *) hg_core_handle);
 
     *handle = (hg_core_handle_t) hg_core_handle;
 
@@ -4896,7 +4893,7 @@ HG_Core_destroy(hg_core_handle_t handle)
     if (handle == HG_CORE_HANDLE_NULL)
         goto done;
 
-    HG_LOG_DEBUG("Destroying handle (%p)", (void *)handle);
+    HG_LOG_DEBUG("Destroying handle (%p)", (void *) handle);
 
     ret = hg_core_destroy((struct hg_core_private_handle *) handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not destroy handle");
@@ -4929,7 +4926,7 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         ret, HG_BUSY, "Cannot reset HG core handle, still in use");
 
     HG_LOG_DEBUG("Resetting handle (%p) with ID=%" PRIu64 ", address (%p)",
-        (void *)handle, id, (void *)addr);
+        (void *) handle, id, (void *) addr);
 
     /* Determine which NA class/context to use */
 #ifdef NA_HAS_SM
@@ -5021,7 +5018,7 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     HG_CHECK_ERROR(
         handle->info.id == 0, done, ret, HG_INVALID_ARG, "NULL RPC ID");
 
-    HG_LOG_DEBUG("Forwarding handle (%p), payload size is %zu", (void *)handle,
+    HG_LOG_DEBUG("Forwarding handle (%p), payload size is %zu", (void *) handle,
         payload_size);
 
     ret = hg_core_forward((struct hg_core_private_handle *) handle, callback,
@@ -5043,7 +5040,7 @@ HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
         "NULL HG core handle");
 
     HG_LOG_DEBUG("Responding on handle (%p), payload size is %zu",
-        (void *)handle, payload_size);
+        (void *) handle, payload_size);
 
     /* Explicit response return code is always success here */
     ret = hg_core_respond((struct hg_core_private_handle *) handle, callback,
@@ -5102,7 +5099,7 @@ HG_Core_cancel(hg_core_handle_t handle)
     HG_CHECK_ERROR(handle == HG_CORE_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG core handle");
 
-    HG_LOG_DEBUG("Canceling handle (%p)", (void *)handle);
+    HG_LOG_DEBUG("Canceling handle (%p)", (void *) handle);
 
     ret = hg_core_cancel((struct hg_core_private_handle *) handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not cancel handle");

@@ -68,7 +68,12 @@ struct hg_test_context_info {
 /*****************/
 
 /* Default error macro */
-#include <mercury_log.h>
+#include "mercury_log.h"
+
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 extern HG_PRIVATE HG_LOG_OUTLET_DECL(hg_test);
 #define HG_TEST_LOG_ERROR(...)                                                 \
     HG_LOG_WRITE(hg_test, HG_LOG_LEVEL_ERROR, __VA_ARGS__)

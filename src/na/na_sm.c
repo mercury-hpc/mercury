@@ -25,7 +25,6 @@
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
 
-#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -592,7 +591,7 @@ na_sm_endpoint_close(
 /**
  * Reserve queue pair.
  */
-static NA_INLINE na_return_t
+static na_return_t
 na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index);
 
 /**
@@ -2296,7 +2295,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_return_t
+static na_return_t
 na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
 {
     unsigned int j = 0;
@@ -2969,7 +2968,7 @@ na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id)
     struct na_sm_op_queue *retry_op_queue =
         &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
 
-    NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *) na_sm_op_id);
 
     /* Push op ID to retry queue */
     hg_thread_spin_lock(&retry_op_queue->lock);
@@ -3563,7 +3562,7 @@ na_sm_process_retries(
         if (!na_sm_op_id)
             break;
 
-        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", (void *)na_sm_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", (void *) na_sm_op_id);
 
         /* Attempt to resolve address first */
         if (!(hg_atomic_get32(&na_sm_op_id->na_sm_addr->status) &
@@ -3662,7 +3661,8 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
     if (status & NA_SM_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p was canceled", (void *)na_sm_op_id);
+        NA_LOG_SUBSYS_DEBUG(
+            op, "Operation ID %p was canceled", (void *) na_sm_op_id);
         callback_info->ret = NA_CANCELED;
     } else
         callback_info->ret = NA_SUCCESS;
@@ -3790,8 +3790,8 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_sm_errno_to_na(errno),
         "getrlimit() failed (%s)", strerror(errno));
 
-    NA_LOG_SUBSYS_DEBUG(
-        cls, "RLIMIT_NOFILE is: %ju, max %ju", (uintmax_t)rlimit.rlim_cur, (uintmax_t)rlimit.rlim_max);
+    NA_LOG_SUBSYS_DEBUG(cls, "RLIMIT_NOFILE is: %ju, max %ju",
+        (uintmax_t) rlimit.rlim_cur, (uintmax_t) rlimit.rlim_max);
 
     /* Initialize private data */
     na_class->plugin_class = malloc(sizeof(struct na_sm_class));
@@ -4858,7 +4858,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = remote_iovcnt;
     }
 
-    NA_LOG_SUBSYS_DEBUG(rma, "Posting put op (op id=%p)", na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(rma, "Posting put op (op id=%p)", (void *) na_sm_op_id);
 
 #if defined(NA_SM_HAS_CMA)
     nwrite =
@@ -5047,7 +5047,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = remote_iovcnt;
     }
 
-    NA_LOG_SUBSYS_DEBUG(rma, "Posting get op (op id=%p)", na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(rma, "Posting get op (op id=%p)", (void *) na_sm_op_id);
 
 #if defined(NA_SM_HAS_CMA)
     nread = process_vm_readv(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
@@ -5231,7 +5231,7 @@ na_sm_cancel(
         NA_SM_OP_COMPLETED)
         goto done;
 
-    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", (void *)na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", (void *) na_sm_op_id);
 
     switch (na_sm_op_id->completion_data.callback_info.type) {
         case NA_CB_RECV_UNEXPECTED:

@@ -363,7 +363,6 @@ build_mercury_test(bulk)
 build_mercury_test(lookup)
 build_mercury_test(proc)
 
-build_mercury_test(perf)
 build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
 build_mercury_test(read_bw)
