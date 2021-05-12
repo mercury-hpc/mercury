@@ -1535,7 +1535,7 @@ na_sm_region_close(const char *username, pid_t pid, na_uint8_t id,
     na_bool_t remove, struct na_sm_region *region)
 {
     char shm_name[NA_SM_MAX_FILENAME] = {'\0'};
-    const char *shm_name_ptr = "none";
+    const char *shm_name_ptr = NULL;
     na_return_t ret = NA_SUCCESS;
 
     if (remove) {
