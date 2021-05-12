@@ -114,7 +114,7 @@ hg_request_wait(
     int ret = HG_UTIL_SUCCESS;
 
     if (timeout_ms != 0)
-        hg_time_get_current(&now);
+        hg_time_get_current_ms(&now);
     deadline = hg_time_add(now, remaining);
 
     do {
@@ -153,7 +153,7 @@ hg_request_wait(
 
 next:
         if (timeout_ms != 0)
-            hg_time_get_current(&now);
+            hg_time_get_current_ms(&now);
         remaining = hg_time_subtract(deadline, now);
     } while (hg_time_less(now, deadline));
 
