@@ -15,20 +15,14 @@
 
 /* Default error macro */
 #include <mercury_log.h>
-#define HG_UTIL_LOG_MASK hg_util_log_mask
-/* Log mask will be initialized in init routine */
-extern HG_UTIL_PRIVATE enum hg_log_type HG_UTIL_LOG_MASK;
-#define HG_UTIL_LOG_MODULE_NAME "HG Util"
+extern HG_UTIL_PRIVATE HG_LOG_OUTLET_DECL(hg_util);
 #define HG_UTIL_LOG_ERROR(...)                                                 \
-    HG_LOG_WRITE(HG_UTIL_LOG_MASK, HG_LOG_TYPE_ERROR, HG_UTIL_LOG_MODULE_NAME, \
-        __VA_ARGS__)
+    HG_LOG_WRITE(hg_util, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_UTIL_LOG_WARNING(...)                                               \
-    HG_LOG_WRITE(HG_UTIL_LOG_MASK, HG_LOG_TYPE_WARNING,                        \
-        HG_UTIL_LOG_MODULE_NAME, __VA_ARGS__)
+    HG_LOG_WRITE(hg_util, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef HG_UTIL_HAS_DEBUG
 #    define HG_UTIL_LOG_DEBUG(...)                                             \
-        HG_LOG_WRITE(HG_UTIL_LOG_MASK, HG_LOG_TYPE_DEBUG,                      \
-            HG_UTIL_LOG_MODULE_NAME, __VA_ARGS__)
+        HG_LOG_WRITE(hg_util, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #    define HG_UTIL_LOG_DEBUG(...) (void) 0
 #endif

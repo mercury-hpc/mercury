@@ -37,6 +37,7 @@ struct na_test_info {
     int loop;                /* Number of loops */
     na_bool_t busy_wait;     /* Busy wait */
     na_uint8_t max_contexts; /* Max contexts */
+    int max_msg_size;        /* Max msg size */
     na_bool_t verbose;       /* Verbose mode */
     int max_number_of_peers; /* Max number of peers */
 #ifdef HG_TEST_HAS_PARALLEL
@@ -54,20 +55,14 @@ struct na_test_info {
 
 /* Default error macro */
 #include <mercury_log.h>
-#define NA_TEST_LOG_MASK na_test_log_mask
-/* Log mask will be initialized in init routine */
-extern enum hg_log_type NA_TEST_LOG_MASK;
-#define NA_TEST_LOG_MODULE_NAME "NA Test"
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(na_test);
 #define NA_TEST_LOG_ERROR(...)                                                 \
-    HG_LOG_WRITE(NA_TEST_LOG_MASK, HG_LOG_TYPE_ERROR, NA_TEST_LOG_MODULE_NAME, \
-        __VA_ARGS__)
+    HG_LOG_WRITE(na_test, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define NA_TEST_LOG_WARNING(...)                                               \
-    HG_LOG_WRITE(NA_TEST_LOG_MASK, HG_LOG_TYPE_WARNING,                        \
-        NA_TEST_LOG_MODULE_NAME, __VA_ARGS__)
-#ifdef HG_HAS_DEBUG
+    HG_LOG_WRITE(na_test, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
+#ifdef NA_HAS_DEBUG
 #    define NA_TEST_LOG_DEBUG(...)                                             \
-        HG_LOG_WRITE(NA_TEST_LOG_MASK, HG_LOG_TYPE_DEBUG,                      \
-            NA_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+        HG_LOG_WRITE(na_test, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #    define NA_TEST_LOG_DEBUG(...) (void) 0
 #endif

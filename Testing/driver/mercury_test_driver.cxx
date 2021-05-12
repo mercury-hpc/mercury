@@ -39,6 +39,7 @@ HGTestDriver::HGTestDriver()
     this->ServerExitTimeOut = 2; /* 2 seconds timeout for server to exit */
     this->TestServer = false;
     this->TestSerial = false;
+    this->IgnoreServerResult = false;
 }
 
 //----------------------------------------------------------------------------
@@ -169,6 +170,13 @@ HGTestDriver::ProcessCommandLine(int argc, char *argv[])
             this->AllowErrorInOutput = true;
             std::cerr << "The allow errors in output flag was set to " <<
                 this->AllowErrorInOutput << std::endl;
+            ArgCountP = NULL;
+            continue;
+        }
+        if (strncmp(argv[i], "--allow-server-errors", strlen("--allow-server-errors")) == 0) {
+            this->IgnoreServerResult = true;
+            std::cerr << "The allow server errors in output flag was set to " <<
+                this->IgnoreServerResult << std::endl;
             ArgCountP = NULL;
             continue;
         }
@@ -345,6 +353,20 @@ HGTestDriver::OutputStringHasError(const char *pname, string &output)
   mercury_sysProcess_Delete(server);    \
 } while (0)
 
+#define HG_TEST_EXECUTE_CMD(cmd) do {                           \
+    if (strlen(cmd) > 0) {                                      \
+        std::vector<std::string> commands =                     \
+            mercury_sys::SystemTools::SplitString(cmd, ';');    \
+        for (unsigned int cc = 0; cc < commands.size(); cc++) { \
+            std::string command = commands[cc];                 \
+            if (command.size() > 0) {                           \
+                std::cout << command.c_str() << std::endl;      \
+                system(command.c_str());                        \
+            }                                                   \
+        }                                                       \
+    }                                                           \
+} while (0)
+
 //----------------------------------------------------------------------------
 int
 HGTestDriver::Main(int argc, char* argv[])
@@ -352,16 +374,7 @@ HGTestDriver::Main(int argc, char* argv[])
 #ifdef HG_TEST_INIT_COMMAND
     // run user-specified commands before initialization.
     // For example: "killall -9 rsh test;"
-    if (strlen(HG_TEST_INIT_COMMAND) > 0) {
-//        std::vector<std::string> commands =
-        std::vector<mercury_sys::String> commands =
-            mercury_sys::SystemTools::SplitString(HG_TEST_INIT_COMMAND, ';');
-        for (unsigned int cc = 0; cc < commands.size(); cc++) {
-            std::string command = commands[cc];
-            if (command.size() > 0)
-                system(command.c_str());
-        }
-    }
+    HG_TEST_EXECUTE_CMD(HG_TEST_INIT_COMMAND);
 #endif
 
     if (!this->ProcessCommandLine(argc, argv))
@@ -465,21 +478,7 @@ HGTestDriver::Main(int argc, char* argv[])
     // the server.
     if (server) {
 #ifdef HG_TEST_SERVER_EXIT_COMMAND
-    // run user-specified commands before initialization.
-    // For example: "killall -9 rsh test;"
-    if (strlen(HG_TEST_SERVER_EXIT_COMMAND) > 0) {
-//        std::vector<std::string> commands =
-        std::vector<mercury_sys::String> commands =
-            mercury_sys::SystemTools::SplitString(HG_TEST_SERVER_EXIT_COMMAND,
-                ';');
-        for (unsigned int cc = 0; cc < commands.size(); cc++) {
-            std::string command = commands[cc];
-            if (command.size() > 0) {
-                std::cout << command.c_str() << std::endl;
-                system(command.c_str());
-            }
-        }
-    }
+        HG_TEST_EXECUTE_CMD(HG_TEST_SERVER_EXIT_COMMAND);
 #endif
         mercury_sysProcess_WaitForExit(server, &this->ServerExitTimeOut);
     }
@@ -497,7 +496,7 @@ HGTestDriver::Main(int argc, char* argv[])
 
     // Report the server return code if it is nonzero.  Otherwise report
     // the client return code.
-    if (serverResult)
+    if (serverResult && !this->IgnoreServerResult)
         return serverResult;
 
     if (mpiError) {

@@ -15,13 +15,16 @@
 
 #include "../hlog/src/hlog.h"
 
-#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
 /****************/
 /* Local Macros */
 /****************/
+
+/* Name of this subsystem */
+#define NA_SUBSYS_NAME        na
+#define NA_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY(NA_SUBSYS_NAME)
 
 #define NA_CLASS_DELIMITER "+" /* e.g. "class+protocol" */
 
@@ -121,8 +124,29 @@ static const struct na_class_ops *const na_class_table[] = {
 static const char *const na_return_name[] = {NA_RETURN_VALUES};
 #undef X
 
-/* Default error log mask */
-enum hg_log_type NA_LOG_MASK = HG_LOG_TYPE_NONE;
+/* NA_LOG_DEBUG_LESIZE: default number of debug log entries. */
+#define NA_LOG_DEBUG_LESIZE (256)
+
+/* Declare debug log for na */
+static HG_LOG_DEBUG_DECL_LE(NA_SUBSYS_NAME, NA_LOG_DEBUG_LESIZE);
+static HG_LOG_DEBUG_DECL_DLOG(NA_SUBSYS_NAME) = HG_LOG_DLOG_INITIALIZER(
+    NA_SUBSYS_NAME, NA_LOG_DEBUG_LESIZE);
+
+/* Default log outlets */
+HG_LOG_SUBSYS_DLOG_DECL_REGISTER(NA_SUBSYS_NAME, hg);
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(fatal, NA_SUBSYS_NAME, HG_LOG_ON);
+
+/* Specific log outlets */
+HG_LOG_SUBSYS_DECL_REGISTER(cls, NA_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(ctx, NA_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(op, NA_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(addr, NA_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(msg, NA_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(mem, NA_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(rma, NA_SUBSYS_NAME);
+
+/* Off by default because of potientally excessive logs */
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(poll, NA_SUBSYS_NAME, HG_LOG_OFF);
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -133,7 +157,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
     na_return_t ret = NA_SUCCESS;
 
     na_info = (struct na_info *) malloc(sizeof(struct na_info));
-    NA_CHECK_ERROR(na_info == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(cls, na_info == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA info struct");
 
     /* Initialize NA info */
@@ -143,7 +167,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
 
     /* Copy info string and work from that */
     input_string = strdup(info_string);
-    NA_CHECK_ERROR(input_string == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(cls, input_string == NULL, error, ret, NA_NOMEM,
         "Could not duplicate host string");
 
     /**
@@ -162,18 +186,18 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
 
         /* Get NA class name */
         na_info->class_name = strdup(token);
-        NA_CHECK_ERROR(na_info->class_name == NULL, error, ret, NA_NOMEM,
-            "Could not duplicate NA info class name");
+        NA_CHECK_SUBSYS_ERROR(cls, na_info->class_name == NULL, error, ret,
+            NA_NOMEM, "Could not duplicate NA info class name");
 
         /* Get protocol name */
         na_info->protocol_name = strdup(_locator);
-        NA_CHECK_ERROR(na_info->protocol_name == NULL, error, ret, NA_NOMEM,
-            "Could not duplicate NA info protocol name");
+        NA_CHECK_SUBSYS_ERROR(cls, na_info->protocol_name == NULL, error, ret,
+            NA_NOMEM, "Could not duplicate NA info protocol name");
     } else {
         /* Get protocol name */
         na_info->protocol_name = strdup(token);
-        NA_CHECK_ERROR(na_info->protocol_name == NULL, error, ret, NA_NOMEM,
-            "Could not duplicate NA info protocol name");
+        NA_CHECK_SUBSYS_ERROR(cls, na_info->protocol_name == NULL, error, ret,
+            NA_NOMEM, "Could not duplicate NA info protocol name");
     }
 
     /* Is the host string empty? */
@@ -181,7 +205,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
         goto done;
 
     /* Format sanity check ("://") */
-    NA_CHECK_ERROR(strncmp(locator, "//", 2) != 0, error, ret,
+    NA_CHECK_SUBSYS_ERROR(fatal, strncmp(locator, "//", 2) != 0, error, ret,
         NA_PROTONOSUPPORT, "Bad address string format");
 
     /* :// followed by empty hostname is allowed, explicitly check here */
@@ -189,7 +213,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
         goto done;
 
     na_info->host_name = strdup(locator + 2);
-    NA_CHECK_ERROR(na_info->host_name == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(cls, na_info->host_name == NULL, error, ret, NA_NOMEM,
         "Could not duplicate NA info host name");
 
 done:
@@ -237,41 +261,37 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     na_bool_t plugin_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
-    const char *log_level = getenv("HG_NA_LOG_LEVEL");
 
-    /* Set log level */
-    if (log_level)
-        NA_LOG_MASK = hg_log_name_to_type(log_level);
-
-    NA_CHECK_ERROR(
-        info_string == NULL, error, ret, NA_INVALID_ARG, "NULL info string");
+    NA_CHECK_SUBSYS_ERROR(cls, info_string == NULL, error, ret, NA_INVALID_ARG,
+        "NULL info string");
 
     na_private_class =
         (struct na_private_class *) malloc(sizeof(struct na_private_class));
-    NA_CHECK_ERROR(na_private_class == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(cls, na_private_class == NULL, error, ret, NA_NOMEM,
         "Could not allocate class");
     memset(na_private_class, 0, sizeof(struct na_private_class));
 
     ret = na_info_parse(info_string, &na_info);
-    NA_CHECK_NA_ERROR(error, ret, "Could not parse host string");
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse host string");
 
     na_info->na_init_info = na_init_info;
     if (na_init_info)
         na_private_class->na_class.progress_mode = na_init_info->progress_mode;
 
     /* Print debug info */
-    NA_LOG_DEBUG("Class: %s, Protocol: %s, Hostname: %s", na_info->class_name,
-        na_info->protocol_name, na_info->host_name);
+    NA_LOG_SUBSYS_DEBUG(cls, "Class: %s, Protocol: %s, Hostname: %s",
+        na_info->class_name, na_info->protocol_name, na_info->host_name);
 
     for (plugin_index = 0; plugin_index < plugin_count; plugin_index++) {
         na_bool_t verified = NA_FALSE;
 
-        NA_CHECK_ERROR(na_class_table[plugin_index]->class_name == NULL, error,
-            ret, NA_PROTONOSUPPORT, "class name is not defined");
+        NA_CHECK_SUBSYS_ERROR(cls,
+            na_class_table[plugin_index]->class_name == NULL, error, ret,
+            NA_PROTONOSUPPORT, "class name is not defined");
 
-        NA_CHECK_ERROR(na_class_table[plugin_index]->check_protocol == NULL,
-            error, ret, NA_OPNOTSUPPORTED,
-            "check_protocol plugin callback is not defined");
+        NA_CHECK_SUBSYS_ERROR(cls,
+            na_class_table[plugin_index]->check_protocol == NULL, error, ret,
+            NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
 
         /* Skip check protocol if class name does not match */
         if (na_info->class_name) {
@@ -284,7 +304,8 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         verified = na_class_table[plugin_index]->check_protocol(
             na_info->protocol_name);
         if (!verified) {
-            NA_CHECK_ERROR(na_info->class_name, error, ret, NA_PROTONOSUPPORT,
+            NA_CHECK_SUBSYS_ERROR(fatal, na_info->class_name, error, ret,
+                NA_PROTONOSUPPORT,
                 "Specified class name does not support requested protocol");
             continue;
         }
@@ -295,8 +316,8 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
             /* While we're here, dup the class_name */
             na_info->class_name =
                 strdup(na_class_table[plugin_index]->class_name);
-            NA_CHECK_ERROR(na_info->class_name == NULL, error, ret, NA_NOMEM,
-                "Unable to dup class name string");
+            NA_CHECK_SUBSYS_ERROR(cls, na_info->class_name == NULL, error, ret,
+                NA_NOMEM, "Unable to dup class name string");
         }
 
         /* All checks have passed */
@@ -304,23 +325,24 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         break;
     }
 
-    NA_CHECK_ERROR(!plugin_found, error, ret, NA_PROTONOSUPPORT,
+    NA_CHECK_SUBSYS_ERROR(fatal, !plugin_found, error, ret, NA_PROTONOSUPPORT,
         "No suitable plugin found that matches %s", info_string);
 
     na_private_class->na_class.ops = na_class_table[plugin_index];
-    NA_CHECK_ERROR(na_private_class->na_class.ops == NULL, error, ret,
-        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(cls, na_private_class->na_class.ops == NULL, error,
+        ret, NA_INVALID_ARG, "NULL NA class ops");
 
-    NA_CHECK_ERROR(na_private_class->na_class.ops->initialize == NULL, error,
-        ret, NA_OPNOTSUPPORTED, "initialize plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(cls,
+        na_private_class->na_class.ops->initialize == NULL, error, ret,
+        NA_OPNOTSUPPORTED, "initialize plugin callback is not defined");
 
     ret = na_private_class->na_class.ops->initialize(
         &na_private_class->na_class, na_info, listen);
-    NA_CHECK_NA_ERROR(error, ret, "Could not initialize plugin");
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not initialize plugin");
 
     na_private_class->na_class.protocol_name = strdup(na_info->protocol_name);
-    NA_CHECK_ERROR(na_private_class->na_class.protocol_name == NULL, error, ret,
-        NA_NOMEM, "Could not duplicate protocol name");
+    NA_CHECK_SUBSYS_ERROR(cls, na_private_class->na_class.protocol_name == NULL,
+        error, ret, NA_NOMEM, "Could not duplicate protocol name");
 
     na_private_class->na_class.listen = listen;
 
@@ -348,9 +370,9 @@ NA_Finalize(na_class_t *na_class)
     if (!na_private_class)
         goto done;
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->finalize == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(cls, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(cls, na_class->ops->finalize == NULL, done, ret,
         NA_OPNOTSUPPORTED, "finalize plugin callback is not defined");
 
     ret = na_class->ops->finalize(&na_private_class->na_class);
@@ -369,11 +391,6 @@ NA_Cleanup(void)
     unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     unsigned int i;
-    const char *log_level = getenv("HG_NA_LOG_LEVEL");
-
-    /* Set log level */
-    if (log_level)
-        NA_LOG_MASK = hg_log_name_to_type(log_level);
 
     for (i = 0; i < plugin_count; i++) {
         if (!na_class_table[i]->cleanup)
@@ -387,8 +404,7 @@ NA_Cleanup(void)
 void
 NA_Set_log_level(const char *level)
 {
-    /* Set log level */
-    NA_LOG_MASK = hg_log_name_to_type(level);
+    hg_log_set_subsys_level(NA_SUBSYS_NAME_STRING, hg_log_name_to_level(level));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -405,28 +421,29 @@ NA_Context_create_id(na_class_t *na_class, na_uint8_t id)
     na_return_t ret = NA_SUCCESS;
     struct na_private_context *na_private_context = NULL;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        ctx, na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
 
     na_private_context =
         (struct na_private_context *) malloc(sizeof(struct na_private_context));
-    NA_CHECK_ERROR(na_private_context == NULL, error, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(ctx, na_private_context == NULL, error, ret, NA_NOMEM,
         "Could not allocate context");
     na_private_context->na_class = na_class;
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, error, ret, NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(ctx, na_class->ops == NULL, error, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
     if (na_class->ops->context_create) {
         ret = na_class->ops->context_create(
             na_class, &na_private_context->context.plugin_context, id);
-        NA_CHECK_NA_ERROR(error, ret, "Could not create plugin context");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            ctx, error, ret, "Could not create plugin context");
     }
 
     /* Initialize completion queue */
     na_private_context->completion_queue =
         hg_atomic_queue_alloc(NA_ATOMIC_QUEUE_SIZE);
-    NA_CHECK_ERROR(na_private_context->completion_queue == NULL, error, ret,
-        NA_NOMEM, "Could not allocate queue");
+    NA_CHECK_SUBSYS_ERROR(ctx, na_private_context->completion_queue == NULL,
+        error, ret, NA_NOMEM, "Could not allocate queue");
     HG_QUEUE_INIT(&na_private_context->backfill_queue);
     hg_atomic_init32(&na_private_context->backfill_queue_count, 0);
 
@@ -457,14 +474,14 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     na_bool_t empty;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        ctx, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
     if (!context)
         goto done;
 
     /* Check that completion queue is empty now */
     empty = hg_atomic_queue_is_empty(na_private_context->completion_queue);
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, done, ret, NA_BUSY,
         "Completion queue should be empty");
     hg_atomic_queue_free(na_private_context->completion_queue);
 
@@ -472,7 +489,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
     empty = HG_QUEUE_IS_EMPTY(&na_private_context->backfill_queue);
     hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
-    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, done, ret, NA_BUSY,
         "Completion queue should be empty");
 
     /* Destroy completion queue mutex/cond */
@@ -480,12 +497,13 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     hg_thread_cond_destroy(&na_private_context->completion_queue_cond);
 
     /* Destroy NA plugin context */
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(ctx, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
     if (na_class->ops->context_destroy) {
         ret = na_class->ops->context_destroy(
             na_class, na_private_context->context.plugin_context);
-        NA_CHECK_NA_ERROR(done, ret, "Could not destroy plugin context");
+        NA_CHECK_SUBSYS_NA_ERROR(
+            ctx, done, ret, "Could not destroy plugin context");
     }
 
 #ifdef NA_HAS_MULTI_PROGRESS
@@ -506,12 +524,15 @@ NA_Op_create(na_class_t *na_class)
 {
     na_op_id_t *ret = NULL;
 
-    NA_CHECK_ERROR_NORET(na_class == NULL, done, "NULL NA class");
-    NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
-    NA_CHECK_ERROR_NORET(na_class->ops->op_create == NULL, done,
+    NA_CHECK_SUBSYS_ERROR_NORET(op, na_class == NULL, done, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        op, na_class->ops == NULL, done, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR_NORET(op, na_class->ops->op_create == NULL, done,
         "op_create plugin callback is not defined");
 
     ret = na_class->ops->op_create(na_class);
+
+    NA_LOG_SUBSYS_DEBUG(op, "Created new OP ID (%p)", (void *) ret);
 
 done:
     return ret;
@@ -523,17 +544,19 @@ NA_Op_destroy(na_class_t *na_class, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        op, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
 
     if (op_id == NULL)
         /* Nothing to do */
         goto done;
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->op_destroy == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(op, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(op, na_class->ops->op_destroy == NULL, done, ret,
         NA_OPNOTSUPPORTED, "op_destroy plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(op, "Destroying OP ID (%p)", (void *) op_id);
 
     ret = na_class->ops->op_destroy(na_class, op_id);
 
@@ -549,22 +572,22 @@ NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     char *short_name = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(
-        name == NULL, done, ret, NA_INVALID_ARG, "Lookup name is NULL");
-    NA_CHECK_ERROR(
-        addr == NULL, done, ret, NA_INVALID_ARG, "NULL pointer to na_addr_t");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, name == NULL, done, ret, NA_INVALID_ARG, "Lookup name is NULL");
+    NA_CHECK_SUBSYS_ERROR(addr, addr == NULL, done, ret, NA_INVALID_ARG,
+        "NULL pointer to na_addr_t");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_lookup == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_lookup == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_lookup2 plugin callback is not defined");
 
     /* Copy name and work from that */
     name_string = strdup(name);
-    NA_CHECK_ERROR(
-        name_string == NULL, done, ret, NA_NOMEM, "Could not duplicate string");
+    NA_CHECK_SUBSYS_ERROR(addr, name_string == NULL, done, ret, NA_NOMEM,
+        "Could not duplicate string");
 
     /* If NA class name was specified, we can remove the name here:
      * ie. bmi+tcp://hostname:port -> tcp://hostname:port */
@@ -573,7 +596,11 @@ NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     else
         short_name = name_string;
 
+    NA_LOG_SUBSYS_DEBUG(addr, "Looking up addr %s", short_name);
+
     ret = na_class->ops->addr_lookup(na_class, short_name, addr);
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Created new address (%p)", (void *) *addr);
 
 done:
     free(name_string);
@@ -586,16 +613,18 @@ NA_Addr_free(na_class_t *na_class, na_addr_t addr)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
     if (addr == NA_ADDR_NULL)
         /* Nothing to do */
         goto done;
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_free == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_free == NULL, done, ret,
         NA_OPNOTSUPPORTED, "addr_free plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Freeing address (%p)", (void *) addr);
 
     ret = na_class->ops->addr_free(na_class, addr);
 
@@ -609,14 +638,14 @@ NA_Addr_set_remove(na_class_t *na_class, na_addr_t addr)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
     if (addr == NA_ADDR_NULL)
         /* Nothing to do */
         goto done;
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
     if (na_class->ops->addr_set_remove)
         ret = na_class->ops->addr_set_remove(na_class, addr);
 
@@ -630,17 +659,19 @@ NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(
-        addr == NULL, done, ret, NA_INVALID_ARG, "NULL pointer to na_addr_t");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(addr, addr == NULL, done, ret, NA_INVALID_ARG,
+        "NULL pointer to na_addr_t");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_self == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_self == NULL, done, ret,
         NA_OPNOTSUPPORTED, "addr_self plugin callback is not defined");
 
     ret = na_class->ops->addr_self(na_class, addr);
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Created new self address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -652,19 +683,22 @@ NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(
-        addr == NA_ADDR_NULL, done, ret, NA_INVALID_ARG, "NULL addr");
-    NA_CHECK_ERROR(
-        new_addr == NULL, done, ret, NA_INVALID_ARG, "NULL pointer to NA addr");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, addr == NA_ADDR_NULL, done, ret, NA_INVALID_ARG, "NULL addr");
+    NA_CHECK_SUBSYS_ERROR(addr, new_addr == NULL, done, ret, NA_INVALID_ARG,
+        "NULL pointer to NA addr");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_dup == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_dup == NULL, done, ret,
         NA_OPNOTSUPPORTED, "addr_dup plugin callback is not defined");
 
     ret = na_class->ops->addr_dup(na_class, addr, new_addr);
+
+    NA_LOG_SUBSYS_DEBUG(
+        addr, "Dup'ed address (%p) to (%p)", (void *) addr, (void *) *new_addr);
 
 done:
     return ret;
@@ -676,7 +710,7 @@ NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
 {
     na_bool_t ret = NA_FALSE;
 
-    NA_CHECK_ERROR_NORET(na_class == NULL, done, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR_NORET(addr, na_class == NULL, done, "NULL NA class");
 
     if (addr1 == NA_ADDR_NULL && addr2 == NA_ADDR_NULL)
         NA_GOTO_DONE(done, ret, NA_TRUE);
@@ -684,11 +718,15 @@ NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
     if (addr1 == NA_ADDR_NULL || addr2 == NA_ADDR_NULL)
         NA_GOTO_DONE(done, ret, NA_FALSE);
 
-    NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
-    NA_CHECK_ERROR_NORET(na_class->ops->addr_cmp == NULL, done,
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        addr, na_class->ops == NULL, done, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR_NORET(addr, na_class->ops->addr_cmp == NULL, done,
         "addr_cmp plugin callback is not defined");
 
     ret = na_class->ops->addr_cmp(na_class, addr1, addr2);
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Compared addresses (%p) and (%p), result: %d",
+        (void *) addr1, (void *) addr2, ret);
 
 done:
     return ret;
@@ -703,18 +741,19 @@ NA_Addr_to_string(
     na_size_t buf_size_used = 0, plugin_buf_size = 0;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
     /* buf can be NULL */
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
-    NA_CHECK_ERROR(
-        addr == NA_ADDR_NULL, done, ret, NA_INVALID_ARG, "NULL addr");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, addr == NA_ADDR_NULL, done, ret, NA_INVALID_ARG, "NULL addr");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_to_string == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "addr_to_string plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_to_string == NULL, done,
+        ret, NA_OPNOTSUPPORTED,
+        "addr_to_string plugin callback is not defined");
 
     /* Automatically prepend string by plugin name with class delimiter,
      * except for MPI plugin (special case, because of generated string) */
@@ -725,8 +764,8 @@ NA_Addr_to_string(
         buf_size_used =
             strlen(na_class->ops->class_name) + strlen(NA_CLASS_DELIMITER);
         if (buf_ptr) {
-            NA_CHECK_ERROR(buf_size_used >= *buf_size, done, ret, NA_OVERFLOW,
-                "Buffer size too small to copy addr");
+            NA_CHECK_SUBSYS_ERROR(addr, buf_size_used >= *buf_size, done, ret,
+                NA_OVERFLOW, "Buffer size too small to copy addr");
             strcpy(buf_ptr, na_class->ops->class_name);
             strcat(buf_ptr, NA_CLASS_DELIMITER);
             buf_ptr += buf_size_used;
@@ -740,6 +779,10 @@ NA_Addr_to_string(
 
     *buf_size = buf_size_used + plugin_buf_size;
 
+    NA_LOG_SUBSYS_DEBUG(addr,
+        "Generated string (%s) from address (%p), buf_size=%zu", buf_ptr,
+        (void *) addr, *buf_size);
+
 done:
     return ret;
 }
@@ -751,18 +794,22 @@ NA_Addr_serialize(
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
-    NA_CHECK_ERROR(
-        addr == NA_ADDR_NULL, done, ret, NA_INVALID_ARG, "NULL addr");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, addr == NA_ADDR_NULL, done, ret, NA_INVALID_ARG, "NULL addr");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_serialize == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "addr_serialize plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_serialize == NULL, done,
+        ret, NA_OPNOTSUPPORTED,
+        "addr_serialize plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Serializing address (%p)", (void *) addr);
 
     ret = na_class->ops->addr_serialize(na_class, buf, buf_size, addr);
 
@@ -777,20 +824,25 @@ NA_Addr_deserialize(
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(
-        addr == NULL, done, ret, NA_INVALID_ARG, "NULL pointer to addr");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, addr == NULL, done, ret, NA_INVALID_ARG, "NULL pointer to addr");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        addr, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_deserialize == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "addr_deserialize plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(addr, na_class->ops->addr_deserialize == NULL, done,
+        ret, NA_OPNOTSUPPORTED,
+        "addr_deserialize plugin callback is not defined");
 
     ret = na_class->ops->addr_deserialize(na_class, addr, buf, buf_size);
+
+    NA_LOG_SUBSYS_DEBUG(
+        addr, "Deserialized into new address (%p)", (void *) *addr);
 
 done:
     return ret;
@@ -802,23 +854,28 @@ NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
 {
     void *ret = NULL;
 
-    NA_CHECK_ERROR_NORET(na_class == NULL, done, "NULL NA class");
-    NA_CHECK_ERROR_NORET(buf_size == 0, done, "NULL buffer size");
-    NA_CHECK_ERROR_NORET(
-        plugin_data == NULL, done, "NULL pointer to plugin data");
+    NA_CHECK_SUBSYS_ERROR_NORET(msg, na_class == NULL, done, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR_NORET(msg, buf_size == 0, done, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        msg, plugin_data == NULL, done, "NULL pointer to plugin data");
 
-    NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        msg, na_class->ops == NULL, done, "NULL NA class ops");
     if (na_class->ops->msg_buf_alloc)
         ret = na_class->ops->msg_buf_alloc(na_class, buf_size, plugin_data);
     else {
         na_size_t page_size = (na_size_t) hg_mem_get_page_size();
 
         ret = hg_mem_aligned_alloc(page_size, buf_size);
-        NA_CHECK_ERROR_NORET(
-            ret == NULL, done, "Could not allocate %d bytes", (int) buf_size);
+        NA_CHECK_SUBSYS_ERROR_NORET(msg, ret == NULL, done,
+            "Could not allocate %d bytes", (int) buf_size);
         memset(ret, 0, buf_size);
         *plugin_data = (void *) 1; /* Sanity check on free */
     }
+
+    NA_LOG_SUBSYS_DEBUG(msg,
+        "Allocated msg buffer (%p), size (%zu bytes), plugin data (%p)", ret,
+        buf_size, *plugin_data);
 
 done:
     return ret;
@@ -830,17 +887,22 @@ NA_Msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(msg, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+
+    NA_LOG_SUBSYS_DEBUG(
+        msg, "Freeing msg buffer (%p), plugin data (%p)", buf, plugin_data);
+
     if (na_class->ops->msg_buf_free)
         ret = na_class->ops->msg_buf_free(na_class, buf, plugin_data);
     else {
-        NA_CHECK_ERROR(plugin_data != (void *) 1, done, ret, NA_FAULT,
-            "Invalid plugin data value");
+        NA_CHECK_SUBSYS_ERROR(msg, plugin_data != (void *) 1, done, ret,
+            NA_FAULT, "Invalid plugin data value");
         hg_mem_aligned_free(buf);
     }
 
@@ -854,16 +916,21 @@ NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    if (na_class->ops->msg_init_unexpected)
+    NA_CHECK_SUBSYS_ERROR(msg, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    if (na_class->ops->msg_init_unexpected) {
         ret = na_class->ops->msg_init_unexpected(na_class, buf, buf_size);
+
+        NA_LOG_SUBSYS_DEBUG(
+            msg, "Init unexpected buf (%p), size (%zu)", buf, buf_size);
+    }
 
 done:
     return ret;
@@ -875,16 +942,21 @@ NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        msg, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    if (na_class->ops->msg_init_expected)
+    NA_CHECK_SUBSYS_ERROR(msg, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    if (na_class->ops->msg_init_expected) {
         ret = na_class->ops->msg_init_expected(na_class, buf, buf_size);
+
+        NA_LOG_SUBSYS_DEBUG(
+            msg, "Init expected buf (%p), size (%zu)", buf, buf_size);
+    }
 
 done:
     return ret;
@@ -897,19 +969,25 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->mem_handle_create == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "mem_handle_create plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops->mem_handle_create == NULL, done,
+        ret, NA_OPNOTSUPPORTED,
+        "mem_handle_create plugin callback is not defined");
 
     ret = na_class->ops->mem_handle_create(
         na_class, buf, buf_size, flags, mem_handle);
+
+    NA_LOG_SUBSYS_DEBUG(mem,
+        "Created new mem handle (%p), buf (%p), buf_size (%zu), flags (%lu)",
+        (void *) *mem_handle, buf, buf_size, flags);
 
 done:
     return ret;
@@ -922,21 +1000,26 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(segments == NULL, done, ret, NA_INVALID_ARG,
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(mem, segments == NULL, done, ret, NA_INVALID_ARG,
         "NULL pointer to segments");
-    NA_CHECK_ERROR(
-        segment_count == 0, done, ret, NA_INVALID_ARG, "NULL segment count");
+    NA_CHECK_SUBSYS_ERROR(mem, segment_count == 0, done, ret, NA_INVALID_ARG,
+        "NULL segment count");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->mem_handle_create_segments == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(mem,
+        na_class->ops->mem_handle_create_segments == NULL, done, ret,
         NA_OPNOTSUPPORTED,
         "mem_handle_create_segments plugin callback is not defined");
 
     ret = na_class->ops->mem_handle_create_segments(
         na_class, segments, segment_count, flags, mem_handle);
+
+    NA_LOG_SUBSYS_DEBUG(mem,
+        "Created new mem handle (%p) with %zu segments, flags (%lu)",
+        (void *) *mem_handle, segment_count, flags);
 
 done:
     return ret;
@@ -948,15 +1031,18 @@ NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret, NA_INVALID_ARG,
-        "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, done, ret,
+        NA_INVALID_ARG, "NULL memory handle");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->mem_handle_free == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "mem_handle_free plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops->mem_handle_free == NULL, done,
+        ret, NA_OPNOTSUPPORTED,
+        "mem_handle_free plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(mem, "Freeing mem handle (%p)", (void *) mem_handle);
 
     ret = na_class->ops->mem_handle_free(na_class, mem_handle);
 
@@ -970,16 +1056,20 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret, NA_INVALID_ARG,
-        "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, done, ret,
+        NA_INVALID_ARG, "NULL memory handle");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    if (na_class->ops->mem_register)
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    if (na_class->ops->mem_register) {
         /* Optional */
         ret = na_class->ops->mem_register(na_class, mem_handle);
+
+        NA_LOG_SUBSYS_DEBUG(
+            mem, "Registered mem handle (%p)", (void *) mem_handle);
+    }
 
 done:
     return ret;
@@ -991,13 +1081,13 @@ NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret, NA_INVALID_ARG,
-        "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, done, ret,
+        NA_INVALID_ARG, "NULL memory handle");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
     if (na_class->ops->mem_deregister)
         /* Optional */
         ret = na_class->ops->mem_deregister(na_class, mem_handle);
@@ -1013,19 +1103,23 @@ NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
-    NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret, NA_INVALID_ARG,
-        "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, done, ret,
+        NA_INVALID_ARG, "NULL memory handle");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->mem_handle_serialize == NULL, done, ret,
-        NA_OPNOTSUPPORTED,
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops->mem_handle_serialize == NULL,
+        done, ret, NA_OPNOTSUPPORTED,
         "mem_handle_serialize plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(
+        mem, "Serializing mem handle (%p)", (void *) mem_handle);
 
     ret = na_class->ops->mem_handle_serialize(
         na_class, buf, buf_size, mem_handle);
@@ -1041,22 +1135,26 @@ NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(mem_handle == NULL, done, ret, NA_INVALID_ARG,
+    NA_CHECK_SUBSYS_ERROR(
+        mem, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NULL, done, ret, NA_INVALID_ARG,
         "NULL pointer to memory handle");
-    NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
-    NA_CHECK_ERROR(
-        buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, buf == NULL, done, ret, NA_INVALID_ARG, "NULL buffer");
+    NA_CHECK_SUBSYS_ERROR(
+        mem, buf_size == 0, done, ret, NA_INVALID_ARG, "NULL buffer size");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->mem_handle_deserialize == NULL, done, ret,
-        NA_OPNOTSUPPORTED,
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(mem, na_class->ops->mem_handle_deserialize == NULL,
+        done, ret, NA_OPNOTSUPPORTED,
         "mem_handle_deserialize plugin callback is not defined");
 
     ret = na_class->ops->mem_handle_deserialize(
         na_class, mem_handle, buf, buf_size);
+
+    NA_LOG_SUBSYS_DEBUG(
+        mem, "Deserialized into mem handle (%p)", (void *) *mem_handle);
 
 done:
     return ret;
@@ -1068,10 +1166,9 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    na_bool_t ret = NA_FALSE;
 
-    NA_CHECK_ERROR_NORET(na_class == NULL, error, "NULL NA class");
-    NA_CHECK_ERROR_NORET(context == NULL, error, "NULL context");
+    NA_CHECK_SUBSYS_ERROR_NORET(poll, na_class == NULL, error, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR_NORET(poll, context == NULL, error, "NULL context");
 
     /* Do not try to wait if NA_NO_BLOCK is set */
     if (na_class->progress_mode & NA_NO_BLOCK)
@@ -1083,14 +1180,17 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
         return NA_FALSE;
 
     /* Check plugin try wait */
-    NA_CHECK_ERROR_NORET(na_class->ops == NULL, error, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        poll, na_class->ops == NULL, error, "NULL NA class ops");
     if (na_class->ops->na_poll_try_wait)
         return na_class->ops->na_poll_try_wait(na_class, context);
+
+    NA_LOG_SUBSYS_DEBUG(poll, "Safe to wait on context (%p)", (void *) context);
 
     return NA_TRUE;
 
 error:
-    return ret;
+    return NA_FALSE;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1106,15 +1206,18 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 #endif
     na_return_t ret = NA_TIMEOUT;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(
-        na_private_context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
+    NA_CHECK_SUBSYS_ERROR(
+        poll, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(poll, na_private_context == NULL, done, ret,
+        NA_INVALID_ARG, "NULL context");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->progress == NULL, done, ret,
+    NA_CHECK_SUBSYS_ERROR(poll, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(poll, na_class->ops->progress == NULL, done, ret,
         NA_OPNOTSUPPORTED, "progress plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(poll, "Entering progress on context (%p) for %u ms",
+        (void *) context, timeout);
 
 #ifdef NA_HAS_MULTI_PROGRESS
     hg_atomic_incr32(&na_private_context->progressing);
@@ -1207,7 +1310,8 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     na_return_t ret = NA_SUCCESS;
     unsigned int count = 0;
 
-    NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
+    NA_CHECK_SUBSYS_ERROR(
+        op, context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
 
     while (count < max_count) {
         const char *which = "normal";
@@ -1279,8 +1383,8 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
             (void *)completion_data_ptr, (void *)context, which);
 
         /* Completion data should be valid */
-        NA_CHECK_ERROR(completion_data_ptr == NULL, done, ret, NA_INVALID_ARG,
-            "NULL completion data");
+        NA_CHECK_SUBSYS_ERROR(op, completion_data_ptr == NULL, done, ret,
+            NA_INVALID_ARG, "NULL completion data");
         completion_data = *completion_data_ptr;
 
         hlog_fast(na_completions,
@@ -1324,16 +1428,19 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
-    NA_CHECK_ERROR(
-        op_id == NULL, done, ret, NA_INVALID_ARG, "NULL operation ID");
+    NA_CHECK_SUBSYS_ERROR(
+        op, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(
+        op, context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
+    NA_CHECK_SUBSYS_ERROR(
+        op, op_id == NULL, done, ret, NA_INVALID_ARG, "NULL operation ID");
 
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->cancel == NULL, done, ret, NA_OPNOTSUPPORTED,
-        "cancel plugin callback is not defined");
+    NA_CHECK_SUBSYS_ERROR(op, na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(op, na_class->ops->cancel == NULL, done, ret,
+        NA_OPNOTSUPPORTED, "cancel plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling op ID (%p)", (void *) op_id);
 
     ret = na_class->ops->cancel(na_class, context, op_id);
 

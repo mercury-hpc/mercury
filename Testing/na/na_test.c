@@ -73,8 +73,8 @@ extern const char *na_test_opt_arg_g; /* flag argument (or value) */
 extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
-/* Default log mask */
-enum hg_log_type NA_TEST_LOG_MASK = HG_LOG_TYPE_NONE;
+/* Default log outlets */
+HG_LOG_SUBSYS_DECL_REGISTER(na_test, hg);
 
 /*---------------------------------------------------------------------------*/
 void
@@ -160,6 +160,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'C': /* number of contexts */
                 na_test_info->max_contexts =
                     (na_uint8_t) atoi(na_test_opt_arg_g);
+                break;
+            case 'Z': /* msg size */
+                na_test_info->max_msg_size = atoi(na_test_opt_arg_g);
                 break;
             case 'V': /* verbose */
                 na_test_info->verbose = NA_TRUE;
@@ -386,15 +389,6 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     char *info_string = NULL;
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
-    const char *log_level = getenv("NA_TEST_LOG_LEVEL");
-
-    /* Set log level */
-    if (!log_level)
-        log_level = "warning";
-
-    NA_TEST_LOG_MASK = hg_log_name_to_type(log_level);
-    NA_Set_log_level(log_level);
-    HG_Util_set_log_level(log_level);
 
     na_test_parse_options(argc, argv, na_test_info);
 
@@ -427,6 +421,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     }
     na_init_info.auth_key = na_test_info->key;
     na_init_info.max_contexts = na_test_info->max_contexts;
+    na_init_info.max_unexpected_size = (na_size_t) na_test_info->max_msg_size;
+    na_init_info.max_expected_size = (na_size_t) na_test_info->max_msg_size;
 
     printf("# Using info string: %s\n", info_string);
     na_test_info->na_class =

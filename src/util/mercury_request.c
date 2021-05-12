@@ -109,8 +109,8 @@ hg_request_destroy(hg_request_t *request)
 
 /*---------------------------------------------------------------------------*/
 int
-hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
-    unsigned int *flag)
+hg_request_wait(
+    hg_request_t *request, unsigned int timeout_ms, unsigned int *flag)
 {
     hg_time_t deadline, remaining = hg_time_from_ms(timeout_ms);
     hg_time_t now = hg_time_from_ms(0);
@@ -119,7 +119,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
 
     hlog_fast(reqwait, "%s: enter %p", __func__, (void *)request);
     if (timeout_ms != 0)
-        hg_time_get_current(&now);
+        hg_time_get_current_ms(&now);
     deadline = hg_time_add(now, remaining);
 
     do {
@@ -138,7 +138,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
             hg_time_to_ms(remaining), request->request_class->arg);
 
         if (timeout_ms != 0)
-            hg_time_get_current(&now);
+            hg_time_get_current_ms(&now);
         remaining = hg_time_subtract(deadline, now);
     } while (hg_time_less(now, deadline));
 

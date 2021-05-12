@@ -32,6 +32,10 @@
 #define HG_HANDLE_CLASS(handle)                                                \
     ((struct hg_private_class *) ((handle)->info.hg_class))
 
+/* Name of this subsystem */
+#define HG_SUBSYS_NAME        hg_
+#define HG_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY(HG_SUBSYS_NAME)
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -204,9 +208,6 @@ hg_core_respond_cb(const struct hg_core_cb_info *callback_info);
 #define X(a) #a,
 static const char *const hg_return_name[] = {HG_RETURN_VALUES};
 #undef X
-
-/* Default error log mask */
-enum hg_log_type HG_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -981,11 +982,6 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
-    const char *log_level = getenv("HG_LOG_LEVEL");
-
-    /* Set log level */
-    if (log_level)
-        HG_LOG_MASK = hg_log_name_to_type(log_level);
 
     /* Make sure error return codes match */
     assert(HG_CANCELED == (hg_return_t) NA_CANCELED);
@@ -1052,8 +1048,14 @@ HG_Cleanup(void)
 void
 HG_Set_log_level(const char *level)
 {
-    /* Set log level */
-    HG_LOG_MASK = hg_log_name_to_type(level);
+    hg_log_set_subsys_level(HG_SUBSYS_NAME_STRING, hg_log_name_to_level(level));
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Set_log_subsys(const char *subsys)
+{
+    hg_log_set_subsys(subsys);
 }
 
 /*---------------------------------------------------------------------------*/

@@ -118,6 +118,17 @@ HG_PUBLIC void
 HG_Set_log_level(const char *level);
 
 /**
+ * Set the log sub-system for HG. That setting is valid for all HG classes.
+ *
+ * \param subsys [IN]           string of subsystems, format is:
+ *                                subsys1,subsys2,subsys3,etc
+ *                              subsystem can be turned off, e.g.:
+ *                                ~subsys1
+ */
+HG_PUBLIC void
+HG_Set_log_subsys(const char *subsys);
+
+/**
  * Obtain the name of the given class.
  *
  * \param hg_class [IN]         pointer to HG class

@@ -298,6 +298,38 @@ if(NA_HAS_SM)
   )
 endif()
 
+#------------------------------------------------------------------------------
+# Specify project public header files to be installed
+#------------------------------------------------------------------------------
+set(NA_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_types.h
+)
+
+if(NA_HAS_MPI)
+  set(NA_PUBLIC_HEADERS
+    ${NA_PUBLIC_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
+  )
+endif()
+
+if(NA_HAS_SM)
+  set(NA_PUBLIC_HEADERS
+    ${NA_PUBLIC_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.h
+  )
+endif()
+
+#------------------------------------------------------------------------------
+# Specify project private header files
+#------------------------------------------------------------------------------
+set(NA_PRIVATE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
+)
+
 #----------------------------------------------------------------------------
 # Libraries
 #----------------------------------------------------------------------------
@@ -315,7 +347,9 @@ foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
 endforeach()
 
 # NA
-add_library(na ${NA_SRCS})
+add_library(na ${NA_SRCS}
+  ${NA_PRIVATE_HEADERS} ${NA_PUBLIC_HEADERS}
+)
 target_include_directories(na
   PUBLIC  "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
@@ -329,6 +363,9 @@ mercury_set_lib_options(na "na" ${NA_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)
 endif()
+set_target_properties(na PROPERTIES
+  PUBLIC_HEADER "${NA_PUBLIC_HEADERS}"
+)
 
 #---------------------------------------------------------------------------
 # Add Target(s) to CMake Install
@@ -340,42 +377,8 @@ install(
     ${NA_EXPORTED_TARGETS}
   LIBRARY DESTINATION ${NA_INSTALL_LIB_DIR}
   ARCHIVE DESTINATION ${NA_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${NA_INSTALL_INCLUDE_DIR}
   RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
-)
-
-#-----------------------------------------------------------------------------
-# Specify project header files to be installed
-#-----------------------------------------------------------------------------
-set(NA_HEADERS
-  ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_types.h
-)
-
-if(NA_HAS_MPI)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
-  )
-endif()
-
-if(NA_HAS_SM)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.h
-  )
-endif()
-
-#-----------------------------------------------------------------------------
-# Add file(s) to CMake Install
-#-----------------------------------------------------------------------------
-install(
-  FILES
-    ${NA_HEADERS}
-  DESTINATION
-    ${NA_INSTALL_INCLUDE_DIR}
-  COMPONENT
-    headers
 )
 
 #------------------------------------------------------------------------------

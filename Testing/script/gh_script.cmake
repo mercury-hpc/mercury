@@ -68,6 +68,19 @@ if(MERCURY_BUILD_CONFIGURATION MATCHES "Ubsan")
   set(MERCURY_MEMORYCHECK_TYPE "UndefinedBehaviorSanitizer")
 endif()
 
+# Only sockets supported on macOS
+if(APPLE)
+  set(OFI_PROTOCOLS "sockets")
+else()
+  # Disable sockets with Tsan and Debug builds (OFI issues)
+  if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan"
+    OR MERCURY_BUILD_CONFIGURATION MATCHES "Debug")
+    set(OFI_PROTOCOLS "tcp")
+  else()
+    set(OFI_PROTOCOLS "sockets;tcp")
+  endif()
+endif()
+
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
 if(NOT DEFINED dashboard_model)
   set(MERCURY_DASHBOARD_MODEL "$ENV{MERCURY_DASHBOARD_MODEL}")
@@ -87,9 +100,6 @@ set(CTEST_UPDATE_VERSION_ONLY TRUE)
 
 # Number of jobs to build and keep going if some targets can't be made
 set(CTEST_BUILD_FLAGS "-k -j4")
-
-# Default num proc for MPI testing
-set(MAX_NUMPROCS "4")
 
 # Build shared libraries
 if(NOT DEFINED build_shared_libs)
@@ -120,10 +130,13 @@ if(MERCURY_DO_COVERAGE)
   if(NOT DEFINED dashboard_full OR dashboard_full)
     set(dashboard_do_coverage TRUE)
   endif()
+  if(dashboard_do_coverage)
+    set(dashboard_do_done TRUE)
+  endif()
 endif()
 
 # Optional memcheck options
-if(MERCURY_MEMORYCHECK_TYPE)
+if(DEFINED MERCURY_MEMORYCHECK_TYPE)
   message("Enabling memcheck")
 
   set(CTEST_MEMORYCHECK_TYPE ${MERCURY_MEMORYCHECK_TYPE})
@@ -139,9 +152,6 @@ if(MERCURY_MEMORYCHECK_TYPE)
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
-
-    # Set num proc to 1 to speed up CI
-    set(MAX_NUMPROCS "1")
   endif()
 
   # Asan
@@ -163,8 +173,16 @@ if(MERCURY_MEMORYCHECK_TYPE)
   if(NOT DEFINED dashboard_full OR dashboard_full)
     set(dashboard_do_memcheck TRUE)
   endif()
+  if(dashboard_do_memcheck)
+    set(dashboard_do_done TRUE)
+  endif()
 else()
   set(USE_CHECKSUMS ON)
+endif()
+
+# Complete dashboard by default
+if(NOT DEFINED MERCURY_MEMORYCHECK_TYPE AND NOT MERCURY_DO_COVERAGE AND dashboard_do_test)
+  set(dashboard_do_done TRUE)
 endif()
 
 # Build name referenced in cdash
@@ -224,9 +242,9 @@ NA_USE_MPI:BOOL=${USE_MPI}
 NA_USE_CCI:BOOL=OFF
 NA_USE_SM:BOOL=${USE_SM}
 NA_USE_OFI:BOOL=${USE_OFI}
-NA_OFI_TESTING_PROTOCOL:STRING=sockets;tcp
+NA_OFI_TESTING_PROTOCOL:STRING=${OFI_PROTOCOLS}
 NA_USE_UCX:BOOL=ON
-MPIEXEC_MAX_NUMPROCS:STRING=${MAX_NUMPROCS}
+NA_MPI_TESTING_PROTOCOL:STRING=static
 
 MERCURY_TESTING_ENABLE_PARALLEL:BOOL=${USE_MPI}
 MERCURY_TESTING_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_server;

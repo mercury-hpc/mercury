@@ -8,10 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-
 #include "mercury_test.h"
 
 /****************/

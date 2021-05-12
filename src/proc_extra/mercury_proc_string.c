@@ -10,6 +10,8 @@
 
 #include "mercury_proc_string.h"
 
+#include <stdlib.h>
+
 /****************/
 /* Local Macros */
 /****************/

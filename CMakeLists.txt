@@ -361,6 +361,7 @@ endif()
 # CPack
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
+  set(CPACK_GENERATOR "TBZ2")
   set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README.md)
   set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${MERCURY_PACKAGE_DESCRIPTION})
@@ -369,9 +370,29 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
   set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
   set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
-  set(CPACK_GENERATOR "TBZ2")
+  set(CPACK_SOURCE_GENERATOR "TBZ2")
   set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE}-${MERCURY_VERSION_FULL})
-  set(CPACK_SOURCE_IGNORE_FILES ".git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
+  set(CPACK_SOURCE_IGNORE_FILES
+    # Files specific to version control
+    "/\\\\.git/"
+    "/\\\\.git$"
+    "/\\\\.gitattributes$"
+    "/\\\\.github/"
+    "/\\\\.gitignore$"
+    "/\\\\.gitmodules$"
+
+    # IDE files
+    "/\\\\.vscode/"
+
+    # Build
+    "/build/"
+
+    # Temporary files
+    "\\\\.swp$"
+    "\\\\.#"
+    "/#"
+    "~$"
+  )
   set(CPACK_SOURCE_STRIP_FILES "")
   include(CPack)
 endif()

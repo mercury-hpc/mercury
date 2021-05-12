@@ -8,12 +8,9 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-
 #include "mercury_test.h"
+
+#include <unistd.h>
 
 /****************/
 /* Local Macros */
@@ -131,9 +128,7 @@ main(int argc, char *argv[])
     sleep(1);
 
     /* After that point, we need to silence errors */
-    HG_TEST_LOG_MASK = HG_LOG_TYPE_NONE;
-    HG_Set_log_level("none");
-    NA_Set_log_level("none");
+    hg_log_set_level(HG_LOG_LEVEL_NONE);
 
     if (!hg_test_info.na_test_info.self_send) {
         HG_TEST("attempt second interrupted RPC");

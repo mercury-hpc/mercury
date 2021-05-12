@@ -70,6 +70,7 @@ private:
     int ServerArgCount;
     bool AllowErrorInOutput;
     bool TestSerial;
+    bool IgnoreServerResult;
 };
 
 #endif //MERCURY_TEST_DRIVER_H

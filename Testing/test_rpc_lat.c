@@ -12,9 +12,6 @@
 #include "mercury_test.h"
 #include "mercury_time.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
 /****************/
 /* Local Macros */
 /****************/
@@ -30,8 +27,8 @@
 #define LARGE_SKIP 10
 #define LARGE_SIZE 8192
 
-#define NDIGITS      2
-#define NWIDTH       20
+#define NDIGITS 2
+#define NWIDTH  20
 
 /************************************/
 /* Local Type and Struct Definition */

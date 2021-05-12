@@ -8,10 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <inttypes.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "mercury_bulk.h"
 #include "mercury_bulk_proc.h"
 #include "mercury_core.h"
@@ -22,6 +18,9 @@
 #include "mercury_list.h"
 #include "mercury_thread_condition.h"
 #include "mercury_thread_spin.h"
+
+#include <stdlib.h>
+#include <string.h>
 
 /****************/
 /* Local Macros */
@@ -205,6 +204,7 @@ struct hg_bulk_op_id {
     hg_atomic_int32_t status;             /* Operation status */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_atomic_int32_t ref_count;          /* Refcount */
+    hg_return_t err_ret;                  /* Return value if errored status */
     hg_uint32_t op_count;                 /* Number of ongoing operations */
     hg_bool_t reuse;                      /* Re-use op ID once ref_count is 0 */
 };
@@ -1596,7 +1596,7 @@ hg_bulk_op_create(
     }
 #endif
 
-    HG_LOG_DEBUG("Created new bulk op ID (%p)", (void *)hg_bulk_op_id);
+    HG_LOG_DEBUG("Created new bulk op ID (%p)", (void *) hg_bulk_op_id);
 
     *hg_bulk_op_id_ptr = hg_bulk_op_id;
 
@@ -1677,7 +1677,7 @@ hg_bulk_op_destroy(struct hg_bulk_op_id *hg_bulk_op_id)
 
     /* Repost handle if we were listening, otherwise destroy it */
     if (hg_bulk_op_id->reuse) {
-        HG_LOG_DEBUG("Re-using bulk op ID (%p)", (void *)hg_bulk_op_id);
+        HG_LOG_DEBUG("Re-using bulk op ID (%p)", (void *) hg_bulk_op_id);
 
         /* Reset ref_count */
         hg_atomic_set32(&hg_bulk_op_id->ref_count, 1);
@@ -1690,7 +1690,7 @@ hg_bulk_op_destroy(struct hg_bulk_op_id *hg_bulk_op_id)
             &hg_bulk_op_id->op_pool->pending_list, hg_bulk_op_id, pending);
         hg_thread_spin_unlock(&hg_bulk_op_id->op_pool->pending_list_lock);
     } else {
-        HG_LOG_DEBUG("Freeing bulk op ID (%p)", (void *)hg_bulk_op_id);
+        HG_LOG_DEBUG("Freeing bulk op ID (%p)", (void *) hg_bulk_op_id);
 
         for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
             na_return_t na_ret;
@@ -1768,7 +1768,7 @@ hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
         hg_thread_spin_unlock(&hg_bulk_op_pool->pending_list_lock);
     }
 
-    HG_LOG_DEBUG("Created bulk op ID pool (%p)", (void *)hg_bulk_op_pool);
+    HG_LOG_DEBUG("Created bulk op ID pool (%p)", (void *) hg_bulk_op_pool);
 
     *hg_bulk_op_pool_ptr = hg_bulk_op_pool;
 
@@ -1787,7 +1787,7 @@ hg_bulk_op_pool_destroy(struct hg_bulk_op_pool *hg_bulk_op_pool)
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    HG_LOG_DEBUG("Free bulk op ID pool (%p)", (void *)hg_bulk_op_pool);
+    HG_LOG_DEBUG("Free bulk op ID pool (%p)", (void *) hg_bulk_op_pool);
 
     hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
 
@@ -1928,6 +1928,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
 
     /* Reset status */
     hg_atomic_set32(&hg_bulk_op_id->status, 0);
+    hg_bulk_op_id->err_ret = HG_SUCCESS;
 
     /* Expected op count */
     hg_bulk_op_id->op_count = (size > 0) ? 1 : 0; /* Default */
@@ -2351,7 +2352,7 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_COMPLETED,
             "Operation was completed");
-        HG_LOG_DEBUG("NA_CANCELED event on op ID %p", (void *)hg_bulk_op_id);
+        HG_LOG_DEBUG("NA_CANCELED event on op ID %p", (void *) hg_bulk_op_id);
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_CANCELED),
             "Received NA_CANCELED event on op ID that was not canceled");
@@ -2361,6 +2362,8 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
 
         /* Mark handle as errored */
         hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_ERRORED);
+        if (hg_bulk_op_id->err_ret == HG_SUCCESS)
+            hg_bulk_op_id->err_ret = (hg_return_t) callback_info->ret;
     }
 
     /* When all NA transfers that correspond to bulk operation complete
@@ -2393,12 +2396,12 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_bool_t self_notify)
     if (status & HG_BULK_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        HG_LOG_DEBUG("Operation ID %p is canceled", (void *)hg_bulk_op_id);
+        HG_LOG_DEBUG("Operation ID %p is canceled", (void *) hg_bulk_op_id);
         callback_info->ret = HG_CANCELED;
     } else if (status & HG_BULK_OP_ERRORED) {
         /* If it was errored, set callback ret accordingly */
-        HG_LOG_DEBUG("Operation ID %p is errored", (void *)hg_bulk_op_id);
-        callback_info->ret = HG_PROTOCOL_ERROR;
+        HG_LOG_DEBUG("Operation ID %p is errored", (void *) hg_bulk_op_id);
+        callback_info->ret = hg_bulk_op_id->err_ret;
     } else
         callback_info->ret = HG_SUCCESS;
 
@@ -2516,7 +2519,7 @@ HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
         flags, (struct hg_bulk **) handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not create bulk handle");
 
-    HG_LOG_DEBUG("Created new bulk handle (%p)", (void *)*handle);
+    HG_LOG_DEBUG("Created new bulk handle (%p)", (void *) *handle);
 
 done:
     return ret;
@@ -2531,7 +2534,7 @@ HG_Bulk_free(hg_bulk_t handle)
     if (handle == HG_BULK_NULL)
         goto done;
 
-    HG_LOG_DEBUG("Freeing bulk handle (%p)", (void *)handle);
+    HG_LOG_DEBUG("Freeing bulk handle (%p)", (void *) handle);
 
     ret = hg_bulk_free((struct hg_bulk *) handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not free bulk handle");
@@ -2567,8 +2570,8 @@ HG_Bulk_bind(hg_bulk_t handle, hg_context_t *context)
     HG_CHECK_ERROR(
         context == NULL, done, ret, HG_INVALID_ARG, "NULL HG context");
 
-    HG_LOG_DEBUG("Binding bulk handle (%p) to context (%p)",
-        (void *)handle, (void *)context);
+    HG_LOG_DEBUG("Binding bulk handle (%p) to context (%p)", (void *) handle,
+        (void *) context);
 
     ret = hg_bulk_bind((struct hg_bulk *) handle, context->core_context);
     HG_CHECK_HG_ERROR(done, ret, "Could not bind context to bulk handle");
@@ -2621,7 +2624,7 @@ HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
     if (!size || !max_count)
         goto done;
 
-    HG_LOG_DEBUG("Accessing bulk handle (%p)", (void *)handle);
+    HG_LOG_DEBUG("Accessing bulk handle (%p)", (void *) handle);
 
     hg_bulk_access((struct hg_bulk *) handle, offset, size, flags, max_count,
         buf_ptrs, buf_sizes, actual_count);
@@ -2645,7 +2648,7 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, unsigned long flags)
         "Serialize size with flags eager=%d, sm=%d, is %zu bytes for bulk "
         "handle (%p)",
         (flags & HG_BULK_EAGER) ? HG_TRUE : HG_FALSE,
-        (flags & HG_BULK_SM) ? HG_TRUE : HG_FALSE, ret, (void *)handle);
+        (flags & HG_BULK_SM) ? HG_TRUE : HG_FALSE, ret, (void *) handle);
 
 done:
     return ret;
@@ -2662,7 +2665,7 @@ HG_Bulk_serialize(
         "NULL bulk handle passed");
 
     HG_LOG_DEBUG("Serializing bulk handle (%p) with flags eager=%d, sm=%d",
-        (void *)handle, (flags & HG_BULK_EAGER) ? HG_TRUE : HG_FALSE,
+        (void *) handle, (flags & HG_BULK_EAGER) ? HG_TRUE : HG_FALSE,
         (flags & HG_BULK_SM) ? HG_TRUE : HG_FALSE);
 
     ret = hg_bulk_serialize(
@@ -2687,7 +2690,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         hg_class->core_class, (struct hg_bulk **) handle, buf, buf_size);
     HG_CHECK_HG_ERROR(done, ret, "Could not deserialize handle");
 
-    HG_LOG_DEBUG("Deserialized into new bulk handle (%p)", (void *)*handle);
+    HG_LOG_DEBUG("Deserialized into new bulk handle (%p)", (void *) *handle);
 
 done:
     return ret;
@@ -2733,7 +2736,7 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
 
     HG_LOG_DEBUG(
         "Transferring data between bulk handle (%p) and bulk handle (%p)",
-        (void *)hg_bulk_origin, (void *)hg_bulk_local);
+        (void *) hg_bulk_origin, (void *) hg_bulk_local);
 
     /* Do bulk transfer */
     ret = hg_bulk_transfer(context->core_context, callback, arg, op,
@@ -2785,7 +2788,7 @@ HG_Bulk_bind_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
 
     HG_LOG_DEBUG(
         "Transferring data between bulk handle (%p) and bulk handle (%p)",
-        (void *)hg_bulk_origin, (void *)hg_bulk_local);
+        (void *) hg_bulk_origin, (void *) hg_bulk_local);
 
     /* Do bulk transfer */
     ret = hg_bulk_transfer(context->core_context, callback, arg, op,
@@ -2837,7 +2840,7 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
 
     HG_LOG_DEBUG(
         "Transferring data between bulk handle (%p) and bulk handle (%p)",
-        (void *)hg_bulk_origin, (void *)hg_bulk_local);
+        (void *) hg_bulk_origin, (void *) hg_bulk_local);
 
     /* Do bulk transfer */
     ret = hg_bulk_transfer(context->core_context, callback, arg, op,
@@ -2858,7 +2861,7 @@ HG_Bulk_cancel(hg_op_id_t op_id)
     HG_CHECK_ERROR(op_id == HG_OP_ID_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG bulk operation ID");
 
-    HG_LOG_DEBUG("Canceling bulk op ID (%p)", (void *)op_id);
+    HG_LOG_DEBUG("Canceling bulk op ID (%p)", (void *) op_id);
 
     ret = hg_bulk_cancel((struct hg_bulk_op_id *) op_id);
     HG_CHECK_HG_ERROR(done, ret, "Could not cancel bulk operation");

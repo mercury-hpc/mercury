@@ -150,7 +150,8 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-macro(add_mercury_test test_name comm protocol busy parallel self scalable)
+macro(add_mercury_test test_name comm protocol busy parallel self scalable
+  ignore_server_err)
   # Set full test name
   set(full_test_name ${test_name})
   set(opt_names ${comm} ${protocol})
@@ -183,6 +184,9 @@ macro(add_mercury_test test_name comm protocol busy parallel self scalable)
   if(${scalable})
     set(test_args ${test_args} -C 2)
   endif()
+  if(${ignore_server_err})
+    set(driver_args ${driver_args} --allow-server-errors)
+  endif()
 
   if(NOT ${self})
     # Static client/server test (MPI only)
@@ -200,8 +204,10 @@ macro(add_mercury_test test_name comm protocol busy parallel self scalable)
       )
     else()
       # Dynamic client/server test
-      set(driver_args --server $<TARGET_FILE:hg_test_server>       ${test_args}
-                      --client $<TARGET_FILE:hg_test_${test_name}> ${test_args})
+      set(driver_args
+        ${driver_args}
+        --server $<TARGET_FILE:hg_test_server>       ${test_args}
+        --client $<TARGET_FILE:hg_test_${test_name}> ${test_args})
       if(NOT ${parallel})
         set(driver_args ${driver_args} --serial)
       endif()
@@ -237,12 +243,12 @@ macro(add_mercury_test_standalone test_name)
 endmacro()
 
 # Loop over all combinations
-function(add_mercury_test_comm test_name comm protocols progress_modes serial self)
+function(add_mercury_test_comm test_name comm protocols progress_modes serial self ignore_server_err)
 #  message("name=${test_name} comm=${comm} protocols=${protocols} progress_modes=${progress_modes} serial=${serial} self=${self}")
   foreach(protocol ${protocols})
     foreach(busy ${progress_modes})
       add_mercury_test(${test_name}
-        ${comm} ${protocol} ${busy} ${serial} ${self} false)
+        ${comm} ${protocol} ${busy} ${serial} ${self} false ${ignore_server_err})
     endforeach()
   endforeach()
 endfunction()
@@ -254,7 +260,7 @@ function(add_mercury_test_comm_scalable test_name comm protocols progress_modes 
       if(${comm} STREQUAL "ofi" AND
         (NOT ((${protocol} STREQUAL "tcp") OR (${protocol} STREQUAL "verbs"))))
           add_mercury_test(${test_name}
-            ${comm} ${protocol} ${busy} ${serial} false true)
+            ${comm} ${protocol} ${busy} ${serial} false true false)
       endif()
     endforeach()
   endforeach()
@@ -266,15 +272,15 @@ function(add_mercury_test_comm_all test_name)
     # Forward to remote server
     add_mercury_test_comm(${test_name} ${comm}
       "${NA_${upper_comm}_TESTING_PROTOCOL}"
-      "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} false)
+      "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} false false)
     # Forward to self
     if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
       add_mercury_test_comm(${test_name} ${comm}
         "${NA_${upper_comm}_TESTING_PROTOCOL}"
-        "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true)
+        "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true false)
     endif()
     # Scalable test
-    if(MERCURY_TESTING_USE_THREAD_POOL)
+    if(MERCURY_TESTING_USE_THREAD_POOL AND NOT APPLE)
       add_mercury_test_comm_scalable(${test_name} ${comm}
         "${NA_${upper_comm}_TESTING_PROTOCOL}"
         "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true)
@@ -288,24 +294,24 @@ function(add_mercury_test_comm_all_serial test_name)
     # Forward to remote server
     add_mercury_test_comm(${test_name} ${comm}
       "${NA_${upper_comm}_TESTING_PROTOCOL}"
-      "${NA_TESTING_NO_BLOCK}" false false)
+      "${NA_TESTING_NO_BLOCK}" false false false)
     # Forward to self
     if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
       add_mercury_test_comm(${test_name} ${comm}
         "${NA_${upper_comm}_TESTING_PROTOCOL}"
-        "${NA_TESTING_NO_BLOCK}" false true)
+        "${NA_TESTING_NO_BLOCK}" false true false)
     endif()
   endforeach()
 endfunction()
 
-function(add_mercury_test_comm_all_serial_remote test_name)
+function(add_mercury_test_comm_kill_server test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
     # Forward to remote server
     if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
       add_mercury_test_comm(${test_name} ${comm}
         "${NA_${upper_comm}_TESTING_PROTOCOL}"
-        "${NA_TESTING_NO_BLOCK}" false false)
+        "${NA_TESTING_NO_BLOCK}" false false true)
     endif()
   endforeach()
 endfunction()
@@ -362,7 +368,6 @@ build_mercury_test(bulk)
 build_mercury_test(lookup)
 build_mercury_test(proc)
 
-build_mercury_test(perf)
 build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
 build_mercury_test(read_bw)
@@ -383,5 +388,5 @@ add_mercury_test_comm_all_serial(rpc_lat)
 add_mercury_test_comm_all_serial(write_bw)
 add_mercury_test_comm_all_serial(read_bw)
 
-add_mercury_test_comm_all_serial_remote(kill)
+add_mercury_test_comm_kill_server(kill)
 

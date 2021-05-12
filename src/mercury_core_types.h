@@ -93,6 +93,7 @@ struct hg_init_info {
     X(HG_OPNOTSUPPORTED) /*!< operation not supported on endpoint */           \
     X(HG_ADDRINUSE)      /*!< address already in use */                        \
     X(HG_ADDRNOTAVAIL)   /*!< cannot assign requested address */               \
+    X(HG_HOSTUNREACH)    /*!< cannot reach host during operation */            \
     X(HG_TIMEOUT)        /*!< operation reached timeout */                     \
     X(HG_CANCELED)       /*!< operation canceled */                            \
     X(HG_CHECKSUM_ERROR) /*!< checksum error */                                \
