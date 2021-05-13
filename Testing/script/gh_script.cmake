@@ -190,7 +190,7 @@ if(NOT build_shared_libs)
   set(lower_mercury_build_configuration ${lower_mercury_build_configuration}-static)
 endif()
 
-set(CTEST_BUILD_NAME "${BUILD_NAME}-${OS_NAME}-$ENV{CC}-${lower_mercury_build_configuration}-${BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "${BUILD_NAME}-ucx-${OS_NAME}-$ENV{CC}-${lower_mercury_build_configuration}-${BUILD_NUMBER}")
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 
