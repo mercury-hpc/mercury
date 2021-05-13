@@ -36,6 +36,7 @@ HLOG_OUTLET_SHORT_DEFN(wireup_req, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wire_state, wireup);
 HLOG_OUTLET_SHORT_DEFN(reclaim, wireup);
 HLOG_OUTLET_SHORT_DEFN(timeout_noisy, all);
+HLOG_OUTLET_SHORT_DEFN(interval, timeout_noisy);
 HLOG_OUTLET_SHORT_DEFN(timeout, timeout_noisy);
 
 static char wire_no_data;
@@ -1482,7 +1483,7 @@ wireup_once(wiring_t *wiring)
     ival = (now < wiring->once.last) ? 0 : now - wiring->once.last;
 
     if (ival > wiring->once.longest_interval) {
-        hlog_fast(timeout, "%s: longest wireup_once() interval, "
+        hlog_fast(interval, "%s: longest wireup_once() interval, "
             "%" PRIu64 " -> %" PRIu64,
             __func__, wiring->once.longest_interval, ival);
         wiring->once.longest_interval = ival;
