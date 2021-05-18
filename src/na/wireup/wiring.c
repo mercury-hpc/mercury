@@ -63,7 +63,7 @@ static const wire_state_t *continue_life(wiring_t *, wire_t *,
 static const wire_state_t *destroy(wiring_t *, wire_t *);
 static const wire_state_t *reject_msg(wiring_t *, wire_t *,
     const wireup_msg_t *);
-static const wire_state_t *reject_expire(wiring_t *, wire_t *);
+static const wire_state_t *ignore_expire(wiring_t *, wire_t *);
 static const wire_state_t *ignore_wakeup(wiring_t *, wire_t *);
 static const wire_state_t *send_keepalive(wiring_t *, wire_t *);
 static const wire_state_t *retry(wiring_t *, wire_t *);
@@ -95,11 +95,11 @@ static wire_state_t state[] = {
                    .wakeup = send_keepalive,
                    .receive = continue_life,
                    .descr = "live"}
-, [WIRE_S_CLOSING] = {.expire = reject_expire,
+, [WIRE_S_CLOSING] = {.expire = ignore_expire,
                       .wakeup = ignore_wakeup,
                       .receive = reject_msg,
                       .descr = "closing"}
-, [WIRE_S_FREE] = {.expire = reject_expire,
+, [WIRE_S_FREE] = {.expire = ignore_expire,
                    .wakeup = ignore_wakeup,
                    .receive = reject_msg,
                    .descr = "free"}
@@ -643,7 +643,7 @@ ignore_wakeup(wiring_t *wiring, wire_t *w)
 }
 
 static const wire_state_t *
-reject_expire(wiring_t *wiring, wire_t *w)
+ignore_expire(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
