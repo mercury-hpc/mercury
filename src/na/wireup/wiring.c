@@ -44,11 +44,14 @@ void * const wire_data_nil = &wire_no_data;
 
 static const ucp_tag_t wireup_start_tag = TAG_CHNL_WIREUP | TAG_ID_MASK;
 
-#define _KEEPALIVE_INTERVAL 1000000000
-static const uint64_t keepalive_interval = _KEEPALIVE_INTERVAL;  // 1 second
-static const uint64_t timeout_interval = 2 * _KEEPALIVE_INTERVAL;
+#define KEEPALIVE_INTERVAL ((uint64_t)1000000000)
+#define RETRY_INTERVAL ((uint64_t)1000000000 / 4)
+static const uint64_t retry_interval = RETRY_INTERVAL;          // 1/4 second
+static const uint64_t keepalive_interval = KEEPALIVE_INTERVAL;  // 1 second
+static const uint64_t timeout_interval = UINT64_MAX; // 10 * KEEPALIVE_INTERVAL;
 
 static uint64_t getnanos(void);
+static uint64_t gettimeout(void);
 
 static void wireup_rx_req(wiring_t *, const wireup_msg_t *);
 
@@ -81,14 +84,14 @@ static void wiring_free_request_put(wiring_t *, wiring_request_t *);
 static bool wiring_requests_check_status(wiring_t *);
 static void wiring_requests_discard(wiring_t *);
 static void wiring_garbage_init(wiring_garbage_schedule_t *);
-static bool wiring_reclaim(wiring_t *, bool);
+static bool wiring_reclaim(wiring_t *, bool, bool *);
 static void wiring_closing_put(wiring_t *, sender_id_t);
 
 static wiring_ref_t reclaimed_bin_sentinel;
 
 static wire_state_t state[] = {
-  [WIRE_S_INITIAL] = {.expire = retry,
-                      .wakeup = ignore_wakeup,
+  [WIRE_S_INITIAL] = {.expire = ignore_expire,
+                      .wakeup = retry,
                       .receive = start_life,
                       .descr = "initial"}
 , [WIRE_S_LIVE] = {.expire = destroy,
@@ -522,8 +525,8 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     w->msg = NULL;
     w->msglen = 0;
     wiring_expiration_remove(st, w);
-    wiring_expiration_put(st, w, getnanos() + timeout_interval);
-    /* TBD assert that we're not on the wakeup queue already? */
+    wiring_expiration_put(st, w, gettimeout());
+    wiring_wakeup_remove(st, w);
     wiring_wakeup_put(st, w, getnanos() + keepalive_interval);
 
     return &state[WIRE_S_LIVE];
@@ -568,7 +571,7 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     }
 
     wiring_expiration_remove(st, w);
-    wiring_expiration_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, gettimeout());
 
     return &state[WIRE_S_LIVE];
 }
@@ -683,7 +686,7 @@ retry(wiring_t *wiring, wire_t *w)
         return &state[WIRE_S_CLOSING];
     }
 
-    wiring_expiration_put(st, w, getnanos() + timeout_interval);
+    wiring_wakeup_put(st, w, getnanos() + retry_interval);
 
     return &state[WIRE_S_INITIAL];
 }
@@ -1124,6 +1127,22 @@ getnanos(void)
     return (uint64_t)ts.tv_sec * 1000000000 + (uint64_t)ts.tv_nsec;
 }
 
+/* Return the current time plus the timeout interval or UINT64_MAX,
+ * whichever is smaller, protecting against overflow.  Since I use
+ * timeout_interval == UINT64_MAX to disable timeouts, overflow is
+ * a real possibility.
+ */
+static uint64_t
+gettimeout(void)
+{
+    const uint64_t nanos = getnanos();
+
+    if (UINT64_MAX - nanos < timeout_interval)
+        return UINT64_MAX;
+
+    return getnanos() + timeout_interval;
+}
+
 const char *
 wireup_op_string(wireup_op_t op)
 {
@@ -1195,7 +1214,7 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     }
     *w = (wire_t){.ep = ep, .id = rid, .state = &state[WIRE_S_LIVE]};
 
-    wiring_expiration_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, gettimeout());
     wiring_wakeup_put(st, w, getnanos() + keepalive_interval);
 
     tx_params = (ucp_request_param_t){
@@ -1379,7 +1398,8 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
         .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen,
         .cb = cb, .cb_arg = cb_arg};
 
-    wiring_expiration_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, gettimeout());
+    wiring_wakeup_put(st, w, getnanos() + retry_interval);
 
     if (!wireup_send(wiring, w)) {
         w->state = &state[WIRE_S_CLOSING];
