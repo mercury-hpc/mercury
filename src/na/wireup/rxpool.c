@@ -160,12 +160,17 @@ rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
     request = ucp_tag_recv_nbx(worker, buf, buflen, rxpool->tag,
         rxpool->tag_mask, &recv_params);
 
-    assert(request == desc);
+    /* TBD expect NULL.  Handle it by immediately enqueueing the completion? */
+    if (request == NULL)
+        errx(EXIT_FAILURE, "%s: ucp_tag_recv_nbx: request == NULL", __func__);
 
     if (UCS_PTR_IS_ERR(request)) {
         errx(EXIT_FAILURE, "%s: ucp_tag_recv_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
     }
+
+    if (request != desc)
+        errx(EXIT_FAILURE, "%s: ucp_tag_recv_nbx: request != desc", __func__);
 }
 
 void
