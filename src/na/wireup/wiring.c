@@ -472,22 +472,27 @@ wireup_wakeup_transition(wiring_t *wiring, uint64_t now)
     }
 }
 
-static void
+static bool
 wireup_expire_transition(wiring_t *wiring, uint64_t now)
 {
     wstorage_t *st = wiring->storage;
     wire_t *w;
+    bool progress = false;
 
     wiring_assert_locked(wiring);
 
     while ((w = wiring_expiration_peek(st)) != NULL) {
         if (w->tlink[timo_expire].due > now)
             break;
+
+        progress = true;
+
         wiring_expiration_remove(st, w);
         hlog_fast(wire_state, "%s: wire %td expired",
             __func__, w - &st->wire[0]);
         wireup_transition(wiring, w, (*w->state->expire)(wiring, w));
     }
+    return progress;
 }
 
 static const wire_state_t *
@@ -745,7 +750,7 @@ wiring_teardown(wiring_t *wiring, bool orderly)
         (void)ucp_worker_progress(wiring->worker);
 
     // no outstanding ops should hold onto garbage.
-    if (!wiring_reclaim(wiring, true))
+    if (!wiring_reclaim(wiring, true, NULL))
         hlog_fast(reclaim, "%s: could not reclaim everything", __func__);
 
     wiring_requests_discard(wiring);
@@ -1051,7 +1056,7 @@ wiring_garbage_add(wiring_t *wiring, wstorage_t *storage, void **assoc)
         (void *)storage, (void *)assoc);
 
     while ((last = sched->epoch.last) - sched->epoch.first == NELTS(sched->bin))
-        wiring_reclaim(wiring, false);
+        wiring_reclaim(wiring, false, NULL);
 
     bin = &sched->bin[last];
 
@@ -1497,6 +1502,7 @@ wireup_once(wiring_t *wiring)
     rxpool_t *rxpool = wiring->rxpool;
     rxdesc_t *rdesc;
     uint64_t now = getnanos(), ival;
+    bool progress = false;
 
     wiring_assert_locked(wiring);
 
@@ -1511,6 +1517,9 @@ wireup_once(wiring_t *wiring)
 
     wiring->once.last = now;
 
+    /* Wakeup does not affect the progress determination because
+     * no wire changes state.
+     */
     wireup_wakeup_transition(wiring, now);
 
     rdesc = rxpool_next(rxpool);
@@ -1530,14 +1539,16 @@ wireup_once(wiring_t *wiring)
         rxdesc_release(rxpool, rdesc);
     }
 
-    wireup_expire_transition(wiring, getnanos());
+    progress |= wireup_expire_transition(wiring, getnanos());
 
-    /* Reclaim requests for any transmissions / endpoint closures. */
+    /* Reclaim requests for any transmissions / endpoint closures.
+     * Request reclamation does not affect the progress determination.
+     */
     (void)wiring_requests_check_status(wiring);
 
-    wiring_reclaim(wiring, false);
+    wiring_reclaim(wiring, false, &progress);
 
-    return (rdesc != NULL) ? 1 : 0;
+    return (rdesc != NULL || progress) ? 1 : 0;
 }
 
 /* Store at `maskp` and `atagp` the mask and tag that wireup reserves
@@ -1642,7 +1653,7 @@ wiring_ref_holds_epoch(const wiring_ref_t *ref, uint64_t epoch_in_past)
 
 static bool
 wiring_reclaim_bin_for_epoch(wiring_t *wiring,
-    uint64_t epoch, uint64_t last_epoch)
+    uint64_t epoch, uint64_t last_epoch, bool *progressp)
 {
     wstorage_t *st = wiring->storage;
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
@@ -1688,6 +1699,8 @@ wiring_reclaim_bin_for_epoch(wiring_t *wiring,
         next_id = st->wire[id].next;
 
         hlog_fast(reclaim, "%s: finalizing wire %p", __func__, (void *)w);
+        if (progressp != NULL)
+            *progressp = true;
         wiring_finalize_wire(wiring, w);
         wireup_transition(wiring, w, &state[WIRE_S_FREE]);
 
@@ -1729,7 +1742,7 @@ wiring_closing_put(wiring_t *wiring, sender_id_t id)
 }
 
 static bool
-wiring_reclaim(wiring_t *wiring, bool finalize)
+wiring_reclaim(wiring_t *wiring, bool finalize, bool *progressp)
 {
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
     uint64_t epoch;
@@ -1750,7 +1763,7 @@ wiring_reclaim(wiring_t *wiring, bool finalize)
         hlog_fast(reclaim, "%s: reclaiming epoch %" PRIu64
             " in [%" PRIu64 ", %" PRIu64 "]", __func__, epoch, first, last);
 
-        wiring_reclaim_bin_for_epoch(wiring, epoch, last);
+        wiring_reclaim_bin_for_epoch(wiring, epoch, last, progressp);
     }
     if (sched->epoch.first != epoch)
         sched->epoch.first = epoch;
@@ -1759,5 +1772,5 @@ wiring_reclaim(wiring_t *wiring, bool finalize)
         return true;
     if (sched->epoch.first < sched->epoch.last)
         return false;
-    return wiring_reclaim_bin_for_epoch(wiring, epoch, epoch);
+    return wiring_reclaim_bin_for_epoch(wiring, epoch, epoch, progressp);
 }
