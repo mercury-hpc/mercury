@@ -1831,7 +1831,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    while (!hg_bulk_op_id) {
+    do {
         unsigned int i;
 
         hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
@@ -1847,6 +1847,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
         if (hg_bulk_op_pool->extending) {
             hg_thread_cond_wait(
                 &hg_bulk_op_pool->extend_cond, &hg_bulk_op_pool->extend_mutex);
+            hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
             continue;
         }
         hg_bulk_op_pool->extending = HG_TRUE;
@@ -1873,7 +1874,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
         hg_bulk_op_pool->extending = HG_FALSE;
         hg_thread_cond_broadcast(&hg_bulk_op_pool->extend_cond);
         hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
-    }
+    } while (!hg_bulk_op_id);
 
     *hg_bulk_op_id_ptr = hg_bulk_op_id;
 
