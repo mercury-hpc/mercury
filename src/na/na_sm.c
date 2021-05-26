@@ -1546,10 +1546,11 @@ na_sm_region_close(const char *username, pid_t pid, na_uint8_t id,
         shm_name_ptr = shm_name;
     }
 
-    NA_LOG_SUBSYS_DEBUG(cls, "shm_unmap() %s", shm_name_ptr);
+    NA_LOG_SUBSYS_DEBUG(cls, "shm_unmap() %s",
+        (shm_name_ptr == NULL) ? "is NULL" : shm_name_ptr);
     ret = na_sm_shm_unmap(shm_name_ptr, region, sizeof(struct na_sm_region));
-    NA_CHECK_SUBSYS_NA_ERROR(
-        cls, done, ret, "Could not unmap SM region (%s)", shm_name_ptr);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "Could not unmap SM region (%s)",
+        (shm_name_ptr == NULL) ? "is NULL" : shm_name_ptr);
 
 done:
     return ret;
@@ -2329,7 +2330,7 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
                     "Reserved pair index %u\n### Available: %s", (i + (j * 64)),
                     lltoa((hg_util_uint64_t) available, buf, 2));
 #endif
-                *index = (na_uint8_t)(i + (j * 64));
+                *index = (na_uint8_t) (i + (j * 64));
                 return NA_SUCCESS;
             }
 
