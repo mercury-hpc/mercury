@@ -1362,7 +1362,8 @@ recv_callback(void *request, ucs_status_t status,
         *recv_unexpected = (struct na_cb_info_recv_unexpected){
           .actual_buf_size = (na_size_t)info->length
         , .source = source
-        , .tag = (na_tag_t)SHIFTOUT(info->sender_tag, ~nuctx->msg.tagmask)};
+        , .tag = (na_tag_t)((info->sender_tag & ~nuctx->msg.tagmask) >>
+                            nuctx->msg.tagshift)};
 
         hlog_fast(op_life_noisy,
             "%s: op %p ucx tag %" PRIx64 " na tag %" PRIu32,
@@ -1776,7 +1777,7 @@ na_ucx_msg_send(na_context_t *context,
             break;
     }
 
-    tag = SHIFTIN(proto_tag, ~nuctx->msg.tagmask);
+    tag = proto_tag << nuctx->msg.tagshift;
     if (cb_type == NA_CB_SEND_EXPECTED)
         tag |= nuctx->exp.tag;
     else
