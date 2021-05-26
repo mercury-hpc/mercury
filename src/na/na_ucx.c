@@ -672,6 +672,19 @@ na_ucx_context_teardown(na_ucx_context_t *nctx, na_class_t *nacl)
     return;
 }
 
+static unsigned
+mask_to_shift(uint64_t mask)
+{
+    uint64_t lowest = LOWEST_SET_BIT(mask);
+    unsigned i;
+
+    for (i = 0; i < 64; i++) {
+        if ((lowest & BIT(i)) != 0)
+            break;
+    }
+    return i;
+}
+
 static na_return_t
 na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
 {
