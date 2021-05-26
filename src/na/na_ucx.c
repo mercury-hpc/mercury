@@ -1332,7 +1332,7 @@ recv_callback(void *request, ucs_status_t status,
 
     hlog_fast(op_life, "%s: op %p", __func__, (void *)op);
 
-    if (!hg_atomic_cas32(&op->status, expected_status, op_s_complete)) {
+    if (hg_atomic_get32(&op->status) != (hg_util_int32_t)expected_status) {
         NA_LOG_ERROR("op id %p: expected status %s, found %s",
             (void *)op,
             op_status_string(expected_status),
@@ -1341,6 +1341,8 @@ recv_callback(void *request, ucs_status_t status,
         hlog_fast(op_life_noisy, "%s: op %p ucx status %s", __func__,
             (void *)op, ucs_status_string(status));
     }
+
+    hg_atomic_set32(&op->status, op_s_complete);
 
     if (status == UCS_OK) {
         wire_id_t wire_id;
@@ -1447,13 +1449,14 @@ send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
     hlog_fast(op_life_noisy, "%s: op %p ucx status %s", __func__,
         (void *)op, ucs_status_string(status));
 
-    if (!hg_atomic_cas32(&op->status, expected_status, op_s_complete)) {
+    if (hg_atomic_get32(&op->status) != (hg_util_int32_t)expected_status) {
         NA_LOG_ERROR("op id %p: %s expected status %s, found %s",
             (void *)op,
 	    na_cb_type_string(op->completion_data.callback_info.type),
             op_status_string(expected_status),
             op_status_string(op->status));
     }
+    hg_atomic_set32(&op->status, op_s_complete);
 
     if (status == UCS_OK)
         cbinfo->ret = NA_SUCCESS;
