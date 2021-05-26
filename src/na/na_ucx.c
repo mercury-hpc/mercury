@@ -1092,7 +1092,7 @@ na_ucx_addr_cmp(na_class_t NA_UNUSED *nacl, na_addr_t addr1, na_addr_t addr2)
     return addr1 == addr2;
 }
 
-static NA_INLINE hg_util_int32_t
+static hg_util_int32_t
 addr_decref(na_ucx_addr_t *addr, const char *reason)
 {
     const hg_util_int32_t count = hg_atomic_decr32(&addr->refcount);
@@ -1103,7 +1103,7 @@ addr_decref(na_ucx_addr_t *addr, const char *reason)
     return count;
 }
 
-static NA_INLINE hg_util_int32_t
+static hg_util_int32_t
 addr_incref(na_ucx_addr_t *addr, const char *reason)
 {
     const hg_util_int32_t count = hg_atomic_incr32(&addr->refcount);
