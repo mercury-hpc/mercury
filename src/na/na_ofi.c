@@ -1747,7 +1747,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static void
 na_ofi_provider_check(
-    enum na_ofi_prov_type prov_type, const char *user_requested_protocol)
+    enum na_ofi_prov_type prov_type, const char NA_UNUSED *user_requested_protocol)
 {
     int rc;
     struct fi_info *cur;
