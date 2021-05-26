@@ -774,26 +774,32 @@ static inline bool
 wire_is_connected(wiring_t *wiring, wire_id_t wid)
 {
     wstorage_t *st = wiring->storage;
-    wire_t *w;
+    sender_id_t id = atomic_load_explicit(&wid.id, memory_order_relaxed);
 
-    if (wid.id == sender_id_nil || st->nwires <= wid.id)
+    if (id == sender_id_nil || st->nwires <= id)
         return false;
 
-    w = &st->wire[wid.id];
-
-    return w->state == &state[WIRE_S_LIVE];
+    return st->wire[id].state == &state[WIRE_S_LIVE];
 }
 
-/* TBD lock? */
+/* A caller must hold a reference on the wiring (a wiring_ref_t) to
+ * avoid racing with a wiring_enlarge() or wiring_teardown() call
+ * to access a slot in the associated-data table before it is
+ * relocated or freed.
+ */
 void *
 wire_get_data(wiring_t *wiring, wire_id_t wid)
 {
+    sender_id_t id = atomic_load_explicit(&wid.id, memory_order_relaxed);
+
     if (!wire_is_connected(wiring, wid))
         return wire_data_nil;
-    /* XXX TOCTOU race here.  Also, assoc can move between the
-     * time we load the pointer and the time we dereference it.
+    /* There is a TOCTOU race here if the caller does not hold a
+     * wiring_ref_t.  Also, `assoc` can be freed between the
+     * time we load the pointer and the time we dereference it, unless
+     * a reference is held.
      */
-    return wiring->assoc[wid.id];
+    return wiring->assoc[id];
 }
 
 /* TBD lock? */
@@ -1065,8 +1071,7 @@ wiring_garbage_add(wiring_t *wiring, wstorage_t *storage, void **assoc)
     bin->assoc = assoc;
     sched->epoch.last = last + 1;
 
-    atomic_fetch_add_explicit(&sched->work_available.next, 1,
-                              memory_order_release);
+    atomic_fetch_add_explicit(&sched->work_available, 1, memory_order_relaxed);
 }
 
 static wstorage_t *
@@ -1608,10 +1613,11 @@ wiring_ref_init(wiring_t *wiring, wiring_ref_t *ref,
     wiring_garbage_bin_t *bin;
 
     ref->reclaim = reclaim;
-    ref->busy = false;
+    atomic_store_explicit(&ref->busy, false, memory_order_relaxed);
 
     do {
-        uint64_t epoch = sched->epoch.last;
+        uint64_t epoch = atomic_load_explicit(&sched->epoch.last,
+            memory_order_acquire);
         bin = &sched->bin[epoch % NELTS(sched->bin)];
 
         /* Do not add a reference to a reclaimed bin.  The last bin can
@@ -1619,12 +1625,15 @@ wiring_ref_init(wiring_t *wiring, wiring_ref_t *ref,
          * race in between our loading `epoch.last` and updating it,
          * advancing `epoch.first` over our bin.  
          */
-        if ((ref->next = bin->first_ref) == &reclaimed_bin_sentinel)
+
+        ref->next = atomic_load_explicit(&bin->first_ref, memory_order_acquire);
+        if (ref->next == &reclaimed_bin_sentinel)
             continue;
 
-        ref->epoch = epoch;
+        atomic_store_explicit(&ref->epoch, epoch, memory_order_release);
 
-    } while (!atomic_compare_exchange_weak(&bin->first_ref, &ref->next, ref));
+    } while (!atomic_compare_exchange_weak_explicit(&bin->first_ref,
+                 &ref->next, ref, memory_order_acq_rel, memory_order_acquire));
 }
 
 static void

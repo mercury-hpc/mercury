@@ -637,9 +637,12 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
         aseq = address_wire_write_begin(cache);
 
         /* TBD assert prior values are nil? */
-        cache->wire_id = info.wire_id;
-        cache->sender_id = info.sender_id;
-        cache->ep = info.ep;
+        atomic_store_explicit(&cache->wire_id, info.wire_id,
+            memory_order_relaxed);
+        atomic_store_explicit(&cache->sender_id, info.sender_id,
+            memory_order_relaxed);
+        atomic_store_explicit(&cache->ep, info.ep,
+            memory_order_relaxed);
 
         address_wire_write_end(aseq);
     } else {
@@ -1665,9 +1668,11 @@ wire_event_callback(wire_event_info_t info, void *arg)
          * so it has been reclaimed.
          */
         aseq = address_wire_write_begin(cache);
-        cache->sender_id = sender_id_nil;
-        cache->wire_id = wire_id_nil;
-        cache->ep = NULL;
+        atomic_store_explicit(&cache->sender_id, sender_id_nil,
+            memory_order_relaxed);
+        atomic_store_explicit(&cache->wire_id, wire_id_nil,
+            memory_order_relaxed);
+        atomic_store_explicit(&cache->ep, NULL, memory_order_relaxed);
         address_wire_write_end(aseq);
 
         /* Now the address can be reclaimed
@@ -1716,8 +1721,9 @@ wire_event_callback(wire_event_info_t info, void *arg)
     hlog_fast(op_life, "%s: end deferred xmits", __func__);
 
     aseq = address_wire_write_begin(cache);
-    cache->ep = info.ep;
-    cache->sender_id = info.sender_id;
+    atomic_store_explicit(&cache->ep, info.ep, memory_order_relaxed);
+    atomic_store_explicit(&cache->sender_id, info.sender_id,
+        memory_order_relaxed);
     address_wire_write_end(aseq);
 
     return true;
@@ -1764,8 +1770,9 @@ na_ucx_msg_send(na_context_t *context,
 
     for (;;) {
         const address_wire_aseq_t aseq = address_wire_read_begin(cache);
-        sender_id = cache->sender_id;
-        cached_ctx = cache->ctx;
+        sender_id = atomic_load_explicit(&cache->sender_id,
+            memory_order_relaxed);
+        cached_ctx = atomic_load_explicit(&cache->ctx, memory_order_relaxed);
         /* XXX The endpoint mustn't be destroyed between the time we
          * load its pointer and the time we transmit on it, but the wireup
          * state machine isn't synchronized with transmission.
@@ -1777,7 +1784,7 @@ na_ucx_msg_send(na_context_t *context,
          * Alternatively, defer releasing the endpoint until an "epoch" has
          * passed.
          */
-        ep = cache->ep;
+        ep = atomic_load_explicit(&cache->ep, memory_order_relaxed);
         if (address_wire_read_end(aseq))
             break;
     }
@@ -2275,8 +2282,8 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
 
     for (;;) {
         const address_wire_aseq_t aseq = address_wire_read_begin(cache);
-        nuctx = cache->ctx;
-        ep = cache->ep;
+        nuctx = atomic_load_explicit(&cache->ctx, memory_order_relaxed);
+        ep = atomic_load_explicit(&cache->ep, memory_order_relaxed);
         if (address_wire_read_end(aseq))
             break;
     }

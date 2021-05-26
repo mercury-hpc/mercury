@@ -193,36 +193,46 @@ static inline void
 wiring_ref_get(wiring_t *wiring, wiring_ref_t *ref)
 {
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
-    const uint64_t last = sched->epoch.last;
+    const uint64_t last = atomic_load_explicit(&sched->epoch.last,
+        memory_order_acquire);
 
-    assert(!ref->busy);
+    assert(!atomic_load_explicit(&ref->busy, memory_order_relaxed));
 
-    ref->busy = true;
+    atomic_store_explicit(&ref->busy, true, memory_order_release);
 
-    if (ref->epoch == last)
+    const uint64_t epoch = atomic_load_explicit(&ref->epoch,
+        memory_order_relaxed);
+
+    if (epoch == last)
         return;
 
-    ref->epoch = last;
-    atomic_fetch_add_explicit(&sched->work_available.next, 1,
-                              memory_order_release);
+    atomic_store_explicit(&ref->epoch, last, memory_order_release);
+
+    atomic_fetch_add_explicit(&sched->work_available, 1,
+                              memory_order_relaxed);
 }
 
 static inline void
-wiring_ref_put(wiring_t *wiring, wiring_ref_t *ref)
+wiring_ref_put(wiring_t wiring_unused *wiring, wiring_ref_t *ref)
 {
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
-    const uint64_t last = sched->epoch.last;
+    const uint64_t last = atomic_load_explicit(&sched->epoch.last,
+        memory_order_acquire);
 
-    assert(ref->busy);
+    assert(atomic_load_explicit(&ref->busy, memory_order_relaxed));
 
-    ref->busy = false;
+    atomic_store_explicit(&ref->busy, false, memory_order_release);
 
-    if (ref->epoch == last)
+    const uint64_t epoch = atomic_load_explicit(&ref->epoch,
+        memory_order_relaxed);
+
+    if (epoch == last)
         return;
 
-    ref->epoch = last;
-    atomic_fetch_add_explicit(&sched->work_available.next, 1,
-                              memory_order_release);
+    atomic_store_explicit(&ref->epoch, last, memory_order_release);
+
+    atomic_fetch_add_explicit(&sched->work_available, 1,
+                              memory_order_relaxed);
 }
 
 static inline void
@@ -230,12 +240,12 @@ wiring_ref_free(wiring_t *wiring, wiring_ref_t *ref)
 {
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
 
-    assert(!ref->busy);
+    assert(!atomic_load_explicit(&ref->busy, memory_order_relaxed));
 
     ref->epoch = UINT64_MAX;
 
-    atomic_fetch_add_explicit(&sched->work_available.next, 1,
-                              memory_order_release);
+    atomic_fetch_add_explicit(&sched->work_available, 1,
+                              memory_order_relaxed);
 }
 
 #endif /* _WIRES_H_ */
