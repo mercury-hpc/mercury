@@ -196,7 +196,10 @@ typedef struct na_ucx_class na_ucx_class_t;
 
 struct na_op_id {
     struct na_cb_completion_data completion_data;
-    na_context_t *na_ctx;
+    struct {
+        na_context_t *na;
+        na_ucx_context_t *nu;
+    } ctx;
     hg_atomic_int32_t status;
     union {
         op_rxinfo_t rx;
@@ -1317,7 +1320,7 @@ recv_callback(void *request, ucs_status_t status,
     , .tag = 0
     };
     na_op_id_t *op = request;
-    na_ucx_context_t *nuctx = op->na_ctx->plugin_context;
+    na_ucx_context_t *nuctx = op->ctx.nu;
     struct na_cb_info *cbinfo = &op->completion_data.callback_info;
     struct na_cb_info_recv_unexpected *recv_unexpected =
         &cbinfo->info.recv_unexpected;
@@ -1419,18 +1422,19 @@ recv_callback(void *request, ucs_status_t status,
     }
 
 out:
+    // TBD use lighter weight synchronization in _ref_put, _ref_get.
     wiring_ref_put(&nuctx->wiring, &op->ref);
 
-    na_cb_completion_add(op->na_ctx, &op->completion_data);
-    hlog_fast(op_life_noisy, "%s: enqueued completion for op %p",
+    hlog_fast(op_life_noisy, "%s: enqueueing completion for op %p",
         __func__, (void *)op);
+    na_cb_completion_add(op->ctx.na, &op->completion_data);
 }
 
 static void
 send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
 {
     na_op_id_t *op = request;
-    na_ucx_context_t *nuctx = op->na_ctx->plugin_context;
+    na_ucx_context_t *nuctx = op->ctx.nu;
     struct na_cb_info *cbinfo = &op->completion_data.callback_info;
     const op_status_t expected_status =
         (status == UCS_ERR_CANCELED) ? op_s_canceled : op_s_underway;
@@ -1456,10 +1460,11 @@ send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
         cbinfo->ret = NA_PROTOCOL_ERROR;
 
     wiring_ref_put(&nuctx->wiring, &op->ref);
-    na_cb_completion_add(op->na_ctx, &op->completion_data);
 
     hlog_fast(op_life_noisy,
-        "%s: enqueued completion for op %p", __func__, (void *)op);
+        "%s: enqueueing completion for op %p", __func__, (void *)op);
+
+    na_cb_completion_add(op->ctx.na, &op->completion_data);
 }
 
 static na_return_t
@@ -1617,14 +1622,14 @@ tagged_send(na_ucx_context_t *nuctx, const void *buf, na_size_t buf_size,
         hg_atomic_set32(&op->status, op_s_complete);
         op->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
         wiring_ref_put(&nuctx->wiring, &op->ref);
-        na_cb_completion_add(op->na_ctx, &op->completion_data);
+        na_cb_completion_add(op->ctx.na, &op->completion_data);
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
         hlog_fast(op_life, "%s: completed op %p", __func__, (void *)op);
         hg_atomic_set32(&op->status, op_s_complete);
         op->completion_data.callback_info.ret = NA_SUCCESS;
         wiring_ref_put(&nuctx->wiring, &op->ref);
-        na_cb_completion_add(op->na_ctx, &op->completion_data);
+        na_cb_completion_add(op->ctx.na, &op->completion_data);
     } else {
         hlog_fast(op_life, "%s: posted op %p", __func__, (void *)op);
     }
@@ -1698,7 +1703,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
                 "%s:     op %p canceled -> complete", __func__, (void *)op);
             struct na_cb_info *cbinfo = &op->completion_data.callback_info;
             cbinfo->ret = NA_CANCELED;
-            na_cb_completion_add(op->na_ctx, &op->completion_data);
+            na_cb_completion_add(op->ctx.na, &op->completion_data);
         } else {
             hlog_fast(op_life,
                 "%s:     op %p expected deferred/canceled, found %s", __func__,
@@ -1784,7 +1789,8 @@ na_ucx_msg_send(na_context_t *context,
         tag |= nuctx->unexp.tag;
 
     /* TBD Assert expected op_id->status */
-    op_id->na_ctx = context;
+    op_id->ctx.na = context;
+    op_id->ctx.nu = nuctx;
     op_id->completion_data.callback_info.type = cb_type;
     op_id->completion_data.callback = callback;
     op_id->completion_data.callback_info.arg = arg;
@@ -1921,9 +1927,10 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
         __func__, na_cb_type_string(cb_type), buf, buf_size, tag, tagmask,
         (void *)op, arg);
 
-    /* TBD Assert expected status */
-    op->status = op_s_underway;
-    op->na_ctx = ctx;
+    /* TBD Assert expected status? */
+    hg_atomic_set32(&op->status, op_s_underway);
+    op->ctx.na = ctx;
+    op->ctx.nu = nuctx;
     op->info.rx.buf = buf;
     op->completion_data.callback_info.type = cb_type;
     op->completion_data.callback = callback;
@@ -2251,7 +2258,7 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     , .request = op
     };
     ucp_ep_h ep;
-    na_ucx_context_t NA_DEBUG_USED *nuctx;
+    na_ucx_context_t *nuctx;
     address_wire_t *cache = &remote_addr->wire_cache;
     ucs_status_ptr_t request;
     unpacked_rkey_t *unpacked = &remote_mh->handle.unpacked_remote;
@@ -2282,8 +2289,9 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
         return NA_PROTOCOL_ERROR;
 
     /* TBD: verify original status */
-    op->status = op_s_underway;
-    op->na_ctx = ctx;
+    hg_atomic_set32(&op->status, op_s_underway);
+    op->ctx.na = ctx;
+    op->ctx.nu = nuctx;
     op->completion_data.callback_info.type = put ? NA_CB_PUT : NA_CB_GET;
     op->completion_data.callback = callback;
     op->completion_data.callback_info.arg = arg;
@@ -2317,7 +2325,7 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
         wiring_ref_put(&nuctx->wiring, &op->ref);
         hg_atomic_set32(&op->status, op_s_complete);
         op->completion_data.callback_info.ret = NA_SUCCESS;
-        na_cb_completion_add(op->na_ctx, &op->completion_data);
+        na_cb_completion_add(op->ctx.na, &op->completion_data);
     } else {
         hlog_fast(op_life, "%s: posted %s op %p", __func__, put ? "put" : "get",
             (void *)op);
