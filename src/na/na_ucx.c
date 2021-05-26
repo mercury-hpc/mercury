@@ -230,6 +230,8 @@ struct _na_ucx_context {
     } exp, unexp;
     struct {
         uint64_t tagmask;
+        unsigned tagshift;
+        uint64_t tagmax;
     } msg;
     na_uint8_t id;
 };
@@ -739,6 +741,8 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
      */
     expflag = ~nctx->app.tagmask ^ (~nctx->app.tagmask >> 1);
     nctx->msg.tagmask = nctx->app.tagmask | expflag;
+    nctx->msg.tagmax = SHIFTOUT_MASK(~nctx->msg.tagmask);
+    nctx->msg.tagshift = mask_to_shift(~nctx->msg.tagmask);
     nctx->exp.tag = nctx->app.tag | expflag;
     nctx->unexp.tag = nctx->app.tag;
 
@@ -1730,7 +1734,7 @@ na_ucx_msg_send(na_context_t *context,
     ucp_ep_h ep;
     uint64_t tag;
     const na_tag_t NA_DEBUG_USED maxtag =
-        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
+        (na_tag_t)MIN(NA_TAG_MAX, nuctx->msg.tagmax);
 
     assert(proto_tag <= maxtag);
 
@@ -1959,12 +1963,12 @@ na_ucx_msg_recv_expected(na_class_t NA_UNUSED *nacl, na_context_t *ctx,
 {
     na_ucx_context_t *nuctx = ctx->plugin_context;
     const na_tag_t NA_DEBUG_USED maxtag =
-        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
+        (na_tag_t)MIN(NA_TAG_MAX, nuctx->msg.tagmax);
 
     assert(proto_tag <= maxtag);
 
     return na_ucx_msg_recv(ctx, callback, arg, buf, buf_size,
-        nuctx->exp.tag | SHIFTIN(proto_tag, ~nuctx->msg.tagmask), UINT64_MAX,
+        nuctx->exp.tag | (proto_tag << nuctx->msg.tagshift), UINT64_MAX,
         NA_CB_RECV_EXPECTED, op_id);
 }
 
@@ -2360,8 +2364,7 @@ static NA_INLINE na_tag_t
 na_ucx_msg_get_max_tag(const na_class_t *nacl)
 {
     const na_ucx_class_t *nucl = na_ucx_class_const(nacl);
-    const na_tag_t maxtag =
-        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nucl->context.msg.tagmask));
+    const na_tag_t maxtag = (na_tag_t)MIN(NA_TAG_MAX, nucl->context.msg.tagmax);
 
     assert(maxtag >= 3);
 
