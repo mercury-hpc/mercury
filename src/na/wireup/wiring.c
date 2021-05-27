@@ -996,8 +996,6 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     }
     wiring->storage = st;
     wiring->assoc = assoc;
-    wiring->once.last = UINT64_MAX;
-    wiring->once.longest_interval = 0;
 
     st->nwires = nwires;
 
@@ -1506,45 +1504,16 @@ wireup_once(wiring_t *wiring)
 {
     rxpool_t *rxpool = wiring->rxpool;
     rxdesc_t *rdesc;
-    uint64_t now = getnanos(), ival;
-    bool progress = false;
+    uint64_t now = getnanos();
+    bool progress;
 
     wiring_assert_locked(wiring);
-
-    ival = (now < wiring->once.last) ? 0 : now - wiring->once.last;
-
-    if (ival > wiring->once.longest_interval) {
-        hlog_fast(interval, "%s: longest wireup_once() interval, "
-            "%" PRIu64 " -> %" PRIu64,
-            __func__, wiring->once.longest_interval, ival);
-        wiring->once.longest_interval = ival;
-    }
-
-    wiring->once.last = now;
 
     /* Wakeup does not affect the progress determination because
      * no wire changes state.
      */
     wireup_wakeup_transition(wiring, now);
-
-    rdesc = rxpool_next(rxpool);
-
-    if (rdesc != NULL) {
-        if (rdesc->status != UCS_OK) {
-            hlog_fast(wireup_rx, "%s: receive error, %s, exiting.",
-                __func__, ucs_status_string(rdesc->status));
-            return -1;
-        }
-
-        hlog_fast(wireup_rx,
-            "%s: received %zu-byte message tagged %" PRIu64 ", processing...",
-            __func__, rdesc->rxlen, rdesc->sender_tag);
-        wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
-
-        rxdesc_release(rxpool, rdesc);
-    }
-
-    progress |= wireup_expire_transition(wiring, getnanos());
+    progress = wireup_expire_transition(wiring, now);
 
     /* Reclaim requests for any transmissions / endpoint closures.
      * Request reclamation does not affect the progress determination.
@@ -1553,7 +1522,23 @@ wireup_once(wiring_t *wiring)
 
     wiring_reclaim(wiring, false, &progress);
 
-    return (rdesc != NULL || progress) ? 1 : 0;
+    if ((rdesc = rxpool_next(rxpool)) == NULL)
+        return progress ? 1 : 0;
+
+    if (rdesc->status != UCS_OK) {
+        hlog_fast(wireup_rx, "%s: receive error, %s, exiting.",
+            __func__, ucs_status_string(rdesc->status));
+        return -1;
+    }
+
+    hlog_fast(wireup_rx,
+        "%s: received %zu-byte message tagged %" PRIu64 ", processing...",
+        __func__, rdesc->rxlen, rdesc->sender_tag);
+    wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
+
+    rxdesc_release(rxpool, rdesc);
+
+    return 1;
 }
 
 /* Store at `maskp` and `atagp` the mask and tag that wireup reserves
