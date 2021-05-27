@@ -1728,16 +1728,17 @@ wiring_reclaim(wiring_t *wiring, bool finalize, bool *progressp)
 {
     wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
     uint64_t epoch;
-    const uint64_t first = sched->epoch.first, last = sched->epoch.last;
 
-#if 0
-    if (sched->work_available.prev == sched->work_available.next && !finalize)
+    const uint64_t work_available =
+        atomic_load_explicit(&sched->work_available, memory_order_relaxed);
+    if (work_available == 0 && !finalize)
         return true;
     else
         hlog_fast(reclaim, "%s: there is work to do", __func__);
-#endif
 
-    assert(sched->work_available.prev <= sched->work_available.next);
+    assert(work_available >= 0);
+
+    const uint64_t first = sched->epoch.first, last = sched->epoch.last;
 
     wiring_assert_locked(wiring);
 
@@ -1749,7 +1750,10 @@ wiring_reclaim(wiring_t *wiring, bool finalize, bool *progressp)
     }
     if (sched->epoch.first != epoch)
         sched->epoch.first = epoch;
-    sched->work_available.prev = sched->work_available.next;
+
+    atomic_fetch_add_explicit(&sched->work_available, -work_available,
+        memory_order_relaxed);
+
     if (!finalize)
         return true;
     if (sched->epoch.first < sched->epoch.last)

@@ -110,9 +110,7 @@ typedef struct wiring_garbage_schedule {
     struct {
         volatile uint64_t wiring_atomic first, last;
     } epoch;
-    struct {
-        volatile uint64_t wiring_atomic prev, next;
-    } work_available;
+    volatile uint64_t wiring_atomic work_available;
     /* The wire_t storage and the associated-data table cannot
      * be reallocated more than 64 times during a program's
      * lifetime, because the size of each doubles with each reallocation
