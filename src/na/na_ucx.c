@@ -1346,12 +1346,12 @@ recv_callback(void *request, ucs_status_t status,
 
     if (status == UCS_OK) {
         wire_id_t wire_id;
-        const void * NA_DEBUG_LOG_USED buf = op->info.rx.buf;
+        const void *buf = op->info.rx.buf;
         void *data;
         na_addr_t source;
 
         // XXX use standard endianness
-        memcpy(&wire_id.id, op->info.rx.buf, sizeof(wire_id.id));
+        memcpy(&wire_id.id, buf, sizeof(wire_id.id));
 
         if (cbinfo->type != NA_CB_RECV_UNEXPECTED) {
             source = NULL;
