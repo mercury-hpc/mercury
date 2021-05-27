@@ -802,18 +802,6 @@ wire_get_data(wiring_t *wiring, wire_id_t wid)
     return wiring->assoc[id];
 }
 
-/* TBD lock? */
-sender_id_t
-wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
-{
-    if (!wire_is_connected(wiring, wid))
-        return sender_id_nil;
-    /* XXX TOCTOU race here.  Also, assoc can move between the
-     * time we load the pointer and the time we dereference it.
-     */
-    return wiring->storage->wire[wid.id].id;
-}
-
 bool
 wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 {

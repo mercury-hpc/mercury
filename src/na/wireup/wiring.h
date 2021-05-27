@@ -156,7 +156,6 @@ wire_id_t wireup_start(wiring_t *, ucp_address_t *, size_t,
 bool wireup_stop(wiring_t *, wire_id_t, bool);
 void wireup_app_tag(wiring_t *, uint64_t *, uint64_t *);
 const char *wire_event_string(wire_event_t);
-sender_id_t wire_get_sender_id(wiring_t *, wire_id_t);
 void *wire_get_data(wiring_t *, wire_id_t);
 
 void wiring_lock(wiring_t *);
