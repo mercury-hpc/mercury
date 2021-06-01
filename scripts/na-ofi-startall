@@ -3,7 +3,6 @@
 set -e
 set -u
 
-dir=$(dirname $0)
 prog=$(basename $0)
 
 . $dir/next.subr
@@ -16,4 +15,4 @@ echo output file ${outfile}
 
 rm -f port.cfg ucx-test-hostname finished-*
 
-jsrun -n 2 -r 1 -l CPU-CPU sh $HOME/na-ucx/mercury/${personality}-run > $outfile 2>&1 
+jsrun -n 2 -r 1 -l CPU-CPU sh ${dir}/${personality}-run > $outfile 2>&1 

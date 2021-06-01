@@ -1,6 +1,7 @@
 #!/bin/sh
 
+export dir=$(pwd)/$(dirname $0)
 prog=$(basename $0)
 export personality=${prog%%-launch}
 
-bsub $HOME/na-ucx/mercury/${personality}-job
+bsub ${dir}/${personality}-job

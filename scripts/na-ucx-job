@@ -5,4 +5,4 @@
 #BSUB -W 0:10
 #BSUB -nnodes 2
 
-$HOME/na-ucx/mercury/${personality}-startall
+${dir}/${personality}-startall
