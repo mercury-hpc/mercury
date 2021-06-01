@@ -1,0 +1,24 @@
+first_missing_file()
+{
+	personality=$1
+
+	seq 999 | \
+	while read seqno; do
+		tmpname=$(printf "%03d-${personality}-benchmark" $seqno)
+		[ -e $tmpname ] && continue
+		echo $tmpname
+		break
+	done
+}
+
+next_output_file()
+{
+	personality=$1
+
+	missing=$(first_missing_file ${personality})
+	if [ "x${missing}" = "x" ]; then
+		ls -1rt [0-9][0-9][0-9]-${personality}-benchmark | head -1
+	else
+		echo $missing
+	fi
+}

@@ -1,0 +1,102 @@
+#!/bin/sh
+
+set -e
+set -u
+
+prog=$(basename $0)
+prog_head=${prog%%-run}
+comm=${prog_head##na-}
+
+# Mercury config
+#export HG_NA_LOG_LEVEL=debug
+#export HLOG="all=on"
+export HLOG_OUTPUT=stderr # ring
+#export HLOG_OUTPUT=ring
+#export HLOG="tx=on rx=on op_life=on reqwait=on na_completions=on wireup=on"
+#export HLOG="wireup_req=on"
+#export HLOG="op_life=on reclaim=on"
+
+# UCX config
+export UCX_NET_DEVICES="mlx5_0:1"
+
+#
+# Using 1.10.1,
+#
+# UCX_TLS=ud passes the NA latency test.
+# UCX_TLS=rc crashes in the NA latency test.
+#
+#export UCX_TLS=ud_v	# Verbs-based ud
+#export UCX_TLS=ud_x	# accelerated ud
+#export UCX_TLS=rc_v	# Verbs-based rc
+#export UCX_TLS=rc_x	# accelerated rc
+export UCX_TLS=rc	# any rc
+#export UCX_TLS=ud	# any ud
+
+event=cycles
+#event=cs
+#event=page-faults
+
+perfcmd()
+{
+	which=$1
+	perfpfx="perf record -F 999 -e $event -g"
+	echo "$perfpfx -o ${which}.perf --"
+}
+
+pfxcmd="timeout -s ABRT 120s"
+
+hg_build_dir=$HOME/na-ucx/mercury/build
+
+cd $MEMBERWORK/csc444
+
+uname -a
+echo parameters UCX_NET_DEVICES=${UCX_NET_DEVICES} UCX_TLS=${UCX_TLS}
+echo perfcmd $(perfcmd sample)
+
+tests="na_test_lat_client"
+tests="${tests} hg_test_rpc_lat hg_test_read_bw hg_test_write_bw"
+
+case ${PMIX_RANK:-other} in
+0)
+	for test in $tests; do
+		if [ ${test##na_} != ${test} ]; then
+			server=$hg_build_dir/bin/na_test_lat_server
+		else
+			server=$hg_build_dir/bin/hg_test_server
+		fi
+		echo "server node: starting $server for $test" 1>&2
+		$pfxcmd $(perfcmd ${test}-sv) $server -V -c $comm -p verbs -b \
+		    -H mlx5_0 2>&1 | sed -u 's,^,S ,'
+		echo "server node: removing port.cfg" 1>&2
+		rm -f port.cfg
+		echo "server node: creating finished-$test" 1>&2
+		touch finished-$test
+	done
+	echo "server node: tests complete" 1>&2
+	;;
+1)
+	for test in $tests; do
+		echo "client node: awaiting port.cfg for $test" 1>&2
+		while [ ! -e port.cfg ]; do
+			sleep 1
+		done
+		client=$hg_build_dir/bin/$test
+		echo "client node: starting $client for $test" 1>&2
+		$pfxcmd $(perfcmd ${test}-cl) $client -V -c $comm -p verbs -b \
+		    -H mlx5_0 -l 1000 2>&1 | sed -u 's,^,C ,'
+		echo "client node: awaiting finished-$test" 1>&2
+		while ! rm finished-$test 2> /dev/null; do
+			sleep 1
+		done
+	done
+	echo "client node: tests complete" 1>&2
+	;;
+other)
+	if [ ${PMIX_RANK:-none} = "none" ]
+	then
+		echo "Rank (PMIX_RANK) is not set." 1>&2
+	else
+		echo "Unexpected rank (PMIX_RANK), ${PMIX_RANK}." 1>&2
+	fi
+	;;
+esac

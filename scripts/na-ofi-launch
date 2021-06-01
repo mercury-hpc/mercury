@@ -1,0 +1,6 @@
+#!/bin/sh
+
+prog=$(basename $0)
+export personality=${prog%%-launch}
+
+bsub $HOME/na-ucx/mercury/${personality}-job

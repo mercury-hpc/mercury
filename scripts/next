@@ -1,0 +1,12 @@
+#!/bin/bash
+
+dir=$(dirname $0)
+
+. $dir/next.subr
+
+cd $MEMBERWORK/csc444
+
+outfile=$(next_output_file ucx)
+
+touch $outfile
+echo next output file $outfile

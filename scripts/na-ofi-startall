@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -e
+set -u
+
+dir=$(dirname $0)
+prog=$(basename $0)
+
+. $dir/next.subr
+
+cd $MEMBERWORK/csc444
+
+outfile=$(next_output_file $personality)
+
+echo output file ${outfile}
+
+rm -f port.cfg ucx-test-hostname finished-*
+
+jsrun -n 2 -r 1 -l CPU-CPU sh $HOME/na-ucx/mercury/${personality}-run > $outfile 2>&1 
