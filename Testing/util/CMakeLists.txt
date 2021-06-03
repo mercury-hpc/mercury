@@ -20,6 +20,7 @@ set(MERCURY_util_tests
   atomic_queue
   hash_table
   list
+  mem_pool
   poll
   queue
   request
