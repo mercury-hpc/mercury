@@ -1926,6 +1926,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
     hg_bulk_op_id->callback_info.info.bulk.local_handle = hg_bulk_local;
     hg_atomic_incr32(&hg_bulk_local->ref_count);
     hg_bulk_op_id->callback_info.info.bulk.op = op;
+    hg_bulk_op_id->callback_info.info.bulk.size = size;
 
     /* Reset status */
     hg_atomic_set32(&hg_bulk_op_id->status, 0);
