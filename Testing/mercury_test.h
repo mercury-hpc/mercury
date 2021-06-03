@@ -21,6 +21,7 @@
 #    include "mercury_thread_pool.h"
 #endif
 #include "mercury_atomic.h"
+#include "mercury_mem_pool.h"
 
 #include "test_bulk.h"
 #include "test_overflow.h"
@@ -37,7 +38,6 @@
 struct hg_test_info {
     struct na_test_info na_test_info;
 #ifdef HG_TEST_HAS_THREAD_POOL
-    hg_thread_mutex_t bulk_handle_mutex;
     hg_thread_pool_t *thread_pool;
 #endif
     hg_class_t *hg_class;
@@ -45,7 +45,7 @@ struct hg_test_info {
     hg_context_t **secondary_contexts;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
-    hg_bulk_t bulk_handle;
+    struct hg_mem_pool *bulk_pool;
     hg_size_t buf_size_max;
 #ifdef HG_TEST_HAS_CRAY_DRC
     uint32_t credential;
@@ -63,9 +63,21 @@ struct hg_test_context_info {
     hg_atomic_int32_t finalizing;
 };
 
+struct hg_test_handle_info {
+#ifdef HG_TEST_HAS_THREAD_POOL
+    struct hg_thread_work work;
+#endif
+    void *data;
+};
+
 /*****************/
 /* Public Macros */
 /*****************/
+
+/* Max */
+#ifndef MAX
+#    define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
 
 /* Default error macro */
 #include "mercury_log.h"
