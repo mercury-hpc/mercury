@@ -240,6 +240,7 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
         hg_request_wait(send_request, NA_MAX_IDLE_TIME, NULL);
         hg_request_reset(send_request);
     }
+    hg_request_wait(send_request, NA_MAX_IDLE_TIME, NULL);
 
 done:
     /* Clean up resources */
