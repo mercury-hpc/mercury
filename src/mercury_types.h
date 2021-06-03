@@ -59,6 +59,7 @@ struct hg_cb_info_bulk {
     hg_bulk_t origin_handle; /* HG Bulk origin handle */
     hg_bulk_t local_handle;  /* HG Bulk local handle */
     hg_bulk_op_t op;         /* Operation type */
+    hg_size_t size;          /* Total size transferred */
 };
 
 struct hg_cb_info {
