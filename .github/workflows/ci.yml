@@ -21,10 +21,10 @@ jobs:
           submodules: true
 
       - name: Install package dependencies
-        run: sudo apt-get install -y clang-format-10
+        run: sudo apt-get install -y clang-format-12
 
       - name: Set git configuration
-        run: git config --global clangFormat.binary clang-format-10
+        run: git config --global clangFormat.binary clang-format-12
 
       - name: Check formatting (push to feature branch)
         if: github.ref != 'refs/heads/master' && github.event_name == 'push'
