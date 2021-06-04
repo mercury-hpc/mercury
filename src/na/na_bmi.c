@@ -2048,12 +2048,12 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Check overflows */
     NA_CHECK_ERROR(
-        (bmi_size_t)(local_offset + length) > na_bmi_mem_handle_local->len,
+        (bmi_size_t) (local_offset + length) > na_bmi_mem_handle_local->len,
         done, ret, NA_OVERFLOW,
         "Exceeding length of region exposed (%zu + %zu > %zu)", local_offset,
         length, na_bmi_mem_handle_local->len);
     NA_CHECK_ERROR(
-        (bmi_size_t)(remote_offset + length) > na_bmi_mem_handle_remote->len,
+        (bmi_size_t) (remote_offset + length) > na_bmi_mem_handle_remote->len,
         done, ret, NA_OVERFLOW,
         "Exceeding length of region exposed (%zu + %zu > %zu)", remote_offset,
         length, na_bmi_mem_handle_remote->len);
@@ -2180,12 +2180,12 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Check overflows */
     NA_CHECK_ERROR(
-        (bmi_size_t)(local_offset + length) > na_bmi_mem_handle_local->len,
+        (bmi_size_t) (local_offset + length) > na_bmi_mem_handle_local->len,
         done, ret, NA_OVERFLOW,
         "Exceeding length of region exposed (%zu + %zu > %zu)", local_offset,
         length, na_bmi_mem_handle_local->len);
     NA_CHECK_ERROR(
-        (bmi_size_t)(remote_offset + length) > na_bmi_mem_handle_remote->len,
+        (bmi_size_t) (remote_offset + length) > na_bmi_mem_handle_remote->len,
         done, ret, NA_OVERFLOW,
         "Exceeding length of region exposed (%zu + %zu > %zu)", remote_offset,
         length, na_bmi_mem_handle_remote->len);
