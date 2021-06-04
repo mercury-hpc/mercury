@@ -438,8 +438,8 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
     ret = (compare_value == InterlockedCompareExchangeNoFence(
                                 &ptr->value, swap_value, compare_value));
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = (hg_util_bool_t)(
-        compare_value == OPA_cas_int(ptr, compare_value, swap_value));
+    ret = (hg_util_bool_t) (compare_value ==
+                            OPA_cas_int(ptr, compare_value, swap_value));
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_compare_exchange_strong_explicit(ptr, &compare_value,
         swap_value, memory_order_acq_rel, memory_order_acquire);
@@ -613,9 +613,9 @@ hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
     ret = (compare_value == InterlockedCompareExchangeNoFence64(
                                 &ptr->value, swap_value, compare_value));
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = (hg_util_bool_t)(
-        compare_value == (hg_util_int64_t) OPA_cas_ptr(
-                             ptr, (void *) compare_value, (void *) swap_value));
+    ret = (hg_util_bool_t) (compare_value == (hg_util_int64_t) OPA_cas_ptr(ptr,
+                                                 (void *) compare_value,
+                                                 (void *) swap_value));
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_compare_exchange_strong_explicit(ptr, &compare_value,
         swap_value, memory_order_acq_rel, memory_order_acquire);
