@@ -10,7 +10,7 @@ fi
 
 # Check C and C++ code with clang-format
 echo "Checking formatting for commit range: $1"
-DIFF="$(git clang-format-10 --style file --diff --extensions c,h $1)"
+DIFF="$(git clang-format-${CLANG_FORMAT_VERSION} --style file --diff --extensions c,h $1)"
 if [ -n "${DIFF}" ] && [ "${DIFF}" != "no modified files to format" ] && [ "${DIFF}" != "clang-format did not modify any files" ]
 then
   echo "clang-format:"

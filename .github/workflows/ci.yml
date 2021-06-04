@@ -12,6 +12,9 @@ jobs:
   format:
     runs-on: ubuntu-latest
 
+    env:
+      CLANG_FORMAT_VERSION: 12
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -21,10 +24,10 @@ jobs:
           submodules: true
 
       - name: Install package dependencies
-        run: sudo apt-get install -y clang-format-12
+        run: sudo apt-get install -y clang-format-${{ env.CLANG_FORMAT_VERSION }}
 
       - name: Set git configuration
-        run: git config --global clangFormat.binary clang-format-12
+        run: git config --global clangFormat.binary clang-format-${{ env.CLANG_FORMAT_VERSION }}
 
       - name: Check formatting (push to feature branch)
         if: github.ref != 'refs/heads/master' && github.event_name == 'push'
