@@ -779,6 +779,34 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_perf_rpc_lat_bi, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+    perf_rpc_lat_in_t in_struct = {NULL, 0};
+
+    /* Get input struct */
+    ret = HG_Get_input(handle, &in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Get_input() failed (%s)", HG_Error_to_string(ret));
+
+    /* Send response back */
+    ret = HG_Respond(handle, NULL, NULL, &in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
+
+done:
+    ret = HG_Free_input(handle, &in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Free_input() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 {
     const struct hg_info *hg_info = NULL;
@@ -1074,6 +1102,7 @@ HG_TEST_THREAD_CB(hg_test_killed_rpc)
 
 HG_TEST_THREAD_CB(hg_test_perf_rpc)
 HG_TEST_THREAD_CB(hg_test_perf_rpc_lat)
+HG_TEST_THREAD_CB(hg_test_perf_rpc_lat_bi)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
 HG_TEST_THREAD_CB(hg_test_perf_bulk_read)
 // HG_TEST_THREAD_CB(hg_test_nested1)

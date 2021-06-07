@@ -57,6 +57,7 @@ struct hg_test_info {
     unsigned int thread_count;
     hg_bool_t auth;
     hg_bool_t auto_sm;
+    hg_bool_t bidirectional;
 };
 
 struct hg_test_context_info {
