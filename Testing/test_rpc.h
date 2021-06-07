@@ -26,12 +26,17 @@ typedef struct {
     hg_uint32_t buf_size;
 } perf_rpc_lat_in_t;
 
+typedef struct {
+    void *buf;
+    hg_uint32_t buf_size;
+} perf_rpc_lat_out_t;
+
 #ifdef HG_HAS_BOOST
 
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_STRUCT_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_STRUCT_PROC(rpc_handle_t, ((hg_uint64_t)(cookie)))
+MERCURY_GEN_STRUCT_PROC(rpc_handle_t, ((hg_uint64_t) (cookie)))
 
 /* Dummy function that needs to be shipped (already defined) */
 /* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
@@ -40,8 +45,8 @@ MERCURY_GEN_STRUCT_PROC(rpc_handle_t, ((hg_uint64_t)(cookie)))
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
 MERCURY_GEN_PROC(
-    rpc_open_in_t, ((hg_const_string_t)(path))((rpc_handle_t)(handle)))
-MERCURY_GEN_PROC(rpc_open_out_t, ((hg_int32_t)(ret))((hg_int32_t)(event_id)))
+    rpc_open_in_t, ((hg_const_string_t) (path)) ((rpc_handle_t) (handle)))
+MERCURY_GEN_PROC(rpc_open_out_t, ((hg_int32_t) (ret)) ((hg_int32_t) (event_id)))
 #else
 /* Dummy function that needs to be shipped (already defined) */
 /* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
@@ -157,6 +162,13 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
     }
 
     return ret;
+}
+
+/* Define hg_proc_perf_rpc_lat_out_t identical to in */
+static HG_INLINE hg_return_t
+hg_proc_perf_rpc_lat_out_t(hg_proc_t proc, void *data)
+{
+    return hg_proc_perf_rpc_lat_in_t(proc, data);
 }
 
 #endif /* TEST_RPC_H */
