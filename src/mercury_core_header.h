@@ -47,10 +47,12 @@ struct hg_core_header_response {
     hg_int8_t ret_code; /* Return code */
     hg_uint8_t flags;   /* Flags */
     hg_uint16_t cookie; /* Cookie */
+    hg_uint64_t pad;    /* Pad */
+    /* 96 bits here */
 #ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
+    /* 128 bits here */
 #endif
-    /* 64/32 bits here */
 };
 #if defined(__GNUC__) || defined(_WIN32)
 #    pragma pack(pop)
@@ -89,7 +91,7 @@ struct hg_core_header {
 #define HG_CORE_IDENTIFIER (('H' << 1) | ('G')) /* 0xD7 */
 
 /* Mercury protocol version number */
-#define HG_CORE_PROTOCOL_VERSION 0x04
+#define HG_CORE_PROTOCOL_VERSION 0x05
 
 /*********************/
 /* Public Prototypes */
