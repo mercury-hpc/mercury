@@ -97,6 +97,7 @@ hg_id_t hg_test_killed_rpc_id_g = 0;
 /* test_perf */
 hg_id_t hg_test_perf_rpc_id_g = 0;
 hg_id_t hg_test_perf_rpc_lat_id_g = 0;
+hg_id_t hg_test_perf_rpc_lat_bi_id_g = 0;
 hg_id_t hg_test_perf_bulk_id_g = 0;
 hg_id_t hg_test_perf_bulk_write_id_g = 0;
 hg_id_t hg_test_perf_bulk_read_id_g = 0;
@@ -119,6 +120,7 @@ hg_test_usage(const char *execname)
     printf("    -x, --handle        Max number of handles\n");
     printf("    -m, --memory        Use shared-memory with local targets\n");
     printf("    -t, --threads       Number of server threads\n");
+    printf("    -B, --bidirectional Bidirectional communication\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -161,6 +163,9 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
             case 'z': /* max buffer size */
                 hg_test_info->buf_size_max =
                     (hg_size_t) atol(na_test_opt_arg_g);
+                break;
+            case 'B': /* bidirectional */
+                hg_test_info->bidirectional = HG_TRUE;
                 break;
             default:
                 break;
@@ -406,6 +411,9 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_perf_rpc_lat_id_g =
         MERCURY_REGISTER(hg_class, "hg_test_perf_rpc_lat", perf_rpc_lat_in_t,
             void, hg_test_perf_rpc_lat_cb);
+    hg_test_perf_rpc_lat_bi_id_g =
+        MERCURY_REGISTER(hg_class, "hg_test_perf_rpc_lat_bi", perf_rpc_lat_in_t,
+            perf_rpc_lat_out_t, hg_test_perf_rpc_lat_bi_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
         bulk_write_in_t, void, hg_test_perf_bulk_cb);
     hg_test_perf_bulk_write_id_g = hg_test_perf_bulk_id_g;
