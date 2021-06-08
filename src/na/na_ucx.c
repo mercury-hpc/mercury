@@ -246,7 +246,7 @@ struct na_ucx_class {
     size_t request_size;        /* Size in bytes of the UCX transaction
                                  * identifier ("request").
                                  */
-    /* TBD synchronize access using a readers-writer lock like ofi */
+    hg_thread_mutex_t addr_lock;/* Synchronizes access to `addr_tbl`. */
     hg_hash_table_t *addr_tbl;  /* All addresses, deduplicated. */
     na_ucx_context_t context;   /* The solitary context. */
     hg_atomic_int32_t ncontexts;/* Always 1, for now. */
@@ -706,6 +706,7 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
     uint64_t expflag;
     size_t uaddrlen;
     ucs_status_t status;
+    int ret;
 
     status = ucp_worker_create(nucl->uctx, &worker_params, &nctx->worker);
 
@@ -745,7 +746,13 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
 
     nctx->self = self;
 
-    if (!hg_hash_table_insert(nucl->addr_tbl, self, self))
+    (void)hg_thread_mutex_lock(&nucl->addr_lock);
+
+    ret = hg_hash_table_insert(nucl->addr_tbl, self, self);
+
+    (void)hg_thread_mutex_unlock(&nucl->addr_lock);
+
+    if (!ret)
         goto cleanup_self;
 
     if (!wiring_init(&nctx->wiring, nctx->worker, nucl->request_size,
@@ -768,7 +775,9 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
     ucp_worker_release_address(nctx->worker, uaddr);
     return NA_SUCCESS;
 cleanup_tbl:
+    (void)hg_thread_mutex_lock(&nucl->addr_lock);
     hg_hash_table_remove(nucl->addr_tbl, self);
+    (void)hg_thread_mutex_unlock(&nucl->addr_lock);
 cleanup_self:
     free(self);
 cleanup_addr:
@@ -784,6 +793,7 @@ na_ucx_addr_dedup(na_class_t *nacl, na_addr_t addr)
     na_ucx_class_t *nucl = na_ucx_class(nacl);
     na_ucx_addr_t *dupaddr;
 
+    (void)hg_thread_mutex_lock(&nucl->addr_lock);
     dupaddr = hg_hash_table_lookup(nucl->addr_tbl, addr);
     if (dupaddr != HG_HASH_TABLE_NULL) {
         free(addr);
@@ -791,6 +801,7 @@ na_ucx_addr_dedup(na_class_t *nacl, na_addr_t addr)
     } else {
         hg_hash_table_insert(nucl->addr_tbl, addr, addr);
     }
+    (void)hg_thread_mutex_unlock(&nucl->addr_lock);
     return addr;
 }
 
@@ -862,11 +873,20 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
 
     nacl->plugin_class = nucl;
 
+    if (hg_thread_mutex_init(&nucl->addr_lock) != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("Could not initialize address lock");
+        free(nucl);
+        nacl->plugin_class = NULL;
+        ret = NA_NOMEM;
+        goto cleanup;
+    }
+
     nucl->addr_tbl = hg_hash_table_new(na_ucx_addr_hash, na_ucx_addr_equal);
 
     if (nucl->addr_tbl == NULL) {
         NA_LOG_ERROR("Could not allocate address table");
         free(nucl);
+        nacl->plugin_class = NULL;
         ret = NA_NOMEM;
         goto cleanup;
     }
@@ -953,6 +973,9 @@ na_ucx_finalize(na_class_t *nacl)
         hg_hash_table_free(nucl->addr_tbl);
         nucl->addr_tbl = NULL;
     }
+
+    (void)hg_thread_mutex_destroy(&nucl->addr_lock);
+
     free(nucl);
     return NA_SUCCESS;
 }
@@ -1144,7 +1167,11 @@ na_ucx_addr_free(na_class_t *nacl, na_addr_t _addr)
 
     assert(addr != nucl->context.self);
 
+    (void)hg_thread_mutex_lock(&nucl->addr_lock);
+
     found = hg_hash_table_remove(nucl->addr_tbl, addr);
+
+    (void)hg_thread_mutex_unlock(&nucl->addr_lock);
 
     assert(found);
 
