@@ -107,7 +107,7 @@ error:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = {0};
+    struct hg_test_info hg_test_info = {.hg_class = NULL};
 #ifdef HG_TEST_HAS_THREAD_POOL
     struct hg_test_thread_args hg_test_thread_args;
     hg_thread_t threads[HG_TEST_NUM_THREADS_DEFAULT];

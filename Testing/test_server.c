@@ -118,7 +118,7 @@ done:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = {0};
+    struct hg_test_info hg_test_info = {.hg_class = NULL};
 #ifdef HG_TEST_HAS_THREAD_POOL
     struct hg_test_worker *progress_workers = NULL;
 #endif

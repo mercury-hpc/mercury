@@ -477,7 +477,7 @@ done:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = {0};
+    struct hg_test_info hg_test_info = {.hg_class = NULL};
     hg_size_t buf_size;
     hg_return_t hg_ret;
     int ret = EXIT_SUCCESS;

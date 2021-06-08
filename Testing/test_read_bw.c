@@ -232,7 +232,7 @@ done:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = {0};
+    struct hg_test_info hg_test_info = {.hg_class = NULL};
     unsigned int nhandles;
     size_t size;
     hg_return_t hg_ret;
