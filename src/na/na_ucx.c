@@ -1737,8 +1737,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
                 "%s:     op %p deferred -> underway", __func__, (void *)op);
             tagged_send(cache->ctx, buf, buf_size, info.ep, info.sender_id,
                 tag, op);
-        } else if (hg_atomic_cas32(&op->status, op_s_canceled,
-                                                   op_s_complete)) {
+        } else if (hg_atomic_cas32(&op->status, op_s_canceled, op_s_complete)) {
             hlog_fast(op_life,
                 "%s:     op %p canceled -> complete", __func__, (void *)op);
             struct na_cb_info *cbinfo = &op->completion_data.callback_info;
