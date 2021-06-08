@@ -1831,7 +1831,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    while (!hg_bulk_op_id) {
+    do {
         unsigned int i;
 
         hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
@@ -1847,6 +1847,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
         if (hg_bulk_op_pool->extending) {
             hg_thread_cond_wait(
                 &hg_bulk_op_pool->extend_cond, &hg_bulk_op_pool->extend_mutex);
+            hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
             continue;
         }
         hg_bulk_op_pool->extending = HG_TRUE;
@@ -1873,7 +1874,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
         hg_bulk_op_pool->extending = HG_FALSE;
         hg_thread_cond_broadcast(&hg_bulk_op_pool->extend_cond);
         hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
-    }
+    } while (!hg_bulk_op_id);
 
     *hg_bulk_op_id_ptr = hg_bulk_op_id;
 
@@ -1925,6 +1926,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
     hg_bulk_op_id->callback_info.info.bulk.local_handle = hg_bulk_local;
     hg_atomic_incr32(&hg_bulk_local->ref_count);
     hg_bulk_op_id->callback_info.info.bulk.op = op;
+    hg_bulk_op_id->callback_info.info.bulk.size = size;
 
     /* Reset status */
     hg_atomic_set32(&hg_bulk_op_id->status, 0);
@@ -2356,6 +2358,9 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_CANCELED),
             "Received NA_CANCELED event on op ID that was not canceled");
+        /* Operations can be canceled by NA */
+        if (!(hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_CANCELED))
+            hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_CANCELED);
     } else if (callback_info->ret != NA_SUCCESS) {
         HG_LOG_ERROR("NA callback returned error (%s)",
             NA_Error_to_string(callback_info->ret));

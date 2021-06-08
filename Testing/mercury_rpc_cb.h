@@ -49,6 +49,8 @@ hg_test_perf_rpc_cb(hg_handle_t handle);
 hg_return_t
 hg_test_perf_rpc_lat_cb(hg_handle_t handle);
 hg_return_t
+hg_test_perf_rpc_lat_bi_cb(hg_handle_t handle);
+hg_return_t
 hg_test_perf_bulk_cb(hg_handle_t handle);
 hg_return_t
 hg_test_perf_bulk_read_cb(hg_handle_t handle);

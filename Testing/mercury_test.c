@@ -46,10 +46,14 @@ hg_test_request_progress(unsigned int timeout, void *arg);
 static int
 hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 
-#ifdef HG_TEST_HAS_THREAD_POOL
+static int
+hg_test_bulk_register(const void *buf, size_t size, void **handle, void *arg);
+
+static int
+hg_test_bulk_deregister(void *handle, void *arg);
+
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg);
-#endif
 
 static hg_return_t
 hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id);
@@ -93,6 +97,7 @@ hg_id_t hg_test_killed_rpc_id_g = 0;
 /* test_perf */
 hg_id_t hg_test_perf_rpc_id_g = 0;
 hg_id_t hg_test_perf_rpc_lat_id_g = 0;
+hg_id_t hg_test_perf_rpc_lat_bi_id_g = 0;
 hg_id_t hg_test_perf_bulk_id_g = 0;
 hg_id_t hg_test_perf_bulk_write_id_g = 0;
 hg_id_t hg_test_perf_bulk_read_id_g = 0;
@@ -115,6 +120,7 @@ hg_test_usage(const char *execname)
     printf("    -x, --handle        Max number of handles\n");
     printf("    -m, --memory        Use shared-memory with local targets\n");
     printf("    -t, --threads       Number of server threads\n");
+    printf("    -B, --bidirectional Bidirectional communication\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -157,6 +163,9 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
             case 'z': /* max buffer size */
                 hg_test_info->buf_size_max =
                     (hg_size_t) atol(na_test_opt_arg_g);
+                break;
+            case 'B': /* bidirectional */
+                hg_test_info->bidirectional = HG_TRUE;
                 break;
             default:
                 break;
@@ -205,24 +214,77 @@ hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_TEST_HAS_THREAD_POOL
-static hg_return_t
-hg_test_handle_create_cb(hg_handle_t handle, void *arg)
+static int
+hg_test_bulk_register(const void *buf, size_t size, void **handle, void *arg)
 {
-    struct hg_thread_work *hg_thread_work;
-    hg_return_t ret = HG_SUCCESS;
+    struct hg_test_info *hg_test_info = (struct hg_test_info *) arg;
+    hg_bulk_t hg_bulk = HG_BULK_NULL;
+    hg_return_t hg_ret;
+    int ret = HG_UTIL_SUCCESS;
+    void *buf_ptr[1] = {NULL};
+    hg_size_t buf_size[1] = {0};
+    union {
+        const void *const_buf;
+        char *buf;
+    } safe_buf = {.const_buf = buf};
+    size_t i;
 
-    hg_thread_work = malloc(sizeof(struct hg_thread_work));
-    HG_TEST_CHECK_ERROR(hg_thread_work == NULL, done, ret, HG_NOMEM_ERROR,
-        "Could not allocate hg_thread_work");
+    /* Force buffer initialization for testing */
+    for (i = 0; i < size; i++)
+        safe_buf.buf[i] = 0;
 
-    (void) arg;
-    HG_Set_data(handle, hg_thread_work, free);
+    buf_ptr[0] = (char *) safe_buf.buf;
+    buf_size[0] = (hg_size_t) size;
+
+    /* Create bulk buffer that can be used for receiving data */
+    hg_ret = HG_Bulk_create(hg_test_info->hg_class, 1, buf_ptr, buf_size,
+        HG_BULK_READWRITE, &hg_bulk);
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, HG_UTIL_FAIL,
+        "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
+    *handle = (void *) hg_bulk;
 
 done:
     return ret;
 }
-#endif
+
+/*---------------------------------------------------------------------------*/
+static int
+hg_test_bulk_deregister(void *handle, void *arg)
+{
+    hg_bulk_t hg_bulk = (hg_bulk_t) handle;
+    int ret = HG_UTIL_SUCCESS;
+
+    (void) arg;
+
+    if (hg_bulk != HG_BULK_NULL) {
+        /* Destroy bulk handle */
+        hg_return_t hg_ret = HG_Bulk_free(hg_bulk);
+        HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, HG_UTIL_FAIL,
+            "HG_Bulk_free() failed (%s)", HG_Error_to_string(ret));
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_handle_create_cb(hg_handle_t handle, void *arg)
+{
+    struct hg_test_handle_info *hg_test_handle_info;
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_test_handle_info = malloc(sizeof(struct hg_test_handle_info));
+    HG_TEST_CHECK_ERROR(hg_test_handle_info == NULL, done, ret, HG_NOMEM_ERROR,
+        "Could not allocate hg_test_handle_info");
+    memset(hg_test_handle_info, 0, sizeof(struct hg_test_handle_info));
+
+    (void) arg;
+    HG_Set_data(handle, hg_test_handle_info, free);
+
+done:
+    return ret;
+}
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -349,6 +411,9 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_perf_rpc_lat_id_g =
         MERCURY_REGISTER(hg_class, "hg_test_perf_rpc_lat", perf_rpc_lat_in_t,
             void, hg_test_perf_rpc_lat_cb);
+    hg_test_perf_rpc_lat_bi_id_g =
+        MERCURY_REGISTER(hg_class, "hg_test_perf_rpc_lat_bi", perf_rpc_lat_in_t,
+            perf_rpc_lat_out_t, hg_test_perf_rpc_lat_bi_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
         bulk_write_in_t, void, hg_test_perf_bulk_cb);
     hg_test_perf_bulk_write_id_g = hg_test_perf_bulk_id_g;
@@ -431,14 +496,12 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Class_set_data() failed (%s)", HG_Error_to_string(ret));
 
-#ifdef HG_TEST_HAS_THREAD_POOL
     /* Attach handle created */
     ret = HG_Class_set_handle_create_callback(hg_test_info->hg_class,
         hg_test_handle_create_cb, hg_test_info->hg_class);
     HG_TEST_CHECK_HG_ERROR(done, ret,
         "HG_Class_set_handle_create_callback() failed (%s)",
         HG_Error_to_string(ret));
-#endif
 
     /* Set header */
     /*
@@ -454,7 +517,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     /* Create additional contexts (do not exceed total max contexts) */
     if (hg_test_info->na_test_info.max_contexts > 1) {
         hg_uint8_t secondary_contexts_count =
-            (hg_uint8_t)(hg_test_info->na_test_info.max_contexts - 1);
+            (hg_uint8_t) (hg_test_info->na_test_info.max_contexts - 1);
         hg_uint8_t i;
 
         hg_test_info->secondary_contexts =
@@ -462,7 +525,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         HG_TEST_CHECK_ERROR(hg_test_info->secondary_contexts == NULL, done, ret,
             HG_NOMEM_ERROR, "Could not allocate secondary contexts");
         for (i = 0; i < secondary_contexts_count; i++) {
-            hg_uint8_t context_id = (hg_uint8_t)(i + 1);
+            hg_uint8_t context_id = (hg_uint8_t) (i + 1);
             hg_test_info->secondary_contexts[i] =
                 HG_Context_create_id(hg_test_info->hg_class, context_id);
             HG_TEST_CHECK_ERROR(hg_test_info->secondary_contexts[i] == NULL,
@@ -505,10 +568,6 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.listen ||
         hg_test_info->na_test_info.self_send) {
-        size_t bulk_size = hg_test_info->buf_size_max;
-        char *buf_ptr;
-        size_t i;
-
 #ifdef HG_TEST_HAS_THREAD_POOL
         /* Make sure that thread count is at least max_contexts */
         if (hg_test_info->thread_count <
@@ -521,23 +580,15 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             hg_test_info->thread_count, &hg_test_info->thread_pool);
         printf("# Starting server with %d threads...\n",
             hg_test_info->thread_count);
-
-        /* Create bulk handle mutex */
-        hg_thread_mutex_init(&hg_test_info->bulk_handle_mutex);
 #endif
-        /* Create bulk buffer that can be used for receiving data */
-        ret = HG_Bulk_create(hg_test_info->hg_class, 1, NULL,
-            (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
-            &hg_test_info->bulk_handle);
-        HG_TEST_CHECK_HG_ERROR(
-            done, ret, "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
 
-        ret = HG_Bulk_access(hg_test_info->bulk_handle, 0, bulk_size,
-            HG_BULK_READWRITE, 1, (void **) &buf_ptr, NULL, NULL);
-        HG_TEST_CHECK_HG_ERROR(
-            done, ret, "HG_Bulk_access() failed (%s)", HG_Error_to_string(ret));
-        for (i = 0; i < bulk_size; i++)
-            buf_ptr[i] = (char) i;
+        /* Create bulk pool */
+        hg_test_info->bulk_pool = hg_mem_pool_create(hg_test_info->buf_size_max,
+            MAX(hg_test_info->thread_count, hg_test_info->handle_max), 2,
+            hg_test_bulk_register, hg_test_bulk_deregister,
+            (void *) hg_test_info);
+        HG_TEST_CHECK_ERROR(hg_test_info->bulk_pool == NULL, done, ret,
+            HG_NOMEM, "Could not create bulk pool");
     }
 
     if (hg_test_info->na_test_info.listen) {
@@ -663,14 +714,13 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
     if (hg_test_info->thread_pool) {
         hg_thread_pool_destroy(hg_test_info->thread_pool);
         hg_test_info->thread_pool = NULL;
-        hg_thread_mutex_destroy(&hg_test_info->bulk_handle_mutex);
     }
 #endif
 
     /* Destroy secondary contexts */
     if (hg_test_info->secondary_contexts) {
         hg_uint8_t secondary_contexts_count =
-            (hg_uint8_t)(hg_test_info->na_test_info.max_contexts - 1);
+            (hg_uint8_t) (hg_test_info->na_test_info.max_contexts - 1);
         hg_uint8_t i;
 
         for (i = 0; i < secondary_contexts_count; i++) {
@@ -694,13 +744,8 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         hg_test_info->context = NULL;
     }
 
-    if (hg_test_info->bulk_handle != HG_BULK_NULL) {
-        /* Destroy bulk handle */
-        ret = HG_Bulk_free(hg_test_info->bulk_handle);
-        HG_TEST_CHECK_HG_ERROR(
-            done, ret, "HG_Bulk_free() failed (%s)", HG_Error_to_string(ret));
-        hg_test_info->bulk_handle = HG_BULK_NULL;
-    }
+    /* Destroy bulk pool */
+    hg_mem_pool_destroy(hg_test_info->bulk_pool);
 
     /* Finalize interface */
     if (hg_test_info->hg_class) {

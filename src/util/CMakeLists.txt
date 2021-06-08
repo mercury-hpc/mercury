@@ -172,6 +172,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
@@ -197,6 +198,7 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem_pool.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
