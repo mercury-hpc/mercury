@@ -205,6 +205,8 @@ rxpool_teardown(rxpool_t *rxpool)
 
         header_free(rxpool->request_size, alignof(rxdesc_t), desc);
     }
+    hg_atomic_queue_free(rxpool->complete);
+    rxpool->complete = NULL;
 }
 
 void
