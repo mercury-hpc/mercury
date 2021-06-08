@@ -40,12 +40,6 @@ typedef struct _wiring_lock_bundle {
     void *arg;
 } wiring_lock_bundle_t;
 
-/* TBD A wire ID can embed a generation
- * number to guard against wire
- * reassignment.  OR, add a "reclaimed"
- * state after "dead" to the wire state machine?
- * "Dead" wires will not be reused.
- */
 typedef struct _wire_id {
     sender_id_t wiring_atomic id;
 } wire_id_t;
