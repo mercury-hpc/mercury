@@ -962,6 +962,9 @@ na_ucx_finalize(na_class_t *nacl)
     if (nucl == NULL)
         return NA_SUCCESS;
 
+    if (hg_atomic_get32(&nucl->ncontexts) != 0)
+        return NA_BUSY;
+
     na_ucx_context_teardown(&nucl->context, nacl);
 
     nacl->plugin_class = NULL;
@@ -986,8 +989,10 @@ na_ucx_context_create(na_class_t *nacl, void **context, na_uint8_t id)
     na_ucx_class_t *nucl = na_ucx_class(nacl);
     na_ucx_context_t *ctx = &nucl->context;
 
-    if (!hg_atomic_cas32(&nucl->ncontexts, 0, 1))
+    if (!hg_atomic_cas32(&nucl->ncontexts, 0, 1)) {
+        hlog_fast(ctx, "%s: no context available", __func__);
         return NA_NOMEM;
+    }
 
     ctx->id = id;
     ctx->nacl = nacl;
