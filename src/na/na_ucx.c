@@ -1304,7 +1304,7 @@ op_ref_reclaim(wiring_ref_t *ref)
 
     hlog_fast(op_life, "%s: destroyed op %p", __func__, (void *)op);
 
-    header_free(op->nucl->request_size, alignof(*op), op);
+    header_free(op->nucl->request_size, alignof(na_op_id_t), op);
 }
 
 static na_op_id_t *
@@ -1314,7 +1314,7 @@ na_ucx_op_create(na_class_t NA_UNUSED *nacl)
     wiring_t *wiring = &nucl->context.wiring;
     na_op_id_t *id;
 
-    id = header_alloc(nucl->request_size, alignof(*id), sizeof(*id));
+    id = header_alloc(nucl->request_size, alignof(na_op_id_t), sizeof(*id));
 
     if (id == NULL) {
         NA_LOG_ERROR("Could not allocate NA UCX operation ID");
