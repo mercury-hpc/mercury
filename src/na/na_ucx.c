@@ -637,7 +637,7 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
         aseq = address_wire_write_begin(cache);
 
         /* TBD assert prior values are nil? */
-        atomic_store_explicit(&cache->wire_id, info.wire_id,
+        atomic_store_explicit(&cache->wire_id.id, info.wire_id.id,
             memory_order_relaxed);
         atomic_store_explicit(&cache->sender_id, info.sender_id,
             memory_order_relaxed);
@@ -1705,7 +1705,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
         aseq = address_wire_write_begin(cache);
         atomic_store_explicit(&cache->sender_id, sender_id_nil,
             memory_order_relaxed);
-        atomic_store_explicit(&cache->wire_id, wire_id_nil,
+        atomic_store_explicit(&cache->wire_id.id, sender_id_nil,
             memory_order_relaxed);
         atomic_store_explicit(&cache->ep, NULL, memory_order_relaxed);
         address_wire_write_end(aseq);
