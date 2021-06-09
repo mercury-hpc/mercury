@@ -192,7 +192,7 @@
     } while (0)
 
 /* Log macro */
-#define HG_LOG_WRITE_DEBUG(name, ...)                                          \
+#define HG_LOG_WRITE_DEBUG(name, debug_func, ...)                              \
     do {                                                                       \
         if (HG_LOG_OUTLET(name).level < HG_LOG_LEVEL_MIN_DEBUG)                \
             break;                                                             \
@@ -200,9 +200,11 @@
             HG_LOG_OUTLET(name).debug_log)                                     \
             hg_dlog_addlog(HG_LOG_OUTLET(name).debug_log, __FILE__, __LINE__,  \
                 __func__, NULL, NULL);                                         \
-        if (HG_LOG_OUTLET(name).level == HG_LOG_LEVEL_DEBUG)                   \
+        if (HG_LOG_OUTLET(name).level == HG_LOG_LEVEL_DEBUG) {                 \
             hg_log_write(&HG_LOG_OUTLET(name), HG_LOG_LEVEL_DEBUG, __FILE__,   \
                 __LINE__, __func__, __VA_ARGS__);                              \
+            debug_func;                                                        \
+        }                                                                      \
     } while (0)
 
 /**
@@ -346,6 +348,14 @@ HG_UTIL_PUBLIC void
 hg_log_set_stream_error(FILE *stream);
 
 /**
+ * Get the stream for error output.
+ *
+ * \return pointer to stream
+ */
+HG_UTIL_PUBLIC FILE *
+hg_log_get_stream_error(void);
+
+/**
  * Set the stream for warning output.
  *
  * \param stream [IN/OUT]       pointer to stream
@@ -354,12 +364,28 @@ HG_UTIL_PUBLIC void
 hg_log_set_stream_warning(FILE *stream);
 
 /**
+ * Get the stream for warning output.
+ *
+ * \return pointer to stream
+ */
+HG_UTIL_PUBLIC FILE *
+hg_log_get_stream_warning(void);
+
+/**
  * Set the stream for debug output.
  *
  * \param stream [IN/OUT]       pointer to stream
  */
 HG_UTIL_PUBLIC void
 hg_log_set_stream_debug(FILE *stream);
+
+/**
+ * Get the stream for debug output.
+ *
+ * \return pointer to stream
+ */
+HG_UTIL_PUBLIC FILE *
+hg_log_get_stream_debug(void);
 
 /**
  * Register log outlet.

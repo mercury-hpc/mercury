@@ -255,9 +255,21 @@ hg_log_set_subsys(const char *log_subsys)
 
     /* Enable each of the subsys */
     while (strtok_r(current, ",", &next) && i < HG_LOG_SUBSYS_MAX) {
-        strncpy(hg_log_subsys_g[i], current, HG_LOG_SUBSYS_NAME_MAX);
+        int j, exist = 0;
+
+        /* Skip duplicates */
+        for (j = 0; j < i; j++) {
+            if (strcmp(current, hg_log_subsys_g[j]) == 0) {
+                exist = 1;
+                break;
+            }
+        }
+
+        if (!exist) {
+            strncpy(hg_log_subsys_g[i], current, HG_LOG_SUBSYS_NAME_MAX);
+            i++;
+        }
         current = next;
-        i++;
     }
 
     /* Update outlets */
@@ -350,6 +362,15 @@ hg_log_set_stream_debug(FILE *stream)
 }
 
 /*---------------------------------------------------------------------------*/
+FILE *
+hg_log_get_stream_debug(void)
+{
+    return hg_log_streams_g[HG_LOG_LEVEL_DEBUG]
+               ? hg_log_streams_g[HG_LOG_LEVEL_DEBUG]
+               : *hg_log_std_streams_g[HG_LOG_LEVEL_DEBUG];
+}
+
+/*---------------------------------------------------------------------------*/
 void
 hg_log_set_stream_warning(FILE *stream)
 {
@@ -357,10 +378,28 @@ hg_log_set_stream_warning(FILE *stream)
 }
 
 /*---------------------------------------------------------------------------*/
+FILE *
+hg_log_get_stream_warning(void)
+{
+    return hg_log_streams_g[HG_LOG_LEVEL_WARNING]
+               ? hg_log_streams_g[HG_LOG_LEVEL_WARNING]
+               : *hg_log_std_streams_g[HG_LOG_LEVEL_WARNING];
+}
+
+/*---------------------------------------------------------------------------*/
 void
 hg_log_set_stream_error(FILE *stream)
 {
     hg_log_streams_g[HG_LOG_LEVEL_ERROR] = stream;
+}
+
+/*---------------------------------------------------------------------------*/
+FILE *
+hg_log_get_stream_error(void)
+{
+    return hg_log_streams_g[HG_LOG_LEVEL_ERROR]
+               ? hg_log_streams_g[HG_LOG_LEVEL_ERROR]
+               : *hg_log_std_streams_g[HG_LOG_LEVEL_ERROR];
 }
 
 /*---------------------------------------------------------------------------*/

@@ -441,6 +441,19 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+    const char *log_subsys = getenv("HG_LOG_SUBSYS");
+
+    if (!log_subsys) {
+        const char *log_level = getenv("HG_LOG_LEVEL");
+
+        /* Set log level */
+        if (!log_level)
+            log_level = "warning";
+
+        /* Set global log level */
+        HG_Set_log_level(log_level);
+        HG_Util_set_log_level(log_level);
+    }
 
     /* Get HG test options */
     hg_test_parse_options(argc, argv, hg_test_info);

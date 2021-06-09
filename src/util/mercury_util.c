@@ -21,7 +21,8 @@
 
 /* Name of this subsystem */
 #define HG_UTIL_SUBSYS_NAME        hg_util
-#define HG_UTIL_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY(HG_UTIL_SUBSYS_NAME)
+#define HG_UTIL_STRINGIFY1(x)      HG_UTIL_STRINGIFY(x)
+#define HG_UTIL_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY1(HG_UTIL_SUBSYS_NAME)
 
 /*******************/
 /* Local Variables */
