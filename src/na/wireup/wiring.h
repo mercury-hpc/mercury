@@ -96,9 +96,9 @@ typedef struct wiring_garbage_bin {
 } wiring_garbage_bin_t;
 
 typedef struct wiring_garbage_schedule {
-    /* a writer both initiates new epochs and reclaims resources connected
-     * with prior epochs.  first <= last, always.  If first < last, then
-     * there are resources to reclaim in the circular buffer `last - first`
+    /* A writer both initiates new epochs and reclaims resources
+     * connected with prior epochs. first <= last, always.  If first <
+     * last, then there are resources to reclaim in the `last - first`
      * circular-buffer bins starting at bin[first % NELTS(bin)].
      */
     struct {
