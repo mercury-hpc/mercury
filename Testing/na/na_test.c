@@ -389,6 +389,19 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     char *info_string = NULL;
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
+    const char *log_subsys = getenv("HG_LOG_SUBSYS");
+
+    if (!log_subsys) {
+        const char *log_level = getenv("HG_LOG_LEVEL");
+
+        /* Set log level */
+        if (!log_level)
+            log_level = "warning";
+
+        /* Set global log level */
+        NA_Set_log_level(log_level);
+        HG_Util_set_log_level(log_level);
+    }
 
     na_test_parse_options(argc, argv, na_test_info);
 

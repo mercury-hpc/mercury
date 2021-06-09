@@ -41,9 +41,11 @@ extern NA_PRIVATE HG_LOG_OUTLET_DECL(poll); /* Progress */
 #define NA_LOG_SUBSYS_WARNING(subsys, ...)                                     \
     HG_LOG_WRITE(subsys, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef NA_HAS_DEBUG
-#    define NA_LOG_DEBUG(...) HG_LOG_WRITE_DEBUG(na, __VA_ARGS__)
+#    define NA_LOG_DEBUG(...) HG_LOG_WRITE_DEBUG(na, NULL, __VA_ARGS__)
 #    define NA_LOG_SUBSYS_DEBUG(subsys, ...)                                   \
-        HG_LOG_WRITE_DEBUG(subsys, __VA_ARGS__)
+        HG_LOG_WRITE_DEBUG(subsys, NULL, __VA_ARGS__)
+#    define NA_LOG_SUBSYS_DEBUG_FUNC(subsys, debug_func, ...)                  \
+        HG_LOG_WRITE_DEBUG(subsys, debug_func, __VA_ARGS__)
 #else
 #    define NA_LOG_DEBUG(...)        (void) 0
 #    define NA_LOG_SUBSYS_DEBUG(...) (void) 0

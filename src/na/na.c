@@ -22,7 +22,8 @@
 
 /* Name of this subsystem */
 #define NA_SUBSYS_NAME        na
-#define NA_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY(NA_SUBSYS_NAME)
+#define NA_STRINGIFY(x)       HG_UTIL_STRINGIFY(x)
+#define NA_SUBSYS_NAME_STRING NA_STRINGIFY(NA_SUBSYS_NAME)
 
 #define NA_CLASS_DELIMITER "+" /* e.g. "class+protocol" */
 

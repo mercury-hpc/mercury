@@ -33,8 +33,9 @@
     ((struct hg_private_class *) ((handle)->info.hg_class))
 
 /* Name of this subsystem */
-#define HG_SUBSYS_NAME        hg_
-#define HG_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY(HG_SUBSYS_NAME)
+#define HG_SUBSYS_NAME        hg
+#define HG_STRINGIFY(x)       HG_UTIL_STRINGIFY(x)
+#define HG_SUBSYS_NAME_STRING HG_STRINGIFY(HG_SUBSYS_NAME)
 
 /************************************/
 /* Local Type and Struct Definition */
