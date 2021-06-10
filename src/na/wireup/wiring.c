@@ -1044,13 +1044,14 @@ wiring_garbage_add(wiring_t *wiring, wstorage_t *storage, void **assoc)
 
     wiring_assert_locked(wiring);
 
-    hlog_fast(reclaim, "%s: adding storage %p assoc %p", __func__,
-        (void *)storage, (void *)assoc);
-
     while ((last = sched->epoch.last) - sched->epoch.first == NELTS(sched->bin))
         wiring_reclaim(wiring, false, NULL);
 
-    bin = &sched->bin[last];
+    hlog_fast(reclaim, "%s: adding storage %p assoc %p epoch %" PRIu64
+        " bin %" PRIu64, __func__, (void *)storage, (void *)assoc, last,
+        last % NELTS(sched->bin));
+
+    bin = &sched->bin[last % NELTS(sched->bin)];
 
     assert(bin->assoc == NULL && bin->storage == NULL);
     bin->storage = storage;
