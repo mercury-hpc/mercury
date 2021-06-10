@@ -1748,7 +1748,8 @@ wiring_reclaim(wiring_t *wiring, bool finalize, bool *progressp)
         hlog_fast(reclaim, "%s: reclaiming epoch %" PRIu64
             " in [%" PRIu64 ", %" PRIu64 "]", __func__, epoch, first, last);
 
-        wiring_reclaim_bin_for_epoch(wiring, epoch, last, progressp);
+        if (!wiring_reclaim_bin_for_epoch(wiring, epoch, last, progressp))
+            break;
     }
     if (sched->epoch.first != epoch)
         sched->epoch.first = epoch;
