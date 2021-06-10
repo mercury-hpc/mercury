@@ -37,6 +37,7 @@ struct na_init_info {
     na_size_t max_expected_size;   /* Max expected size hint */
     na_uint32_t progress_mode;     /* Progress mode */
     na_uint8_t max_contexts;       /* Max contexts */
+    na_uint8_t thread_mode;        /* Thread mode */
 };
 
 /* Segment */
@@ -135,10 +136,18 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_NO_BLOCK 0x01 /*!< no blocking progress */
 #define NA_NO_RETRY 0x02 /*!< no retry of operations in progress */
 
+/* Thread modes (default is thread-safe) */
+#define NA_THREAD_MODE_SINGLE_CLS                                              \
+    (0x01) /*!< only one thread will access class */
+#define NA_THREAD_MODE_SINGLE_CTX                                              \
+    (0x02) /*!< only one thread will access context */
+#define NA_THREAD_MODE_SINGLE                                                  \
+    (NA_THREAD_MODE_SINGLE_CLS | NA_THREAD_MODE_SINGLE_CTX)
+
 /* NA init info initializer */
 #define NA_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NULL, NULL, 0, 0, 0, 1                                                 \
+        NULL, NULL, 0, 0, 0, 1, 0                                              \
     }
 
 #endif /* NA_TYPES_H */
