@@ -787,6 +787,9 @@ cleanup_worker:
     return NA_PROTOCOL_ERROR;   // XXX arbitrary choice of error status
 }
 
+/* Look for a duplicate of `addr` in our table.  If one is found, then
+ * free `addr` and return the duplicate.  Otherwise, return `addr`.
+ */
 static na_addr_t
 na_ucx_addr_dedup(na_class_t *nacl, na_addr_t addr)
 {

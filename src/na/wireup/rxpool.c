@@ -16,6 +16,7 @@
 HLOG_OUTLET_SHORT_DEFN(rxpool, all);
 
 static rxdesc_t *rxpool_next_slow(rxpool_t *, rxdesc_t *);
+static void rxdesc_setup(rxpool_t *, void *, size_t, rxdesc_t *);
 
 static void
 rxdesc_callback(void *request, ucs_status_t status,
@@ -44,6 +45,15 @@ rxdesc_callback(void *request, ucs_status_t status,
         errx(EXIT_FAILURE, "%s: push failed", __func__);
 }
 
+/* Allocate and initialize a receive-descriptor pool.  On success,
+ * return a new pool.  Otherwise, return NULL on error.
+ *
+ * This is a thin layer over `rxpool_init`, see that routine's
+ * documentation for more detail.
+ *
+ * The caller should release all of the resources connected with this
+ * pool by calling `rxpool_destroy`.
+ */
 rxpool_t *
 rxpool_create(ucp_worker_h worker, rxpool_next_buflen_t next_buflen,
     size_t request_size, ucp_tag_t tag, ucp_tag_t tag_mask, size_t nelts)
@@ -72,6 +82,33 @@ roundup_to_power_of_2(size_t x)
     return y;
 }
 
+/* Initialize the receive-descriptor pool, `rxpool`.  On success, return
+ * `rxpool`.  Otherwise, return NULL.
+ *
+ * The pool posts receives on `worker`.  The lifetime of `worker` must
+ * exceed that of `rxpool`.
+ *
+ * `next_buflen` points to a function that the pool calls when a received
+ * message does not fit into a receive buffer.  `next_buflen` tells
+ * the next larger buffer size to use.  When its argument is `0`, it
+ * returns the initial size in bytes for the pool's receive buffers.
+ * For any other argument, `n`, it returns the next larger buffer size,
+ * which must be at least `n + 1`.
+ *
+ * `request_size` tells how many bytes to reserve for use by UCP at
+ * the beginning of a buffer `malloc(3)`d for a receive descriptor
+ * (`rxdesc_t`).
+ *
+ * `tag` and `tag_mask` describe the messages of interest to the pool.
+ * The pool will exclusively receive messages whose tags `rxtag` satisfy
+ * `rxtag ^ tag_mask == tag & tag_mask`.
+ *
+ * The pool will buffer `nelts` received messages.  If `nelts`
+ * messages are already buffered, then the `nelts + 1`th message and
+ * subsequent messages may be dropped.  The owner of the pool
+ * replenishes it by performing `rxpool_next` to retrieve a message and
+ * `rxpool_release` to release that message's descriptor.
+ */
 rxpool_t *
 rxpool_init(rxpool_t *rxpool, ucp_worker_h worker,
     rxpool_next_buflen_t next_buflen, size_t request_size,
@@ -137,7 +174,12 @@ rxpool_init(rxpool_t *rxpool, ucp_worker_h worker,
     return rxpool;
 }
 
-void
+/* (Re)initialize the receive descriptor `desc` belonging to `rxpool`
+ * and post a receive for up to `buflen` bytes at `buf`.  After the posted
+ * receive finishes (or errors out), `rxpool_next(rxpool)` will return the
+ * descriptor.
+ */
+static void
 rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
 {
     const ucp_request_param_t recv_params = {
@@ -173,6 +215,12 @@ rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
         errx(EXIT_FAILURE, "%s: ucp_tag_recv_nbx: request != desc", __func__);
 }
 
+/* Reclaim the resources connected with `rxpool`: cancel the posted
+ * receives and wait for them to complete.  Free the receive descriptors
+ * and release the completion queue.
+ *
+ * Note well: the caller is responsible for `free(3)`ing `rxpool`.
+ */
 void
 rxpool_teardown(rxpool_t *rxpool)
 {
@@ -209,6 +257,9 @@ rxpool_teardown(rxpool_t *rxpool)
     rxpool->complete = NULL;
 }
 
+/* Reclaim the resources connected with `rxpool` and `free(3)` `rxpool`.
+ * See `rxpool_teardown` for details.
+ */
 void
 rxpool_destroy(rxpool_t *rxpool)
 {
@@ -230,9 +281,12 @@ rxpool_pop(rxpool_t *rxpool)
     return rdesc;
 }
 
-/* Return the next completed Rx descriptor in the pool or NULL if
+/* Return the next completed Rx descriptor in `rxpool` or NULL if
  * there are none.  The caller should check the error status
  * before trying to use the Rx buffer.
+ *
+ * The caller "owns" the descriptor.  The pool cannot reuse the
+ * descriptor until the caller releases it with `rxdesc_release`.
  *
  * Callers are responsible for synchronizing calls to rxpool_next().
  */
@@ -334,6 +388,12 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
     return head;
 }
 
+/* Relinquish the caller's ownership of the receive descriptor `rdesc`.
+ * Under the control of `rxpool`, the descriptor can receive a new message.
+ *
+ * `rdesc` must be a descriptor returned by a previous call to
+ * `rxpool_next(rxpool)`.
+ */
 void
 rxdesc_release(rxpool_t *rxpool, rxdesc_t *rdesc)
 {
