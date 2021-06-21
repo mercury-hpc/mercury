@@ -60,6 +60,8 @@ mark_as_advanced(NA_ALLOW_MULTI_PROGRESS)
 # External dependencies / NA plugins
 #------------------------------------------------------------------------------
 include(CheckIncludeFiles)
+include(CheckSymbolExists)
+include(CheckVariableExists)
 
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
@@ -171,6 +173,19 @@ if(NA_USE_UCX)
     ${NA_EXT_LIB_DEPENDENCIES}
     ${UCX_LIBRARIES}
   )
+  # Additional cmake testing
+  set(CMAKE_REQUIRED_FLAGS ${TSAN_C_FLAGS})
+  set(CMAKE_REQUIRED_INCLUDES ${UCX_INCLUDE_DIR})
+  set(CMAKE_REQUIRED_LIBRARIES ${UCX_LIBRARIES})
+
+  # Detect ucp_lib_query
+  check_symbol_exists(ucp_lib_query ucp/api/ucp.h NA_UCX_HAS_LIB_QUERY)
+  # Detect whether UCX has thread mode names
+  check_variable_exists(ucs_thread_mode_names NA_UCX_HAS_THREAD_MODE_NAMES)
+
+  unset(CMAKE_REQUIRED_FLAGS)
+  unset(CMAKE_REQUIRED_INCLUDES)
+  unset(CMAKE_REQUIRED_LIBRARIES)
 endif()
 
 # SM
