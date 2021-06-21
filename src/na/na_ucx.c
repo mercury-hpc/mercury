@@ -389,6 +389,17 @@ const struct na_class_ops NA_PLUGIN_OPS(ucx) = {
     na_ucx_cancel                          /* cancel */
 };
 
+#ifndef NA_UCX_HAS_THREAD_MODE_NAMES
+#    define NA_UCX_THREAD_MODES                                                \
+        X(UCS_THREAD_MODE_SINGLE, "single")                                    \
+        X(UCS_THREAD_MODE_SERIALIZED, "serialized")                            \
+        X(UCS_THREAD_MODE_MULTI, "multi")
+#    define X(a, b) b,
+static const char *ucs_thread_mode_names[UCS_THREAD_MODE_LAST] = {
+    NA_UCX_THREAD_MODES};
+#    undef X
+#endif
+
 /*
  * Local Helper Functions
  */
@@ -692,11 +703,12 @@ mask_to_shift(uint64_t mask)
 }
 
 static na_return_t
-na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
+na_ucx_context_init(
+    na_ucx_context_t *nctx, na_ucx_class_t *nucl, ucs_thread_mode_t thread_mode)
 {
     ucp_worker_params_t worker_params = {
       .field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE
-    , .thread_mode = UCS_THREAD_MODE_MULTI
+    , .thread_mode = thread_mode
     };
     ucp_worker_attr_t worker_actuals = {
       .field_mask = UCP_WORKER_ATTR_FIELD_THREAD_MODE
@@ -720,11 +732,15 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nucl)
         goto cleanup_worker;
     }
 
-    if ((worker_actuals.field_mask & UCP_WORKER_ATTR_FIELD_THREAD_MODE) == 0 ||
-        (worker_actuals.thread_mode != UCS_THREAD_MODE_SERIALIZED &&
-         worker_actuals.thread_mode != UCS_THREAD_MODE_MULTI)) {
-        NA_LOG_ERROR(
-            "UCP worker thread mode unknown, not serialized, or not multi");
+    if ((worker_actuals.field_mask & UCP_WORKER_ATTR_FIELD_THREAD_MODE) == 0) {
+        NA_LOG_ERROR("worker attributes contain no thread mode");
+        goto cleanup_worker;
+    }
+
+    if (thread_mode != UCS_THREAD_MODE_SINGLE
+        && worker_actuals.thread_mode < thread_mode) {
+        NA_LOG_ERROR("UCP worker thread mode (%s) is not supported",
+            ucs_thread_mode_names[worker_actuals.thread_mode]);
         goto cleanup_worker;
     }
 
@@ -835,31 +851,58 @@ na_ucx_check_protocol(const char NA_UNUSED *protocol_name)
 }
 
 static na_return_t
-na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
+na_ucx_initialize(na_class_t *nacl, const struct na_info *na_info,
     na_bool_t NA_UNUSED listen)
 {
-    ucp_context_attr_t uctx_attrs;
+#ifdef NA_UCX_HAS_LIB_QUERY
+    ucp_lib_attr_t ucp_lib_attrs;
+#endif
     ucp_params_t global_params = {
       .field_mask = UCP_PARAM_FIELD_FEATURES | UCP_PARAM_FIELD_REQUEST_SIZE
     , .features = UCP_FEATURE_TAG | UCP_FEATURE_RMA
     , .request_size = sizeof(rxdesc_t)
     };
+    ucp_context_attr_t uctx_attrs = {
+        .field_mask = UCP_ATTR_FIELD_REQUEST_SIZE | UCP_ATTR_FIELD_THREAD_MODE
+    };
     na_ucx_class_t *nucl;
     ucp_config_t *config;
+    ucs_thread_mode_t context_thread_mode = UCS_THREAD_MODE_SINGLE,
+        worker_thread_mode = UCS_THREAD_MODE_MULTI;
     na_return_t ret;
     ucs_status_t status;
 
-#if 0   /* TBD implement this */
-    na_bool_t no_wait = NA_FALSE;
-
     if (na_info->na_init_info != NULL) {
-        /* Progress mode */
-        if (na_info->na_init_info->progress_mode & NA_NO_BLOCK)
-            no_wait = NA_TRUE;
-        /* Max contexts */
-        context_max = na_info->na_init_info->max_contexts;
-        /* Auth key */
-        auth_key = na_info->na_init_info->auth_key;
+        /* Thread mode */
+        if ((na_info->na_init_info->max_contexts > 1)
+            && !(na_info->na_init_info->thread_mode & NA_THREAD_MODE_SINGLE)) {
+            /* If the UCP context can potentially be used by more than one
+             * worker / thread, then this context needs thread safety. */
+            global_params.field_mask |= UCP_PARAM_FIELD_MT_WORKERS_SHARED;
+            global_params.mt_workers_shared = 1;
+            context_thread_mode = UCS_THREAD_MODE_MULTI;
+        }
+        if (na_info->na_init_info->thread_mode & NA_THREAD_MODE_SINGLE_CTX)
+            worker_thread_mode = UCS_THREAD_MODE_SINGLE;
+    }
+
+#ifdef NA_UCX_HAS_LIB_QUERY
+    ucp_lib_attrs.field_mask = UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL;
+    status = ucp_lib_query(&ucp_lib_attrs);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret,
+        NA_PROTOCOL_ERROR, "ucp_context_query: %s", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls,
+        (ucp_lib_attrs.field_mask & UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL) == 0,
+        cleanup, ret, NA_PROTOCOL_ERROR,
+        "lib attributes contain no max thread level");
+
+    /* Best effort to ensure thread safety
+     * (no error to allow for UCS_THREAD_MODE_SERIAL) */
+    if (worker_thread_mode != UCS_THREAD_MODE_SINGLE
+        && ucp_lib_attrs.max_thread_level < worker_thread_mode) {
+        worker_thread_mode = ucp_lib_attrs.max_thread_level;
+        NA_LOG_WARNING("Max worker thread level is: %s",
+            ucs_thread_mode_names[worker_thread_mode]);
     }
 #endif
 
@@ -903,7 +946,6 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
     // TBD create a rxpool_ucp_init() that augments global_params with
     // the necessary request_size?
     status = ucp_init(&global_params, config, &nucl->uctx);
-
     ucp_config_release(config);
 
     if (status != UCS_OK) {
@@ -912,20 +954,20 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
         goto cleanup;
     }
 
-    uctx_attrs.field_mask = UCP_ATTR_FIELD_REQUEST_SIZE;
+    /* Query context to ensure we got what we asked for */
     status = ucp_context_query(nucl->uctx, &uctx_attrs);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_context_query() failed (%s)", ucs_status_string(status));
 
-    if (status != UCS_OK) {
-        NA_LOG_ERROR("ucp_context_query: %s", ucs_status_string(status));
-        ret = NA_PROTOCOL_ERROR;
-        goto cleanup;
-    }
-
-    if ((uctx_attrs.field_mask & UCP_ATTR_FIELD_REQUEST_SIZE) == 0) {
-        NA_LOG_ERROR("context attributes contain no request size");
-        ret = NA_PROTOCOL_ERROR;
-        goto cleanup;
-    }
+    /* Check that expected fields are present */
+    NA_CHECK_SUBSYS_ERROR(cls,
+        (uctx_attrs.field_mask & UCP_ATTR_FIELD_REQUEST_SIZE) == 0, cleanup,
+        ret, NA_PROTOCOL_ERROR,
+        "context attributes contain no request size");
+    NA_CHECK_SUBSYS_ERROR(cls,
+        (uctx_attrs.field_mask & UCP_ATTR_FIELD_THREAD_MODE) == 0, cleanup,
+        ret, NA_PROTOCOL_ERROR,
+        "context attributes contain no thread mode");
 
     nucl->wiring_api_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER;
 
@@ -938,20 +980,24 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
 
     nucl->request_size = uctx_attrs.request_size;
 
-    if ((ret = na_ucx_context_init(&nucl->context, nucl)) != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not initialize UCX context");
-        goto cleanup;
-    }
+    /* Do not continue if thread mode is less than expected */
+    NA_CHECK_SUBSYS_ERROR(cls, context_thread_mode != UCS_THREAD_MODE_SINGLE
+        && uctx_attrs.thread_mode < context_thread_mode, cleanup, ret,
+        NA_PROTOCOL_ERROR, "Context thread mode is: %s",
+        ucs_thread_mode_names[uctx_attrs.thread_mode]);
+
+    /* Create single worker */
+    ret = na_ucx_context_init(&nucl->context, nucl, worker_thread_mode);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        cls, cleanup, ret, "Could not initialize UCX worker");
 
     assert(nucl == na_ucx_class(nacl));
-#if 0
-    nucl->no_wait = no_wait;
-    nucl->context_max = context_max;
-    nucl->contexts = 0;
-#endif
+
     return NA_SUCCESS;
+
 cleanup:
     na_ucx_finalize(nacl);
+
     return ret;
 }
 
