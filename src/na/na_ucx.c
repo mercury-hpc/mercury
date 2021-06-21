@@ -11,6 +11,8 @@
 
 #include "na_plugin.h"
 
+#include "na_ip.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_time.h"
 
@@ -725,6 +727,10 @@ na_ucx_context_init(
     if (status != UCS_OK)
         return NA_PROTOCOL_ERROR;   // arbitrary choice
 
+    /* Print worker info */
+    NA_LOG_SUBSYS_DEBUG_FUNC(ctx, ucp_worker_print_info(nctx->worker,
+        hg_log_get_stream_debug()), "Worker info");
+
     status = ucp_worker_query(nctx->worker, &worker_actuals);
 
     if (status != UCS_OK) {
@@ -829,25 +835,43 @@ na_ucx_addr_dedup(na_class_t *nacl, na_addr_t addr)
  */
 
 static na_bool_t
-na_ucx_check_protocol(const char NA_UNUSED *protocol_name)
+na_ucx_check_protocol(const char *protocol_name)
 {
-    /* TBD
-     *
-     * To test a protocol name, read the initial configuration with
-     * ucp_config_read(), modify the protocol key-value pair in the
-     * configuration using ucp_config_modify(), and then try to
-     * ucp_init() with the new configuration.  If ucp_init() fails,
-     * then the protocol is unsupported.  If ucp_init() passes, the
-     * protocol it probably supported, however, UCP sometimes requires
-     * at least *two* protocols to be enabled.  E.g., I can run my UCP
-     * test program with `UCX_TLS=tcp,cma ./wires`, but a `wires` client
-     * started with `UCX_TLS=cma` will rapidly fail.
-     *
-     * How does the caller know which protocols to check?
-     *
-     * For now, the UCX plugin pretends to support every protocol.
-     */
-    return NA_TRUE;
+    ucp_config_t *config = NULL;
+    ucp_params_t params = {
+      .field_mask = UCP_PARAM_FIELD_FEATURES
+    , .features = UCP_FEATURE_TAG | UCP_FEATURE_RMA
+    };
+    ucp_context_h context = NULL;
+    ucs_status_t status;
+    na_bool_t accept = NA_FALSE;
+
+    status = ucp_config_read(NULL, NULL, &config);
+    NA_CHECK_SUBSYS_ERROR_NORET(cls, status != UCS_OK, done,
+        "ucp_config_read() failed (%s)", ucs_status_string(status));
+
+    /* Print UCX config */
+    NA_LOG_SUBSYS_DEBUG_FUNC(cls, ucp_config_print(config,
+            hg_log_get_stream_debug(), "NA UCX class configuration",
+            UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER
+            | UCS_CONFIG_PRINT_DOC | UCS_CONFIG_PRINT_HIDDEN)
+        , "UCX global configuration");
+
+    status = ucp_config_modify(config, "TLS", protocol_name);
+    NA_CHECK_SUBSYS_ERROR_NORET(cls, status != UCS_OK, done,
+        "ucp_config_modify() failed (%s)", ucs_status_string(status));
+
+    status = ucp_init(&params, config, &context);
+    if (status == UCS_OK) {
+        accept = NA_TRUE;
+        ucp_cleanup(context);
+    }
+
+done:
+    if (config)
+        ucp_config_release(config);
+
+    return accept;
 }
 
 static na_return_t
@@ -871,6 +895,7 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info *na_info,
         worker_thread_mode = UCS_THREAD_MODE_MULTI;
     na_return_t ret;
     ucs_status_t status;
+    int rc;
 
     if (na_info->na_init_info != NULL) {
         /* Thread mode */
@@ -909,50 +934,95 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info *na_info,
     hlog_fast(nacl, "%s: enter nacl %p", __func__, (void *)nacl);
 
     nucl = malloc(sizeof(*nucl));
-
-    if (nucl == NULL) {
-        NA_LOG_ERROR("Could not allocate NA private data class");
-        return NA_NOMEM;
-    }
+    NA_CHECK_SUBSYS_ERROR(cls, nucl == NULL, cleanup, ret, NA_NOMEM,
+        "Could not allocate NA private data class");
 
     *nucl = (na_ucx_class_t){.uctx = NULL, .addr_tbl = NULL};
 
     nacl->plugin_class = nucl;
 
-    if (hg_thread_mutex_init(&nucl->addr_lock) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not initialize address lock");
-        free(nucl);
-        nacl->plugin_class = NULL;
-        ret = NA_NOMEM;
-        goto cleanup;
-    }
+    rc = hg_thread_mutex_init(&nucl->addr_lock);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, cleanup ,ret, NA_NOMEM,
+        "Could not initialize address lock");
 
     nucl->addr_tbl = hg_hash_table_new(na_ucx_addr_hash, na_ucx_addr_equal);
+    NA_CHECK_SUBSYS_ERROR(cls, nucl->addr_tbl == NULL, cleanup ,ret, NA_NOMEM,
+        "Could not allocate address table");
 
-    if (nucl->addr_tbl == NULL) {
-        NA_LOG_ERROR("Could not allocate address table");
-        free(nucl);
-        nacl->plugin_class = NULL;
-        ret = NA_NOMEM;
-        goto cleanup;
+    /* Read UCP configuration */
+    status = ucp_config_read(NULL, NULL, &config);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_config_read() failed (%s)", ucs_status_string(status));
+
+    /* Set user-requested transport */
+    status = ucp_config_modify(config, "TLS", na_info->protocol_name);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_config_modify() failed (%s)", ucs_status_string(status));
+
+    /* Use mutex instead of spinlock */
+    status = ucp_config_modify(config, "USE_MT_MUTEX", "y");
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_config_modify() failed (%s)", ucs_status_string(status));
+
+    /* TODO Currently assume that systems are homogeneous */
+    status = ucp_config_modify(config, "UNIFIED_MODE", "y");
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_config_modify() failed (%s)", ucs_status_string(status));
+
+    /* Add address debug info if running in debug */
+    status = ucp_config_modify(config, "ADDRESS_DEBUG_INFO", "y");
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_config_modify() failed (%s)", ucs_status_string(status));
+
+    /* Set hostname (use default interface name if no hostname was passed) */
+    if (na_info->host_name) {
+        char *host_name = NULL, *ifa_name = NULL;
+        unsigned int port;
+
+        host_name = strdup(na_info->host_name);
+        NA_CHECK_SUBSYS_ERROR(cls, host_name == NULL, cleanup, ret, NA_NOMEM,
+            "strdup() of host_name failed");
+
+        /* Extract hostname */
+        if (strstr(host_name, ":")) {
+            char *port_str = NULL;
+            strtok_r(host_name, ":", &port_str);
+            port = (unsigned int) strtoul(port_str, NULL, 10);
+        }
+
+        /* Try to get matching IP/device */
+        ret = na_ip_check_interface(host_name, port, &ifa_name, NULL);
+        free(host_name);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, cleanup, ret, "Could not check interfaces");
+
+        if (ifa_name) {
+            status = ucp_config_modify(config, "NET_DEVICES", ifa_name);
+            free(ifa_name);
+            NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret,
+                NA_PROTOCOL_ERROR, "ucp_config_modify() failed (%s)",
+                ucs_status_string(status));
+        } else
+            NA_LOG_SUBSYS_WARNING(cls,
+                "Could not find NET_DEVICE to use, using default");
     }
 
-    if ((status = ucp_config_read(NULL, NULL, &config)) != UCS_OK) {
-        NA_LOG_ERROR("ucp_config_read: %s", ucs_status_string(status));
-        ret = NA_PROTOCOL_ERROR;
-        goto cleanup;
-    }
+    /* Print UCX config */
+    NA_LOG_SUBSYS_DEBUG_FUNC(cls, ucp_config_print(config,
+            hg_log_get_stream_debug(), "NA UCX class configuration used",
+            UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER)
+        , "Now using the following UCX global configuration");
 
     // TBD create a rxpool_ucp_init() that augments global_params with
     // the necessary request_size?
     status = ucp_init(&global_params, config, &nucl->uctx);
     ucp_config_release(config);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, cleanup, ret, NA_PROTOCOL_ERROR,
+        "ucp_init() failed (%s)", ucs_status_string(status));
 
-    if (status != UCS_OK) {
-        NA_LOG_ERROR("ucp_init: %s", ucs_status_string(status));
-        ret = NA_PROTOCOL_ERROR;
-        goto cleanup;
-    }
+    /* Print context info */
+    NA_LOG_SUBSYS_DEBUG_FUNC(cls, ucp_context_print_info(nucl->uctx,
+        hg_log_get_stream_debug()), "Context info");
 
     /* Query context to ensure we got what we asked for */
     status = ucp_context_query(nucl->uctx, &uctx_attrs);
