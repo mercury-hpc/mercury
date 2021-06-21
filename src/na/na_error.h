@@ -47,8 +47,9 @@ extern NA_PRIVATE HG_LOG_OUTLET_DECL(poll); /* Progress */
 #    define NA_LOG_SUBSYS_DEBUG_FUNC(subsys, debug_func, ...)                  \
         HG_LOG_WRITE_DEBUG(subsys, debug_func, __VA_ARGS__)
 #else
-#    define NA_LOG_DEBUG(...)        (void) 0
-#    define NA_LOG_SUBSYS_DEBUG(...) (void) 0
+#    define NA_LOG_DEBUG(...)             (void) 0
+#    define NA_LOG_SUBSYS_DEBUG(...)      (void) 0
+#    define NA_LOG_SUBSYS_DEBUG_FUNC(...) (void) 0
 #endif
 
 /* Branch predictor hints */
