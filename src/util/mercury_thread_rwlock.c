@@ -48,30 +48,44 @@
 
 #include "mercury_thread_rwlock.h"
 
+#include "mercury_util_error.h"
+
+#include <string.h>
+
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock)
 {
+    int ret = HG_UTIL_SUCCESS;
+
 #ifdef _WIN32
     InitializeSRWLock(rwlock);
 #else
-    if (pthread_rwlock_init(rwlock, NULL))
-        return HG_UTIL_FAIL;
+    int rc = pthread_rwlock_init(rwlock, NULL);
+    HG_UTIL_CHECK_ERROR(rc != 0, done, ret, HG_UTIL_FAIL,
+        "pthread_rwlock_init() failed (%s)", strerror(rc));
+
+done:
 #endif
 
-    return HG_UTIL_SUCCESS;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_rwlock_destroy(hg_thread_rwlock_t *rwlock)
 {
+    int ret = HG_UTIL_SUCCESS;
+
 #ifdef _WIN32
     /* nothing to do */
 #else
-    if (pthread_rwlock_destroy(rwlock))
-        return HG_UTIL_FAIL;
+    int rc = pthread_rwlock_destroy(rwlock);
+    HG_UTIL_CHECK_ERROR(rc != 0, done, ret, HG_UTIL_FAIL,
+        "pthread_rwlock_destroy() failed (%s)", strerror(rc));
+
+done:
 #endif
 
-    return HG_UTIL_SUCCESS;
+    return ret;
 }

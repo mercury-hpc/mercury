@@ -53,10 +53,8 @@ hg_thread_spin_destroy(hg_thread_spin_t *lock);
  * Lock the spin lock.
  *
  * \param lock [IN/OUT]         pointer to lock object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_spin_lock(hg_thread_spin_t *lock);
 
 /**
@@ -73,14 +71,12 @@ hg_thread_spin_try_lock(hg_thread_spin_t *lock);
  * Unlock the spin lock.
  *
  * \param mutex [IN/OUT]        pointer to lock object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_spin_unlock(hg_thread_spin_t *lock);
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_spin_lock(hg_thread_spin_t *lock)
 {
 #if defined(_WIN32)
@@ -93,14 +89,10 @@ hg_thread_spin_lock(hg_thread_spin_t *lock)
             MemoryBarrier();
         }
     }
-    return HG_UTIL_SUCCESS;
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_lock(lock))
-        return HG_UTIL_FAIL;
-
-    return HG_UTIL_SUCCESS;
+    (void) pthread_spin_lock(lock);
 #else
-    return hg_thread_mutex_lock(lock);
+    hg_thread_mutex_lock(lock);
 #endif
 }
 
@@ -121,21 +113,17 @@ hg_thread_spin_try_lock(hg_thread_spin_t *lock)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_spin_unlock(hg_thread_spin_t *lock)
 {
 #if defined(_WIN32)
     /* Compiler barrier. The store below acts with release semantics */
     MemoryBarrier();
     *lock = 0;
-
-    return HG_UTIL_SUCCESS;
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_unlock(lock))
-        return HG_UTIL_FAIL;
-    return HG_UTIL_SUCCESS;
+    (void) pthread_spin_unlock(lock);
 #else
-    return hg_thread_mutex_unlock(lock);
+    hg_thread_mutex_unlock(lock);
 #endif
 }
 
