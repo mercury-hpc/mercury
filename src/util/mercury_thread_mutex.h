@@ -38,6 +38,16 @@ HG_UTIL_PUBLIC int
 hg_thread_mutex_init(hg_thread_mutex_t *mutex);
 
 /**
+ * Initialize the mutex, asking for "fast" mutex.
+ *
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_PUBLIC int
+hg_thread_mutex_init_fast(hg_thread_mutex_t *mutex);
+
+/**
  * Destroy the mutex.
  *
  * \param mutex [IN/OUT]        pointer to mutex object
@@ -51,10 +61,8 @@ hg_thread_mutex_destroy(hg_thread_mutex_t *mutex);
  * Lock the mutex.
  *
  * \param mutex [IN/OUT]        pointer to mutex object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_mutex_lock(hg_thread_mutex_t *mutex);
 
 /**
@@ -71,24 +79,19 @@ hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex);
  * Unlock the mutex.
  *
  * \param mutex [IN/OUT]        pointer to mutex object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_mutex_unlock(hg_thread_mutex_t *mutex);
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_mutex_lock(hg_thread_mutex_t *mutex)
 {
 #ifdef _WIN32
     EnterCriticalSection(mutex);
 #else
-    if (pthread_mutex_lock(mutex))
-        return HG_UTIL_FAIL;
+    (void) pthread_mutex_lock(mutex);
 #endif
-
-    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -107,17 +110,14 @@ hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_mutex_unlock(hg_thread_mutex_t *mutex)
 {
 #ifdef _WIN32
     LeaveCriticalSection(mutex);
 #else
-    if (pthread_mutex_unlock(mutex))
-        return HG_UTIL_FAIL;
+    (void) pthread_mutex_unlock(mutex);
 #endif
-
-    return HG_UTIL_SUCCESS;
 }
 
 #ifdef __cplusplus
