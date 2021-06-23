@@ -87,10 +87,8 @@ hg_thread_rwlock_destroy(hg_thread_rwlock_t *rwlock);
  * Take a read lock for the rwlock.
  *
  * \param rwlock [IN/OUT]        pointer to rwlock object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_rdlock(hg_thread_rwlock_t *rwlock);
 
 /**
@@ -107,20 +105,16 @@ hg_thread_rwlock_try_rdlock(hg_thread_rwlock_t *rwlock);
  * Release the read lock of the rwlock.
  *
  * \param rwlock [IN/OUT]        pointer to rwlock object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_release_rdlock(hg_thread_rwlock_t *rwlock);
 
 /**
  * Take a write lock for the rwlock.
  *
  * \param rwlock [IN/OUT]        pointer to rwlock object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_wrlock(hg_thread_rwlock_t *rwlock);
 
 /**
@@ -137,24 +131,19 @@ hg_thread_rwlock_try_wrlock(hg_thread_rwlock_t *rwlock);
  * Release the write lock of the rwlock.
  *
  * \param rwlock [IN/OUT]        pointer to rwlock object
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_release_wrlock(hg_thread_rwlock_t *rwlock);
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_rdlock(hg_thread_rwlock_t *rwlock)
 {
 #ifdef _WIN32
     AcquireSRWLockShared(rwlock);
 #else
-    if (pthread_rwlock_rdlock(rwlock))
-        return HG_UTIL_FAIL;
+    (void) pthread_rwlock_rdlock(rwlock);
 #endif
-
-    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -173,31 +162,25 @@ hg_thread_rwlock_try_rdlock(hg_thread_rwlock_t *rwlock)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_release_rdlock(hg_thread_rwlock_t *rwlock)
 {
 #ifdef _WIN32
     ReleaseSRWLockShared(rwlock);
 #else
-    if (pthread_rwlock_unlock(rwlock))
-        return HG_UTIL_FAIL;
+    (void) pthread_rwlock_unlock(rwlock);
 #endif
-
-    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_wrlock(hg_thread_rwlock_t *rwlock)
 {
 #ifdef _WIN32
     ReleaseSRWLockExclusive(rwlock);
 #else
-    if (pthread_rwlock_wrlock(rwlock))
-        return HG_UTIL_FAIL;
+    (void) pthread_rwlock_wrlock(rwlock);
 #endif
-
-    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -216,17 +199,14 @@ hg_thread_rwlock_try_wrlock(hg_thread_rwlock_t *rwlock)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_thread_rwlock_release_wrlock(hg_thread_rwlock_t *rwlock)
 {
 #ifdef _WIN32
     ReleaseSRWLockExclusive(rwlock);
 #else
-    if (pthread_rwlock_unlock(rwlock))
-        return HG_UTIL_FAIL;
+    (void) pthread_rwlock_unlock(rwlock);
 #endif
-
-    return HG_UTIL_SUCCESS;
 }
 
 #ifdef __cplusplus
