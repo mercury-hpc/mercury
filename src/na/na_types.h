@@ -77,14 +77,18 @@ typedef enum na_return { NA_RETURN_VALUES } na_return_t;
 #undef X
 
 /* Callback operation type */
-typedef enum na_cb_type {
-    NA_CB_SEND_UNEXPECTED, /*!< unexpected send callback */
-    NA_CB_RECV_UNEXPECTED, /*!< unexpected recv callback */
-    NA_CB_SEND_EXPECTED,   /*!< expected send callback */
-    NA_CB_RECV_EXPECTED,   /*!< expected recv callback */
-    NA_CB_PUT,             /*!< put callback */
-    NA_CB_GET              /*!< get callback */
-} na_cb_type_t;
+#define NA_CB_TYPES                                                            \
+    X(NA_CB_SEND_UNEXPECTED) /*!< unexpected send callback */                  \
+    X(NA_CB_RECV_UNEXPECTED) /*!< unexpected recv callback */                  \
+    X(NA_CB_SEND_EXPECTED)   /*!< expected send callback */                    \
+    X(NA_CB_RECV_EXPECTED)   /*!< expected recv callback */                    \
+    X(NA_CB_PUT)             /*!< put callback */                              \
+    X(NA_CB_GET)             /*!< get callback */                              \
+    X(NA_CB_MAX)
+
+#define X(a) a,
+typedef enum na_cb_type { NA_CB_TYPES } na_cb_type_t;
+#undef X
 
 /* Callback info structs */
 struct na_cb_info_recv_unexpected {

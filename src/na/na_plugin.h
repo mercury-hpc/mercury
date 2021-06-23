@@ -132,6 +132,16 @@ extern "C" {
 /* Private routines for use inside NA plugins */
 
 /**
+ * Convert cb type to string (null terminated).
+ *
+ * \param cb_type [IN]          callback type
+ *
+ * \return String
+ */
+NA_PRIVATE const char *
+na_cb_type_to_string(na_cb_type_t cb_type) NA_WARN_UNUSED_RESULT;
+
+/**
  * Add callback to context completion queue.
  *
  * \param context [IN/OUT]              pointer to context of execution
