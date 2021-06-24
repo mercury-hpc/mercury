@@ -5144,6 +5144,7 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
         "Could not allocate NA OFI memory handle");
     na_ofi_mem_handle->desc.iov.d = NULL;
     na_ofi_mem_handle->fi_mr = NULL;
+    na_ofi_mem_handle->desc.info.iovcnt = 0;
 
     /* Descriptor info */
     NA_DECODE(error, ret, buf_ptr, buf_size_left, &na_ofi_mem_handle->desc.info,
