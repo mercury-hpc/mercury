@@ -4710,6 +4710,7 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     NA_CHECK_SUBSYS_ERROR(mem, na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
     na_sm_mem_handle->iov.d = NULL;
+    na_sm_mem_handle->info.iovcnt = 0;
 
     /* Descriptor info */
     NA_DECODE(error, ret, buf_ptr, buf_size_left, &na_sm_mem_handle->info,
