@@ -1198,19 +1198,32 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     /* Number of handles for that context should be 0 */
     n_handles = hg_atomic_get32(&context->n_handles);
     if (n_handles != 0) {
-#ifdef HG_HAS_DEBUG
         struct hg_core_private_handle *hg_core_handle = NULL;
-#endif
+
         HG_LOG_ERROR("HG core handles must be freed before destroying context "
                      "(%d remaining)",
             n_handles);
-#ifdef HG_HAS_DEBUG
         hg_thread_spin_lock(&context->created_list_lock);
-        HG_LIST_FOREACH (hg_core_handle, &context->created_list, created)
+        HG_LIST_FOREACH (hg_core_handle, &context->created_list, created) {
+            /* TODO ideally we'd want the upper layer to print that */
+            if (hg_core_handle->core_handle.data)
+                HG_LOG_ERROR("Handle (%p) was not destroyed",
+                    hg_core_handle->core_handle.data);
             HG_LOG_DEBUG(
-                "Handle (%p) was not destroyed", (void *) hg_core_handle);
+                "Core handle (%p) was not destroyed", (void *) hg_core_handle);
+        }
         hg_thread_spin_unlock(&context->created_list_lock);
-#endif
+
+        hg_thread_spin_lock(&context->pending_list_lock);
+        HG_LIST_FOREACH (hg_core_handle, &context->pending_list, pending) {
+            /* TODO ideally we'd want the upper layer to print that */
+            if (hg_core_handle->core_handle.data)
+                HG_LOG_ERROR("Handle (%p) was not destroyed",
+                    hg_core_handle->core_handle.data);
+            HG_LOG_DEBUG(
+                "Core handle (%p) was not destroyed", (void *) hg_core_handle);
+        }
+        hg_thread_spin_unlock(&context->pending_list_lock);
         ret = HG_BUSY;
         goto done;
     }
@@ -4489,8 +4502,8 @@ HG_Core_registered(hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag)
     HG_CHECK_ERROR(flag == NULL, done, ret, HG_INVALID_ARG, "NULL flag");
 
     hg_thread_spin_lock(&private_class->func_map_lock);
-    *flag = (hg_bool_t)(hg_hash_table_lookup(private_class->func_map,
-                            (hg_hash_table_key_t) &id) != HG_HASH_TABLE_NULL);
+    *flag = (hg_bool_t) (hg_hash_table_lookup(private_class->func_map,
+                             (hg_hash_table_key_t) &id) != HG_HASH_TABLE_NULL);
     hg_thread_spin_unlock(&private_class->func_map_lock);
 
 done:
