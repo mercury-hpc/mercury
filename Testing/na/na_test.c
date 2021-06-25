@@ -310,30 +310,13 @@ na_test_gen_config(struct na_test_info *na_test_info)
             sprintf(
                 info_string_ptr, "%d/%d", (int) getpid(), na_test_info->port);
         }
-    } else if ((strcmp("tcp", na_test_info->protocol) == 0) ||
-               (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0) ||
-               (strcmp("verbs", na_test_info->protocol) == 0) ||
-               (strcmp("psm", na_test_info->protocol) == 0) ||
-               (strcmp("psm2", na_test_info->protocol) == 0) ||
-               (strcmp("sockets", na_test_info->protocol) == 0)) {
-        if (!na_test_info->hostname) {
-            /* Nothing */
-        } else if (na_test_info->listen) {
-            sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
-                na_test_info->port + na_test_info->mpi_comm_rank);
-        } else
-            sprintf(info_string_ptr, "%s", na_test_info->hostname);
     } else if (strcmp("static", na_test_info->protocol) == 0) {
         /* Nothing */
     } else if (strcmp("dynamic", na_test_info->protocol) == 0) {
         /* Nothing */
-    } else if (strcmp("gni", na_test_info->protocol) == 0) {
+    } else if (na_test_info->hostname) {
         sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
             na_test_info->port + na_test_info->mpi_comm_rank);
-    } else {
-        NA_TEST_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
-        ret = NA_INVALID_ARG;
-        goto done;
     }
 
 done:
