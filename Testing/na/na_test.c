@@ -141,9 +141,6 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 's': /* static */
                 na_test_info->mpi_static = NA_TRUE;
-                if (na_test_info->protocol)
-                    free(na_test_info->protocol);
-                na_test_info->protocol = strdup("static");
                 break;
             case 'S': /* self */
                 na_test_info->self_send = NA_TRUE;
