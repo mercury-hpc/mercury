@@ -17,11 +17,6 @@
 #    include <windows.h>
 #elif defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
 #    include <time.h>
-#    if (!defined(HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE) || defined(__ppc64__) || \
-         defined(__ppc__)) &&                                                  \
-        defined(HG_UTIL_HAS_SYSTIME_H)
-#        include <sys/time.h>
-#    endif
 #elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
 #    include <mach/mach_time.h>
 #    include <sys/time.h>
@@ -272,24 +267,15 @@ hg_time_get_current(hg_time_t *tv)
 static HG_UTIL_INLINE int
 hg_time_get_current_ms(hg_time_t *tv)
 {
-    /* ppc/32 and ppc/64 do not support CLOCK_MONOTONIC_COARSE in vdso */
-#    if defined(HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE) && !defined(__ppc64__) &&  \
-        !defined(__ppc__)
+/* ppc/32 and ppc/64 do not support CLOCK_MONOTONIC_COARSE in vdso */
+#    if defined(__ppc64__) || defined(__ppc__) || defined(__PPC64__) ||        \
+        defined(__PPC__) || !defined(HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE)
+    clock_gettime(CLOCK_MONOTONIC, tv);
+#    else
     /* We don't need fine grain time stamps, _COARSE resolution is 1ms */
     clock_gettime(CLOCK_MONOTONIC_COARSE, tv);
-
-    return HG_UTIL_SUCCESS;
-#    elif defined(HG_UTIL_HAS_SYSTIME_H)
-    struct timeval _tv;
-
-    gettimeofday(&_tv, NULL);
-    tv->tv_sec = _tv.tv_sec;
-    tv->tv_nsec = _tv.tv_usec * 1000;
-
-    return HG_UTIL_SUCCESS;
-#    else
-    return hg_time_get_current(tv);
 #    endif
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
