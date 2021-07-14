@@ -26,6 +26,9 @@
 #    define HG_UTIL_CONSTRUCTOR_1
 #endif
 
+/* Destructor (used to finalize log outlets) */
+#define HG_UTIL_DESTRUCTOR __attribute__((destructor))
+
 /* Max number of subsystems that can be tracked */
 #define HG_LOG_SUBSYS_MAX (16)
 
@@ -56,6 +59,10 @@
 static void
 hg_log_init(void) HG_UTIL_CONSTRUCTOR_1;
 
+/* Finalize logs */
+static void
+hg_log_finalize(void) HG_UTIL_DESTRUCTOR;
+
 /* Init log level */
 static void
 hg_log_init_level(void);
@@ -67,6 +74,10 @@ hg_log_init_subsys(void);
 /* Reset all log levels */
 static void
 hg_log_outlet_reset_all(void);
+
+/* Free all attached logs */
+static void
+hg_log_free_dlogs(void);
 
 /* Is log active */
 static int
@@ -136,6 +147,13 @@ hg_log_init(void)
 
 /*---------------------------------------------------------------------------*/
 static void
+hg_log_finalize(void)
+{
+    hg_log_free_dlogs();
+}
+
+/*---------------------------------------------------------------------------*/
+static void
 hg_log_init_level(void)
 {
     const char *log_level = getenv("HG_LOG_LEVEL");
@@ -174,6 +192,18 @@ hg_log_outlet_reset_all(void)
     /* Reset subsys */
     for (i = 0; i < HG_LOG_SUBSYS_MAX; i++)
         strcpy(hg_log_subsys_g[i], "\0");
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_log_free_dlogs(void)
+{
+    struct hg_log_outlet *outlet;
+
+    /* Free logs if any was attached */
+    HG_QUEUE_FOREACH (outlet, &hg_log_outlets_g, entry)
+        if (outlet->debug_log)
+            hg_dlog_free(outlet->debug_log);
 }
 
 /*---------------------------------------------------------------------------*/
