@@ -46,6 +46,7 @@ struct hg_test_info {
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
     struct hg_mem_pool *bulk_pool;
+    hg_size_t buf_size_min;
     hg_size_t buf_size_max;
 #ifdef HG_TEST_HAS_CRAY_DRC
     uint32_t credential;

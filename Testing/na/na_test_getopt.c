@@ -17,7 +17,7 @@
 
 int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:d:p:H:P:LsSk:l:bC:VaZ:z:x:mt:B";
+const char *na_test_short_opt_g = "hc:d:p:H:P:LsSk:l:bC:VaZ:y:z:x:mt:B";
 /* clang-format off */
 const struct na_test_opt na_test_opt_g[] = {
     {"help", no_arg, 'h'},
@@ -36,7 +36,8 @@ const struct na_test_opt na_test_opt_g[] = {
     {"verbose", no_arg, 'V'},
     {"auth", no_arg, 'a'},
     {"msg_size", require_arg, 'Z'},
-    {"buf_size", require_arg, 'z'},
+    {"buf_size_min", require_arg, 'y'},
+    {"buf_size_max", require_arg, 'z'},
     {"handle", require_arg, 'x'},
     {"memory", no_arg, 'm'},
     {"threads", require_arg, 't'},

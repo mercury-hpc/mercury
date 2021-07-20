@@ -116,7 +116,8 @@ hg_test_usage(const char *execname)
     na_test_usage(execname);
     printf("    HG OPTIONS\n");
     printf("    -a, --auth          Run auth key service\n");
-    printf("    -z, --buf_size      Max buffer size (in bytes)\n");
+    printf("    -y  --buf_size_min  Min buffer size (in bytes)\n");
+    printf("    -z, --buf_size_max  Max buffer size (in bytes)\n");
     printf("    -x, --handle        Max number of handles\n");
     printf("    -m, --memory        Use shared-memory with local targets\n");
     printf("    -t, --threads       Number of server threads\n");
@@ -160,6 +161,10 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
                 hg_test_info->handle_max =
                     (unsigned int) atoi(na_test_opt_arg_g);
                 break;
+            case 'y': /* min buffer size */
+                hg_test_info->buf_size_min =
+                    (hg_size_t) atol(na_test_opt_arg_g);
+                break;
             case 'z': /* max buffer size */
                 hg_test_info->buf_size_max =
                     (hg_size_t) atol(na_test_opt_arg_g);
@@ -174,7 +179,7 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
     na_test_opt_ind_g = 1;
 
     /* Set defaults */
-    if (!hg_test_info->thread_count) {
+    if (hg_test_info->thread_count == 0) {
         /* Try to guess */
         long int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
 
@@ -182,10 +187,12 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
                                          ? (unsigned int) cpu_count
                                          : HG_TEST_NUM_THREADS_DEFAULT;
     }
-    if (!hg_test_info->handle_max)
+    if (hg_test_info->handle_max == 0)
         hg_test_info->handle_max = 1;
-    if (!hg_test_info->buf_size_max)
+    if (hg_test_info->buf_size_max == 0)
         hg_test_info->buf_size_max = (1 << 20);
+    if (hg_test_info->buf_size_min == 0)
+        hg_test_info->buf_size_min = 1;
 }
 
 /*---------------------------------------------------------------------------*/
