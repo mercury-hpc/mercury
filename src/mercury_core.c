@@ -657,7 +657,8 @@ hg_core_complete(hg_core_handle_t handle);
  * Make progress.
  */
 static hg_return_t
-hg_core_progress(struct hg_core_private_context *context, unsigned int timeout);
+hg_core_progress(
+    struct hg_core_private_context *context, unsigned int timeout_ms);
 
 /**
  * Determines when it is safe to block.
@@ -669,14 +670,14 @@ hg_core_poll_try_wait(struct hg_core_private_context *context);
  * Poll for timeout ms on context.
  */
 static hg_return_t
-hg_core_poll_wait(struct hg_core_private_context *context, unsigned int timeout,
-    hg_bool_t *progressed_ptr);
+hg_core_poll_wait(struct hg_core_private_context *context,
+    unsigned int timeout_ms, hg_bool_t *progressed_ptr);
 
 /**
  * Poll context without blocking.
  */
 static hg_return_t
-hg_core_poll(struct hg_core_private_context *context, unsigned int timeout,
+hg_core_poll(struct hg_core_private_context *context, unsigned int timeout_ms,
     hg_bool_t *progressed_ptr);
 
 /**
@@ -684,7 +685,7 @@ hg_core_poll(struct hg_core_private_context *context, unsigned int timeout,
  */
 static hg_return_t
 hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
-    unsigned int timeout, hg_bool_t *progressed_ptr);
+    unsigned int timeout_ms, hg_bool_t *progressed_ptr);
 
 /**
  * Completion queue notification callback.
@@ -697,8 +698,9 @@ hg_core_progress_loopback_notify(
  * Trigger callbacks.
  */
 static hg_return_t
-hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
-    unsigned int max_count, unsigned int *actual_count);
+hg_core_trigger(struct hg_core_private_context *context,
+    unsigned int timeout_ms, unsigned int max_count,
+    unsigned int *actual_count);
 
 /**
  * Trigger callback from HG lookup op ID.
@@ -1486,15 +1488,15 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
     hg_util_bool_t sm_pending_list_empty = HG_UTIL_TRUE;
 #endif
     /* Convert timeout in ms into seconds */
-    double remaining = HG_CORE_CLEANUP_TIMEOUT / 1000.0;
+    hg_time_t deadline, now;
     hg_return_t ret = HG_SUCCESS;
+
+    hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(HG_CORE_CLEANUP_TIMEOUT));
 
     do {
         unsigned int actual_count = 0;
-        hg_time_t t1, t2;
         hg_return_t trigger_ret, progress_ret;
-
-        hg_time_get_current_ms(&t1);
 
         /* Trigger everything we can from HG */
         do {
@@ -1517,18 +1519,17 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
         if (created_list_empty && pending_list_empty && sm_pending_list_empty)
             break;
 
-        progress_ret =
-            hg_core_progress(context, (unsigned int) (remaining * 1000.0));
+        progress_ret = hg_core_progress(
+            context, hg_time_to_ms(hg_time_subtract(deadline, now)));
         HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
             done, ret, progress_ret, "Could not make progress");
 
-        hg_time_get_current_ms(&t2);
-        remaining -= hg_time_diff(t2, t1);
-    } while ((int) (remaining * 1000.0) > 0 || !pending_list_empty ||
+        hg_time_get_current_ms(&now);
+    } while (hg_time_less(now, deadline) || !pending_list_empty ||
              !sm_pending_list_empty);
 
-    HG_LOG_DEBUG("Remaining %lf, Context list status: %d, %d, %d", remaining,
-        created_list_empty, pending_list_empty, sm_pending_list_empty);
+    HG_LOG_DEBUG("Context list status: %d, %d, %d", created_list_empty,
+        pending_list_empty, sm_pending_list_empty);
 
 done:
     return ret;
@@ -3674,36 +3675,38 @@ unlock:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
+hg_core_progress(
+    struct hg_core_private_context *context, unsigned int timeout_ms)
 {
-    double remaining =
-        timeout / 1000.0; /* Convert timeout in ms into seconds */
+    hg_time_t deadline, now = hg_time_from_ms(0);
     hg_return_t ret;
 
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
+
     do {
-        hg_time_t t1, t2;
         hg_bool_t safe_wait = HG_FALSE, progressed = HG_FALSE;
         unsigned int poll_timeout = 0;
 
-        if (timeout)
-            hg_time_get_current_ms(&t1);
-
-        /* Bypass notifications if timeout is 0 to prevent system calls */
-        if (context->poll_set && timeout) {
+        /* Bypass notifications if timeout_ms is 0 to prevent system calls */
+        if (timeout_ms == 0) {
+            ; // nothing to do
+        } else if (context->poll_set) {
             hg_thread_mutex_lock(&context->completion_queue_notify_mutex);
 
             if (hg_core_poll_try_wait(context)) {
                 safe_wait = HG_TRUE;
-                poll_timeout = (unsigned int) (remaining * 1000.0);
+                poll_timeout = hg_time_to_ms(hg_time_subtract(deadline, now));
 
                 /* We need to be notified when doing blocking progress */
                 hg_atomic_set32(&context->completion_queue_must_notify, 1);
             }
             hg_thread_mutex_unlock(&context->completion_queue_notify_mutex);
-        } else if (!HG_CORE_CONTEXT_CLASS(context)->loopback && timeout &&
+        } else if (!HG_CORE_CONTEXT_CLASS(context)->loopback &&
                    hg_core_poll_try_wait(context)) {
             /* This is the case for NA plugins that don't expose a fd */
-            poll_timeout = (unsigned int) (remaining * 1000.0);
+            poll_timeout = hg_time_to_ms(hg_time_subtract(deadline, now));
         }
 
         /* Only enter blocking wait if it is safe to */
@@ -3723,11 +3726,9 @@ hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
             (hg_atomic_get32(&context->backfill_queue_count) > 0))
             return HG_SUCCESS;
 
-        if (timeout) {
-            hg_time_get_current_ms(&t2);
-            remaining -= hg_time_diff(t2, t1);
-        }
-    } while ((int) (remaining * 1000.0) > 0);
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
+    } while (hg_time_less(now, deadline));
 
     return HG_TIMEOUT;
 
@@ -3760,15 +3761,15 @@ hg_core_poll_try_wait(struct hg_core_private_context *context)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_poll_wait(struct hg_core_private_context *context, unsigned int timeout,
-    hg_bool_t *progressed_ptr)
+hg_core_poll_wait(struct hg_core_private_context *context,
+    unsigned int timeout_ms, hg_bool_t *progressed_ptr)
 {
     unsigned int i, nevents;
     hg_return_t ret = HG_SUCCESS;
     hg_bool_t progressed = HG_FALSE;
     int rc;
 
-    rc = hg_poll_wait(context->poll_set, timeout, HG_CORE_MAX_EVENTS,
+    rc = hg_poll_wait(context->poll_set, timeout_ms, HG_CORE_MAX_EVENTS,
         context->poll_events, &nevents);
 
     /* No longer need to notify when we're not waiting */
@@ -3831,7 +3832,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_poll(struct hg_core_private_context *context, unsigned int timeout,
+hg_core_poll(struct hg_core_private_context *context, unsigned int timeout_ms,
     hg_bool_t *progressed_ptr)
 {
     hg_bool_t progressed = HG_FALSE, progressed_na = HG_FALSE;
@@ -3851,7 +3852,7 @@ hg_core_poll(struct hg_core_private_context *context, unsigned int timeout,
         progress_timeout = 0;
     } else {
 #endif
-        progress_timeout = timeout;
+        progress_timeout = timeout_ms;
 #ifdef NA_HAS_SM
     }
 #endif
@@ -3871,21 +3872,20 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
-    unsigned int timeout, hg_bool_t *progressed_ptr)
+    unsigned int timeout_ms, hg_bool_t *progressed_ptr)
 {
-    double remaining =
-        timeout / 1000.0; /* Convert timeout in ms into seconds */
+    hg_time_t deadline, now = hg_time_from_ms(0);
     unsigned int completed_count = 0;
     hg_bool_t progressed = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
-    do {
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
+
+    for (;;) {
         unsigned int actual_count = 0;
         na_return_t na_ret;
-        hg_time_t t1, t2;
-
-        if (timeout)
-            hg_time_get_current_ms(&t1);
 
         /* Trigger everything we can from NA, if something completed it will
          * be moved to the HG context completion queue */
@@ -3911,24 +3911,22 @@ hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
         }
 
         /* Make sure that timeout of 0 enters progress */
-        if (timeout && ((int) (remaining * 1000.0) <= 0))
+        if (timeout_ms != 0 && !hg_time_less(now, deadline))
             break;
 
         /* Otherwise try to make progress on NA */
-        na_ret = NA_Progress(
-            na_class, na_context, (unsigned int) (remaining * 1000.0));
+        na_ret = NA_Progress(na_class, na_context,
+            hg_time_to_ms(hg_time_subtract(deadline, now)));
+
         if (na_ret == NA_TIMEOUT)
             break;
-        else
-            HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret,
-                (hg_return_t) na_ret, "Could not make progress on NA (%s)",
-                NA_Error_to_string(na_ret));
 
-        if (timeout) {
-            hg_time_get_current_ms(&t2);
-            remaining -= hg_time_diff(t2, t1);
-        }
-    } while (1);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not make progress on NA (%s)", NA_Error_to_string(na_ret));
+
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
+    }
 
     *progressed_ptr = progressed;
 
@@ -3956,13 +3954,16 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
-    unsigned int max_count, unsigned int *actual_count)
+hg_core_trigger(struct hg_core_private_context *context,
+    unsigned int timeout_ms, unsigned int max_count, unsigned int *actual_count)
 {
-    double remaining =
-        timeout / 1000.0; /* Convert timeout in ms into seconds */
+    hg_time_t deadline, now = hg_time_from_ms(0);
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
+
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
@@ -3979,19 +3980,15 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                 if (!hg_completion_entry)
                     continue; /* Give another change to grab it */
             } else {
-                hg_time_t t1, t2;
-
                 /* If something was already processed leave */
                 if (count)
                     break;
 
                 /* Timeout is 0 so leave */
-                if ((int) (remaining * 1000.0) <= 0) {
+                if (!hg_time_less(now, deadline)) {
                     ret = HG_TIMEOUT;
                     break;
                 }
-
-                hg_time_get_current_ms(&t1);
 
                 hg_thread_mutex_lock(&context->completion_queue_mutex);
 
@@ -4000,7 +3997,7 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                     !hg_atomic_get32(&context->backfill_queue_count) &&
                     (hg_thread_cond_timedwait(&context->completion_queue_cond,
                          &context->completion_queue_mutex,
-                         (unsigned int) (remaining * 1000.0)) !=
+                         hg_time_to_ms(hg_time_subtract(deadline, now))) !=
                         HG_UTIL_SUCCESS)) {
                     /* Timeout occurred so leave */
                     ret = HG_TIMEOUT;
@@ -4010,8 +4007,8 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                 if (ret == HG_TIMEOUT)
                     break;
 
-                hg_time_get_current_ms(&t2);
-                remaining -= hg_time_diff(t2, t1);
+                if (timeout_ms != 0)
+                    hg_time_get_current_ms(&now);
                 continue; /* Give another change to grab it */
             }
         }
