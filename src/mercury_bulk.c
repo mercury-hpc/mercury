@@ -178,6 +178,7 @@ struct hg_bulk {
     hg_size_t serialize_size;    /* Cached serialization size */
     hg_atomic_int32_t ref_count; /* Reference count */
     hg_uint8_t context_id;       /* Context ID (valid if bound to handle) */
+    hg_bool_t registered;        /* Handle was registered */
 };
 
 /* HG bulk NA op IDs (not a union as we re-use op IDs) */
@@ -262,7 +263,7 @@ hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
  */
 static hg_return_t
 hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
-    na_class_t *na_class, hg_uint32_t count);
+    na_class_t *na_class, hg_uint32_t count, na_bool_t registered);
 
 /**
  * Register single segment.
@@ -284,7 +285,8 @@ hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
  * Deregister segment.
  */
 static hg_return_t
-hg_bulk_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
+hg_bulk_deregister(
+    na_class_t *na_class, na_mem_handle_t mem_handle, na_bool_t registered);
 
 /**
  * Get serialize size.
@@ -635,6 +637,7 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
         }
 #endif
     }
+    hg_bulk->registered = HG_TRUE;
 
     *hg_bulk_ptr = hg_bulk;
 
@@ -664,29 +667,31 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
     if (hg_bulk->desc.info.flags & HG_BULK_REGV ||
         (hg_bulk->desc.info.segment_count == 1)) {
         if (hg_bulk->na_mem_descs.handles.s[0] != NA_MEM_HANDLE_NULL) {
-            ret = hg_bulk_deregister(
-                hg_bulk->na_class, hg_bulk->na_mem_descs.handles.s[0]);
+            ret = hg_bulk_deregister(hg_bulk->na_class,
+                hg_bulk->na_mem_descs.handles.s[0], hg_bulk->registered);
             HG_CHECK_HG_ERROR(done, ret, "Could not deregister segment");
         }
 
 #ifdef NA_HAS_SM
         if (hg_bulk->na_sm_mem_descs.handles.s[0] != NA_MEM_HANDLE_NULL) {
-            ret = hg_bulk_deregister(
-                hg_bulk->na_sm_class, hg_bulk->na_sm_mem_descs.handles.s[0]);
+            ret = hg_bulk_deregister(hg_bulk->na_sm_class,
+                hg_bulk->na_sm_mem_descs.handles.s[0], hg_bulk->registered);
             HG_CHECK_HG_ERROR(
                 done, ret, "Could not deregister segment with SM");
         }
 #endif
     } else {
         /* Free segments individually */
-        ret = hg_bulk_free_na_mem_descs(&hg_bulk->na_mem_descs,
-            hg_bulk->na_class, hg_bulk->desc.info.segment_count);
+        ret =
+            hg_bulk_free_na_mem_descs(&hg_bulk->na_mem_descs, hg_bulk->na_class,
+                hg_bulk->desc.info.segment_count, hg_bulk->registered);
         HG_CHECK_HG_ERROR(done, ret, "Could not free NA mem descriptors");
 
 #ifdef NA_HAS_SM
         if (hg_bulk->na_sm_class) {
             ret = hg_bulk_free_na_mem_descs(&hg_bulk->na_sm_mem_descs,
-                hg_bulk->na_sm_class, hg_bulk->desc.info.segment_count);
+                hg_bulk->na_sm_class, hg_bulk->desc.info.segment_count,
+                hg_bulk->registered);
             HG_CHECK_HG_ERROR(
                 done, ret, "Could not free NA SM mem descriptors");
         }
@@ -772,7 +777,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
-    na_class_t *na_class, hg_uint32_t count)
+    na_class_t *na_class, hg_uint32_t count, na_bool_t registered)
 {
     na_mem_handle_t *na_mem_handles;
     hg_return_t ret = HG_SUCCESS;
@@ -790,7 +795,7 @@ hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
             if (na_mem_handles[i] == NA_MEM_HANDLE_NULL)
                 continue;
 
-            ret = hg_bulk_deregister(na_class, na_mem_handles[i]);
+            ret = hg_bulk_deregister(na_class, na_mem_handles[i], registered);
             HG_CHECK_HG_ERROR(done, ret, "Could not deregister segment");
         }
         if (count > HG_BULK_STATIC_MAX)
@@ -922,14 +927,17 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
+hg_bulk_deregister(
+    na_class_t *na_class, na_mem_handle_t mem_handle, na_bool_t registered)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    na_ret = NA_Mem_deregister(na_class, mem_handle);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
-        "NA_Mem_deregister() failed (%s)", NA_Error_to_string(na_ret));
+    if (registered) {
+        na_ret = NA_Mem_deregister(na_class, mem_handle);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "NA_Mem_deregister() failed (%s)", NA_Error_to_string(na_ret));
+    }
 
     na_ret = NA_Mem_handle_free(na_class, mem_handle);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
@@ -1243,6 +1251,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
     hg_bulk->core_class = core_class;
     hg_bulk->na_class = HG_Core_class_get_na(core_class);
+    hg_bulk->registered = HG_FALSE;
     hg_atomic_init32(&hg_bulk->ref_count, 1);
 
     /* Descriptor info */
@@ -1375,7 +1384,6 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
             segments[i].base = (hg_ptr_t) calloc(1, segments[i].len);
             HG_CHECK_ERROR(segments[i].base == (hg_ptr_t) NULL, error, ret,
                 HG_NOMEM, "Could not allocate segment");
-            ;
 
             HG_BULK_DECODE_ARRAY(error, ret, buf_ptr, buf_size_left,
                 (void *) segments[i].base, char, segments[i].len);
