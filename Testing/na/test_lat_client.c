@@ -10,6 +10,7 @@
 
 #include "na_test.h"
 
+#include "mercury_poll.h"
 #include "mercury_request.h" /* For convenience */
 #include "mercury_time.h"
 
@@ -42,6 +43,8 @@ struct na_test_lat_info {
     hg_request_class_t *request_class;
     na_addr_t target_addr;
     struct na_test_info na_test_info;
+    hg_poll_set_t *poll_set;
+    int fd;
 };
 
 /********************/
@@ -79,6 +82,18 @@ na_test_request_progress(unsigned int timeout, void *arg)
     /* Safe to block */
     if (NA_Poll_try_wait(na_test_lat_info->na_class, na_test_lat_info->context))
         timeout_progress = timeout;
+
+    if (na_test_lat_info->poll_set && timeout_progress > 0) {
+        struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
+        unsigned int actual_events = 0;
+
+        hg_poll_wait(na_test_lat_info->poll_set, timeout_progress, 1,
+            &poll_event, &actual_events);
+        if (actual_events == 0)
+            return HG_UTIL_FAIL;
+
+        timeout_progress = 0;
+    }
 
     /* Progress */
     if (NA_Progress(na_test_lat_info->na_class, na_test_lat_info->context,
@@ -182,7 +197,7 @@ na_test_measure_latency(
         ret = NA_Msg_recv_expected(na_test_lat_info->na_class,
             na_test_lat_info->context, na_test_recv_expected_cb, recv_request,
             recv_buf, buf_size, recv_buf_data, na_test_lat_info->target_addr, 0,
-            0, recv_op_id);
+            1, recv_op_id);
         if (ret != NA_SUCCESS) {
             NA_TEST_LOG_ERROR(
                 "NA_Msg_recv_expected() failed (%s)", NA_Error_to_string(ret));
@@ -193,7 +208,7 @@ again:
         /* Post send */
         ret = NA_Msg_send_unexpected(na_test_lat_info->na_class,
             na_test_lat_info->context, NULL, NULL, send_buf, buf_size,
-            send_buf_data, na_test_lat_info->target_addr, 0, 0, send_op_id);
+            send_buf_data, na_test_lat_info->target_addr, 0, 1, send_op_id);
         if (ret == NA_AGAIN) {
             hg_request_wait(recv_request, 0, NULL);
             goto again;
@@ -371,6 +386,15 @@ main(int argc, char *argv[])
     na_test_lat_info.context = NA_Context_create(na_test_lat_info.na_class);
     na_test_lat_info.request_class = hg_request_init(
         na_test_request_progress, na_test_request_trigger, &na_test_lat_info);
+    na_test_lat_info.fd =
+        NA_Poll_get_fd(na_test_lat_info.na_class, na_test_lat_info.context);
+    if (na_test_lat_info.fd > 0) {
+        struct hg_poll_event poll_event = {
+            .events = HG_POLLIN, .data.ptr = NULL};
+        na_test_lat_info.poll_set = hg_poll_create();
+        hg_poll_add(
+            na_test_lat_info.poll_set, na_test_lat_info.fd, &poll_event);
+    }
 
     /* Lookup target addr */
     na_test_target_lookup(&na_test_lat_info);
@@ -397,6 +421,10 @@ main(int argc, char *argv[])
     if (na_test_lat_info.na_test_info.mpi_comm_rank == 0)
         na_test_send_finalize(&na_test_lat_info);
     NA_Addr_free(na_test_lat_info.na_class, na_test_lat_info.target_addr);
+    if (na_test_lat_info.fd > 0) {
+        hg_poll_remove(na_test_lat_info.poll_set, na_test_lat_info.fd);
+        hg_poll_destroy(na_test_lat_info.poll_set);
+    }
     hg_request_finalize(na_test_lat_info.request_class, NULL);
     NA_Context_destroy(na_test_lat_info.na_class, na_test_lat_info.context);
     NA_Test_finalize(&na_test_lat_info.na_test_info);
