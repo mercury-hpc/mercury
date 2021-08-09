@@ -31,12 +31,37 @@ typedef na_uint64_t na_offset_t;               /* Offset */
 
 /* Init info */
 struct na_init_info {
-    const char *ip_subnet;         /* Preferred IP subnet */
-    const char *auth_key;          /* Authorization key */
-    na_size_t max_unexpected_size; /* Max unexpected size hint */
-    na_size_t max_expected_size;   /* Max expected size hint */
-    na_uint32_t progress_mode;     /* Progress mode */
-    na_uint8_t max_contexts;       /* Max contexts */
+    /* Preferred IP subnet to use. */
+    const char *ip_subnet;
+
+    /* Authorization key that can be used for communication. All processes
+     * should use the same key in order to communicate.
+     * NB. generation of keys is done through third-party libraries. */
+    const char *auth_key;
+
+    /* Max unexpected size hint that can be passed to control the size of
+     * unexpected messages. Note that the underlying plugin library may switch
+     * to different transfer protocols depending on the message size that is
+     * used. */
+    na_size_t max_unexpected_size;
+
+    /* Max expected size hint that can be passed to control the size of
+     * expected messages. Note that the underlying plugin library may switch
+     * to different transfer protocols depending on the message size that is
+     * used. */
+    na_size_t max_expected_size;
+
+    /* Progress mode flag. Setting NA_NO_BLOCK will force busy-spin on progress
+     * and remove any wait/notification calls. */
+    na_uint32_t progress_mode;
+
+    /* Maximum number of contexts that are expected to be created. */
+    na_uint8_t max_contexts;
+
+    /* Thread mode flags can be used to relax thread-safety when it is not
+     * needed. When setting NA_THREAD_MODE_SINGLE, only a single thread should
+     * access both NA classes and contexts at a time. */
+    na_uint8_t thread_mode;
 };
 
 /* Segment */
@@ -139,10 +164,21 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_NO_BLOCK 0x01 /*!< no blocking progress */
 #define NA_NO_RETRY 0x02 /*!< no retry of operations in progress */
 
+/* Thread modes (default is thread-safe) */
+#define NA_THREAD_MODE_SINGLE_CLS                                              \
+    (0x01) /*!< only one thread will access class */
+#define NA_THREAD_MODE_SINGLE_CTX                                              \
+    (0x02) /*!< only one thread will access context */
+#define NA_THREAD_MODE_SINGLE                                                  \
+    (NA_THREAD_MODE_SINGLE_CLS | NA_THREAD_MODE_SINGLE_CTX)
+
 /* NA init info initializer */
 #define NA_INIT_INFO_INITIALIZER                                               \
+    (struct na_init_info)                                                      \
     {                                                                          \
-        NULL, NULL, 0, 0, 0, 1                                                 \
+        .ip_subnet = NULL, .auth_key = NULL, .max_unexpected_size = 0,         \
+        .max_expected_size = 0, .progress_mode = 0, .max_contexts = 1,         \
+        .thread_mode = 0                                                       \
     }
 
 #endif /* NA_TYPES_H */

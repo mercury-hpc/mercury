@@ -47,6 +47,7 @@ struct na_test_info {
     int mpi_comm_rank;     /* MPI comm rank */
     int mpi_comm_size;     /* MPI comm size */
     na_bool_t extern_init; /* Extern init */
+    na_bool_t use_threads; /* Use threads */
 };
 
 /*****************/
