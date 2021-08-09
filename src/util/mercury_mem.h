@@ -62,6 +62,35 @@ HG_UTIL_PUBLIC void
 hg_mem_aligned_free(void *mem_ptr);
 
 /**
+ * Allocate a buffer with a `size`-bytes, `alignment`-aligned payload
+ * preceded by a `header_size` header, padding the allocation with up
+ * to `alignment - 1` bytes to ensure that the payload is properly aligned.
+ *
+ * If `alignment` is 0, do not try to align the payload.  It's ok if
+ * `size` is 0, however, behavior is undefined if both `header_size`
+ * and `size` are 0.
+ *
+ * \param header_size [IN]      size of header
+ * \param alignment [IN]        alignment size
+ * \param size [IN]             requested payload size
+ *
+ * \return a pointer to the payload or NULL on failure
+ */
+HG_UTIL_PUBLIC void *
+hg_mem_header_alloc(size_t header_size, size_t alignment, size_t size);
+
+/**
+ * Free the memory that was returned previously by a call to
+ * `hg_mem_header_alloc()`.
+ *
+ * \param header_size [IN]      size of header
+ * \param alignment [IN]        alignment size
+ * \param mem_ptr [IN]          memory pointer
+ */
+HG_UTIL_PUBLIC void
+hg_mem_header_free(size_t header_size, size_t alignment, void *mem_ptr);
+
+/**
  * Create/open a shared-memory mapped file of size \size with name \name.
  *
  * \param name [IN]             name of mapped file

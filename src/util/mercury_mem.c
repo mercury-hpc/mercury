@@ -78,6 +78,28 @@ hg_mem_aligned_free(void *mem_ptr)
 
 /*---------------------------------------------------------------------------*/
 void *
+hg_mem_header_alloc(size_t header_size, size_t alignment, size_t size)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                           ? 0
+                           : alignment - header_size % alignment;
+
+    return (char *) malloc(header_size + pad + size) + header_size + pad;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_mem_header_free(size_t header_size, size_t alignment, void *mem_ptr)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                           ? 0
+                           : alignment - header_size % alignment;
+
+    free((char *) mem_ptr - header_size - pad);
+}
+
+/*---------------------------------------------------------------------------*/
+void *
 hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create)
 {
     void *mem_ptr = NULL;
