@@ -13,6 +13,8 @@
 
 #include "na_types.h"
 
+#include <sys/socket.h>
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -52,6 +54,20 @@ na_ip_parse_subnet(const char *spec, na_uint32_t *netp, na_uint32_t *netmaskp);
  */
 NA_PRIVATE na_return_t
 na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr);
+
+/**
+ * Return interface name and sockaddr from a given hostname / port.
+ *
+ * \param hostname [IN]         hostname to resolve
+ * \param port [IN]             port to use
+ * \param ifa_name [OUT]        returned iface name
+ * \param ss_ptr [OUT]          returned pointer to usable sockaddr
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_PRIVATE na_return_t
+na_ip_check_interface(const char *hostname, unsigned int port, char **ifa_name,
+    struct sockaddr_storage **ss_ptr);
 
 #ifdef __cplusplus
 }
