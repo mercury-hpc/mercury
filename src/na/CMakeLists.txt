@@ -60,6 +60,8 @@ mark_as_advanced(NA_ALLOW_MULTI_PROGRESS)
 # External dependencies / NA plugins
 #------------------------------------------------------------------------------
 include(CheckIncludeFiles)
+include(CheckSymbolExists)
+include(CheckVariableExists)
 
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
@@ -154,6 +156,40 @@ if(NA_USE_OFI)
     ${NA_EXT_LIB_DEPENDENCIES}
     ${OFI_LIBRARIES}
   )
+endif()
+
+# UCX
+option(NA_USE_UCX "Use UCX plugin." OFF)
+if(NA_USE_UCX)
+  find_package(UCX 1.9 REQUIRED)
+  message(STATUS "UCX include directory: ${UCX_INCLUDE_DIR}")
+  set(NA_PLUGINS ${NA_PLUGINS} ucx)
+  set(NA_HAS_UCX 1)
+  set(NA_INT_INCLUDE_DEPENDENCIES
+    ${NA_INT_INCLUDE_DEPENDENCIES}
+    ${UCX_INCLUDE_DIR}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${UCX_LIBRARIES}
+  )
+  # Additional cmake testing
+  set(CMAKE_REQUIRED_INCLUDES ${UCX_INCLUDE_DIR})
+  set(CMAKE_REQUIRED_LIBRARIES ${UCX_LIBRARIES})
+  if(CMAKE_BUILD_TYPE MATCHES "Tsan")
+    set(CMAKE_REQUIRED_FLAGS ${CMAKE_C_FLAGS_TSAN})
+  endif()
+
+  # Detect ucp_lib_query
+  check_symbol_exists(ucp_lib_query ucp/api/ucp.h NA_UCX_HAS_LIB_QUERY)
+  # Detect whether UCX has thread mode names
+  check_variable_exists(ucs_thread_mode_names NA_UCX_HAS_THREAD_MODE_NAMES)
+
+  unset(CMAKE_REQUIRED_INCLUDES)
+  unset(CMAKE_REQUIRED_LIBRARIES)
+  if(CMAKE_BUILD_TYPE MATCHES "Tsan")
+    unset(CMAKE_REQUIRED_FLAGS)
+  endif()
 endif()
 
 # SM
@@ -260,6 +296,13 @@ if(NA_USE_OFI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_ofi.c
+  )
+endif()
+
+if(NA_USE_UCX)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ucx.c
   )
 endif()
 
