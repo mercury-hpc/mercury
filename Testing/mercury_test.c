@@ -478,6 +478,10 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 #endif
     }
 
+#ifdef HG_TEST_HAS_THREAD_POOL
+    hg_test_info->na_test_info.use_threads = NA_TRUE;
+#endif
+
     /* Initialize NA test layer */
     hg_test_info->na_test_info.extern_init = NA_TRUE;
     na_ret = NA_Test_init(argc, argv, &hg_test_info->na_test_info);

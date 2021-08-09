@@ -303,7 +303,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
         }
 #endif
         if (na_test_info->listen) {
-            /* special-case SM (pid:id) */
+            /* special-case SM (pid/id) */
             sprintf(
                 info_string_ptr, "%d/%d", (int) getpid(), na_test_info->port);
         }
@@ -416,6 +416,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     na_init_info.max_contexts = na_test_info->max_contexts;
     na_init_info.max_unexpected_size = (na_size_t) na_test_info->max_msg_size;
     na_init_info.max_expected_size = (na_size_t) na_test_info->max_msg_size;
+    na_init_info.thread_mode =
+        na_test_info->use_threads ? 0 : NA_THREAD_MODE_SINGLE;
 
     printf("# Using info string: %s\n", info_string);
     na_test_info->na_class =
