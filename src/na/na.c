@@ -111,6 +111,9 @@ static const struct na_class_ops *const na_class_table[] = {
 #ifdef NA_HAS_CCI
     &NA_PLUGIN_OPS(cci),
 #endif
+#ifdef NA_HAS_UCX
+    &NA_PLUGIN_OPS(ucx),
+#endif
     NULL};
 
 /* Return code string table */
