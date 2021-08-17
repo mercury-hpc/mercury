@@ -153,19 +153,18 @@ void
 hg_dlog_dump(struct hg_dlog *d, int (*log_func)(FILE *, const char *, ...),
     FILE *stream, int trylock)
 {
-    int try_ret;
     unsigned int left, idx;
     struct hg_dlog_dcount32 *dc32;
     struct hg_dlog_dcount64 *dc64;
 
     if (trylock) {
-        try_ret = hg_thread_mutex_try_lock(&d->dlock);
-        if (try_ret < 0) /* warn them, but keep going */
+        int try_ret = hg_thread_mutex_try_lock(&d->dlock);
+        if (try_ret != HG_UTIL_SUCCESS) /* warn them, but keep going */ {
             fprintf(stderr, "hg_dlog_dump: WARN - lock failed\n");
-    } else {
+            return;
+        }
+    } else
         hg_thread_mutex_lock(&d->dlock);
-        try_ret = 0;
-    }
 
     if (d->leadds > 0) {
         log_func(stream,
@@ -199,8 +198,7 @@ hg_dlog_dump(struct hg_dlog *d, int (*log_func)(FILE *, const char *, ...),
         }
     }
 
-    if (try_ret >= 0)
-        hg_thread_mutex_unlock(&d->dlock);
+    hg_thread_mutex_unlock(&d->dlock);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -210,16 +208,14 @@ hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
     char buf[BUFSIZ];
     int pid = getpid();
     FILE *fp;
-    int try_ret;
     unsigned int left, idx;
     struct hg_dlog_dcount32 *dc32;
     struct hg_dlog_dcount64 *dc64;
 
-    if (addpid) {
+    if (addpid)
         snprintf(buf, sizeof(buf), "%s-%d.log", base, pid);
-    } else {
+    else
         snprintf(buf, sizeof(buf), "%s.log", base);
-    }
 
     fp = fopen(buf, "w");
     if (!fp) {
@@ -228,13 +224,13 @@ hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
     }
 
     if (trylock) {
-        try_ret = hg_thread_mutex_try_lock(&d->dlock);
-        if (try_ret < 0) /* warn them, but keep going */
+        int try_ret = hg_thread_mutex_try_lock(&d->dlock);
+        if (try_ret != HG_UTIL_SUCCESS) /* warn them, but keep going */ {
             fprintf(stderr, "hg_dlog_dump: WARN - lock failed\n");
-    } else {
+            return;
+        }
+    } else
         hg_thread_mutex_lock(&d->dlock);
-        try_ret = 0;
-    }
 
     fprintf(fp, "# START COUNTERS\n");
     HG_LIST_FOREACH (dc32, &d->cnts32, l) {
@@ -259,7 +255,6 @@ hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
         idx = (idx + 1) % d->lesize;
     }
 
-    if (try_ret >= 0)
-        hg_thread_mutex_unlock(&d->dlock);
+    hg_thread_mutex_unlock(&d->dlock);
     fclose(fp);
 }
