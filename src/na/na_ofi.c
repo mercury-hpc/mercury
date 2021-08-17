@@ -52,6 +52,7 @@
 #include "mercury_list.h"
 #include "mercury_mem.h"
 #include "mercury_mem_pool.h"
+#include "mercury_thread.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
@@ -71,7 +72,6 @@
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,9 +207,10 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Op ID status bits */
 #define NA_OFI_OP_COMPLETED (1 << 0)
-#define NA_OFI_OP_CANCELED  (1 << 1)
-#define NA_OFI_OP_QUEUED    (1 << 2)
-#define NA_OFI_OP_ERRORED   (1 << 3)
+#define NA_OFI_OP_CANCELING (1 << 1)
+#define NA_OFI_OP_CANCELED  (1 << 2)
+#define NA_OFI_OP_QUEUED    (1 << 3)
+#define NA_OFI_OP_ERRORED   (1 << 4)
 
 /* Private data access */
 #define NA_OFI_CLASS(na_class)                                                 \
@@ -367,36 +368,37 @@ struct na_ofi_op_id {
     } info;                             /* Op info                  */
     HG_QUEUE_ENTRY(na_ofi_op_id) entry; /* Entry in queue           */
     struct fi_context fi_ctx;           /* Context handle           */
+    struct na_ofi_class *na_ofi_class;  /* NA class associated      */
     na_context_t *context;              /* NA context associated    */
     struct na_ofi_addr *addr;           /* Address associated       */
     hg_atomic_int32_t status;           /* Operation status         */
 };
 
 /* Op queue */
-struct na_ofi_queue {
-    hg_thread_mutex_t mutex;
+struct na_ofi_op_queue {
+    hg_thread_spin_t lock;
     HG_QUEUE_HEAD(na_ofi_op_id) queue;
 };
 
 /* Context */
 struct na_ofi_context {
-    struct fid_ep *fi_tx;                /* Transmit context handle  */
-    struct fid_ep *fi_rx;                /* Receive context handle   */
-    struct fid_cq *fi_cq;                /* CQ handle                */
-    struct fid_wait *fi_wait;            /* Wait set handle          */
-    struct na_ofi_queue *retry_op_queue; /* Retry op queue           */
-    na_uint8_t idx;                      /* Context index            */
+    struct fid_ep *fi_tx;                   /* Transmit context handle  */
+    struct fid_ep *fi_rx;                   /* Receive context handle   */
+    struct fid_cq *fi_cq;                   /* CQ handle                */
+    struct fid_wait *fi_wait;               /* Wait set handle          */
+    struct na_ofi_op_queue *retry_op_queue; /* Retry op queue           */
+    na_uint8_t idx;                         /* Context index            */
 };
 
 /* Endpoint */
 struct na_ofi_endpoint {
-    struct na_ofi_addr *src_addr;        /* Endpoint address         */
-    struct fi_info *fi_prov;             /* Provider info            */
-    struct fid_ep *fi_ep;                /* Endpoint handle          */
-    struct fid_wait *fi_wait;            /* Wait set handle          */
-    struct fid_cq *fi_cq;                /* CQ handle                */
-    struct na_ofi_queue *retry_op_queue; /* Retry op queue           */
-    na_bool_t sep;                       /* Scalable endpoint        */
+    struct na_ofi_addr *src_addr;           /* Endpoint address         */
+    struct fi_info *fi_prov;                /* Provider info            */
+    struct fid_ep *fi_ep;                   /* Endpoint handle          */
+    struct fid_wait *fi_wait;               /* Wait set handle          */
+    struct fid_cq *fi_cq;                   /* CQ handle                */
+    struct na_ofi_op_queue *retry_op_queue; /* Retry op queue           */
+    na_bool_t sep;                          /* Scalable endpoint        */
 };
 
 /* Domain */
@@ -421,7 +423,7 @@ struct na_ofi_domain {
     na_bool_t no_wait;               /* Wait disabled on domain  */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered  */
     hg_atomic_int32_t refcount;      /* Refcount of this domain  */
-};
+} HG_LOCK_CAPABILITY("domain");
 
 /* Private data */
 struct na_ofi_class {
@@ -466,13 +468,13 @@ na_ofi_prov_addr_size(na_uint32_t addr_format);
  * Domain lock.
  */
 static NA_INLINE void
-na_ofi_domain_lock(struct na_ofi_domain *domain);
+na_ofi_domain_lock(struct na_ofi_domain *domain) HG_LOCK_ACQUIRE(*domain);
 
 /**
  * Domain unlock.
  */
 static NA_INLINE void
-na_ofi_domain_unlock(struct na_ofi_domain *domain);
+na_ofi_domain_unlock(struct na_ofi_domain *domain) HG_LOCK_RELEASE(*domain);
 
 /**
  * Uses Scalable endpoints (SEP).
@@ -810,7 +812,14 @@ na_ofi_cq_process_rma_event(struct na_ofi_op_id *na_ofi_op_id);
  * Process retries.
  */
 static na_return_t
-na_ofi_cq_process_retries(na_context_t *context);
+na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context);
+
+/**
+ * Push op for retry.
+ */
+static NA_INLINE void
+na_ofi_op_retry(
+    struct na_ofi_context *na_ofi_context, struct na_ofi_op_id *na_ofi_op_id);
 
 /**
  * Complete operation ID.
@@ -823,6 +832,12 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t cb_ret);
  */
 static NA_INLINE void
 na_ofi_release(void *arg);
+
+/**
+ * Cancel OP ID.
+ */
+static na_return_t
+na_ofi_op_cancel(struct na_ofi_op_id *na_ofi_op_id);
 
 /********************/
 /* Plugin callbacks */
@@ -1205,7 +1220,8 @@ na_ofi_prov_addr_size(na_uint32_t addr_format)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_domain_lock(struct na_ofi_domain *domain)
+na_ofi_domain_lock(
+    struct na_ofi_domain *domain) HG_LOCK_NO_THREAD_SAFETY_ANALYSIS
 {
     if (na_ofi_prov_flags[domain->prov_type] & NA_OFI_DOMAIN_LOCK)
         hg_thread_mutex_lock(&domain->mutex);
@@ -1213,7 +1229,8 @@ na_ofi_domain_lock(struct na_ofi_domain *domain)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_domain_unlock(struct na_ofi_domain *domain)
+na_ofi_domain_unlock(
+    struct na_ofi_domain *domain) HG_LOCK_NO_THREAD_SAFETY_ANALYSIS
 {
     if (na_ofi_prov_flags[domain->prov_type] & NA_OFI_DOMAIN_LOCK)
         hg_thread_mutex_unlock(&domain->mutex);
@@ -2454,11 +2471,12 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
         "fi_endpoint() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Initialize queue / mutex */
-    na_ofi_endpoint->retry_op_queue = malloc(sizeof(struct na_ofi_queue));
+    na_ofi_endpoint->retry_op_queue =
+        malloc(sizeof(*na_ofi_endpoint->retry_op_queue));
     NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_endpoint->retry_op_queue == NULL, out,
         ret, NA_NOMEM, "Could not allocate retry_op_queue");
     HG_QUEUE_INIT(&na_ofi_endpoint->retry_op_queue->queue);
-    hg_thread_mutex_init(&na_ofi_endpoint->retry_op_queue->mutex);
+    hg_thread_spin_init(&na_ofi_endpoint->retry_op_queue->lock);
 
     if (!no_wait) {
         if (na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_WAIT_FD)
@@ -2557,7 +2575,7 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
             HG_QUEUE_IS_EMPTY(&na_ofi_endpoint->retry_op_queue->queue);
         NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, out, ret, NA_BUSY,
             "Retry op queue should be empty");
-        hg_thread_mutex_destroy(&na_ofi_endpoint->retry_op_queue->mutex);
+        hg_thread_spin_destroy(&na_ofi_endpoint->retry_op_queue->lock);
         free(na_ofi_endpoint->retry_op_queue);
     }
 
@@ -3119,17 +3137,8 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
         if (na_ofi_class->no_retry)
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_SUBSYS_DEBUG(
-                op, "Pushing %p for retry", (void *) na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
+        else
+            na_ofi_op_retry(ctx, na_ofi_op_id);
     } else
         NA_CHECK_SUBSYS_ERROR(rma, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc), "fi_rma_op() failed, rc: %zd (%s)",
@@ -3446,35 +3455,48 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_process_retries(na_context_t *context)
+na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
 {
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
+    struct na_ofi_op_queue *op_queue = na_ofi_context->retry_op_queue;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
-    na_return_t ret = NA_SUCCESS, complete_ret;
+    na_return_t ret;
 
     do {
+        na_bool_t canceled = NA_FALSE;
         ssize_t rc = 0;
 
-        hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-
-        na_ofi_op_id = HG_QUEUE_FIRST(&ctx->retry_op_queue->queue);
-        if (!na_ofi_op_id)
+        hg_thread_spin_lock(&op_queue->lock);
+        na_ofi_op_id = HG_QUEUE_FIRST(&op_queue->queue);
+        if (!na_ofi_op_id) {
+            hg_thread_spin_unlock(&op_queue->lock);
+            /* Queue is empty */
             break;
+        }
+        /* Dequeue OP ID */
+        HG_QUEUE_POP_HEAD(&op_queue->queue, entry);
+        hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
+
+        /* Check if OP ID was canceled */
+        if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELING) {
+            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
+            canceled = NA_TRUE;
+        }
+        hg_thread_spin_unlock(&op_queue->lock);
+
+        if (canceled) {
+            na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+            /* Try again */
+            continue;
+        }
 
         NA_LOG_SUBSYS_DEBUG(
             op, "Attempting to retry %p", (void *) na_ofi_op_id);
-        NA_CHECK_SUBSYS_ERROR(op,
-            hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELED, error,
-            ret, NA_FAULT, "Operation ID was canceled");
-
-        /* Dequeue OP ID */
-        HG_QUEUE_POP_HEAD(&ctx->retry_op_queue->queue, entry);
-        hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
 
         /* Retry operation */
         switch (na_ofi_op_id->completion_data.callback_info.type) {
             case NA_CB_SEND_UNEXPECTED:
-                rc = fi_tsend(ctx->fi_tx, na_ofi_op_id->info.msg.buf.const_ptr,
+                rc = fi_tsend(na_ofi_context->fi_tx,
+                    na_ofi_op_id->info.msg.buf.const_ptr,
                     na_ofi_op_id->info.msg.buf_size,
                     na_ofi_op_id->info.msg.fi_mr,
                     na_ofi_op_id->info.msg.fi_addr,
@@ -3482,21 +3504,24 @@ na_ofi_cq_process_retries(na_context_t *context)
                     &na_ofi_op_id->fi_ctx);
                 break;
             case NA_CB_RECV_UNEXPECTED:
-                rc = fi_trecv(ctx->fi_rx, na_ofi_op_id->info.msg.buf.ptr,
+                rc = fi_trecv(na_ofi_context->fi_rx,
+                    na_ofi_op_id->info.msg.buf.ptr,
                     na_ofi_op_id->info.msg.buf_size,
                     na_ofi_op_id->info.msg.fi_mr,
                     na_ofi_op_id->info.msg.fi_addr, NA_OFI_UNEXPECTED_TAG,
                     NA_OFI_TAG_MASK, &na_ofi_op_id->fi_ctx);
                 break;
             case NA_CB_SEND_EXPECTED:
-                rc = fi_tsend(ctx->fi_tx, na_ofi_op_id->info.msg.buf.const_ptr,
+                rc = fi_tsend(na_ofi_context->fi_tx,
+                    na_ofi_op_id->info.msg.buf.const_ptr,
                     na_ofi_op_id->info.msg.buf_size,
                     na_ofi_op_id->info.msg.fi_mr,
                     na_ofi_op_id->info.msg.fi_addr, na_ofi_op_id->info.msg.tag,
                     &na_ofi_op_id->fi_ctx);
                 break;
             case NA_CB_RECV_EXPECTED:
-                rc = fi_trecv(ctx->fi_rx, na_ofi_op_id->info.msg.buf.ptr,
+                rc = fi_trecv(na_ofi_context->fi_rx,
+                    na_ofi_op_id->info.msg.buf.ptr,
                     na_ofi_op_id->info.msg.buf_size,
                     na_ofi_op_id->info.msg.fi_mr,
                     na_ofi_op_id->info.msg.fi_addr, na_ofi_op_id->info.msg.tag,
@@ -3509,8 +3534,8 @@ na_ofi_cq_process_retries(na_context_t *context)
 
                 /* Set RMA msg */
                 NA_OFI_MSG_RMA_SET(fi_msg_rma, msg_iov, rma_iov, na_ofi_op_id);
-                rc =
-                    fi_writemsg(ctx->fi_tx, &fi_msg_rma, NA_OFI_PUT_COMPLETION);
+                rc = fi_writemsg(
+                    na_ofi_context->fi_tx, &fi_msg_rma, NA_OFI_PUT_COMPLETION);
                 break;
             }
             case NA_CB_GET: {
@@ -3521,7 +3546,8 @@ na_ofi_cq_process_retries(na_context_t *context)
                 /* Set RMA msg */
                 NA_OFI_MSG_RMA_SET(fi_msg_rma, msg_iov, rma_iov, na_ofi_op_id);
 
-                rc = fi_readmsg(ctx->fi_tx, &fi_msg_rma, NA_OFI_GET_COMPLETION);
+                rc = fi_readmsg(
+                    na_ofi_context->fi_tx, &fi_msg_rma, NA_OFI_GET_COMPLETION);
                 break;
             }
             default:
@@ -3530,42 +3556,71 @@ na_ofi_cq_process_retries(na_context_t *context)
                     na_ofi_op_id->completion_data.callback_info.type);
         }
 
-        if (unlikely(rc == -FI_EAGAIN)) {
-            NA_LOG_SUBSYS_DEBUG(
-                op, "Re-pushing %p for retry", (void *) na_ofi_op_id);
+        if (rc == 0) {
+            /* If the operation got canceled while we retried it, attempt to
+             * cancel it */
+            if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELING) {
+                ret = na_ofi_op_cancel(na_ofi_op_id);
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    op, error, ret, "Could not cancel operation");
+            }
+            continue;
+        } else if (rc == -FI_EAGAIN) {
+            hg_thread_spin_lock(&op_queue->lock);
+            /* Do not repush OP ID if it was canceled in the meantime */
+            if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELING) {
+                hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
+                canceled = NA_TRUE;
+            } else {
+                NA_LOG_SUBSYS_DEBUG(
+                    op, "Re-pushing %p for retry", (void *) na_ofi_op_id);
+                /* Re-push op ID to retry queue */
+                HG_QUEUE_PUSH_TAIL(&op_queue->queue, na_ofi_op_id, entry);
+                hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
+            }
+            hg_thread_spin_unlock(&op_queue->lock);
 
-            /* Re-push op ID to retry queue */
-            HG_QUEUE_PUSH_TAIL(&NA_OFI_CONTEXT(context)->retry_op_queue->queue,
-                na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-
-            /* Do not attempt to retry again and continue making progress */
-            break;
-        } else
-            NA_CHECK_SUBSYS_ERROR(op, rc != 0, error, ret,
-                na_ofi_errno_to_na((int) -rc),
+            if (canceled) {
+                na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+                /* Try again */
+                continue;
+            } else
+                /* Do not attempt to retry again and continue making progress,
+                 * otherwise we could loop indefinitely */
+                break;
+        } else {
+            NA_LOG_SUBSYS_ERROR(op,
                 "retry operation of %d failed, rc: %zd (%s)",
                 na_ofi_op_id->completion_data.callback_info.type, rc,
                 fi_strerror((int) -rc));
 
-        hg_thread_mutex_unlock(&NA_OFI_CONTEXT(context)->retry_op_queue->mutex);
-
+            /* Force internal completion in error mode */
+            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_ERRORED);
+            na_ofi_complete(na_ofi_op_id, na_ofi_errno_to_na((int) -rc));
+        }
     } while (1);
 
-    hg_thread_mutex_unlock(&NA_OFI_CONTEXT(context)->retry_op_queue->mutex);
-
-    return ret;
+    return NA_SUCCESS;
 
 error:
-    /* Force internal cancelation */
-    hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
-    complete_ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-    NA_CHECK_SUBSYS_ERROR_DONE(
-        op, complete_ret != NA_SUCCESS, "Could not complete operation");
-
-    hg_thread_mutex_unlock(&NA_OFI_CONTEXT(context)->retry_op_queue->mutex);
-
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_ofi_op_retry(
+    struct na_ofi_context *na_ofi_context, struct na_ofi_op_id *na_ofi_op_id)
+{
+    struct na_ofi_op_queue *retry_op_queue = na_ofi_context->retry_op_queue;
+
+    NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry (%s)", (void *) na_ofi_op_id,
+        na_cb_type_to_string(na_ofi_op_id->completion_data.callback_info.type));
+
+    /* Push op ID to retry queue */
+    hg_thread_spin_lock(&retry_op_queue->lock);
+    HG_QUEUE_PUSH_TAIL(&retry_op_queue->queue, na_ofi_op_id, entry);
+    hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
+    hg_thread_spin_unlock(&retry_op_queue->lock);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3574,28 +3629,15 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t cb_ret)
 {
     struct na_cb_info *callback_info = NULL;
     na_return_t ret = NA_SUCCESS;
-    hg_util_int32_t status;
 
-    /* Mark op id as completed before checking for cancelation */
-    status = hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
+    /* Mark op id as completed (independent of cb_ret) */
+    hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
     /* Init callback info */
     callback_info = &na_ofi_op_id->completion_data.callback_info;
 
     /* Set callback ret */
     callback_info->ret = cb_ret;
-
-    /* Check for current status before completing */
-    if (status & NA_OFI_OP_CANCELED) {
-        /* If it was canceled while being processed, set callback ret
-         * accordingly */
-        NA_LOG_SUBSYS_DEBUG(
-            op, "Operation ID %p is canceled", (void *) na_ofi_op_id);
-    } else if (status & NA_OFI_OP_ERRORED) {
-        /* If it was errored, set callback ret accordingly */
-        NA_LOG_SUBSYS_DEBUG(
-            op, "Operation ID %p is errored", (void *) na_ofi_op_id);
-    }
 
     switch (callback_info->type) {
         case NA_CB_RECV_UNEXPECTED:
@@ -3668,6 +3710,65 @@ na_ofi_release(void *arg)
         na_ofi_addr_decref(na_ofi_op_id->addr);
         na_ofi_op_id->addr = NULL;
     }
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_op_cancel(struct na_ofi_op_id *na_ofi_op_id)
+{
+    struct fid_ep *fi_ep = NULL;
+    ssize_t rc;
+    na_return_t ret;
+
+    /* Let only one thread call fi_cancel() */
+    if (hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED) &
+        NA_OFI_OP_CANCELED)
+        return NA_SUCCESS;
+
+    switch (na_ofi_op_id->completion_data.callback_info.type) {
+        case NA_CB_RECV_UNEXPECTED:
+        case NA_CB_RECV_EXPECTED:
+            fi_ep = NA_OFI_CONTEXT(na_ofi_op_id->context)->fi_rx;
+            break;
+        case NA_CB_SEND_UNEXPECTED:
+        case NA_CB_SEND_EXPECTED:
+        case NA_CB_PUT:
+        case NA_CB_GET:
+            fi_ep = NA_OFI_CONTEXT(na_ofi_op_id->context)->fi_tx;
+            break;
+        default:
+            NA_GOTO_SUBSYS_ERROR(op, error, ret, NA_INVALID_ARG,
+                "Operation type %d not supported",
+                na_ofi_op_id->completion_data.callback_info.type);
+            break;
+    }
+
+    /* fi_cancel() is an asynchronous operation, either the operation
+     * will be canceled and an FI_ECANCELED event will be generated
+     * or it will show up in the regular completion queue.
+     */
+    rc = fi_cancel(&fi_ep->fid, &na_ofi_op_id->fi_ctx);
+    NA_LOG_SUBSYS_DEBUG(
+        op, "fi_cancel() rc: %d (%s)", (int) rc, fi_strerror((int) -rc));
+    (void) rc;
+
+    /* Work around segfault on fi_cq_signal() in some providers */
+    if (na_ofi_prov_flags[na_ofi_op_id->na_ofi_class->domain->prov_type] &
+        NA_OFI_SIGNAL) {
+        /* Signal CQ to wake up and no longer wait on FD */
+        int rc_signal =
+            fi_cq_signal(NA_OFI_CONTEXT(na_ofi_op_id->context)->fi_cq);
+        NA_CHECK_SUBSYS_ERROR(op, rc_signal != 0 && rc_signal != -ENOSYS, error,
+            ret, na_ofi_errno_to_na(-rc_signal),
+            "fi_cq_signal (op type %d) failed, rc: %d (%s)",
+            na_ofi_op_id->completion_data.callback_info.type, rc_signal,
+            fi_strerror(-rc_signal));
+    }
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
 }
 
 /********************/
@@ -4036,13 +4137,13 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
         ctx->fi_wait = ep->fi_wait;
         ctx->retry_op_queue = ep->retry_op_queue;
     } else {
-        ctx->retry_op_queue = malloc(sizeof(struct na_ofi_queue));
+        ctx->retry_op_queue = malloc(sizeof(*ctx->retry_op_queue));
         NA_CHECK_SUBSYS_ERROR(ctx, ctx->retry_op_queue == NULL, error, ret,
             NA_NOMEM, "Could not allocate retry_op_queue/_lock");
 
         /* Initialize queue / mutex */
         HG_QUEUE_INIT(&ctx->retry_op_queue->queue);
-        hg_thread_mutex_init(&ctx->retry_op_queue->mutex);
+        hg_thread_spin_init(&ctx->retry_op_queue->lock);
 
         NA_CHECK_SUBSYS_ERROR(fatal,
             priv->contexts >= priv->context_max || id >= priv->context_max,
@@ -4109,7 +4210,7 @@ out:
 error:
     hg_thread_mutex_unlock(&priv->mutex);
     if (na_ofi_with_sep(priv) && ctx->retry_op_queue) {
-        hg_thread_mutex_destroy(&ctx->retry_op_queue->mutex);
+        hg_thread_spin_destroy(&ctx->retry_op_queue->lock);
         free(ctx->retry_op_queue);
     }
     free(ctx);
@@ -4167,7 +4268,7 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
             ctx->fi_cq = NULL;
         }
 
-        hg_thread_mutex_destroy(&ctx->retry_op_queue->mutex);
+        hg_thread_spin_destroy(&ctx->retry_op_queue->lock);
         free(ctx->retry_op_queue);
     }
 
@@ -4183,14 +4284,15 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_op_id_t *
-na_ofi_op_create(na_class_t NA_UNUSED *na_class)
+na_ofi_op_create(na_class_t *na_class)
 {
     struct na_ofi_op_id *na_ofi_op_id = NULL;
 
     na_ofi_op_id =
         (struct na_ofi_op_id *) calloc(1, sizeof(struct na_ofi_op_id));
-    NA_CHECK_SUBSYS_ERROR_NORET(op, na_ofi_op_id == NULL, out,
+    NA_CHECK_SUBSYS_ERROR_NORET(op, na_ofi_op_id == NULL, error,
         "Could not allocate NA OFI operation ID");
+    na_ofi_op_id->na_ofi_class = NA_OFI_CLASS(na_class);
 
     /* Completed by default */
     hg_atomic_init32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
@@ -4199,8 +4301,10 @@ na_ofi_op_create(na_class_t NA_UNUSED *na_class)
     na_ofi_op_id->completion_data.plugin_callback = na_ofi_release;
     na_ofi_op_id->completion_data.plugin_callback_args = na_ofi_op_id;
 
-out:
     return (na_op_id_t *) na_ofi_op_id;
+
+error:
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4645,17 +4749,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         if (NA_OFI_CLASS(na_class)->no_retry)
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_SUBSYS_DEBUG(
-                op, "Pushing %p for retry", (void *) na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
+        else
+            na_ofi_op_retry(ctx, na_ofi_op_id);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
@@ -4715,17 +4810,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         if (NA_OFI_CLASS(na_class)->no_retry)
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_SUBSYS_DEBUG(
-                op, "Pushing %p for retry", (void *) na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
+        else
+            na_ofi_op_retry(ctx, na_ofi_op_id);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
@@ -4789,17 +4875,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         if (NA_OFI_CLASS(na_class)->no_retry)
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_SUBSYS_DEBUG(
-                op, "Pushing %p for retry", (void *) na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
+        else
+            na_ofi_op_retry(ctx, na_ofi_op_id);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
@@ -4863,17 +4940,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         if (NA_OFI_CLASS(na_class)->no_retry)
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_SUBSYS_DEBUG(
-                op, "Pushing %p for retry", (void *) na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
+        else
+            na_ofi_op_retry(ctx, na_ofi_op_id);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
@@ -5251,18 +5319,18 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid *fids[1];
+    na_bool_t retry_queue_empty;
     int rc;
 
     if (priv->no_wait)
         return NA_FALSE;
 
     /* Keep making progress if retry queue is not empty */
-    hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-    if (!HG_QUEUE_IS_EMPTY(&ctx->retry_op_queue->queue)) {
-        hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
+    hg_thread_spin_lock(&ctx->retry_op_queue->lock);
+    retry_queue_empty = HG_QUEUE_IS_EMPTY(&ctx->retry_op_queue->queue);
+    hg_thread_spin_unlock(&ctx->retry_op_queue->lock);
+    if (!retry_queue_empty)
         return NA_FALSE;
-    }
-    hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
 
     /* Assume it is safe to block if provider is using wait set */
     if ((na_ofi_prov_flags[priv->domain->prov_type] & NA_OFI_WAIT_SET)
@@ -5340,7 +5408,7 @@ na_ofi_progress(
         }
 
         /* Attempt to process retries */
-        ret = na_ofi_cq_process_retries(context);
+        ret = na_ofi_cq_process_retries(NA_OFI_CONTEXT(context));
         NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process retries");
 
         if (actual_count > 0)
@@ -5355,7 +5423,7 @@ na_ofi_progress(
     /* PSM2 is a user-level interface, to prevent busy-spin and allow
      * other threads to be scheduled, we need to yield here. */
     if (NA_OFI_CLASS(na_class)->domain->prov_type == NA_OFI_PROV_PSM2)
-        sched_yield();
+        hg_thread_yield();
 
     return NA_TIMEOUT;
 
@@ -5365,76 +5433,54 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
+na_ofi_cancel(
+    na_class_t NA_UNUSED *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
-    struct fid_ep *fi_ep = NULL;
-    na_return_t ret = NA_SUCCESS;
-    na_bool_t canceled = NA_FALSE;
     hg_util_int32_t status;
-    ssize_t rc;
+    na_return_t ret;
 
     /* Exit if op has already completed */
-    status = hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
-    if ((status & NA_OFI_OP_COMPLETED) || (status & NA_OFI_OP_ERRORED))
-        goto out;
+    status = hg_atomic_get32(&na_ofi_op_id->status);
+    if ((status & NA_OFI_OP_COMPLETED) || (status & NA_OFI_OP_ERRORED) ||
+        (status & NA_OFI_OP_CANCELED) || (status & NA_OFI_OP_CANCELING))
+        return NA_SUCCESS;
 
-    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", (void *) na_ofi_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p (%s)",
+        (void *) na_ofi_op_id,
+        na_cb_type_to_string(na_ofi_op_id->completion_data.callback_info.type));
 
-    switch (na_ofi_op_id->completion_data.callback_info.type) {
-        case NA_CB_RECV_UNEXPECTED:
-        case NA_CB_RECV_EXPECTED:
-            fi_ep = NA_OFI_CONTEXT(context)->fi_rx;
-            break;
-        case NA_CB_SEND_UNEXPECTED:
-        case NA_CB_SEND_EXPECTED:
-        case NA_CB_PUT:
-        case NA_CB_GET:
-            fi_ep = NA_OFI_CONTEXT(context)->fi_tx;
-            break;
-        default:
-            NA_GOTO_SUBSYS_ERROR(op, out, ret, NA_INVALID_ARG,
-                "Operation type %d not supported",
-                na_ofi_op_id->completion_data.callback_info.type);
-            break;
-    }
+    /* Must set canceling before we check for the retry queue */
+    hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELING);
 
     /* Check if op_id is in retry queue */
-    hg_thread_mutex_lock(&NA_OFI_CONTEXT(context)->retry_op_queue->mutex);
     if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_QUEUED) {
-        HG_QUEUE_REMOVE(&NA_OFI_CONTEXT(context)->retry_op_queue->queue,
-            na_ofi_op_id, na_ofi_op_id, entry);
-        hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
-        canceled = NA_TRUE;
-    }
-    hg_thread_mutex_unlock(&NA_OFI_CONTEXT(context)->retry_op_queue->mutex);
+        struct na_ofi_op_queue *op_queue =
+            NA_OFI_CONTEXT(context)->retry_op_queue;
+        na_bool_t canceled = NA_FALSE;
 
-    if (canceled) {
-        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-        NA_CHECK_SUBSYS_NA_ERROR(op, out, ret, "Could not complete operation");
+        /* If dequeued by process_retries() in the meantime, we'll just let it
+         * cancel there */
+
+        hg_thread_spin_lock(&op_queue->lock);
+        if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_QUEUED) {
+            HG_QUEUE_REMOVE(
+                &op_queue->queue, na_ofi_op_id, na_ofi_op_id, entry);
+            hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
+            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
+            canceled = NA_TRUE;
+        }
+        hg_thread_spin_unlock(&op_queue->lock);
+
+        if (canceled)
+            na_ofi_complete(na_ofi_op_id, NA_CANCELED);
     } else {
-        /* fi_cancel() is an asynchronous operation, either the operation
-         * will be canceled and an FI_ECANCELED event will be generated
-         * or it will show up in the regular completion queue.
-         */
-        rc = fi_cancel(&fi_ep->fid, &na_ofi_op_id->fi_ctx);
-        NA_LOG_SUBSYS_DEBUG(
-            op, "fi_cancel() rc: %d (%s)", (int) rc, fi_strerror((int) -rc));
-        (void) rc;
+        ret = na_ofi_op_cancel(na_ofi_op_id);
+        NA_CHECK_SUBSYS_NA_ERROR(op, error, ret, "Could not cancel operation");
     }
 
-    /* Work around segfault on fi_cq_signal() in some providers */
-    if (na_ofi_prov_flags[NA_OFI_CLASS(na_class)->domain->prov_type] &
-        NA_OFI_SIGNAL) {
-        /* Signal CQ to wake up and no longer wait on FD */
-        int rc_signal = fi_cq_signal(NA_OFI_CONTEXT(context)->fi_cq);
-        NA_CHECK_SUBSYS_ERROR(op, rc_signal != 0 && rc_signal != -ENOSYS, out,
-            ret, na_ofi_errno_to_na(-rc_signal),
-            "fi_cq_signal (op type %d) failed, rc: %d (%s)",
-            na_ofi_op_id->completion_data.callback_info.type, rc_signal,
-            fi_strerror(-rc_signal));
-    }
+    return NA_SUCCESS;
 
-out:
+error:
     return ret;
 }
