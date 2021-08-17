@@ -13,16 +13,18 @@
 
 #include "mercury_util_config.h"
 
+#include "mercury_thread_annotation.h"
+
 #if defined(_WIN32)
 #    include <windows.h>
 typedef volatile LONG hg_thread_spin_t;
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
 #    include <pthread.h>
-typedef pthread_spinlock_t hg_thread_spin_t;
+typedef pthread_spinlock_t HG_LOCK_CAPABILITY("spin") hg_thread_spin_t;
 #else
 /* Default to hg_thread_mutex_t if pthread_spinlock_t is not supported */
 #    include "mercury_thread_mutex.h"
-typedef hg_thread_mutex_t hg_thread_spin_t;
+typedef hg_thread_mutex_t HG_LOCK_CAPABILITY("spin") hg_thread_spin_t;
 #endif
 
 #ifdef __cplusplus
@@ -55,7 +57,7 @@ hg_thread_spin_destroy(hg_thread_spin_t *lock);
  * \param lock [IN/OUT]         pointer to lock object
  */
 static HG_UTIL_INLINE void
-hg_thread_spin_lock(hg_thread_spin_t *lock);
+hg_thread_spin_lock(hg_thread_spin_t *lock) HG_LOCK_ACQUIRE(*lock);
 
 /**
  * Try locking the spin lock.
@@ -65,7 +67,8 @@ hg_thread_spin_lock(hg_thread_spin_t *lock);
  * \return Non-negative on success or negative on failure
  */
 static HG_UTIL_INLINE int
-hg_thread_spin_try_lock(hg_thread_spin_t *lock);
+hg_thread_spin_try_lock(hg_thread_spin_t *lock)
+    HG_LOCK_TRY_ACQUIRE(HG_UTIL_SUCCESS, *lock);
 
 /**
  * Unlock the spin lock.
@@ -73,11 +76,11 @@ hg_thread_spin_try_lock(hg_thread_spin_t *lock);
  * \param mutex [IN/OUT]        pointer to lock object
  */
 static HG_UTIL_INLINE void
-hg_thread_spin_unlock(hg_thread_spin_t *lock);
+hg_thread_spin_unlock(hg_thread_spin_t *lock) HG_LOCK_RELEASE(*lock);
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
-hg_thread_spin_lock(hg_thread_spin_t *lock)
+hg_thread_spin_lock(hg_thread_spin_t *lock) HG_LOCK_NO_THREAD_SAFETY_ANALYSIS
 {
 #if defined(_WIN32)
     while (InterlockedExchange(lock, EBUSY)) {
@@ -98,7 +101,8 @@ hg_thread_spin_lock(hg_thread_spin_t *lock)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
-hg_thread_spin_try_lock(hg_thread_spin_t *lock)
+hg_thread_spin_try_lock(
+    hg_thread_spin_t *lock) HG_LOCK_NO_THREAD_SAFETY_ANALYSIS
 {
 #if defined(_WIN32)
     return InterlockedExchange(lock, EBUSY);
@@ -114,7 +118,7 @@ hg_thread_spin_try_lock(hg_thread_spin_t *lock)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
-hg_thread_spin_unlock(hg_thread_spin_t *lock)
+hg_thread_spin_unlock(hg_thread_spin_t *lock) HG_LOCK_NO_THREAD_SAFETY_ANALYSIS
 {
 #if defined(_WIN32)
     /* Compiler barrier. The store below acts with release semantics */

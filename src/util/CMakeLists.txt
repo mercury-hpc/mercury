@@ -202,6 +202,7 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_annotation.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
