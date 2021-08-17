@@ -573,6 +573,7 @@ na_mpi_accept(na_class_t *na_class)
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Intercomm_create failed");
             ret = NA_PROTOCOL_ERROR;
+            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
             goto done;
         }
     } else {
@@ -581,6 +582,7 @@ na_mpi_accept(na_class_t *na_class)
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Comm_accept failed");
             ret = NA_PROTOCOL_ERROR;
+            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
             goto done;
         }
     }
@@ -591,6 +593,7 @@ na_mpi_accept(na_class_t *na_class)
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Comm_dup() failed");
         ret = NA_PROTOCOL_ERROR;
+        hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
         goto done;
     }
 
@@ -1153,6 +1156,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Comm_dup() failed");
             ret = NA_PROTOCOL_ERROR;
+            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
             goto done;
         }
     } else {
@@ -1162,6 +1166,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Intercomm_create() failed");
                 ret = NA_PROTOCOL_ERROR;
+                hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
                 goto done;
             }
         } else {
@@ -1171,6 +1176,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Comm_connect() failed");
                 ret = NA_PROTOCOL_ERROR;
+                hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
                 goto done;
             }
         }
@@ -1182,6 +1188,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Comm_dup() failed");
         ret = NA_PROTOCOL_ERROR;
+        hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
         goto done;
     }
 
@@ -1951,9 +1958,9 @@ na_mpi_progress_unexpected(
         }
     }
 
+done:
     hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->remote_list_mutex);
 
-done:
     return ret;
 }
 

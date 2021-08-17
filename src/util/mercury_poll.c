@@ -466,6 +466,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     if (unlikely(errno == EINTR)) {
         events[0].events |= HG_POLLINTR;
         *actual_events = 1;
+        hg_thread_mutex_unlock(&poll_set->lock);
 
         return HG_UTIL_SUCCESS;
     }

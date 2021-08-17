@@ -3658,9 +3658,10 @@ hg_core_completion_add(struct hg_core_context *context,
          * increase latency */
         if (hg_atomic_get32(&private_context->completion_queue_must_notify)) {
             rc = hg_event_set(private_context->completion_queue_notify);
-            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, unlock, ret, HG_FAULT,
                 "Could not signal completion queue");
         }
+unlock:
         hg_thread_mutex_unlock(&private_context->completion_queue_notify_mutex);
     }
 

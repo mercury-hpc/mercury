@@ -135,9 +135,11 @@ hg_request_wait(
                     &request->request_class->progress_mutex,
                     hg_time_to_ms(remaining)) != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
+                hg_thread_mutex_unlock(&request->request_class->progress_mutex);
                 break;
             }
             /* Continue as request may have completed in the meantime */
+            hg_thread_mutex_unlock(&request->request_class->progress_mutex);
             goto next;
         }
         request->request_class->progressing = HG_UTIL_TRUE;
