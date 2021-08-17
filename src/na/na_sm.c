@@ -2147,17 +2147,14 @@ na_sm_endpoint_close(
     na_bool_t empty;
 
     /* Check that poll addr list is empty */
-    hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
     empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
-    hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
-
     if (!empty) {
         struct na_sm_addr *na_sm_addr;
 
-        hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
         na_sm_addr = HG_LIST_FIRST(&na_sm_endpoint->poll_addr_list.list);
         while (na_sm_addr) {
             struct na_sm_addr *next = HG_LIST_NEXT(na_sm_addr, entry);
+
             HG_LIST_REMOVE(na_sm_addr, entry);
 
             /* Destroy remaining addresses */
@@ -2166,41 +2163,31 @@ na_sm_endpoint_close(
                 NA_CHECK_SUBSYS_NA_ERROR(
                     cls, done, ret, "Could not remove address");
             }
-
             na_sm_addr = next;
         }
         /* Sanity check */
         empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
-        hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
     }
     NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Poll addr list should be empty");
 
     /* Check that unexpected message queue is empty */
-    hg_thread_spin_lock(&na_sm_endpoint->unexpected_msg_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_msg_queue.queue);
-    hg_thread_spin_unlock(&na_sm_endpoint->unexpected_msg_queue.lock);
     NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Unexpected msg queue should be empty");
 
     /* Check that unexpected op queue is empty */
-    hg_thread_spin_lock(&na_sm_endpoint->unexpected_op_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_op_queue.queue);
-    hg_thread_spin_unlock(&na_sm_endpoint->unexpected_op_queue.lock);
     NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Unexpected op queue should be empty");
 
     /* Check that expected op queue is empty */
-    hg_thread_spin_lock(&na_sm_endpoint->expected_op_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->expected_op_queue.queue);
-    hg_thread_spin_unlock(&na_sm_endpoint->expected_op_queue.lock);
     NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Expected op queue should be empty");
 
     /* Check that retry op queue is empty */
-    hg_thread_spin_lock(&na_sm_endpoint->retry_op_queue.lock);
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
-    hg_thread_spin_unlock(&na_sm_endpoint->retry_op_queue.lock);
     NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
         "Retry op queue should be empty");
 
