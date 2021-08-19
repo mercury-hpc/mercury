@@ -122,10 +122,15 @@ struct na_cb_info_recv_unexpected {
     na_tag_t tag;
 };
 
+struct na_cb_info_recv_expected {
+    na_size_t actual_buf_size;
+};
+
 /* Callback info struct */
 struct na_cb_info {
     union { /* Union of callback info structures */
         struct na_cb_info_recv_unexpected recv_unexpected;
+        struct na_cb_info_recv_expected recv_expected;
     } info;
     void *arg;         /* User data */
     na_cb_type_t type; /* Callback type */
