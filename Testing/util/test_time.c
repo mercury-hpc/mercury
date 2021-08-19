@@ -13,6 +13,7 @@ main(int argc, char *argv[])
     hg_time_t sleep_time = {1, 0};
     double epsilon = 1e-9;
     double t1_double, t2_double;
+    unsigned int t1_ms = 12345, t2_ms;
     int ret = EXIT_SUCCESS;
 
     (void) argc;
@@ -59,6 +60,14 @@ main(int argc, char *argv[])
     /* Should be equal */
     if (fabs(hg_time_to_double(diff1) - hg_time_to_double(diff2)) > epsilon) {
         fprintf(stderr, "Error: diff1 != diff2\n");
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Should be equal */
+    t2_ms = hg_time_to_ms(hg_time_from_ms(t1_ms));
+    if (t2_ms != t1_ms) {
+        fprintf(stderr, "Error: t1_ms (%u) != t2_ms (%u)\n", t1_ms, t2_ms);
         ret = EXIT_FAILURE;
         goto done;
     }
