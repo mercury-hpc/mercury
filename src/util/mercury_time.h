@@ -336,28 +336,6 @@ hg_time_to_double(hg_time_t tv)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE unsigned int
-hg_time_to_ms(hg_time_t tv)
-{
-#if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-    return (unsigned int) (tv.tv_sec * 1000 + tv.tv_nsec / (1000 * 1000));
-#else
-    return (unsigned int) (tv.tv_sec * 1000 +.tv_usec / 1000);
-#endif
-}
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE hg_time_t
-hg_time_from_ms(unsigned int ms)
-{
-#if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-    return (hg_time_t){.tv_sec = ms / 1000, .tv_nsec = 1000 * 1000 * ms};
-#else
-    return (hg_time_t){.tv_sec = ms / 1000, .tv_usec = 1000 * ms};
-#endif
-}
-
-/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_time_t
 hg_time_from_double(double d)
 {
@@ -371,6 +349,30 @@ hg_time_from_double(double d)
 #endif
 
     return tv;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE unsigned int
+hg_time_to_ms(hg_time_t tv)
+{
+#if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+    return (unsigned int) (tv.tv_sec * 1000 + tv.tv_nsec / 1000000);
+#else
+    return (unsigned int) (tv.tv_sec * 1000 + tv.tv_usec / 1000);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE hg_time_t
+hg_time_from_ms(unsigned int ms)
+{
+#if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+    return (hg_time_t){
+        .tv_sec = ms / 1000, .tv_nsec = (ms - (ms / 1000) * 1000) * 1000000};
+#else
+    return (hg_time_t){
+        .tv_sec = ms / 1000, .tv_usec = (ms - (ms / 1000) * 1000) * 1000};
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
