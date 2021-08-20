@@ -3665,7 +3665,6 @@ unlock:
         hg_thread_mutex_unlock(&private_context->completion_queue_notify_mutex);
     }
 
-done:
     return ret;
 }
 
