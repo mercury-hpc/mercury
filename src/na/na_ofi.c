@@ -3006,7 +3006,7 @@ na_ofi_msg_send(struct na_ofi_class *na_ofi_class, na_context_t *context,
                                                   : tag,
         .tag_mask = 0};
 
-    NA_LOG_SUBSYS_DEBUG(msg, "Posting msg send with tag=%" PRIu64 " (op id=%p)",
+    NA_LOG_SUBSYS_DEBUG(msg, "Posting msg send with tag=%" PRIu32 " (op id=%p)",
         tag, (void *) na_ofi_op_id);
 
     /* Post the FI unexpected send request */
