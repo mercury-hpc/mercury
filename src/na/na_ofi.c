@@ -45,7 +45,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
+static unsigned int av_cnt = 0;
 #include "na_plugin.h"
 
 #include "mercury_hash_table.h"
@@ -65,6 +65,8 @@
 #ifdef NA_OFI_HAS_EXT_GNI_H
 #    include <rdma/fi_ext_gni.h>
 #endif
+
+#include <semaphore.h>
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -246,14 +248,90 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
         fi_msg_rma.data = 0;                                                   \
     } while (0)
 
+#define NA_DEFAULT_UNIVERSE_SIZE 2048
+
+/* The environment variable, FI_UNIVERSE_SIZE, is presumed to be set. In case
+ * it is not set, the value of NA_DEFAULT_UNIVERSE_SIZE is used. The av_table
+ * management capability uses the universe size to establish two addtional
+ * values:
+ *
+ * 1. The threshold for initiating av_table removal is set to universe_size - 8.
+ *
+ * 2. The number of entries to have cleared below the universe size, following
+ *    the removal operation, is set to universe_size/4.
+ *
+ * The value of the difference between the threshold and the universe size can
+ * optionally be set via the HG_NA_UNIVERSE_THRESHOLD_DELTA environment
+ * variable.
+ *
+ * The number of entries to clear below the universe size can be set via the
+ * HG_NA_UNIVERSE_CLEAR_CNT environment variable,
+ *
+ * The av_table management capability can be disabled by setting the
+ * environment variable HG_NA_MANAGE_AV_TABLE=0.
+ */
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
 
+/* NA double linked list definition. Used for av_table management. */
+struct nad_list_head {
+	struct nad_list_head *next;
+	struct nad_list_head *prev;
+};
+
+typedef struct nad_list_head na_list_t;
+
+#define na_list_entry(ptr, type, member) \
+    ((type *)((char *)(ptr)-(char *)(&((type *)0)->member)))
+
+static NA_INLINE void na_list_head_init(na_list_t *d_link)
+{
+	d_link->next = d_link;
+	d_link->prev = d_link;
+}
+
+static NA_INLINE void na_list_add_head(na_list_t *d_link, na_list_t *head)
+{
+	d_link->prev = head;
+	d_link->next = head->next;
+	head->next->prev = d_link;
+	head->next = d_link;
+}
+
+static NA_INLINE na_list_t *na_list_get_head(na_list_t *head)
+{
+	if(head->next == head) {
+		return NULL;
+	}
+	return head->next;
+}
+static NA_INLINE void na_list_add_tail(na_list_t *d_link, na_list_t *head)
+{
+	d_link->next = head;
+	d_link->prev = head->prev;
+	head->prev->next = d_link;
+	head->prev = d_link;
+}
+
+static NA_INLINE void na_list_delete(na_list_t *d_link)
+{
+	d_link->next->prev = d_link->prev;
+	d_link->prev->next = d_link->next;
+	d_link->prev = d_link;
+	d_link->next = d_link;
+}
+static NA_INLINE int na_list_empty(na_list_t *d_link)
+{
+	return d_link->next == d_link;
+}
+/*  End NA double linked list Definition */
+
 /* Address */
 struct na_ofi_addr {
     HG_QUEUE_ENTRY(na_ofi_addr) entry; /* Entry in addr pool        */
-    struct na_ofi_class *class;        /* Class                    */
+    struct na_ofi_class *class;        /* Class                     */
     void *addr;                        /* Native address            */
     na_size_t addrlen;                 /* Native address len        */
     char *uri;                         /* Generated URI             */
@@ -261,6 +339,18 @@ struct na_ofi_addr {
     na_uint64_t ht_key;                /* Key in hash-table         */
     hg_atomic_int32_t refcount;        /* Reference counter         */
     na_bool_t remove;                  /* Remove from AV on free    */
+};
+
+/* Extended fi address. Value in address hash table when av_table
+ * management is active.
+ */
+struct fi_extaddr {
+    na_uint64_t          fi_addr;           /* FI address                */
+    hg_atomic_int32_t    ref_count;         /* Reference count           */
+    struct na_ofi_domain *domain;           /* Domain                    */
+    na_uint64_t          ht_key;            /* Key in hash table         */
+    na_bool_t		 clt_lookup;        /* Client look-up of address */
+    na_list_t            fi_lru_link;       /* Link to the LRU list head */
 };
 
 /* SIN address */
@@ -420,6 +510,15 @@ struct na_ofi_domain {
     na_bool_t no_wait;               /* Wait disabled on domain  */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered  */
     hg_atomic_int32_t refcount;      /* Refcount of this domain  */
+
+    na_uint32_t   av_addr_min;       /* number of AV address limit kept in cache */
+    na_uint32_t   av_addr_threshold; /* threshold the maximum number of AV addresses */
+    sem_t         av_sem;            /* semaphore enforcing av_addr_threshold usage */
+
+    na_bool_t     av_use_sem;        /* client do no use the semaphore */
+    na_bool_t     av_manage_avtable; /* set to zero to disable av_table mgmt */
+    hg_thread_mutex_t lru_lock;      /* LRU list head mutex */
+    na_list_t         lru_head;      /* LRU list head, protected by lru_lock */
 };
 
 /**
@@ -566,6 +665,15 @@ na_ofi_addr_ht_key_equal(
 static na_return_t
 na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
     const void *addr, na_size_t addrlen, fi_addr_t *fi_addr,
+    na_uint64_t *addr_key, na_bool_t is_client_lookup);
+
+/**
+ * Lookup the address in the hash-table. Insert it into the AV if it does not
+ * already exist. Temporary version that does not manage av_table entries.
+ */
+static na_return_t
+na_ofi_addr_ht_lookup_noavm(struct na_ofi_domain *domain, na_uint32_t addr_format,
+    const void *addr, na_size_t addrlen, fi_addr_t *fi_addr,
     na_uint64_t *addr_key);
 
 /**
@@ -573,6 +681,13 @@ na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
  */
 static na_return_t
 na_ofi_addr_ht_remove(
+    struct na_ofi_domain *domain, fi_addr_t *fi_addr, na_uint64_t *addr_key);
+
+/**
+ * Remove an addr from the AV and the hash-table.
+ */
+static na_return_t
+na_ofi_addr_ht_remove_noavm(
     struct na_ofi_domain *domain, fi_addr_t *fi_addr, na_uint64_t *addr_key);
 
 /**
@@ -625,7 +740,7 @@ na_ofi_gni_get_domain_op_value(
 static na_return_t
 na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     const char *auth_key, na_bool_t no_wait,
-    struct na_ofi_domain **na_ofi_domain_p);
+    struct na_ofi_domain **na_ofi_domain_p, na_bool_t listen);
 
 /**
  * Close domain.
@@ -703,6 +818,12 @@ na_ofi_addr_addref(struct na_ofi_addr *na_ofi_addr);
  */
 static void
 na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr);
+
+/**
+ * Decrement address refcount. Does not implement av_table mgmt.
+ */
+static void
+na_ofi_addr_decref_noavm(struct na_ofi_addr *na_ofi_addr);
 
 /**
  * Retrieve address from pool.
@@ -1596,6 +1717,128 @@ na_ofi_addr_ht_key_equal(
 static na_return_t
 na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
     const void *addr, na_size_t addrlen, fi_addr_t *fi_addr,
+    na_uint64_t *addr_key, na_bool_t is_client_lookup)
+{
+    na_return_t ret = NA_SUCCESS;
+    hg_hash_table_value_t ht_key = NULL;
+    struct fi_extaddr *ext_addr = NULL;
+    int rc;
+
+    int addr_added = 0;
+    unsigned int av_entries;
+    unsigned int av_initial = 0;
+    int semval;
+
+    /* Generate key */
+    *addr_key = na_ofi_addr_to_key(addr_format, addr, addrlen);
+    NA_CHECK_SUBSYS_ERROR(addr, *addr_key == 0, out, ret, NA_PROTONOSUPPORT,
+        "Could not generate key from addr");
+
+    /* Lookup key */
+    hg_thread_rwlock_wrlock(&domain->rwlock);
+    av_initial = hg_hash_table_num_entries(domain->addr_ht);
+    ext_addr = (struct fi_extaddr*)hg_hash_table_lookup(domain->addr_ht, addr_key);
+    if (ext_addr != HG_HASH_TABLE_NULL) {
+        /* Found hashed fi_addr; increment ref_count */
+        *fi_addr = ext_addr->fi_addr;
+        hg_atomic_incr32(&ext_addr->ref_count);
+	if (is_client_lookup == NA_TRUE)
+	    ext_addr->clt_lookup = NA_TRUE;
+
+        /* remove from LRU if there */
+        hg_thread_mutex_lock(&domain->lru_lock);
+        if(!na_list_empty(&ext_addr->fi_lru_link)) {
+            na_list_delete(&ext_addr->fi_lru_link);
+        }
+        hg_thread_mutex_unlock(&domain->lru_lock);
+        hg_thread_rwlock_release_rdlock(&domain->rwlock);
+        goto out;
+    }
+    hg_thread_rwlock_release_wrlock(&domain->rwlock);
+
+    /* Insert addr into AV if key not found */
+    na_ofi_domain_lock(domain);
+    rc = fi_av_insert(domain->fi_av, addr, 1, fi_addr, 0 /* flags */, NULL);
+    na_ofi_domain_unlock(domain);
+    NA_CHECK_SUBSYS_ERROR(addr, rc < 1, out, ret, na_ofi_errno_to_na(-rc),
+        "fi_av_insert() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+    hg_thread_rwlock_wrlock(&domain->rwlock);
+
+    ext_addr = (struct fi_extaddr*)hg_hash_table_lookup(domain->addr_ht, addr_key);
+    if (ext_addr != HG_HASH_TABLE_NULL) {
+       /* race condition that same source inserted to AV and hash_table, if the
+        * fi_addr is different then remove the newly inserted and reuse the
+        * fi_addr in hash-table.
+        */
+        if (ext_addr->fi_addr != *fi_addr) {
+            rc = fi_av_remove(domain->fi_av, fi_addr, 1, 0 /* flags */);
+            NA_CHECK_SUBSYS_ERROR(addr, rc != 0, unlock, ret,
+                na_ofi_errno_to_na(-rc), "fi_av_remove() failed, rc: %d (%s)",
+                rc, fi_strerror(-rc));
+        }
+	*fi_addr = ext_addr->fi_addr;
+unlock:
+        hg_thread_rwlock_release_wrlock(&domain->rwlock);
+        goto out;
+    }
+
+    if (domain->av_use_sem == NA_TRUE) {
+        sem_wait(&domain->av_sem);
+    }
+    hg_thread_rwlock_wrlock(&domain->rwlock);
+    
+    /* Allocate new key */
+    ht_key = malloc(sizeof(na_uint64_t));
+    NA_CHECK_SUBSYS_ERROR(addr, ht_key == NULL, error, ret, NA_NOMEM,
+        "Cannot allocate memory for ht_key");
+
+    /* Allocate new value */
+    ext_addr = malloc(sizeof(*ext_addr));
+    NA_CHECK_SUBSYS_ERROR(addr, ext_addr == NULL, error, ret, NA_NOMEM,
+                          "cannot allocate memory for av_address");
+    ext_addr->domain = domain;
+    ext_addr->fi_addr = *fi_addr;
+    ext_addr->ht_key = *addr_key;
+    ext_addr->clt_lookup = is_client_lookup;
+    *((na_uint64_t *) ht_key) = *addr_key;
+    na_list_head_init(&ext_addr->fi_lru_link);
+    hg_atomic_init32(&ext_addr->ref_count, 1);
+    /* Insert new value */
+    rc = hg_hash_table_insert(domain->addr_ht, ht_key, ext_addr);
+    NA_CHECK_SUBSYS_ERROR(
+        addr, rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+    addr_added = 1;
+    hg_thread_rwlock_release_wrlock(&domain->rwlock);
+
+out:
+    if (ret == NA_SUCCESS && addr_added) {
+        av_entries = hg_hash_table_num_entries(domain->addr_ht);
+        if (domain->av_use_sem == NA_TRUE) {
+            sem_getvalue(&domain->av_sem, &semval);
+            NA_LOG_SUBSYS_ERROR(addr, "initial %u, actual %u, sem %d\n", 
+                                av_initial, av_entries, semval);
+        } else {
+            NA_LOG_SUBSYS_ERROR(addr, "initial %u, actual %u\n", 
+                                av_initial, av_entries);
+        }
+
+    } else {
+        NA_LOG_ERROR("initial cache size %u\n", av_initial);
+    }
+    return ret;
+
+error:
+    hg_thread_rwlock_release_wrlock(&domain->rwlock);
+    free(ht_key);
+    free(ext_addr);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_addr_ht_lookup_noavm(struct na_ofi_domain *domain, na_uint32_t addr_format,
+    const void *addr, na_size_t addrlen, fi_addr_t *fi_addr,
     na_uint64_t *addr_key)
 {
     hg_hash_table_key_t ht_key = addr_key;
@@ -1678,6 +1921,36 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_addr_ht_remove(
+    struct na_ofi_domain *domain, fi_addr_t *fi_addr, na_uint64_t *addr_key)
+{
+    hg_hash_table_value_t ht_value = NULL;
+    struct fi_extaddr *ext_addr;
+    na_uint64_t     fi_address;           /* FI address                */
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    ht_value =
+        hg_hash_table_lookup(domain->addr_ht, (hg_hash_table_key_t) addr_key);
+    if (ht_value == HG_HASH_TABLE_NULL)
+        goto out;
+    ext_addr = (struct fi_extaddr*)ht_value;
+
+    fi_address = ext_addr->fi_addr;
+
+    rc = hg_hash_table_remove(domain->addr_ht, (hg_hash_table_key_t) addr_key);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 1, out, ret, NA_NOENTRY,
+        "hg_hash_table_remove() failed");
+
+    rc = fi_av_remove(domain->fi_av, &fi_address, 1, 0 /* flags */);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        "fi_av_remove() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_addr_ht_remove_noavm(
     struct na_ofi_domain *domain, fi_addr_t *fi_addr, na_uint64_t *addr_key)
 {
     hg_hash_table_value_t ht_value = NULL;
@@ -2097,13 +2370,15 @@ out:
 static na_return_t
 na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     const char *auth_key, na_bool_t no_wait,
-    struct na_ofi_domain **na_ofi_domain_p)
+    struct na_ofi_domain **na_ofi_domain_p, na_bool_t listen)
 {
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
     struct fi_info *prov, *providers = NULL;
     na_bool_t domain_found = NA_FALSE, prov_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
+    na_uint32_t universe_size, param_val;
+    char *env_str = NULL;
     int rc;
 
     /**
@@ -2309,10 +2584,73 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
         NA_NOMEM, "hg_hash_table_new() failed");
     hg_hash_table_register_free_functions(na_ofi_domain->addr_ht, free, free);
 
+    env_str = getenv("HG_NA_MANAGE_AV_TABLE");
+    if (env_str && atoi(env_str) == 0)
+        na_ofi_domain->av_manage_avtable = NA_FALSE;
+    else
+        na_ofi_domain->av_manage_avtable = NA_TRUE;
+
+    if (na_ofi_domain->av_manage_avtable == NA_TRUE) {
+        na_list_head_init(&na_ofi_domain->lru_head);
+        rc = hg_thread_mutex_init(&na_ofi_domain->lru_lock);
+        NA_CHECK_SUBSYS_ERROR(addr, rc != NA_SUCCESS, error, ret, NA_NOMEM,
+                   "lru_lock mutex failed\n");
+    }
+
     /* Insert to global domain list */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
     HG_LIST_INSERT_HEAD(&na_ofi_domain_list_g, na_ofi_domain, entry);
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+
+    if (na_ofi_domain->av_manage_avtable == NA_TRUE) {
+        /* FI_UNIVERSE_SIZE should aways be set by libfabric. */
+        env_str = getenv("FI_UNIVERSE_SIZE");
+        if (env_str != NULL )
+            universe_size = atoi(env_str);
+        else
+            universe_size = NA_DEFAULT_UNIVERSE_SIZE;
+    
+        env_str = getenv("HG_NA_UNIVERSE_CLEAR_CNT");
+        if (env_str) { 
+	    param_val = atoi(env_str);
+            na_ofi_domain->av_addr_min = universe_size - param_val;
+    	    NA_LOG_ERROR("HG_NA_UNIVERSE_CLEAR_CNT == %d\n", param_val);
+        } else {
+            na_ofi_domain->av_addr_min = universe_size > 8 ?
+                                     universe_size - universe_size / 4 :
+    				 universe_size - 1;
+    	    NA_LOG_ERROR("HG_NA_UNIVERSE_CLEAR_CNT == NULL, using %u\n",
+                         universe_size - na_ofi_domain->av_addr_min);
+        }
+    
+        env_str = getenv("HG_NA_UNIVERSE_THRESHOLD_DELTA");
+        if (env_str) {
+	    param_val = atoi(env_str);
+            na_ofi_domain->av_addr_threshold = universe_size - param_val;
+    	    NA_LOG_ERROR("HG_NA_UNIVERSE_THRESHOLD_DELTA == %d\n", param_val);
+        } else {
+            na_ofi_domain->av_addr_threshold = universe_size > 8 ? universe_size - 8 :
+                                           universe_size - 1;
+    	    NA_LOG_ERROR("HG_NA_UNIVERSE_THRESHOLD_DELTA == NULL, using %u\n",
+                         universe_size - na_ofi_domain->av_addr_threshold);
+        }
+    
+        if (na_ofi_domain->av_addr_threshold <= na_ofi_domain->av_addr_min)
+            na_ofi_domain->av_addr_min = na_ofi_domain->av_addr_threshold - 1;
+    
+        if (listen == NA_TRUE)
+            na_ofi_domain->av_use_sem = NA_TRUE;
+        else
+            na_ofi_domain->av_use_sem = NA_FALSE;
+    
+        if (na_ofi_domain->av_use_sem == NA_TRUE) {
+            ret = sem_init(&na_ofi_domain->av_sem, 0,
+                           na_ofi_domain->av_addr_threshold);
+            if (ret < 0) {
+                NA_LOG_ERROR("Init semaphore error %d\n", errno);
+            }
+        }
+    }
 
     *na_ofi_domain_p = na_ofi_domain;
 
@@ -2682,10 +3020,17 @@ retry:
         addr, error, ret, "Could not get URI from endpoint address");
 
     /* Lookup/insert self address so that we can use it to send to ourself */
-    ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
-        na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
-        na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr,
-        &na_ofi_addr->ht_key);
+    if (na_ofi_class->domain->av_manage_avtable == NA_TRUE)
+        ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
+            na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+            na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr,
+            &na_ofi_addr->ht_key, NA_FALSE);
+    else
+        ret = na_ofi_addr_ht_lookup_noavm(na_ofi_class->domain,
+            na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+            na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr,
+            &na_ofi_addr->ht_key);
+
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "na_ofi_addr_ht_lookup(%s) failed", na_ofi_addr->uri);
 
@@ -2790,6 +3135,100 @@ na_ofi_addr_addref(struct na_ofi_addr *na_ofi_addr)
 static void
 na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
 {
+    struct fi_extaddr *ext_addr = NULL;
+    unsigned int av_entries;
+    na_list_t    *lru_link;
+    int   removed = 0;
+    int   semval;
+
+    /* If there are more references, return */
+    if (hg_atomic_decr32(&na_ofi_addr->refcount))
+       return;
+
+    /* get extended address */
+    hg_thread_rwlock_wrlock(&na_ofi_addr->class->domain->rwlock);
+    ext_addr = hg_hash_table_lookup(na_ofi_addr->class->domain->addr_ht,
+           &na_ofi_addr->ht_key);
+    if (ext_addr == HG_HASH_TABLE_NULL)
+	goto out;
+
+    if (hg_atomic_get32(&ext_addr->ref_count) != 0)
+        hg_atomic_decr32(&ext_addr->ref_count);
+    if (hg_atomic_get32(&ext_addr->ref_count) != 0)
+	goto out;
+
+    /* add na_ofi address to LRU list */
+    hg_thread_mutex_lock(&na_ofi_addr->class->domain->lru_lock);
+    na_list_delete(&ext_addr->fi_lru_link);
+    na_list_add_tail(&ext_addr->fi_lru_link, &na_ofi_addr->class->domain->lru_head);
+    lru_link = na_list_get_head(&na_ofi_addr->class->domain->lru_head);
+
+    /* verify and enforce AV address cache */
+    av_entries = hg_hash_table_num_entries(na_ofi_addr->class->domain->addr_ht);
+    if (av_entries >= na_ofi_addr->class->domain->av_addr_threshold)
+        while (1) {
+            av_entries =
+                hg_hash_table_num_entries(na_ofi_addr->class->domain->addr_ht);
+            if (av_entries <= na_ofi_addr->class->domain->av_addr_min) {
+                break;
+            }
+            lru_link = na_list_get_head(&na_ofi_addr->class->domain->lru_head);
+            if (lru_link == HG_HASH_TABLE_NULL ) {
+	        break;
+            }
+
+            ext_addr = na_list_entry(lru_link, struct fi_extaddr, fi_lru_link);
+	    na_list_delete(lru_link);
+	    if (hg_atomic_get32(&ext_addr->ref_count) == 0 &&
+	        !(ext_addr->clt_lookup == NA_TRUE)) {
+            	na_ofi_addr_ht_remove(na_ofi_addr->class->domain,
+		                      &ext_addr->fi_addr,
+                                      &ext_addr->ht_key);
+            	removed++;
+		if (na_ofi_addr->class->domain->av_use_sem == NA_TRUE) {
+            	    int rc = sem_post(&na_ofi_addr->class->domain->av_sem);
+                    sem_getvalue(&na_ofi_addr->class->domain->av_sem, &semval);
+	        }
+            }
+        }
+
+    hg_thread_mutex_unlock(&na_ofi_addr->class->domain->lru_lock);
+    if (na_ofi_addr->class->domain->av_use_sem == NA_TRUE)
+        sem_getvalue(&na_ofi_addr->class->domain->av_sem, &semval);
+    if (removed != 0 && na_ofi_addr->class->domain->av_use_sem == NA_TRUE) {
+	NA_LOG_ERROR("SHRINK fi_addresses: removed=%u, cached=%u, sem=%d\n",
+                     removed, av_entries, semval);
+    } else if (removed != 0) {
+	NA_LOG_ERROR("SHRINK fi_addresses: removed=%u, cached=%u\n",
+                     removed, av_entries);
+    }
+out:
+    hg_thread_rwlock_release_wrlock(&na_ofi_addr->class->domain->rwlock);
+#ifdef NA_OFI_HAS_ADDR_POOL
+    /* Reset refcount to 1 */
+    hg_atomic_set32(&na_ofi_addr->refcount, 1);
+
+    /* Free URI if it was allocated */
+    free(na_ofi_addr->uri);
+    na_ofi_addr->uri = NULL;
+
+    /* Free addr info */
+    free(na_ofi_addr->addr);
+    na_ofi_addr->addr = NULL;
+
+    /* Push address back to addr pool */
+    hg_thread_spin_lock(&na_ofi_addr->class->addr_pool_lock);
+    HG_QUEUE_PUSH_TAIL(&na_ofi_addr->class->addr_pool, na_ofi_addr, entry);
+    hg_thread_spin_unlock(&na_ofi_addr->class->addr_pool_lock);
+#else
+    na_ofi_addr_destroy(na_ofi_addr);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_addr_decref_noavm(struct na_ofi_addr *na_ofi_addr)
+{
     /* If there are more references, return */
     if (hg_atomic_decr32(&na_ofi_addr->refcount))
         return;
@@ -2799,8 +3238,9 @@ na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
     if (na_ofi_addr->remove) {
         NA_LOG_SUBSYS_DEBUG(addr, "fi_addr=%" SCNx64 " ht_key=%" SCNx64,
             na_ofi_addr->fi_addr, na_ofi_addr->ht_key);
-        na_ofi_addr_ht_remove(na_ofi_addr->class->domain, &na_ofi_addr->fi_addr,
-            &na_ofi_addr->ht_key);
+        na_ofi_addr_ht_remove_noavm(na_ofi_addr->class->domain,
+	                            &na_ofi_addr->fi_addr,
+                                    &na_ofi_addr->ht_key);
     }
 
 #ifdef NA_OFI_HAS_ADDR_POOL
@@ -3268,7 +3708,11 @@ error:
     if (na_ofi_op_id->info.rma.remote_iovcnt > NA_OFI_IOV_STATIC_MAX)
         free(na_ofi_op_id->info.rma.remote_iov.d);
 
-    na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_class->domain->av_manage_avtable == NA_TRUE)
+    	na_ofi_addr_decref(na_ofi_addr);
+    else
+    	na_ofi_addr_decref_noavm(na_ofi_addr);
+
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
     return ret;
@@ -3417,6 +3861,7 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
             ret = na_ofi_cq_process_recv_unexpected_event(na_ofi_class,
                 na_ofi_op_id, src_addr, src_err_addr, src_err_addrlen,
                 cq_event->tag, cq_event->len);
+ 	    //if (ret != 0)
             NA_CHECK_SUBSYS_NA_ERROR(
                 msg, out, ret, "Could not process unexpected recv event");
         } else {
@@ -3487,21 +3932,38 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
         na_ofi_addr->fi_addr = src_addr;
     else if (src_err_addr && src_err_addrlen) { /* addr from error info */
         /* We do not need to keep a copy of src_err_addr */
-        ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
-            na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
-            src_err_addr, src_err_addrlen, &na_ofi_addr->fi_addr,
-            &na_ofi_addr->ht_key);
+        if (na_ofi_class->domain->av_manage_avtable == NA_TRUE)
+            ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
+                na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+                src_err_addr, src_err_addrlen, &na_ofi_addr->fi_addr,
+                &na_ofi_addr->ht_key, NA_FALSE);
+        else
+            ret = na_ofi_addr_ht_lookup_noavm(na_ofi_class->domain,
+                na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+                src_err_addr, src_err_addrlen, &na_ofi_addr->fi_addr,
+                &na_ofi_addr->ht_key);
+		
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "na_ofi_addr_ht_lookup() failed");
     } else if (na_ofi_with_msg_hdr(
                    na_ofi_class->domain)) { /* addr from msg header */
         /* We do not need to keep a copy of msg header */
-        ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
-            na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
-            na_ofi_op_id->info.msg.buf.ptr,
-            na_ofi_prov_addr_size(
-                na_ofi_prov_addr_format[na_ofi_class->domain->prov_type]),
-            &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+
+        if (na_ofi_class->domain->av_manage_avtable == NA_TRUE)
+            ret = na_ofi_addr_ht_lookup(na_ofi_class->domain,
+                na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+                na_ofi_op_id->info.msg.buf.ptr,
+                na_ofi_prov_addr_size(
+                    na_ofi_prov_addr_format[na_ofi_class->domain->prov_type]),
+                &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key, NA_FALSE);
+        else
+            ret = na_ofi_addr_ht_lookup_noavm(na_ofi_class->domain,
+                na_ofi_prov_addr_format[na_ofi_class->domain->prov_type],
+                na_ofi_op_id->info.msg.buf.ptr,
+                na_ofi_prov_addr_size(
+                    na_ofi_prov_addr_format[na_ofi_class->domain->prov_type]),
+                &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "na_ofi_addr_ht_lookup() failed");
     } else
@@ -3520,7 +3982,10 @@ out:
     return ret;
 
 error:
-    na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_class->domain->av_manage_avtable == NA_TRUE)
+        na_ofi_addr_decref(na_ofi_addr);
+    else
+        na_ofi_addr_decref_noavm(na_ofi_addr);
     return ret;
 }
 
@@ -3783,7 +4248,10 @@ na_ofi_release(void *arg)
         "Releasing resources from an uncompleted operation");
 
     if (na_ofi_op_id->addr) {
-        na_ofi_addr_decref(na_ofi_op_id->addr);
+        if (na_ofi_op_id->addr->class->domain->av_manage_avtable == NA_TRUE)
+            na_ofi_addr_decref(na_ofi_op_id->addr);
+        else
+            na_ofi_addr_decref_noavm(na_ofi_op_id->addr);
         na_ofi_op_id->addr = NULL;
     }
 }
@@ -4008,7 +4476,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Create/Open domain */
     ret = na_ofi_domain_open(
-        prov_type, domain_name_ptr, auth_key, no_wait, &priv->domain);
+        prov_type, domain_name_ptr, auth_key, no_wait, &priv->domain, listen);
     NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not open domain for %s, %s",
         na_ofi_prov_name[prov_type], domain_name_ptr);
 
@@ -4374,9 +4842,16 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         addr, error, ret, "Could not convert string to address");
 
     /* Lookup address */
-    ret = na_ofi_addr_ht_lookup(domain,
-        na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
-        na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+    if (domain->av_manage_avtable == NA_TRUE)
+        ret = na_ofi_addr_ht_lookup(domain,
+            na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
+            na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key,
+	    NA_TRUE);
+    else
+        ret = na_ofi_addr_ht_lookup_noavm(domain,
+                na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
+                na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "na_ofi_addr_ht_lookup(%s) failed", name);
 
@@ -4386,8 +4861,13 @@ out:
     return ret;
 
 error:
-    if (na_ofi_addr)
-        na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_addr) {
+        if (na_ofi_addr->class->domain->av_manage_avtable == NA_TRUE) {
+            na_ofi_addr_decref(na_ofi_addr);
+        } else {
+            na_ofi_addr_decref_noavm(na_ofi_addr);
+	}
+    }
     return ret;
 }
 
@@ -4614,9 +5094,16 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
     /* Skip URI generation, URI will only be generated when needed */
 
     /* Lookup address */
-    ret = na_ofi_addr_ht_lookup(domain,
-        na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
-        na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+    if (domain->av_manage_avtable == NA_TRUE)
+        ret = na_ofi_addr_ht_lookup(domain,
+            na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
+            na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key,
+	    NA_FALSE);
+    else
+        ret = na_ofi_addr_ht_lookup_noavm(domain,
+            na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
+            na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
+
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "na_ofi_addr_ht_lookup() failed");
 
@@ -4626,8 +5113,13 @@ out:
     return ret;
 
 error:
-    if (na_ofi_addr)
-        na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_addr) {
+        if (na_ofi_addr->class->domain->av_manage_avtable == NA_TRUE) {
+            na_ofi_addr_decref(na_ofi_addr);
+        } else {
+            na_ofi_addr_decref_noavm(na_ofi_addr);
+	}
+    }
     return ret;
 }
 
@@ -4791,7 +5283,11 @@ out:
     return ret;
 
 error:
-    na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_addr->class->domain->av_manage_avtable == NA_TRUE)
+        na_ofi_addr_decref(na_ofi_addr);
+    else
+        na_ofi_addr_decref_noavm(na_ofi_addr);
+
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
     return ret;
@@ -4933,7 +5429,10 @@ out:
     return ret;
 
 error:
-    na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_addr->class->domain->av_manage_avtable == NA_TRUE)
+        na_ofi_addr_decref(na_ofi_addr);
+    else
+        na_ofi_addr_decref_noavm(na_ofi_addr);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
     return ret;
@@ -5006,7 +5505,10 @@ out:
     return ret;
 
 error:
-    na_ofi_addr_decref(na_ofi_addr);
+    if (na_ofi_addr->class->domain->av_manage_avtable == NA_TRUE)
+        na_ofi_addr_decref(na_ofi_addr);
+    else
+        na_ofi_addr_decref_noavm(na_ofi_addr);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
     return ret;
