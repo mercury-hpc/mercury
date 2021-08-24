@@ -45,7 +45,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-static unsigned int av_cnt = 0;
 #include "na_plugin.h"
 
 #include "mercury_hash_table.h"
