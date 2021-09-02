@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -21,12 +21,54 @@
 typedef hg_uint64_t hg_size_t; /* Size */
 typedef hg_uint64_t hg_id_t;   /* RPC ID */
 
-/* HG init info struct */
+/**
+ * HG init info struct
+ * NB. should be initialized using HG_INIT_INFO_INITIALIZER
+ */
 struct hg_init_info {
-    struct na_init_info na_init_info; /* NA Init Info */
-    na_class_t *na_class;             /* NA class */
-    hg_bool_t auto_sm;                /* Use NA SM plugin with local addrs */
-    hg_bool_t stats;                  /* (Debug) Print stats at exit */
+    /* NA init info struct, see na_types.h for documentation */
+    struct na_init_info na_init_info;
+
+    /* Optional NA class that can be used for initializing an HG class. Using
+     * that option makes the init string passed to HG_Init() ignored.
+     * Default is: NULL */
+    na_class_t *na_class;
+
+    /* Controls the initial number of requests that are posted on context
+     * creation when the HG class is initialized with listen set to true.
+     * A value of zero is equivalent to using the internal default value.
+     * Default value is: 256 */
+    hg_uint32_t request_post_init;
+
+    /* Controls the number of requests that are incrementally posted when the
+     * initial number of requests is exhausted, a value of 0 means that only the
+     * initial number of requests will be re-used after they complete. Note that
+     * if the number of requests that are posted reaches 0, the underlying
+     * NA transport is responsible for queueing incoming requests. This value is
+     * used only if \request_post_init is set to a non-zero value.
+     * Default value is: 256 */
+    hg_uint32_t request_post_incr;
+
+    /* Controls whether the NA shared-memory interface should be automatically
+     * used if/when the RPC target address shares the same node as its origin.
+     * Default is: false */
+    hg_bool_t auto_sm;
+
+    /* Controls whether mercury should _NOT_ attempt to transfer small bulk data
+     * along with the RPC request.
+     * Default is: false */
+    hg_bool_t no_bulk_eager;
+
+    /* Disable internal loopback interface that enables forwarding of RPC
+     * requests to self addresses. Doing so will force traffic to be routed
+     * through NA. For performance reasons, users should be cautious when using
+     * that option.
+     * Default is: false */
+    hg_bool_t no_loopback;
+
+    /* (Debug) Print stats at exit.
+     * Default is: false */
+    hg_bool_t stats;
 };
 
 /* Error return codes:
@@ -51,6 +93,7 @@ struct hg_init_info {
     X(HG_OPNOTSUPPORTED) /*!< operation not supported on endpoint */           \
     X(HG_ADDRINUSE)      /*!< address already in use */                        \
     X(HG_ADDRNOTAVAIL)   /*!< cannot assign requested address */               \
+    X(HG_HOSTUNREACH)    /*!< cannot reach host during operation */            \
     X(HG_TIMEOUT)        /*!< operation reached timeout */                     \
     X(HG_CANCELED)       /*!< operation canceled */                            \
     X(HG_CHECKSUM_ERROR) /*!< checksum error */                                \
@@ -89,6 +132,11 @@ typedef enum {
                   request */
 } hg_proc_op_t;
 
+/**
+ * Encode/decode operation flags.
+ */
+#define HG_CORE_SM (1 << 0)
+
 /*****************/
 /* Public Macros */
 /*****************/
@@ -97,12 +145,13 @@ typedef enum {
 #define HG_MAX_IDLE_TIME (3600 * 1000)
 
 /* HG size max */
-#define HG_SIZE_MAX UINT64_MAX
+#define HG_SIZE_MAX (UINT64_MAX)
 
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, HG_FALSE, HG_FALSE                     \
+        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE, HG_FALSE,    \
+            HG_FALSE                                                           \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */

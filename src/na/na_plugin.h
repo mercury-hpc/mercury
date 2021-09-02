@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -49,6 +49,19 @@ struct na_cb_completion_data {
 #    define NA_UNUSED
 #endif
 
+/* Remove warnings from variables that are only used for debug */
+#ifdef NDEBUG
+#    define NA_DEBUG_USED NA_UNUSED
+#else
+#    define NA_DEBUG_USED
+#endif
+
+#ifdef NA_HAS_DEBUG
+#    define NA_DEBUG_LOG_USED
+#else
+#    define NA_DEBUG_LOG_USED NA_UNUSED
+#endif
+
 /**
  * container_of - cast a member of a structure out to the containing structure
  * \ptr:        the pointer to the member.
@@ -76,6 +89,44 @@ struct na_cb_completion_data {
  */
 #define NA_PLUGIN_OPS(plugin_name) na_##plugin_name##_class_ops_g
 
+/**
+ * Encode type
+ */
+#define NA_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, size)         \
+    do {                                                                       \
+        NA_CHECK_ERROR(buf_size_left < size, label, ret, NA_OVERFLOW,          \
+            "Buffer size too small (%zu)", buf_size_left);                     \
+        memcpy(buf_ptr, data, size);                                           \
+        buf_ptr += size;                                                       \
+        buf_size_left -= size;                                                 \
+    } while (0)
+
+#define NA_ENCODE(label, ret, buf_ptr, buf_size_left, data, type)              \
+    NA_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, sizeof(type))
+
+#define NA_ENCODE_ARRAY(label, ret, buf_ptr, buf_size_left, data, type, count) \
+    NA_TYPE_ENCODE(                                                            \
+        label, ret, buf_ptr, buf_size_left, data, sizeof(type) * count)
+
+/**
+ * Decode type
+ */
+#define NA_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, size)         \
+    do {                                                                       \
+        NA_CHECK_ERROR(buf_size_left < size, label, ret, NA_OVERFLOW,          \
+            "Buffer size too small (%zu)", buf_size_left);                     \
+        memcpy(data, buf_ptr, size);                                           \
+        buf_ptr += size;                                                       \
+        buf_size_left -= size;                                                 \
+    } while (0)
+
+#define NA_DECODE(label, ret, buf_ptr, buf_size_left, data, type)              \
+    NA_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, sizeof(type))
+
+#define NA_DECODE_ARRAY(label, ret, buf_ptr, buf_size_left, data, type, count) \
+    NA_TYPE_DECODE(                                                            \
+        label, ret, buf_ptr, buf_size_left, data, sizeof(type) * count)
+
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -87,14 +138,23 @@ extern "C" {
 /* Private routines for use inside NA plugins */
 
 /**
+ * Convert cb type to string (null terminated).
+ *
+ * \param cb_type [IN]          callback type
+ *
+ * \return String
+ */
+NA_PRIVATE const char *
+na_cb_type_to_string(na_cb_type_t cb_type) NA_WARN_UNUSED_RESULT;
+
+/**
  * Add callback to context completion queue.
  *
  * \param context [IN/OUT]              pointer to context of execution
  * \param na_cb_completion_data [IN]    pointer to completion data
  *
- * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
-NA_PRIVATE na_return_t
+NA_PRIVATE void
 na_cb_completion_add(
     na_context_t *context, struct na_cb_completion_data *na_cb_completion_data);
 
@@ -116,6 +176,9 @@ extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(cci);
 #endif
 #ifdef NA_HAS_OFI
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ofi);
+#endif
+#ifdef NA_HAS_UCX
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ucx);
 #endif
 
 #ifdef __cplusplus

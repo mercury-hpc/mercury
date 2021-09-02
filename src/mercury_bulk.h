@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -22,10 +22,10 @@
 /*****************/
 
 /* The memory attributes associated with the bulk handle
- * can be defined as read only, write only or read/write */
-#define HG_BULK_READ_ONLY  0x01
-#define HG_BULK_WRITE_ONLY 0x02
-#define HG_BULK_READWRITE  0x03
+ * can be defined as read only, write only or read-write */
+#define HG_BULK_READ_ONLY  (1 << 0)
+#define HG_BULK_WRITE_ONLY (1 << 1)
+#define HG_BULK_READWRITE  (HG_BULK_READ_ONLY | HG_BULK_WRITE_ONLY)
 
 /*********************/
 /* Public Prototypes */
@@ -158,7 +158,7 @@ HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
  *
  * \return Non-negative value
  */
-HG_PUBLIC hg_size_t
+static HG_INLINE hg_size_t
 HG_Bulk_get_size(hg_bulk_t handle);
 
 /**
@@ -168,38 +168,45 @@ HG_Bulk_get_size(hg_bulk_t handle);
  *
  * \return Non-negative value
  */
-HG_PUBLIC hg_uint32_t
+static HG_INLINE hg_uint32_t
 HG_Bulk_get_segment_count(hg_bulk_t handle);
+
+/**
+ * Get permission flags set on an existing bulk handle.
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return Non-negative value
+ */
+static HG_INLINE hg_uint8_t
+HG_Bulk_get_flags(hg_bulk_t handle);
 
 /**
  * Get size required to serialize bulk handle.
  *
  * \param handle [IN]           abstract bulk handle
- * \param request_eager [IN]    boolean (passing HG_TRUE adds size of encoding
- *                              actual data along the handle if handle meets
- *                              HG_BULK_READ_ONLY flag condition)
+ * \param flags [IN]            option flags, valid flags are:
+ *                                HG_BULK_SM, HG_BULK_EAGER
  *
  * \return Non-negative value
  */
 HG_PUBLIC hg_size_t
-HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager);
+HG_Bulk_get_serialize_size(hg_bulk_t handle, unsigned long flags);
 
 /**
  * Serialize bulk handle into a buffer.
  *
  * \param buf [IN/OUT]          pointer to buffer
  * \param buf_size [IN]         buffer size
- * \param request_eager [IN]    boolean (passing HG_TRUE encodes actual data
- *                              along the handle, which is more efficient for
- *                              small data, this is only valid if bulk handle
- *                              has HG_BULK_READ_ONLY permission)
+ * \param flags [IN]            option flags, valid flags are:
+ *                                HG_BULK_SM, HG_BULK_EAGER
  * \param handle [IN]           abstract bulk handle
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Bulk_serialize(
-    void *buf, hg_size_t buf_size, hg_bool_t request_eager, hg_bulk_t handle);
+    void *buf, hg_size_t buf_size, unsigned long flags, hg_bulk_t handle);
 
 /**
  * Deserialize bulk handle from an existing buffer.
@@ -214,39 +221,6 @@ HG_Bulk_serialize(
 HG_PUBLIC hg_return_t
 HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     hg_size_t buf_size);
-
-/**
- * Get pointer to cached serialized buffer if any was priorly set.
- *
- * \param handle [IN]           abstract bulk handle
- *
- * \return Pointer to buffer or NULL in case of error
- */
-HG_PUBLIC void *
-HG_Bulk_get_serialize_cached_ptr(hg_bulk_t handle);
-
-/**
- * Get pointer to cached serialized buffer size if any was priorly set.
- *
- * \param handle [IN]           abstract bulk handle
- *
- * \return Non-negative value or 0 in case of error
- */
-HG_PUBLIC hg_size_t
-HG_Bulk_get_serialize_cached_size(hg_bulk_t handle);
-
-/**
- * Set cached pointer to serialization buffer.
- *
- * \param handle [IN]           abstract bulk handle
- * \param buf [IN]              pointer to buffer
- * \param buf_size [IN]         buffer size
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_PUBLIC hg_return_t
-HG_Bulk_set_serialize_cached_ptr(
-    hg_bulk_t handle, void *buf, na_size_t buf_size);
 
 /**
  * Transfer data to/from origin using abstract bulk handles and explicit origin
@@ -339,6 +313,38 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
  */
 HG_PUBLIC hg_return_t
 HG_Bulk_cancel(hg_op_id_t op_id);
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/* HG bulk descriptor info */
+struct hg_bulk_desc_info {
+    hg_size_t len;             /* Size of region */
+    hg_uint32_t segment_count; /* Segment count */
+    hg_uint8_t flags;          /* Flags of operation access */
+};
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+HG_Bulk_get_size(hg_bulk_t handle)
+{
+    return ((struct hg_bulk_desc_info *) handle)->len;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_uint32_t
+HG_Bulk_get_segment_count(hg_bulk_t handle)
+{
+    return ((struct hg_bulk_desc_info *) handle)->segment_count;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_uint8_t
+HG_Bulk_get_flags(hg_bulk_t handle)
+{
+    return ((struct hg_bulk_desc_info *) handle)->flags;
+}
 
 #ifdef __cplusplus
 }

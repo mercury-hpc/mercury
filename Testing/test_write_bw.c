@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -11,9 +11,6 @@
 #include "mercury_atomic.h"
 #include "mercury_test.h"
 #include "mercury_time.h"
-
-#include <stdio.h>
-#include <stdlib.h>
 
 /****************/
 /* Local Macros */
@@ -30,10 +27,8 @@
 #define LARGE_SKIP 10
 #define LARGE_SIZE 8192
 
-#define NDIGITS      2
-#define NWIDTH       20
-#define MAX_MSG_SIZE (HG_TEST_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES  (HG_TEST_MAX_HANDLES)
+#define NDIGITS 2
+#define NWIDTH  20
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -92,7 +87,7 @@ measure_bulk_transfer(
     hg_request_t *request;
     struct hg_test_perf_args args;
     size_t avg_iter;
-    double time_read = 0, read_bandwidth;
+    double time_read = 0, read_bandwidth, read_rate;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
 
@@ -166,8 +161,8 @@ again:
             /* Assign handles to multiple targets */
             if (hg_test_info->na_test_info.max_contexts > 1) {
                 ret = HG_Set_target_id(handles[j],
-                    (hg_uint8_t)(
-                        avg_iter % hg_test_info->na_test_info.max_contexts));
+                    (hg_uint8_t) (avg_iter %
+                                  hg_test_info->na_test_info.max_contexts));
                 HG_TEST_CHECK_HG_ERROR(done, ret,
                     "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
             }
@@ -181,7 +176,7 @@ again:
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
         NA_Test_barrier(&hg_test_info->na_test_info);
         hg_time_get_current(&t2);
-        time_read += hg_time_to_double(hg_time_subtract(t2, t1));
+        time_read += hg_time_diff(t2, t1);
 
         hg_request_reset(request);
         hg_atomic_set32(&args.op_completed_count, 0);
@@ -192,12 +187,16 @@ again:
             (double) (nhandles * (avg_iter + 1) *
                       (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
             time_read;
+        read_rate =
+            (double) (nhandles * (avg_iter + 1) *
+                      (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
+            time_read;
 
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH, NDIGITS,
-                read_bandwidth);
+            fprintf(stdout, "%-*d%*.*f%*.*f\r", 10, (int) nbytes, NWIDTH,
+                NDIGITS, read_bandwidth, NWIDTH, NDIGITS, read_rate);
 #endif
     }
 #ifndef HG_TEST_PRINT_PARTIAL
@@ -206,11 +205,15 @@ again:
         (double) (nhandles * loop *
                   (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
         time_read;
+    read_rate =
+        (double) (nhandles * loop *
+                  (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
+        time_read;
 
     /* At this point we have received everything so work out the bandwidth */
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-        fprintf(stdout, "%-*d%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS,
-            read_bandwidth);
+        fprintf(stdout, "%-*d%*.*f%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS,
+            read_bandwidth, NWIDTH, NDIGITS, read_rate);
 #endif
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         fprintf(stdout, "\n");
@@ -248,23 +251,25 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_ERROR(
         hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
 
-    for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
+    for (nhandles = 1; nhandles <= hg_test_info.handle_max; nhandles *= 2) {
         if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
             fprintf(stdout,
-                "# Loop %d times from size %d to %d byte(s) with "
+                "# Loop %d times from size %zu to %zu byte(s) with "
                 "%u handle(s)\n",
-                hg_test_info.na_test_info.loop, 1, MAX_MSG_SIZE, nhandles);
+                hg_test_info.na_test_info.loop, hg_test_info.buf_size_min,
+                hg_test_info.buf_size_max, nhandles);
 #ifdef HG_TEST_HAS_VERIFY_DATA
             fprintf(
                 stdout, "# WARNING verifying data, output will be slower\n");
 #endif
-            fprintf(
-                stdout, "%-*s%*s\n", 10, "# Size", NWIDTH, "Bandwidth (MB/s)");
+            fprintf(stdout, "%-*s%*s%*s\n", 10, "# Size", NWIDTH,
+                "Bandwidth (MB/s)", NWIDTH, "Rate (op/s)");
             fflush(stdout);
         }
 
-        for (size = 1; size <= MAX_MSG_SIZE; size *= 2) {
+        for (size = hg_test_info.buf_size_min;
+             size <= hg_test_info.buf_size_max; size *= 2) {
             hg_ret = measure_bulk_transfer(&hg_test_info, size, nhandles);
             HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
                 "measure_bulk_transfer() failed");

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -102,7 +102,6 @@ typedef na_uint64_t na_ptr_t;
 
 /* Build Options */
 #cmakedefine NA_HAS_MULTI_PROGRESS
-#cmakedefine NA_HAS_VERBOSE_ERROR
 #cmakedefine NA_HAS_DEBUG
 
 /* BMI */
@@ -126,5 +125,10 @@ typedef na_uint64_t na_ptr_t;
 #cmakedefine NA_SM_HAS_CMA
 #cmakedefine NA_SM_SHM_PREFIX "@NA_SM_SHM_PREFIX@"
 #cmakedefine NA_SM_TMP_DIRECTORY "@NA_SM_TMP_DIRECTORY@"
+
+/* UCX */
+#cmakedefine NA_HAS_UCX
+#cmakedefine NA_UCX_HAS_LIB_QUERY
+#cmakedefine NA_UCX_HAS_THREAD_MODE_NAMES
 
 #endif /* NA_CONFIG_H */

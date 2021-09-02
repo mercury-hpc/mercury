@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -88,9 +88,6 @@ typedef hg_uint8_t hg_bool_t;
 #    define HG_FALLTHROUGH()
 #endif
 
-/* Environment variable names (to be removed) */
-#define HG_PORT_NAME "MERCURY_PORT_NAME"
-
 /* Shared libraries */
 #cmakedefine HG_BUILD_SHARED_LIBS
 #ifdef HG_BUILD_SHARED_LIBS
@@ -108,15 +105,9 @@ typedef hg_uint8_t hg_bool_t;
 /* Build Options */
 #cmakedefine HG_HAS_BOOST
 #cmakedefine HG_HAS_CHECKSUMS
-#cmakedefine HG_HAS_SELF_FORWARD
-#cmakedefine HG_HAS_EAGER_BULK
 #cmakedefine HG_HAS_XDR
-#cmakedefine HG_HAS_POST_LIMIT
-#define HG_POST_LIMIT @MERCURY_POST_LIMIT@
-#cmakedefine HG_HAS_SM_ROUTING
 #cmakedefine HG_HAS_COLLECT_STATS
 
-#cmakedefine HG_HAS_VERBOSE_ERROR
 #cmakedefine HG_HAS_DEBUG
 
 #endif /* MERCURY_CONFIG_H */

@@ -172,19 +172,13 @@ else()
 endif()
 
 #------------------------------------------------------------------------------
-# Enable verbose error.
+# Enable debug output.
 #------------------------------------------------------------------------------
-option(MERCURY_ENABLE_VERBOSE_ERROR "Print error messages to stderr." ON)
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(HG_HAS_VERBOSE_ERROR 1)
-  option(MERCURY_ENABLE_DEBUG "Enable debug statements." OFF)
-  if(MERCURY_ENABLE_DEBUG)
-    set(HG_HAS_DEBUG 1)
-  else()
-    set(HG_HAS_DEBUG 0)
-  endif()
+option(MERCURY_ENABLE_DEBUG "Enable debug statements." OFF)
+if(MERCURY_ENABLE_DEBUG)
+  set(HG_HAS_DEBUG 1)
 else()
-  set(HG_HAS_VERBOSE_ERROR 0)
+  set(HG_HAS_DEBUG 0)
 endif()
 
 #-------------------------------------------------------------------------------
@@ -364,6 +358,7 @@ endif()
 # CPack
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
+  set(CPACK_GENERATOR "TBZ2")
   set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README.md)
   set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${MERCURY_PACKAGE_DESCRIPTION})
@@ -372,9 +367,29 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
   set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
   set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
-  set(CPACK_GENERATOR "TBZ2")
+  set(CPACK_SOURCE_GENERATOR "TBZ2")
   set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE}-${MERCURY_VERSION_FULL})
-  set(CPACK_SOURCE_IGNORE_FILES ".git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
+  set(CPACK_SOURCE_IGNORE_FILES
+    # Files specific to version control
+    "/\\\\.git/"
+    "/\\\\.git$"
+    "/\\\\.gitattributes$"
+    "/\\\\.github/"
+    "/\\\\.gitignore$"
+    "/\\\\.gitmodules$"
+
+    # IDE files
+    "/\\\\.vscode/"
+
+    # Build
+    "/build/"
+
+    # Temporary files
+    "\\\\.swp$"
+    "\\\\.#"
+    "/#"
+    "~$"
+  )
   set(CPACK_SOURCE_STRIP_FILES "")
   include(CPack)
 endif()

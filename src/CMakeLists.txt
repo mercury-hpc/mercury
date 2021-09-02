@@ -94,40 +94,6 @@ if(MERCURY_USE_CHECKSUMS)
   endif()
 endif()
 
-# Coresident RPC
-option(MERCURY_USE_SELF_FORWARD "Execute RPC call locally and bypass NA layer when using NA self address." OFF)
-if(MERCURY_USE_SELF_FORWARD)
-  set(HG_HAS_SELF_FORWARD 1)
-endif()
-set(MERCURY_USE_SELF_FORWARD PARENT_SCOPE)
-
-# Eager bulk transfer
-option(MERCURY_USE_EAGER_BULK "Encode bulk data with RPC when bulk region described is small." ON)
-if(MERCURY_USE_EAGER_BULK)
-  set(HG_HAS_EAGER_BULK 1)
-endif()
-
-# Post limit
-option(MERCURY_ENABLE_POST_LIMIT "Limit number of handles posted by listeners." ON)
-if(MERCURY_ENABLE_POST_LIMIT)
-  set(HG_HAS_POST_LIMIT 1)
-endif()
-mark_as_advanced(MERCURY_ENABLE_POST_LIMIT)
-set(MERCURY_POST_LIMIT "256" CACHE STRING "Number of handles posted.")
-mark_as_advanced(MERCURY_POST_LIMIT)
-
-# Transparent shared-memory routing
-option(MERCURY_USE_SM_ROUTING
-  "Enable routing of local communication through shared-memory (requires SM)."
-  OFF)
-if(MERCURY_USE_SM_ROUTING)
-  if(NOT NA_USE_SM)
-    # Always force SM if NA_USE_SM is turned OFF
-    set(NA_USE_SM "ON" CACHE BOOL "Use shared-memory plugin." FORCE)
-  endif()
-  set(HG_HAS_SM_ROUTING 1)
-endif()
-
 # Collect statistics
 option(MERCURY_ENABLE_STATS "Enable collection of stats that can be printed at exit." OFF)
 if(MERCURY_ENABLE_STATS)
@@ -191,6 +157,39 @@ set(MERCURY_HL_SRCS
 )
 
 #------------------------------------------------------------------------------
+# Specify project public header files to be installed
+#------------------------------------------------------------------------------
+set(MERCURY_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_types.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_header.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_bulk.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_types.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
+)
+
+set(MERCURY_HL_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl_macros.h
+)
+
+#------------------------------------------------------------------------------
+# Specify project private header files
+#------------------------------------------------------------------------------
+set(MERCURY_PRIVATE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk_proc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_private.h
+)
+
+#------------------------------------------------------------------------------
 # Libraries
 #------------------------------------------------------------------------------
 
@@ -202,7 +201,9 @@ foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
 endforeach()
 
 # MERCURY
-add_library(mercury ${MERCURY_SRCS})
+add_library(mercury ${MERCURY_SRCS}
+  ${MERCURY_PRIVATE_HEADERS} ${MERCURY_PUBLIC_HEADERS}
+)
 target_include_directories(mercury
   PUBLIC  "$<BUILD_INTERFACE:${MERCURY_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${MERCURY_INSTALL_INCLUDE_INTERFACE}>
@@ -219,16 +220,22 @@ mercury_set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury)
 endif()
+set_target_properties(mercury PROPERTIES
+  PUBLIC_HEADER "${MERCURY_PUBLIC_HEADERS}"
+)
 
 set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 
 # MERCURY HL
-add_library(mercury_hl ${MERCURY_HL_SRCS})
+add_library(mercury_hl ${MERCURY_HL_SRCS} ${MERCURY_HL_PUBLIC_HEADERS})
 target_link_libraries(mercury_hl mercury)
 mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_hl)
 endif()
+set_target_properties(mercury_hl PROPERTIES
+  PUBLIC_HEADER "${MERCURY_HL_PUBLIC_HEADERS}"
+)
 
 set(MERCURY_EXPORTED_LIBS mercury_hl ${MERCURY_EXPORTED_LIBS})
 
@@ -260,24 +267,6 @@ set(MERCURY_HL_HEADERS
 #-----------------------------------------------------------------------------
 # Add file(s) to CMake Install
 #-----------------------------------------------------------------------------
-install(
-  FILES
-    ${MERCURY_HEADERS}
-  DESTINATION
-    ${MERCURY_INSTALL_INCLUDE_DIR}
-  COMPONENT
-    headers
-)
-
-install(
-  FILES
-    ${MERCURY_HL_HEADERS}
-  DESTINATION
-    ${MERCURY_INSTALL_INCLUDE_DIR}
-  COMPONENT
-    headers
-)
-
 if(MERCURY_USE_BOOST_PP AND NOT MERCURY_USE_SYSTEM_BOOST)
   install(
     DIRECTORY
@@ -299,6 +288,7 @@ install(
     ${MERCURY_EXPORTED_TARGETS}
   LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
   ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${MERCURY_INSTALL_INCLUDE_DIR}
   RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
 )
 
@@ -309,6 +299,7 @@ install(
     ${MERCURY_EXPORTED_TARGETS}
   LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
   ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${MERCURY_INSTALL_INCLUDE_DIR}
   RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
 )
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -12,9 +12,6 @@
 
 #include "mercury_atomic.h"
 #include "mercury_thread.h"
-
-#include <stdio.h>
-#include <stdlib.h>
 
 #define HG_TEST_MAX_ADDR_LEN 256
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -74,6 +74,28 @@ hg_mem_aligned_free(void *mem_ptr)
 #else
     free(mem_ptr);
 #endif
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+hg_mem_header_alloc(size_t header_size, size_t alignment, size_t size)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                           ? 0
+                           : alignment - header_size % alignment;
+
+    return (char *) malloc(header_size + pad + size) + header_size + pad;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_mem_header_free(size_t header_size, size_t alignment, void *mem_ptr)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                           ? 0
+                           : alignment - header_size % alignment;
+
+    free((char *) mem_ptr - header_size - pad);
 }
 
 /*---------------------------------------------------------------------------*/

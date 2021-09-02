@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -9,9 +9,6 @@
  */
 
 #include "mercury_test.h"
-
-#include <stdio.h>
-#include <stdlib.h>
 
 extern hg_id_t hg_test_nested1_id_g;
 

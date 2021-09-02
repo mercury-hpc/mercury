@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -30,10 +30,16 @@
 /* Local Macros */
 /****************/
 
-#define HG_POST_LIMIT_DEFAULT 256
-
 #define HG_CONTEXT_CLASS(context)                                              \
-    ((struct hg_private_class *) (context->hg_class))
+    ((struct hg_private_class *) ((context)->hg_class))
+
+#define HG_HANDLE_CLASS(handle)                                                \
+    ((struct hg_private_class *) ((handle)->info.hg_class))
+
+/* Name of this subsystem */
+#define HG_SUBSYS_NAME        hg
+#define HG_STRINGIFY(x)       HG_UTIL_STRINGIFY(x)
+#define HG_SUBSYS_NAME_STRING HG_STRINGIFY(HG_SUBSYS_NAME)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -45,6 +51,7 @@ struct hg_private_class {
     hg_return_t (*handle_create)(hg_handle_t, void *); /* handle_create */
     void *handle_create_arg;                           /* handle_create arg */
     hg_thread_spin_t register_lock;                    /* Register lock */
+    hg_bool_t bulk_eager;                              /* Eager bulk proc */
 };
 
 /* Info for function map */
@@ -213,11 +220,6 @@ hg_core_respond_cb(const struct hg_core_cb_info *callback_info);
 #define X(a) #a,
 static const char *const hg_return_name[] = {HG_RETURN_VALUES};
 #undef X
-
-/* Default error log mask */
-#ifdef HG_HAS_VERBOSE_ERROR
-unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
 
 /*---------------------------------------------------------------------------*/
 void hg_get_handle_pvar_data(int index, hg_handle_t handle, void *buf)
@@ -445,6 +447,7 @@ hg_core_addr_lookup_cb(const struct hg_core_cb_info *callback_info)
     if (hg_op_id->callback)
         hg_op_id->callback(&hg_cb_info);
 
+    /* NB. OK to free after callback execution, op ID is not re-used */
     free(hg_op_id);
 
     return ret;
@@ -565,6 +568,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
+    hg_uint8_t proc_flags = 0;
     void *buf, **extra_buf;
     hg_size_t buf_size, *extra_buf_size;
     hg_bulk_t *extra_bulk;
@@ -637,6 +641,20 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
     HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
+#ifdef NA_HAS_SM
+    /* Determine if we need special handling for SM */
+    if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
+        NA_ADDR_NULL)
+        proc_flags |= HG_PROC_SM;
+#endif
+
+    /* Attempt to use eager bulk transfers when appropriate */
+    if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager &&
+        !HG_Core_addr_is_self(hg_handle->handle.core_handle->info.addr))
+        proc_flags |= HG_PROC_BULK_EAGER;
+
+    hg_proc_set_flags(proc, proc_flags);
+
     /* Encode parameters */
     ret = proc_cb(proc, struct_ptr);
     HG_CHECK_HG_ERROR(done, ret, "Could not encode parameters");
@@ -680,6 +698,23 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         /* Reset proc */
         ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
         HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
+
+        /* Reset proc flags */
+        proc_flags = 0;
+
+#ifdef NA_HAS_SM
+        /* Determine if we need special handling for SM */
+        if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
+            NA_ADDR_NULL)
+            proc_flags |= HG_PROC_SM;
+#endif
+
+        /* Attempt to use eager bulk transfers when appropriate */
+        if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager &&
+            !HG_Core_addr_is_self(hg_handle->handle.core_handle->info.addr))
+            proc_flags |= HG_PROC_BULK_EAGER;
+
+        hg_proc_set_flags(proc, proc_flags);
 
         /* Encode extra_bulk_handle, we can do that safely here because
          * the user payload has been copied so we don't have to worry
@@ -998,14 +1033,6 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
-#ifdef HG_HAS_VERBOSE_ERROR
-    const char *log_level = NULL;
-
-    /* Set log level */
-    log_level = getenv("HG_LOG_LEVEL");
-    if (log_level && (strcmp(log_level, "debug") == 0))
-        HG_LOG_MASK |= HG_LOG_TYPE_DEBUG;
-#endif
 
     /* Make sure error return codes match */
     assert(HG_CANCELED == (hg_return_t) NA_CANCELED);
@@ -1016,6 +1043,13 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
     memset(hg_class, 0, sizeof(struct hg_private_class));
     hg_thread_spin_init(&hg_class->register_lock);
+
+    /* Save bulk eager information */
+    if (hg_init_info) {
+        hg_class->bulk_eager = !hg_init_info->no_bulk_eager;
+    } else {
+        hg_class->bulk_eager = HG_TRUE;
+    }
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
@@ -1071,6 +1105,20 @@ HG_Cleanup(void)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+HG_Set_log_level(const char *level)
+{
+    hg_log_set_subsys_level(HG_SUBSYS_NAME_STRING, hg_log_name_to_level(level));
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Set_log_subsys(const char *subsys)
+{
+    hg_log_set_subsys(subsys);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Class_set_handle_create_callback(hg_class_t *hg_class,
     hg_return_t (*callback)(hg_handle_t, void *), void *arg)
@@ -1101,12 +1149,6 @@ hg_context_t *
 HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 {
     struct hg_context *hg_context = NULL;
-#ifdef HG_POST_LIMIT
-    unsigned int request_count =
-        (HG_POST_LIMIT > 0) ? HG_POST_LIMIT : HG_POST_LIMIT_DEFAULT;
-#else
-    unsigned int request_count = HG_POST_LIMIT_DEFAULT;
-#endif
 
     HG_CHECK_ERROR_NORET(hg_class == NULL, error, "NULL HG class");
 
@@ -1127,8 +1169,7 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 
     /* If we are listening, start posting requests */
     if (HG_Core_class_is_listening(hg_class->core_class)) {
-        hg_return_t ret = HG_Core_context_post(
-            hg_context->core_context, request_count, HG_TRUE);
+        hg_return_t ret = HG_Core_context_post(hg_context->core_context);
         HG_CHECK_HG_ERROR(error, ret, "Could not post context requests (%s)",
             HG_Error_to_string(ret));
     }
@@ -1321,7 +1362,7 @@ HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
     hg_thread_spin_lock(&private_class->register_lock);
     ret = HG_Core_registered(hg_class->core_class, id, flag);
     hg_thread_spin_unlock(&private_class->register_lock);
-    HG_CHECK_HG_ERROR(done, ret, "Could not check for registered RPC ID (s)",
+    HG_CHECK_HG_ERROR(done, ret, "Could not check for registered RPC ID (%s)",
         HG_Error_to_string(ret));
 
 done:
@@ -1551,7 +1592,7 @@ HG_Addr_free(hg_class_t *hg_class, hg_addr_t addr)
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_free(hg_class->core_class, (hg_core_addr_t) addr);
+    ret = HG_Core_addr_free((hg_core_addr_t) addr);
     HG_CHECK_HG_ERROR(
         done, ret, "Could not free addr (%s)", HG_Error_to_string(ret));
 
@@ -1568,7 +1609,7 @@ HG_Addr_set_remove(hg_class_t *hg_class, hg_addr_t addr)
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_set_remove(hg_class->core_class, (hg_core_addr_t) addr);
+    ret = HG_Core_addr_set_remove((hg_core_addr_t) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not set addr to be removed (%s)",
         HG_Error_to_string(ret));
 
@@ -1602,8 +1643,7 @@ HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_dup(hg_class->core_class, (hg_core_addr_t) addr,
-        (hg_core_addr_t *) new_addr);
+    ret = HG_Core_addr_dup((hg_core_addr_t) addr, (hg_core_addr_t *) new_addr);
     HG_CHECK_HG_ERROR(
         done, ret, "Could not dup addr (%s)", HG_Error_to_string(ret));
 
@@ -1619,8 +1659,7 @@ HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2)
 
     HG_CHECK_ERROR_NORET(hg_class == NULL, done, "NULL HG class");
 
-    ret = HG_Core_addr_cmp(
-        hg_class->core_class, (hg_core_addr_t) addr1, (hg_core_addr_t) addr2);
+    ret = HG_Core_addr_cmp((hg_core_addr_t) addr1, (hg_core_addr_t) addr2);
 
 done:
     return ret;
@@ -1636,8 +1675,7 @@ HG_Addr_to_string(
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_to_string(
-        hg_class->core_class, buf, buf_size, (hg_core_addr_t) addr);
+    ret = HG_Core_addr_to_string(buf, buf_size, (hg_core_addr_t) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not convert addr to string (%s)",
         HG_Error_to_string(ret));
 
@@ -1962,8 +2000,10 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 
     HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_forward_count);
 
-    HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
-        "NULL HG handle");
+    HG_CHECK_ERROR(
+        handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG, "NULL HG handle");
+    HG_CHECK_ERROR(handle->info.addr == HG_ADDR_NULL, done, ret, HG_INVALID_ARG,
+        "NULL target addr");
 
     /* Set callback data */
     private_handle->forward_cb = callback;

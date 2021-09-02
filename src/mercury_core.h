@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -75,8 +75,8 @@ typedef hg_return_t (*hg_core_cb_t)(
 #define HG_CORE_OP_ID_IGNORE ((hg_core_op_id_t *) 1)
 
 /* Flags */
-#define HG_CORE_MORE_DATA   0x01 /* More data required */
-#define HG_CORE_NO_RESPONSE 0x02 /* No response required */
+#define HG_CORE_MORE_DATA   (1 << 0) /* More data required */
+#define HG_CORE_NO_RESPONSE (1 << 1) /* No response required */
 
 /*********************/
 /* Public Prototypes */
@@ -197,7 +197,7 @@ HG_Core_class_is_listening(const hg_core_class_t *hg_core_class);
 static HG_INLINE na_class_t *
 HG_Core_class_get_na(const hg_core_class_t *hg_core_class);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 /**
  * Obtain the underlying NA SM class.
  *
@@ -309,7 +309,7 @@ HG_Core_context_get_class(const hg_core_context_t *context);
 static HG_INLINE na_context_t *
 HG_Core_context_get_na(const hg_core_context_t *context);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 /**
  * Retrieve the underlying NA SM context.
  *
@@ -373,20 +373,18 @@ HG_Core_context_set_handle_create_callback(hg_core_context_t *context,
 
 /**
  * Post requests associated to context in order to receive incoming RPCs.
- * Requests are automatically re-posted after completion depending on the
- * value of \repost. Additionally a callback can be triggered on HG handle
+ * Requests are automatically re-posted after completion until the context is
+ * destroyed. Additionally a callback can be triggered on HG handle
  * creation. This allows upper layers to instantiate data that needs to be
- * attached to a handle.
+ * attached to a handle. Number of requests that are posted can be controlled
+ * through HG init info.
  *
  * \param context [IN]          pointer to HG core context
- * \param request_count [IN]    number of requests
- * \param repost [IN]           boolean, when HG_TRUE, requests are re-posted
  *
  * \return the associated class
  */
 HG_PUBLIC hg_return_t
-HG_Core_context_post(
-    hg_core_context_t *context, unsigned int request_count, hg_bool_t repost);
+HG_Core_context_post(hg_core_context_t *context);
 
 /**
  * Dynamically register an RPC ID as well as the RPC callback executed
@@ -456,17 +454,6 @@ HG_PUBLIC void *
 HG_Core_registered_data(hg_core_class_t *hg_core_class, hg_id_t id);
 
 /**
- * Create a HG core address.
- *
- * \param hg_core_class [IN]    pointer to HG core class
- * \param new_addr [OUT]        pointer to abstract address
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_PUBLIC hg_return_t
-HG_Core_addr_create(hg_core_class_t *hg_core_class, hg_core_addr_t *addr);
-
-/**
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling HG_Core_addr_free(). After completion, user callback is
  * placed into a completion queue and can be triggered using HG_Core_trigger().
@@ -500,13 +487,12 @@ HG_Core_addr_lookup2(
 /**
  * Free the addr from the list of peers.
  *
- * \param hg_core_class [IN]    pointer to HG core class
  * \param addr [IN]             abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_free(hg_core_class_t *hg_core_class, hg_core_addr_t addr);
+HG_Core_addr_free(hg_core_addr_t addr);
 
 /**
  * Hint that the address is no longer valid. This may happen if the peer is
@@ -514,24 +500,12 @@ HG_Core_addr_free(hg_core_class_t *hg_core_class, hg_core_addr_t addr);
  * peer address from the list of the peers, before freeing it and reclaim
  * resources.
  *
- * \param hg_core_class [IN]    pointer to HG core class
  * \param addr [IN]             abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_set_remove(hg_core_class_t *hg_core_class, hg_core_addr_t addr);
-
-/**
- * Set the underlying NA address to a HG address.
- *
- * \param core_addr [IN]        abstract address that not set NA address before
- * \param na_addr [IN]          abstract NA addr
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-static HG_INLINE hg_return_t
-HG_Core_addr_set_na(hg_core_addr_t core_addr, na_addr_t na_addr);
+HG_Core_addr_set_remove(hg_core_addr_t addr);
 
 /**
  * Obtain the underlying NA address from an HG address.
@@ -543,15 +517,17 @@ HG_Core_addr_set_na(hg_core_addr_t core_addr, na_addr_t na_addr);
 static HG_INLINE na_addr_t
 HG_Core_addr_get_na(hg_core_addr_t addr);
 
+#ifdef NA_HAS_SM
 /**
- * Obtain the underlying NA class from an HG address.
+ * Obtain the underlying NA SM address from an HG address.
  *
  * \param addr [IN]             abstract address
  *
- * \return Pointer to NA class or NULL if not a valid HG address
+ * \return abstract NA addr or NA_ADDR_NULL if not a valid HG address
  */
-static HG_INLINE na_class_t *
-HG_Core_addr_get_na_class(hg_core_addr_t addr);
+static HG_INLINE na_addr_t
+HG_Core_addr_get_na_sm(hg_core_addr_t addr);
+#endif
 
 /**
  * Access self address. Address must be freed with HG_Core_addr_free().
@@ -565,32 +541,38 @@ HG_PUBLIC hg_return_t
 HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr);
 
 /**
- * Compare two addresses.
- *
- * \param hg_core_class [IN]    pointer to HG core class
- * \param addr1 [IN]            abstract address
- * \param addr2 [IN]            abstract address
- *
- * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
- */
-HG_PUBLIC hg_bool_t
-HG_Core_addr_cmp(
-    hg_core_class_t *hg_core_class, hg_core_addr_t addr1, hg_core_addr_t addr2);
-
-/**
  * Duplicate an existing HG abstract address. The duplicated address can be
  * stored for later use and the origin address be freed safely. The duplicated
  * address must be freed with HG_Core_addr_free().
  *
- * \param hg_core_class [IN]    pointer to HG core class
  * \param addr [IN]             abstract address
  * \param new_addr [OUT]        pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_dup(hg_core_class_t *hg_core_class, hg_core_addr_t addr,
-    hg_core_addr_t *new_addr);
+HG_Core_addr_dup(hg_core_addr_t addr, hg_core_addr_t *new_addr);
+
+/**
+ * Compare two addresses.
+ *
+ * \param addr1 [IN]            abstract address
+ * \param addr2 [IN]            abstract address
+ *
+ * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
+ */
+HG_PUBLIC hg_bool_t
+HG_Core_addr_cmp(hg_core_addr_t addr1, hg_core_addr_t addr2);
+
+/**
+ * Test whether address is self or not.
+ *
+ * \param addr [IN]            pointer to abstract address
+ *
+ * \return HG_TRUE if address is self address, HG_FALSE otherwise
+ */
+static HG_INLINE hg_bool_t
+HG_Core_addr_is_self(hg_core_addr_t addr);
 
 /**
  * Convert an addr to a string (returned string includes the terminating
@@ -599,7 +581,6 @@ HG_Core_addr_dup(hg_core_class_t *hg_core_class, hg_core_addr_t addr,
  * through buf_size is too small, HG_SIZE_ERROR is returned and the buf_size
  * output is set to the minimum size required.
  *
- * \param hg_core_class [IN]    pointer to HG core class
  * \param buf [IN/OUT]          pointer to destination buffer
  * \param buf_size [IN/OUT]     pointer to buffer size
  * \param addr [IN]             abstract address
@@ -607,8 +588,47 @@ HG_Core_addr_dup(hg_core_class_t *hg_core_class, hg_core_addr_t addr,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_to_string(hg_core_class_t *hg_core_class, char *buf,
-    hg_size_t *buf_size, hg_core_addr_t addr);
+HG_Core_addr_to_string(char *buf, hg_size_t *buf_size, hg_core_addr_t addr);
+
+/**
+ * Get size required to serialize address.
+ *
+ * \param addr [IN]             abstract address
+ * \param flags [IN]            optional flags
+ *
+ * \return Non-negative value
+ */
+HG_PUBLIC hg_size_t
+HG_Core_addr_get_serialize_size(hg_core_addr_t addr, unsigned long flags);
+
+/**
+ * Serialize address into a buffer.
+ *
+ * \param buf [IN/OUT]          pointer to destination buffer
+ * \param buf_size [IN]         pointer to buffer size
+ * \param flags [IN]            optional flags
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_addr_serialize(
+    void *buf, hg_size_t buf_size, unsigned long flags, hg_core_addr_t addr);
+
+/**
+ * Deserialize address from a buffer. The returned address must be freed with
+ * HG_Core_addr_free().
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param addr [OUT]            pointer to abstract address
+ * \param buf [IN]              pointer to buffer used for deserialization
+ * \param buf_size [IN]         buffer size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_addr_deserialize(hg_core_class_t *hg_core_class, hg_core_addr_t *addr,
+    const void *buf, hg_size_t buf_size);
 
 /**
  * Initiate a new HG RPC using the specified function ID and the local/remote
@@ -859,7 +879,7 @@ HG_Core_cancel(hg_core_handle_t handle);
 /* HG core class */
 struct hg_core_class {
     na_class_t *na_class; /* NA class */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_class_t *na_sm_class; /* NA SM class */
 #endif
     void *data;                         /* User data */
@@ -870,7 +890,7 @@ struct hg_core_class {
 struct hg_core_context {
     struct hg_core_class *core_class; /* HG core class */
     na_context_t *na_context;         /* NA context */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_context_t *na_sm_context; /* NA SM context */
 #endif
     void *data;                         /* User data */
@@ -880,11 +900,12 @@ struct hg_core_context {
 
 /* HG core addr */
 struct hg_core_addr {
-    na_class_t *na_class; /* NA class from NA address */
-    na_addr_t na_addr;    /* NA address */
-#ifdef HG_HAS_SM_ROUTING
+    struct hg_core_class *core_class; /* HG core class */
+    na_addr_t na_addr;                /* NA address */
+#ifdef NA_HAS_SM
     na_addr_t na_sm_addr; /* NA SM address */
 #endif
+    hg_bool_t is_self; /* Self address */
 };
 
 /* HG core RPC registration info */
@@ -937,7 +958,7 @@ HG_Core_class_get_na(const hg_core_class_t *hg_core_class)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 static HG_INLINE na_class_t *
 HG_Core_class_get_na_sm(const hg_core_class_t *hg_core_class)
 {
@@ -1001,7 +1022,7 @@ HG_Core_context_get_na(const hg_core_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 static HG_INLINE na_context_t *
 HG_Core_context_get_na_sm(const hg_core_context_t *context)
 {
@@ -1035,15 +1056,6 @@ HG_Core_context_get_data(const hg_core_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_return_t
-HG_Core_addr_set_na(hg_core_addr_t core_addr, na_addr_t na_addr)
-{
-    core_addr->na_addr = na_addr;
-
-    return HG_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
 static HG_INLINE na_addr_t
 HG_Core_addr_get_na(hg_core_addr_t addr)
 {
@@ -1051,10 +1063,19 @@ HG_Core_addr_get_na(hg_core_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE na_class_t *
-HG_Core_addr_get_na_class(hg_core_addr_t addr)
+#ifdef NA_HAS_SM
+static HG_INLINE na_addr_t
+HG_Core_addr_get_na_sm(hg_core_addr_t addr)
 {
-    return addr->na_class;
+    return addr->na_sm_addr;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_bool_t
+HG_Core_addr_is_self(hg_core_addr_t addr)
+{
+    return addr->is_self;
 }
 
 /*---------------------------------------------------------------------------*/

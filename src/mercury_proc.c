@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -15,6 +15,8 @@
 #ifdef HG_HAS_CHECKSUMS
 #    include <mchecksum.h>
 #endif
+
+#include <stdlib.h>
 
 /****************/
 /* Local Macros */
@@ -186,6 +188,9 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
                 done, ret, HG_INVALID_PARAM, "Unknown proc operation");
     }
 #endif
+
+    /* Reset flags */
+    hg_proc->flags = 0;
 
     /* Reset proc buf */
     hg_proc->proc_buf.buf = buf;
@@ -427,7 +432,8 @@ hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size)
                 *(hg_uint32_t *) hg_proc->checksum_hash,
                 *(const hg_uint32_t *) hash);
         else if (hg_proc->checksum_size == sizeof(hg_uint64_t))
-            HG_LOG_ERROR("checksum 0x%016X does not match (expected 0x%016X!)",
+            HG_LOG_ERROR("checksum 0x%016" PRIx64
+                         " does not match (expected 0x%016" PRIx64 "!)",
                 *(hg_uint64_t *) hg_proc->checksum_hash,
                 *(const hg_uint64_t *) hash);
         else

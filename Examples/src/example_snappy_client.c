@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -23,12 +23,6 @@
 
 #define NR_ITEMS 1024 * 1024
 
-struct snappy_lookup_args {
-    hg_class_t *hg_class;
-    hg_context_t *hg_context;
-    hg_addr_t hg_target_addr;
-};
-
 struct snappy_compress_rpc_args {
     int *input;
     size_t input_length;
@@ -46,7 +40,7 @@ static hg_return_t
 snappy_compress_rpc_cb(const struct hg_cb_info *callback_info)
 {
     struct snappy_compress_rpc_args *snappy_compress_rpc_args =
-            (struct snappy_compress_rpc_args *) callback_info->arg;
+        (struct snappy_compress_rpc_args *) callback_info->arg;
     hg_handle_t handle = callback_info->info.forward.handle;
 
     int *input;
@@ -79,8 +73,9 @@ snappy_compress_rpc_cb(const struct hg_cb_info *callback_info)
 
     /* The output data is now in the bulk buffer */
     printf("Compressed buffer length is: %zu\n", compressed_length);
-    print_buf(5, (int *)compressed);
-    if (snappy_validate_compressed_buffer(compressed, compressed_length) == SNAPPY_OK) {
+    print_buf(5, (int *) compressed);
+    if (snappy_validate_compressed_buffer(compressed, compressed_length) ==
+        SNAPPY_OK) {
         printf("Compressed buffer validated: compressed successfully\n");
     }
 
@@ -89,8 +84,8 @@ snappy_compress_rpc_cb(const struct hg_cb_info *callback_info)
 
     /* Uncompress data and check uncompressed_length */
     printf("Uncompressing buffer...\n");
-    snappy_uncompress(compressed, compressed_length,
-            (char *) uncompressed, &uncompressed_length);
+    snappy_uncompress(compressed, compressed_length, (char *) uncompressed,
+        &uncompressed_length);
     printf("Uncompressed buffer length is: %zu\n", uncompressed_length);
     print_buf(20, uncompressed);
 
@@ -112,8 +107,8 @@ snappy_compress_rpc_cb(const struct hg_cb_info *callback_info)
 }
 
 static int
-snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
-        na_addr_t na_target_addr)
+snappy_compress_rpc(
+    hg_class_t *hg_class, hg_context_t *hg_context, hg_addr_t hg_target_addr)
 {
     int *input;
     size_t source_length = NR_ITEMS * sizeof(int);
@@ -149,21 +144,21 @@ snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
     memset(compressed, '\0', max_compressed_length);
 
     /* Create HG handle bound to target */
-    HG_Create(hg_context, na_target_addr, snappy_compress_id_g, &handle);
+    HG_Create(hg_context, hg_target_addr, snappy_compress_id_g, &handle);
 
     /**
      * Associate 'handle' with a region of memory. Mercury's bulk transfer is
      * going to get/put data from this region.
      */
-    HG_Bulk_create(hg_class, 1, (void **) &input,
-            &source_length, HG_BULK_READ_ONLY, &input_bulk_handle);
-    HG_Bulk_create(hg_class, 1, &compressed,
-            &max_compressed_length, HG_BULK_READWRITE, &compressed_bulk_handle);
+    HG_Bulk_create(hg_class, 1, (void **) &input, &source_length,
+        HG_BULK_READ_ONLY, &input_bulk_handle);
+    HG_Bulk_create(hg_class, 1, &compressed, &max_compressed_length,
+        HG_BULK_READWRITE, &compressed_bulk_handle);
 
     /* Create struct to keep arguments as the call will be executed
      * asynchronously */
     snappy_compress_rpc_args = (struct snappy_compress_rpc_args *) malloc(
-            sizeof(struct snappy_compress_rpc_args));
+        sizeof(struct snappy_compress_rpc_args));
     snappy_compress_rpc_args->input = input;
     snappy_compress_rpc_args->input_length = source_length;
     snappy_compress_rpc_args->input_bulk_handle = input_bulk_handle;
@@ -177,7 +172,7 @@ snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
     /* Forward the call */
     printf("Sending input to target\n");
     HG_Forward(handle, snappy_compress_rpc_cb, snappy_compress_rpc_args,
-            &snappy_compress_input);
+        &snappy_compress_input);
 
     /* Handle will be destroyed when call completes (reference count) */
     HG_Destroy(handle);
@@ -185,87 +180,78 @@ snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
     return 0;
 }
 
-static hg_return_t
-snappy_lookup_cb(const struct hg_cb_info *callback_info)
-{
-    struct snappy_lookup_args *snappy_lookup_args =
-                (struct snappy_lookup_args *) callback_info->arg;
-    snappy_lookup_args->hg_target_addr = callback_info->info.lookup.addr;
-
-    /* Register RPC */
-    snappy_compress_id_g = snappy_compress_register(snappy_lookup_args->hg_class);
-
-    /* Send RPC to target */
-    snappy_compress_rpc(snappy_lookup_args->hg_class, snappy_lookup_args->hg_context,
-            snappy_lookup_args->hg_target_addr);
-
-    return NA_SUCCESS;
-}
-
 int
 main(void)
 {
-    const char *na_info_string = NULL;
+    const char *info_string = NULL;
 
     char target_addr_string[PATH_MAX], *p;
     FILE *na_config = NULL;
-    struct snappy_lookup_args snappy_lookup_args;
 
     hg_class_t *hg_class;
     hg_context_t *hg_context;
+    hg_addr_t hg_target_addr;
 
     hg_return_t hg_ret;
 
     /* Get info string */
-    na_info_string = getenv(HG_PORT_NAME);
-    if (!na_info_string) {
-        fprintf(stderr, HG_PORT_NAME " environment variable must be set");
+    info_string = getenv("HG_PORT_NAME");
+    if (!info_string) {
+        fprintf(stderr, "HG_PORT_NAME environment variable must be set\n");
         exit(0);
     }
-    printf("Using %s\n", na_info_string);
+    printf("Using %s\n", info_string);
+
+    HG_Set_log_level("warning");
 
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init(na_info_string, NA_FALSE);
+    hg_class = HG_Init(info_string, HG_FALSE);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);
 
-    /* The connection string is generated after NA_Addr_self()/NA_Addr_to_string(),
-     * we must get that string and pass it to  NA_Addr_lookup() */
+    /* The connection string is generated after
+     * NA_Addr_self()/NA_Addr_to_string(), we must get that string and pass it
+     * to  NA_Addr_lookup() */
     na_config = fopen(TEMP_DIRECTORY CONFIG_FILE_NAME, "r");
     if (!na_config) {
         fprintf(stderr, "Could not open config file from: %s\n",
-                TEMP_DIRECTORY CONFIG_FILE_NAME);
+            TEMP_DIRECTORY CONFIG_FILE_NAME);
         exit(0);
     }
     fgets(target_addr_string, PATH_MAX, na_config);
     p = strrchr(target_addr_string, '\n');
-    if (p != NULL) *p = '\0';
+    if (p != NULL)
+        *p = '\0';
     printf("Target address is: %s\n", target_addr_string);
     fclose(na_config);
 
     /* Look up target address */
-    snappy_lookup_args.hg_class = hg_class;
-    snappy_lookup_args.hg_context = hg_context;
-    HG_Addr_lookup(hg_context, snappy_lookup_cb, &snappy_lookup_args,
-            target_addr_string, HG_OP_ID_IGNORE);
+    HG_Addr_lookup2(hg_class, target_addr_string, &hg_target_addr);
+
+    /* Register RPC */
+    snappy_compress_id_g = snappy_compress_register(hg_class);
+
+    /* Send RPC to target */
+    snappy_compress_rpc(hg_class, hg_context, hg_target_addr);
 
     /* Poke progress engine and check for events */
     do {
         unsigned int actual_count = 0;
         do {
-            hg_ret = HG_Trigger(hg_context, 0 /* timeout */,
-                    1 /* max count */, &actual_count);
+            hg_ret = HG_Trigger(
+                hg_context, 0 /* timeout */, 1 /* max count */, &actual_count);
         } while ((hg_ret == HG_SUCCESS) && actual_count);
 
         /* Do not try to make progress anymore if we're done */
-        if (snappy_compress_done_g) break;
+        if (snappy_compress_done_g)
+            break;
 
         hg_ret = HG_Progress(hg_context, HG_MAX_IDLE_TIME);
     } while (hg_ret == HG_SUCCESS);
 
     /* Finalize */
-    HG_Addr_free(hg_class, snappy_lookup_args.hg_target_addr);
+    HG_Addr_free(hg_class, hg_target_addr);
 
     HG_Context_destroy(hg_context);
     HG_Finalize(hg_class);

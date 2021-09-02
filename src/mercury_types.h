@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -56,9 +56,10 @@ struct hg_cb_info_respond {
 };
 
 struct hg_cb_info_bulk {
-    hg_bulk_op_t op;         /* Operation type */
     hg_bulk_t origin_handle; /* HG Bulk origin handle */
     hg_bulk_t local_handle;  /* HG Bulk local handle */
+    hg_bulk_op_t op;         /* Operation type */
+    hg_size_t size;          /* Total size transferred */
 };
 
 struct hg_cb_info {

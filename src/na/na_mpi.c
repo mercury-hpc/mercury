@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -143,7 +143,6 @@ struct na_mpi_op_id {
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
     void *arg;
-    hg_atomic_int32_t ref_count; /* Ref count */
     hg_atomic_int32_t completed; /* Operation completed */
     na_bool_t canceled;          /* Operation canceled */
     union {
@@ -165,6 +164,9 @@ struct na_mpi_class {
     char port_name[MPI_MAX_PORT_NAME]; /* Server local port name used for
                                           dynamic connection */
     MPI_Comm intra_comm;               /* MPI intra-communicator */
+
+    na_size_t unexpected_size_max; /* Max unexpected size */
+    na_size_t expected_size_max;   /* Max expected size */
 
     hg_thread_t accept_thread;      /* Thread for accepting new connections */
     hg_thread_mutex_t accept_mutex; /* Mutex */
@@ -238,12 +240,12 @@ static na_return_t
 na_mpi_finalize(na_class_t *na_class);
 
 /* op_create */
-static na_op_id_t
+static na_op_id_t *
 na_mpi_op_create(na_class_t *na_class);
 
 /* op_destroy */
 static na_return_t
-na_mpi_op_destroy(na_class_t *na_class, na_op_id_t op_id);
+na_mpi_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
@@ -385,7 +387,7 @@ na_mpi_release(void *arg);
 
 /* cancel */
 static na_return_t
-na_mpi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id);
+na_mpi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 /*******************/
 /* Local Variables */
@@ -428,10 +430,9 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     na_mpi_mem_handle_create,             /* mem_handle_create */
     NULL,                                 /* mem_handle_create_segment */
     na_mpi_mem_handle_free,               /* mem_handle_free */
+    NULL,                                 /* mem_handle_get_max_segments */
     na_mpi_mem_register,                  /* mem_register */
     na_mpi_mem_deregister,                /* mem_deregister */
-    NULL,                                 /* mem_publish */
-    NULL,                                 /* mem_unpublish */
     na_mpi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
     na_mpi_mem_handle_serialize,          /* mem_handle_serialize */
     na_mpi_mem_handle_deserialize,        /* mem_handle_deserialize */
@@ -572,6 +573,7 @@ na_mpi_accept(na_class_t *na_class)
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Intercomm_create failed");
             ret = NA_PROTOCOL_ERROR;
+            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
             goto done;
         }
     } else {
@@ -580,6 +582,7 @@ na_mpi_accept(na_class_t *na_class)
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Comm_accept failed");
             ret = NA_PROTOCOL_ERROR;
+            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
             goto done;
         }
     }
@@ -590,6 +593,7 @@ na_mpi_accept(na_class_t *na_class)
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Comm_dup() failed");
         ret = NA_PROTOCOL_ERROR;
+        hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
         goto done;
     }
 
@@ -891,6 +895,16 @@ na_mpi_initialize(
     use_static_inter_comm = (na_bool_t)(flags & MPI_INIT_STATIC);
     NA_MPI_CLASS(na_class)->use_static_inter_comm = use_static_inter_comm;
 
+    /* Set msg size limits */
+    NA_MPI_CLASS(na_class)->unexpected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
+            ? na_info->na_init_info->max_unexpected_size
+            : NA_MPI_UNEXPECTED_SIZE;
+    NA_MPI_CLASS(na_class)->expected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_expected_size)
+            ? na_info->na_init_info->max_expected_size
+            : NA_MPI_EXPECTED_SIZE;
+
     /* Initialize MPI */
     mpi_ret = MPI_Initialized(&mpi_ext_initialized);
     if (mpi_ret != MPI_SUCCESS) {
@@ -1073,7 +1087,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_op_id_t
+static na_op_id_t *
 na_mpi_op_create(na_class_t NA_UNUSED *na_class)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
@@ -1084,29 +1098,21 @@ na_mpi_op_create(na_class_t NA_UNUSED *na_class)
         goto done;
     }
     memset(na_mpi_op_id, 0, sizeof(struct na_mpi_op_id));
-    hg_atomic_init32(&na_mpi_op_id->ref_count, 1);
+
     /* Completed by default */
     hg_atomic_init32(&na_mpi_op_id->completed, 1);
 
 done:
-    return (na_op_id_t) na_mpi_op_id;
+    return (na_op_id_t *) na_mpi_op_id;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
-    struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    na_return_t ret = NA_SUCCESS;
+    free((struct na_mpi_op_id *) op_id);
 
-    if (hg_atomic_decr32(&na_mpi_op_id->ref_count)) {
-        /* Cannot free yet */
-        goto done;
-    }
-    free(na_mpi_op_id);
-
-done:
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1150,6 +1156,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Comm_dup() failed");
             ret = NA_PROTOCOL_ERROR;
+            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
             goto done;
         }
     } else {
@@ -1159,6 +1166,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Intercomm_create() failed");
                 ret = NA_PROTOCOL_ERROR;
+                hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
                 goto done;
             }
         } else {
@@ -1168,6 +1176,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Comm_connect() failed");
                 ret = NA_PROTOCOL_ERROR;
+                hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
                 goto done;
             }
         }
@@ -1179,6 +1188,7 @@ na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Comm_dup() failed");
         ret = NA_PROTOCOL_ERROR;
+        hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
         goto done;
     }
 
@@ -1327,20 +1337,16 @@ na_mpi_addr_to_string(
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_mpi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
+na_mpi_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
-    na_size_t max_unexpected_size = NA_MPI_UNEXPECTED_SIZE;
-
-    return max_unexpected_size;
+    return NA_MPI_CLASS(na_class)->unexpected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_mpi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
+na_mpi_msg_get_max_expected_size(const na_class_t *na_class)
 {
-    na_size_t max_expected_size = NA_MPI_EXPECTED_SIZE;
-
-    return max_expected_size;
+    return NA_MPI_CLASS(na_class)->expected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1366,8 +1372,7 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1392,7 +1397,7 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1407,8 +1412,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate na_op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1441,7 +1445,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1461,8 +1465,7 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_EXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1487,7 +1490,7 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1507,8 +1510,7 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_EXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1535,7 +1537,7 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1695,8 +1697,7 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_PUT;
     na_mpi_op_id->callback = callback;
@@ -1752,7 +1753,7 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1793,8 +1794,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_GET;
     na_mpi_op_id->callback = callback;
@@ -1850,7 +1850,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1958,9 +1958,9 @@ na_mpi_progress_unexpected(
         }
     }
 
+done:
     hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->remote_list_mutex);
 
-done:
     return ret;
 }
 
@@ -2119,7 +2119,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -2227,7 +2227,7 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 
             free(*rma_info);
             *rma_info = NULL;
-            na_mpi_release(na_mpi_op_id);
+            na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
         } else {
             if (!complete_op_id) {
                 na_mpi_op_id = HG_LIST_NEXT(na_mpi_op_id, entry);
@@ -2361,12 +2361,7 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
     na_mpi_op_id->completion_data.plugin_callback = na_mpi_release;
     na_mpi_op_id->completion_data.plugin_callback_args = na_mpi_op_id;
 
-    ret = na_cb_completion_add(
-        na_mpi_op_id->context, &na_mpi_op_id->completion_data);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
+    na_cb_completion_add(na_mpi_op_id->context, &na_mpi_op_id->completion_data);
 
 done:
     return ret;
@@ -2381,13 +2376,12 @@ na_mpi_release(void *arg)
     if (na_mpi_op_id && !hg_atomic_get32(&na_mpi_op_id->completed)) {
         NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
-    na_mpi_op_destroy(NULL, (na_op_id_t) na_mpi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_cancel(
-    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t op_id)
+    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;

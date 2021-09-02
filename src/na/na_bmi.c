@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -8,9 +8,13 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "na_ip.h"
 #include "na_plugin.h"
 
+#include "na_ip.h"
+
+#include "mercury_hash_table.h"
+#include "mercury_thread_rwlock.h"
+#include "mercury_thread_spin.h"
 #include "mercury_time.h"
 
 #include <bmi.h>
@@ -24,33 +28,39 @@
 /* Local Macros */
 /****************/
 
-/* Error compat */
-#define NA_INVALID_PARAM    NA_INVALID_ARG
-#define NA_SIZE_ERROR       NA_MSGSIZE
-#define NA_NOMEM_ERROR      NA_NOMEM
-#define NA_PERMISSION_ERROR NA_PERMISSION
-#define NA_ADDRINUSE_ERROR  NA_ADDRINUSE
-
 /* Max addr name */
-#define NA_BMI_MAX_ADDR_NAME 256
+#define NA_BMI_ADDR_NAME_MAX (256)
+#define NA_BMI_ADDR_PREALLOC (64)
 
 /* Msg sizes */
-#define NA_BMI_UNEXPECTED_SIZE 4096
+#define NA_BMI_UNEXPECTED_SIZE (4096)
 #define NA_BMI_EXPECTED_SIZE   NA_BMI_UNEXPECTED_SIZE
 
-/* Max tag */
-#define NA_BMI_MAX_TAG (NA_TAG_MAX >> 2)
+/* Default tags, take the first 3 bits for RMA handling
+ * RMA msg - RMA op - RMA ack - remaining bits for tags
+ * do not use bit 31 as bmi_msg_tag_t is signed.
+ */
+#define NA_BMI_RMA_MSG_TAG (1 << 28)
+#define NA_BMI_RMA_TAG     (1 << 29)
+#define NA_BMI_RMA_ACK_TAG (1 << 30)
 
-/* Default tag used for one-sided over two-sided */
-#define NA_BMI_RMA_REQUEST_TAG (NA_BMI_MAX_TAG + 1)
-#define NA_BMI_RMA_TAG         (NA_BMI_RMA_REQUEST_TAG + 1)
-#define NA_BMI_MAX_RMA_TAG     (NA_TAG_MAX >> 1)
+/* Max tag used for messages (all above bits are not set) */
+#define NA_BMI_TAG_MAX ((1 << 28) - 1)
+
+/* RMA flags */
+#define NA_BMI_RMA_SVC (1 << 0)
+#define NA_BMI_RMA_ACK (1 << 1)
+
+/* Op ID status bits */
+#define NA_BMI_OP_COMPLETED (1 << 0)
+#define NA_BMI_OP_CANCELED  (1 << 1)
+#define NA_BMI_OP_QUEUED    (1 << 2)
+#define NA_BMI_OP_ERRORED   (1 << 3)
 
 #define NA_BMI_CLASS(na_class)                                                 \
     ((struct na_bmi_class *) (na_class->plugin_class))
-
-#define NA_BMI_CANCEL_R (1 << 0)
-#define NA_BMI_CANCEL_C (1 << 1)
+#define NA_BMI_CONTEXT(context)                                                \
+    ((struct na_bmi_context *) (context->plugin_context))
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -58,21 +68,23 @@
 
 /* na_bmi_addr */
 struct na_bmi_addr {
-    BMI_addr_t bmi_addr;         /* BMI addr */
-    na_bool_t unexpected;        /* Address generated from unexpected recv */
-    na_bool_t self;              /* Boolean for self */
-    hg_atomic_int32_t ref_count; /* Ref count */
+    HG_QUEUE_ENTRY(na_bmi_addr) entry; /* Pool of addresses */
+    BMI_addr_t bmi_addr;               /* BMI addr */
+    na_bool_t unexpected;              /* From unexpected recv */
+    na_bool_t self;                    /* Boolean for self */
+    hg_atomic_int32_t ref_count;       /* Ref count */
 };
 
 struct na_bmi_unexpected_info {
     struct BMI_unexpected_info info;
+    struct na_bmi_addr *na_bmi_addr;
     HG_QUEUE_ENTRY(na_bmi_unexpected_info) entry;
 };
 
 struct na_bmi_mem_handle {
-    na_ptr_t base;   /* Initial address of memory */
-    na_size_t size;  /* Size of memory */
-    na_uint8_t attr; /* Flag of operation access */
+    na_ptr_t base;    /* Base address of region */
+    bmi_size_t len;   /* Size of region */
+    na_uint8_t flags; /* Flag of operation access */
 };
 
 typedef enum na_bmi_rma_op {
@@ -80,98 +92,207 @@ typedef enum na_bmi_rma_op {
     NA_BMI_RMA_GET  /* Request a get operation */
 } na_bmi_rma_op_t;
 
-struct na_bmi_rma_info {
-    na_bmi_rma_op_t op;           /* Operation requested */
-    na_ptr_t base;                /* Initial address of memory */
-    bmi_size_t disp;              /* Offset from initial address */
-    bmi_size_t count;             /* Number of entries */
-    bmi_msg_tag_t transfer_tag;   /* Tag used for the data transfer */
-    bmi_msg_tag_t completion_tag; /* Tag used for completion ack */
+struct na_bmi_rma_msg_info {
+    na_bmi_rma_op_t op;    /* Operation requested */
+    na_ptr_t base;         /* Base address of region */
+    bmi_size_t len;        /* Length of region */
+    bmi_msg_tag_t rma_tag; /* Tag used for the data transfer */
+    bmi_msg_tag_t ack_tag; /* Tag used for completion ack */
 };
 
-struct na_bmi_info_lookup {
-    na_addr_t addr;
-};
-
-struct na_bmi_info_send_unexpected {
-    bmi_op_id_t op_id; /* BMI operation ID */
-};
-
-struct na_bmi_info_recv_unexpected {
-    void *buf;
-    bmi_size_t buf_size;
-    struct BMI_unexpected_info *unexpected_info;
-};
-
-struct na_bmi_info_send_expected {
-    bmi_op_id_t op_id; /* BMI operation ID */
-};
-
-struct na_bmi_info_recv_expected {
-    bmi_op_id_t op_id; /* BMI operation ID */
-    bmi_size_t buf_size;
-    bmi_size_t actual_size;
-};
-
-struct na_bmi_info_put {
-    bmi_op_id_t request_op_id;
-    bmi_op_id_t transfer_op_id;
-    hg_atomic_int32_t transfer_completed;
-    bmi_size_t transfer_actual_size;
-    bmi_op_id_t completion_op_id;
-    na_bool_t completion_flag;
-    bmi_size_t completion_actual_size;
-    na_bool_t internal_progress;
-    BMI_addr_t remote_addr;
-    struct na_bmi_rma_info *rma_info;
-};
-
-struct na_bmi_info_get {
-    bmi_op_id_t request_op_id;
-    bmi_op_id_t transfer_op_id;
-    bmi_size_t transfer_actual_size;
-    na_bool_t internal_progress;
-    BMI_addr_t remote_addr;
-    struct na_bmi_rma_info *rma_info;
-};
-
-struct na_bmi_op_id {
-    na_context_t *context;
-    na_cb_type_t type;
-    na_cb_t callback; /* Callback */
-    void *arg;
-    hg_atomic_int32_t ref_count; /* Ref count */
-    hg_atomic_int32_t completed; /* Operation completed */
-    uint64_t cancel;
+/* Msg info */
+struct na_bmi_msg_info {
     union {
-        struct na_bmi_info_send_unexpected send_unexpected;
-        struct na_bmi_info_recv_unexpected recv_unexpected;
-        struct na_bmi_info_send_expected send_expected;
-        struct na_bmi_info_recv_expected recv_expected;
-        struct na_bmi_info_put put;
-        struct na_bmi_info_get get;
-    } info;
-    struct na_cb_completion_data completion_data;
-    HG_QUEUE_ENTRY(na_bmi_op_id) entry;
+        const void *const_ptr;
+        void *ptr;
+    } buf;
+    bmi_size_t buf_size;
+    bmi_size_t actual_buf_size;
+    bmi_msg_tag_t tag;
+    bmi_op_id_t op_id;
 };
 
+/* RMA info */
+struct na_bmi_rma_info {
+    struct na_bmi_rma_msg_info msg_info;
+    void *base;
+    bmi_size_t actual_len;
+    bmi_size_t ack_size;
+    bmi_op_id_t msg_op_id;
+    bmi_op_id_t rma_op_id;
+    bmi_op_id_t ack_op_id;
+    hg_atomic_int32_t op_completed_count;
+    na_uint32_t op_count;
+    na_bool_t ack;
+    na_uint8_t flags;
+};
+
+/* Operation ID */
+struct na_bmi_op_id {
+    struct na_cb_completion_data completion_data; /* Completion data */
+    union {
+        struct na_bmi_msg_info msg;
+        struct na_bmi_rma_info rma;
+    } info;                             /* Op info                  */
+    HG_QUEUE_ENTRY(na_bmi_op_id) entry; /* Entry in queue           */
+    na_class_t *na_class;               /* NA class associated      */
+    na_context_t *context;              /* NA context associated    */
+    struct na_bmi_addr *na_bmi_addr;    /* Address associated       */
+    hg_atomic_int32_t status;           /* Operation status         */
+};
+
+/* Unexpected msg queue */
+struct na_bmi_unexpected_msg_queue {
+    HG_QUEUE_HEAD(na_bmi_unexpected_info) queue;
+    hg_thread_spin_t lock;
+};
+
+/* Op ID queue */
+struct na_bmi_op_queue {
+    HG_QUEUE_HEAD(na_bmi_op_id) queue;
+    hg_thread_spin_t lock;
+};
+
+/* Map (used to cache addresses) */
+struct na_bmi_map {
+    hg_thread_rwlock_t lock;
+    hg_hash_table_t *map;
+};
+
+/* Addr queue */
+struct na_bmi_addr_queue {
+    HG_QUEUE_HEAD(na_bmi_addr) queue;
+    hg_thread_spin_t lock;
+};
+
+/* Context */
+struct na_bmi_context {
+    bmi_context_id context_id;
+};
+
+/* Class */
 struct na_bmi_class {
-    char *listen_addr;                       /* Listen addr */
-    int port;                                /* Port used */
-    char *protocol_name;                     /* Protocol used for this class */
-    char pref_anyip[16];                     /* for INADDR_ANY */
-    hg_thread_mutex_t test_unexpected_mutex; /* Mutex */
-    HG_QUEUE_HEAD(na_bmi_unexpected_info)
-    unexpected_msg_queue;                         /* Unexpected message queue */
-    hg_thread_mutex_t unexpected_msg_queue_mutex; /* Mutex */
-    HG_QUEUE_HEAD(na_bmi_op_id) unexpected_op_queue; /* Unexpected op queue */
-    hg_thread_mutex_t unexpected_op_queue_mutex;     /* Mutex */
-    hg_atomic_int32_t rma_tag;                       /* Atomic RMA tag value */
+    struct na_bmi_unexpected_msg_queue
+        unexpected_msg_queue;                   /* Unexpected msg queue */
+    struct na_bmi_op_queue unexpected_op_queue; /* Unexpected op queue */
+    struct na_bmi_map addr_map;                 /* Address map */
+    struct na_bmi_addr_queue addr_queue;        /* Addr queue */
+    hg_thread_mutex_t test_unexpected_mutex;    /* Mutex */
+    char *protocol_name;                        /* Protocol used */
+    char *listen_addr;                          /* Listen addr */
+    struct na_bmi_addr *src_addr;               /* Source address */
+    na_size_t unexpected_size_max;              /* Max unexpected size */
+    na_size_t expected_size_max;                /* Max expected size */
+    int port;                                   /* Port used */
+    hg_atomic_int32_t rma_tag;                  /* Atomic RMA tag value */
 };
 
 /********************/
 /* Local Prototypes */
 /********************/
+
+/**
+ * Key hash for hash table.
+ */
+static NA_INLINE unsigned int
+na_bmi_addr_key_hash(hg_hash_table_key_t vlocation);
+
+/**
+ * Compare key.
+ */
+static NA_INLINE int
+na_bmi_addr_key_equal(
+    hg_hash_table_key_t vlocation1, hg_hash_table_key_t vlocation2);
+
+/**
+ * Lookup addr key from map.
+ */
+static NA_INLINE struct na_bmi_addr *
+na_bmi_addr_map_lookup(struct na_bmi_map *na_bmi_map, BMI_addr_t bmi_addr);
+
+/**
+ * Insert new addr key into map. Execute callback while write lock is acquired.
+ */
+static na_return_t
+na_bmi_addr_map_insert(struct na_bmi_map *na_bmi_map, BMI_addr_t bmi_addr,
+    na_bool_t unexpected, struct na_bmi_addr_queue *addr_queue,
+    struct na_bmi_addr **addr);
+
+/**
+ * Remove entry from map.
+ */
+static void
+na_bmi_addr_map_remove(struct na_bmi_map *na_bmi_map,
+    struct na_bmi_addr *na_bmi_addr, struct na_bmi_addr_queue *addr_queue);
+
+/**
+ * Create new address.
+ */
+static na_return_t
+na_bmi_addr_create(BMI_addr_t bmi_addr, na_bool_t unexpected, na_bool_t self,
+    struct na_bmi_addr **addr);
+
+/**
+ * Destroy address.
+ */
+static void
+na_bmi_addr_destroy(struct na_bmi_addr *na_bmi_addr);
+
+/*
+ * Generate RMA tags.
+ */
+static NA_INLINE bmi_msg_tag_t
+na_bmi_gen_rma_tag(na_class_t *na_class);
+
+/**
+ * Progress unexpected messages.
+ */
+static na_return_t
+na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, na_bool_t *progressed);
+
+/**
+ * Progress expected messages.
+ */
+static na_return_t
+na_bmi_progress_expected(
+    na_context_t *context, unsigned int timeout, na_bool_t *progressed);
+
+/**
+ * Process unexpected messages.
+ */
+static na_return_t
+na_bmi_process_msg_unexpected(struct na_bmi_op_queue *unexpected_op_queue,
+    struct na_bmi_addr *na_bmi_addr,
+    const struct BMI_unexpected_info *bmi_unexpected_info,
+    struct na_bmi_unexpected_msg_queue *unexpected_msg_queue,
+    na_bool_t *queued);
+
+/**
+ * Process RMA messages.
+ */
+static na_return_t
+na_bmi_process_rma_msg(na_class_t *na_class, na_context_t *context,
+    struct na_bmi_addr *na_bmi_addr,
+    const struct BMI_unexpected_info *bmi_unexpected_info);
+
+/**
+ * Process RMA acks.
+ */
+static na_return_t
+na_bmi_process_rma_ack(struct na_bmi_op_id *na_bmi_op_id, na_bool_t *completed);
+
+/**
+ * Complete operation.
+ */
+static void
+na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id);
+
+/**
+ * Release memory.
+ */
+static void
+na_bmi_release(void *arg);
 
 /* check_protocol */
 static na_bool_t
@@ -186,19 +307,21 @@ na_bmi_initialize(
 static na_return_t
 na_bmi_finalize(na_class_t *na_class);
 
+/* context_create */
 static na_return_t
 na_bmi_context_create(na_class_t *na_class, void **context, na_uint8_t id);
 
+/* context_destroy */
 static na_return_t
 na_bmi_context_destroy(na_class_t *na_class, void *context);
 
 /* op_create */
-static na_op_id_t
+static na_op_id_t *
 na_bmi_op_create(na_class_t *na_class);
 
 /* op_destroy */
 static na_return_t
-na_bmi_op_destroy(na_class_t *na_class, na_op_id_t op_id);
+na_bmi_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
@@ -229,13 +352,15 @@ static na_return_t
 na_bmi_addr_to_string(
     na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr);
 
-/* msg_get_max */
+/* msg_get_max_unexpected_size */
 static na_size_t
 na_bmi_msg_get_max_unexpected_size(const na_class_t *na_class);
 
+/* msg_get_max_expected_size */
 static na_size_t
 na_bmi_msg_get_max_expected_size(const na_class_t *na_class);
 
+/* msg_get_max_tag */
 static na_tag_t
 na_bmi_msg_get_max_tag(const na_class_t *na_class);
 
@@ -266,43 +391,26 @@ na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
     na_tag_t tag, na_op_id_t *op_id);
 
-static na_return_t
-na_bmi_msg_unexpected_push(
-    na_class_t *na_class, struct na_bmi_unexpected_info *unexpected_info);
-
-static struct na_bmi_unexpected_info *
-na_bmi_msg_unexpected_pop(na_class_t *na_class);
-
-static na_return_t
-na_bmi_msg_unexpected_op_push(
-    na_class_t *na_class, struct na_bmi_op_id *na_bmi_op_id);
-
-static struct na_bmi_op_id *
-na_bmi_msg_unexpected_op_pop(na_class_t *na_class);
-
-/* mem_handle */
+/* mem_handle_create */
 static na_return_t
 na_bmi_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
+/* mem_handle_free */
 static na_return_t
 na_bmi_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
-static na_return_t
-na_bmi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
-
-static na_return_t
-na_bmi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
-
-/* mem_handle serialization */
+/* mem_handle_get_serialize_size */
 static na_size_t
 na_bmi_mem_handle_get_serialize_size(
     na_class_t *na_class, na_mem_handle_t mem_handle);
 
+/* mem_handle_serialize */
 static na_return_t
 na_bmi_mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
     na_mem_handle_t mem_handle);
 
+/* mem_handle_deserialize */
 static na_return_t
 na_bmi_mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
     const void *buf, na_size_t buf_size);
@@ -328,30 +436,9 @@ static na_return_t
 na_bmi_progress(
     na_class_t *na_class, na_context_t *context, unsigned int timeout);
 
-static na_return_t
-na_bmi_progress_unexpected(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
-
-static na_return_t
-na_bmi_progress_expected(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
-
-static na_return_t
-na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
-    struct BMI_unexpected_info *unexpected_info);
-
-static na_return_t
-na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id);
-
-static na_return_t
-na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id);
-
-static void
-na_bmi_release(void *arg);
-
 /* cancel */
 static na_return_t
-na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id);
+na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 /*******************/
 /* Local Variables */
@@ -394,10 +481,9 @@ const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
     na_bmi_mem_handle_create,             /* mem_handle_create */
     NULL,                                 /* mem_handle_create_segment */
     na_bmi_mem_handle_free,               /* mem_handle_free */
-    na_bmi_mem_register,                  /* mem_register */
-    na_bmi_mem_deregister,                /* mem_deregister */
-    NULL,                                 /* mem_publish */
-    NULL,                                 /* mem_unpublish */
+    NULL,                                 /* mem_handle_get_max_segments */
+    NULL,                                 /* mem_register */
+    NULL,                                 /* mem_deregister */
     na_bmi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
     na_bmi_mem_handle_serialize,          /* mem_handle_serialize */
     na_bmi_mem_handle_deserialize,        /* mem_handle_deserialize */
@@ -414,29 +500,620 @@ const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
 /********************/
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE bmi_msg_tag_t
-na_bmi_gen_rma_tag(na_class_t *na_class, uint8_t step)
+static NA_INLINE unsigned int
+na_bmi_addr_key_hash(hg_hash_table_key_t vlocation)
 {
-    bmi_msg_tag_t tag;
+    /* Hashing through PIDs should be sufficient in practice */
+    return (unsigned int) (*((BMI_addr_t *) vlocation) >> 32);
+}
 
-    /* Compare and swap tag if reached max tag */
-    if (hg_atomic_cas32(&NA_BMI_CLASS(na_class)->rma_tag, NA_BMI_MAX_RMA_TAG,
-            NA_BMI_RMA_TAG)) {
-        tag = NA_BMI_RMA_TAG;
-    } else {
-        /* Increment tag */
-        tag = hg_atomic_incr32(&NA_BMI_CLASS(na_class)->rma_tag);
+/*---------------------------------------------------------------------------*/
+static NA_INLINE int
+na_bmi_addr_key_equal(
+    hg_hash_table_key_t vlocation1, hg_hash_table_key_t vlocation2)
+{
+    return *((BMI_addr_t *) vlocation1) == *((BMI_addr_t *) vlocation2);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE struct na_bmi_addr *
+na_bmi_addr_map_lookup(struct na_bmi_map *na_bmi_map, BMI_addr_t bmi_addr)
+{
+    struct na_bmi_addr *na_bmi_addr = NULL;
+
+    /* Lookup key */
+    hg_thread_rwlock_rdlock(&na_bmi_map->lock);
+    na_bmi_addr =
+        hg_hash_table_lookup(na_bmi_map->map, (hg_hash_table_key_t) &bmi_addr);
+    hg_thread_rwlock_release_rdlock(&na_bmi_map->lock);
+
+    return na_bmi_addr;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_addr_map_insert(struct na_bmi_map *na_bmi_map, BMI_addr_t bmi_addr,
+    na_bool_t unexpected, struct na_bmi_addr_queue *addr_queue,
+    struct na_bmi_addr **addr)
+{
+    struct na_bmi_addr *na_bmi_addr = NULL;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    hg_thread_rwlock_wrlock(&na_bmi_map->lock);
+
+    /* Look up again to prevent race between lock release/acquire */
+    na_bmi_addr = (struct na_bmi_addr *) hg_hash_table_lookup(
+        na_bmi_map->map, (hg_hash_table_key_t) &bmi_addr);
+    if (na_bmi_addr != NULL) {
+        ret = NA_EXIST; /* Entry already exists */
+        goto done;
     }
 
-    /* NOTE: the "step" argument is used to classify which step of an
-     * emulated RMA operation this tag will be used for.  We partition them
-     * off to prevent collisions between symmetric RMA operations between a
-     * pair of hosts.
-     */
-    tag = tag << 8;
-    tag = tag | step;
+    /* Try to pick addr from pool */
+    hg_thread_spin_lock(&addr_queue->lock);
+    na_bmi_addr = HG_QUEUE_FIRST(&addr_queue->queue);
+    HG_QUEUE_POP_HEAD(&addr_queue->queue, entry);
+    hg_thread_spin_unlock(&addr_queue->lock);
+    if (!na_bmi_addr) {
+        ret = na_bmi_addr_create(bmi_addr, unexpected, NA_FALSE, &na_bmi_addr);
+        NA_CHECK_NA_ERROR(error, ret, "Could not create address");
+    }
 
-    return tag;
+    na_bmi_addr->bmi_addr = bmi_addr;
+    na_bmi_addr->unexpected = unexpected;
+    na_bmi_addr->self = NA_FALSE;
+    hg_atomic_init32(&na_bmi_addr->ref_count, 1);
+
+    /* Insert new value */
+    rc = hg_hash_table_insert(na_bmi_map->map,
+        (hg_hash_table_key_t) &na_bmi_addr->bmi_addr,
+        (hg_hash_table_value_t) na_bmi_addr);
+    NA_CHECK_ERROR(
+        rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+
+done:
+    hg_thread_rwlock_release_wrlock(&na_bmi_map->lock);
+
+    *addr = na_bmi_addr;
+
+    return ret;
+
+error:
+    hg_thread_rwlock_release_wrlock(&na_bmi_map->lock);
+
+    if (na_bmi_addr) {
+        hg_thread_spin_lock(&addr_queue->lock);
+        HG_QUEUE_PUSH_TAIL(&addr_queue->queue, na_bmi_addr, entry);
+        hg_thread_spin_unlock(&addr_queue->lock);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_bmi_addr_map_remove(struct na_bmi_map *na_bmi_map,
+    struct na_bmi_addr *na_bmi_addr, struct na_bmi_addr_queue *addr_queue)
+{
+    hg_thread_rwlock_wrlock(&na_bmi_map->lock);
+    if (hg_hash_table_lookup(
+            na_bmi_map->map, (hg_hash_table_key_t) &na_bmi_addr->bmi_addr)) {
+        hg_hash_table_remove(
+            na_bmi_map->map, (hg_hash_table_key_t) &na_bmi_addr->bmi_addr);
+
+        hg_thread_spin_lock(&addr_queue->lock);
+        HG_QUEUE_PUSH_TAIL(&addr_queue->queue, na_bmi_addr, entry);
+        hg_thread_spin_unlock(&addr_queue->lock);
+    }
+    hg_thread_rwlock_release_wrlock(&na_bmi_map->lock);
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_addr_create(BMI_addr_t bmi_addr, na_bool_t unexpected, na_bool_t self,
+    struct na_bmi_addr **addr)
+{
+    struct na_bmi_addr *na_bmi_addr = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Allocate addr */
+    na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
+    NA_CHECK_ERROR(na_bmi_addr == NULL, done, ret, NA_NOMEM,
+        "Could not allocate BMI addr");
+
+    na_bmi_addr->bmi_addr = bmi_addr;
+    na_bmi_addr->unexpected = unexpected;
+    na_bmi_addr->self = self;
+    hg_atomic_init32(&na_bmi_addr->ref_count, 1);
+
+    *addr = na_bmi_addr;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_bmi_addr_destroy(struct na_bmi_addr *na_bmi_addr)
+{
+    free(na_bmi_addr);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE bmi_msg_tag_t
+na_bmi_gen_rma_tag(na_class_t *na_class)
+{
+    hg_atomic_cas32(&NA_BMI_CLASS(na_class)->rma_tag, NA_BMI_TAG_MAX, 0);
+
+    /* Increment tag */
+    return hg_atomic_incr32(&NA_BMI_CLASS(na_class)->rma_tag);
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, na_bool_t *progressed)
+{
+    int outcount = 0;
+    struct BMI_unexpected_info bmi_unexpected_info;
+    struct na_bmi_addr *na_bmi_addr = NULL;
+    na_return_t ret = NA_SUCCESS;
+    na_bool_t queued = NA_FALSE;
+    int bmi_ret;
+
+    /* Prevent multiple threads from calling BMI_testunexpected concurrently */
+    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
+    bmi_ret =
+        BMI_testunexpected(1, &outcount, &bmi_unexpected_info, (int) timeout);
+    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
+    NA_CHECK_ERROR(bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR,
+        "BMI_testunexpected() failed");
+
+    if (!outcount) {
+        *progressed = NA_FALSE;
+        return ret;
+    }
+
+    NA_CHECK_ERROR(bmi_unexpected_info.error_code != 0, cleanup, ret,
+        NA_PROTOCOL_ERROR, "BMI_testunexpected failed(), error code set");
+
+    /* Retrieve source addr */
+    na_bmi_addr = na_bmi_addr_map_lookup(
+        &NA_BMI_CLASS(na_class)->addr_map, bmi_unexpected_info.addr);
+    if (!na_bmi_addr) {
+        na_return_t na_ret;
+
+        NA_LOG_DEBUG("Address was not found, attempting to insert it (key=%ld)",
+            (long int) bmi_unexpected_info.addr);
+
+        /* Insert new entry and create new address if needed */
+        na_ret = na_bmi_addr_map_insert(&NA_BMI_CLASS(na_class)->addr_map,
+            bmi_unexpected_info.addr, NA_TRUE,
+            &NA_BMI_CLASS(na_class)->addr_queue, &na_bmi_addr);
+        NA_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_EXIST, done, ret,
+            na_ret, "Could not insert new address");
+    } else
+        NA_LOG_DEBUG(
+            "Address was found (key=%ld)", (long int) bmi_unexpected_info.addr);
+
+    /* Unexpected RMA msg for RMA emulation */
+    if (bmi_unexpected_info.tag & NA_BMI_RMA_MSG_TAG) {
+        /* Make RMA progress */
+        ret = na_bmi_process_rma_msg(
+            na_class, context, na_bmi_addr, &bmi_unexpected_info);
+        NA_CHECK_NA_ERROR(cleanup, ret, "Could not make RMA progress");
+    } else {
+        ret = na_bmi_process_msg_unexpected(
+            &NA_BMI_CLASS(na_class)->unexpected_op_queue, na_bmi_addr,
+            &bmi_unexpected_info, &NA_BMI_CLASS(na_class)->unexpected_msg_queue,
+            &queued);
+        NA_CHECK_NA_ERROR(cleanup, ret, "Could not process unexpected msg");
+    }
+
+    *progressed = NA_TRUE;
+
+cleanup:
+    if (!queued)
+        BMI_unexpected_free(
+            bmi_unexpected_info.addr, bmi_unexpected_info.buffer);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_progress_expected(
+    na_context_t *context, unsigned int timeout, na_bool_t *progressed)
+{
+    bmi_op_id_t bmi_op_id = 0;
+    int outcount = 0;
+    bmi_error_code_t error_code = 0;
+    bmi_size_t bmi_actual_size = 0;
+    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    na_return_t ret = NA_SUCCESS;
+    int bmi_ret = 0;
+
+    /* Return as soon as something completes or timeout is reached */
+    bmi_ret = BMI_testcontext(1, &bmi_op_id, &outcount, &error_code,
+        &bmi_actual_size, (void **) &na_bmi_op_id, (int) timeout,
+        NA_BMI_CONTEXT(context)->context_id);
+    NA_CHECK_ERROR(bmi_ret < 0 && (error_code != 0), done, ret,
+        NA_PROTOCOL_ERROR, "BMI_testcontext() failed");
+
+    if (!outcount) {
+        *progressed = NA_FALSE;
+        return ret;
+    }
+
+    if (error_code == -BMI_ECANCEL) {
+        NA_CHECK_ERROR(
+            hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED, done,
+            ret, NA_FAULT, "Operation ID was completed");
+        NA_LOG_DEBUG(
+            "BMI_ECANCEL event on operation ID %p", (void *) na_bmi_op_id);
+        NA_CHECK_ERROR(
+            !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_CANCELED),
+            done, ret, NA_FAULT, "Operation ID was not canceled");
+    } else
+        NA_CHECK_ERROR(error_code != 0, done, ret, NA_PROTOCOL_ERROR,
+            "BMI_testcontext() failed, error code set");
+
+    switch (na_bmi_op_id->completion_data.callback_info.type) {
+        case NA_CB_RECV_EXPECTED:
+            /* Set the actual size */
+            na_bmi_op_id->info.msg.actual_buf_size = bmi_actual_size;
+            NA_FALLTHROUGH();
+        case NA_CB_SEND_UNEXPECTED:
+        case NA_CB_SEND_EXPECTED:
+            na_bmi_complete(na_bmi_op_id);
+            break;
+        case NA_CB_PUT:
+        case NA_CB_GET:
+            if (bmi_op_id == na_bmi_op_id->info.rma.msg_op_id) {
+                /* Nothing */
+            } else if (bmi_op_id == na_bmi_op_id->info.rma.rma_op_id) {
+                /* Process ack if requested */
+                if ((na_bmi_op_id->info.rma.flags & NA_BMI_RMA_SVC) &&
+                    (na_bmi_op_id->info.rma.flags & NA_BMI_RMA_ACK)) {
+                    na_bool_t ack_completed;
+
+                    ret = na_bmi_process_rma_ack(na_bmi_op_id, &ack_completed);
+                    NA_CHECK_NA_ERROR(done, ret, "Could not process ack");
+
+                    if (ack_completed)
+                        hg_atomic_incr32(
+                            &na_bmi_op_id->info.rma.op_completed_count);
+                }
+            } else if (bmi_op_id == na_bmi_op_id->info.rma.ack_op_id) {
+                /* Check ack completion flag */
+                if (!(na_bmi_op_id->info.rma.flags & NA_BMI_RMA_SVC) &&
+                    (error_code == 0)) {
+                    NA_CHECK_ERROR(!na_bmi_op_id->info.rma.ack, done, ret,
+                        NA_PROTOCOL_ERROR,
+                        "Error during transfer, ack received is %u",
+                        na_bmi_op_id->info.rma.ack);
+                }
+            } else
+                NA_GOTO_ERROR(done, ret, NA_FAULT, "Unexpected operation ID");
+
+            /* Complete op ID when reached expected completion count */
+            if (hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count) ==
+                (hg_util_int32_t) na_bmi_op_id->info.rma.op_count)
+                na_bmi_complete(na_bmi_op_id);
+            break;
+        case NA_CB_RECV_UNEXPECTED:
+            NA_GOTO_ERROR(done, ret, NA_FAULT,
+                "Should not complete unexpected recv here");
+            break;
+        default:
+            NA_GOTO_ERROR(
+                done, ret, NA_PROTOCOL_ERROR, "Unknown type of operation ID");
+    }
+
+    *progressed = NA_TRUE;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_process_msg_unexpected(struct na_bmi_op_queue *unexpected_op_queue,
+    struct na_bmi_addr *na_bmi_addr,
+    const struct BMI_unexpected_info *bmi_unexpected_info,
+    struct na_bmi_unexpected_msg_queue *unexpected_msg_queue, na_bool_t *queued)
+{
+    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Pop op ID from queue */
+    hg_thread_spin_lock(&unexpected_op_queue->lock);
+    na_bmi_op_id = HG_QUEUE_FIRST(&unexpected_op_queue->queue);
+    if (likely(na_bmi_op_id)) {
+        HG_QUEUE_POP_HEAD(&unexpected_op_queue->queue, entry);
+        hg_atomic_and32(&na_bmi_op_id->status, ~NA_BMI_OP_QUEUED);
+    }
+    hg_thread_spin_unlock(&unexpected_op_queue->lock);
+
+    if (likely(na_bmi_op_id)) {
+        /* Fill info */
+        na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+        hg_atomic_incr32(&na_bmi_addr->ref_count);
+        na_bmi_op_id->info.msg.actual_buf_size = bmi_unexpected_info->size;
+        na_bmi_op_id->info.msg.tag = bmi_unexpected_info->tag;
+
+        /* Copy buffer */
+        memcpy(na_bmi_op_id->info.msg.buf.ptr, bmi_unexpected_info->buffer,
+            (size_t) bmi_unexpected_info->size);
+
+        na_bmi_complete(na_bmi_op_id);
+
+        *queued = NA_FALSE;
+    } else {
+        struct na_bmi_unexpected_info *na_bmi_unexpected_info = NULL;
+
+        /* If no error and message arrived, keep a copy of the struct in
+         * the unexpected message queue */
+        na_bmi_unexpected_info = (struct na_bmi_unexpected_info *) malloc(
+            sizeof(struct na_bmi_unexpected_info));
+        NA_CHECK_ERROR(na_bmi_unexpected_info == NULL, done, ret, NA_NOMEM,
+            "Could not allocate unexpected info");
+
+        na_bmi_unexpected_info->na_bmi_addr = na_bmi_addr;
+        hg_atomic_incr32(&na_bmi_addr->ref_count);
+
+        memcpy(&na_bmi_unexpected_info->info, bmi_unexpected_info,
+            sizeof(struct BMI_unexpected_info));
+
+        /* Otherwise push the unexpected message into our
+         * unexpected queue so that we can treat it later when a
+         * recv_unexpected is posted */
+        hg_thread_spin_lock(&unexpected_msg_queue->lock);
+        HG_QUEUE_PUSH_TAIL(
+            &unexpected_msg_queue->queue, na_bmi_unexpected_info, entry);
+        hg_thread_spin_unlock(&unexpected_msg_queue->lock);
+
+        *queued = NA_TRUE;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_process_rma_msg(na_class_t *na_class, na_context_t *context,
+    struct na_bmi_addr *na_bmi_addr,
+    const struct BMI_unexpected_info *bmi_unexpected_info)
+{
+    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    na_return_t ret = NA_SUCCESS;
+    int bmi_ret;
+
+    NA_CHECK_ERROR(
+        bmi_unexpected_info->size != sizeof(struct na_bmi_rma_msg_info), error,
+        ret, NA_FAULT,
+        "Unexpected message size does not match RMA info struct");
+
+    /* Allocate na_op_id */
+    na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, error, ret, NA_NOMEM,
+        "Could not allocate NA BMI operation ID");
+
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, error, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), error,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
+    /* This is an internal operation so no user callback/arg */
+    na_bmi_op_id->context = context;
+    na_bmi_op_id->completion_data.callback_info.type = 0;
+    na_bmi_op_id->completion_data.callback = NULL;
+    na_bmi_op_id->completion_data.callback_info.arg = NULL;
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+    na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
+
+    /* Mark op ID as RMA svc */
+    na_bmi_op_id->info.rma.flags = NA_BMI_RMA_SVC;
+
+    memcpy(&na_bmi_op_id->info.rma.msg_info, bmi_unexpected_info->buffer,
+        (size_t) bmi_unexpected_info->size);
+
+    switch (na_bmi_op_id->info.rma.msg_info.op) {
+        /* Remote wants to do a put so wait in a recv */
+        case NA_BMI_RMA_PUT:
+            na_bmi_op_id->completion_data.callback_info.type = NA_CB_PUT;
+            na_bmi_op_id->info.rma.base =
+                (void *) na_bmi_op_id->info.rma.msg_info.base;
+            na_bmi_op_id->info.rma.actual_len = 0;
+            na_bmi_op_id->info.rma.msg_op_id = 0;
+            na_bmi_op_id->info.rma.rma_op_id = 0;
+            na_bmi_op_id->info.rma.ack_op_id = 0;
+            na_bmi_op_id->info.rma.ack = NA_FALSE;
+            na_bmi_op_id->info.rma.ack_size = 0;
+            na_bmi_op_id->info.rma.flags |= NA_BMI_RMA_ACK;
+            na_bmi_op_id->info.rma.op_count = 2;
+            hg_atomic_init32(&na_bmi_op_id->info.rma.op_completed_count, 0);
+
+            /* Start receiving data */
+            bmi_ret = BMI_post_recv(&na_bmi_op_id->info.rma.rma_op_id,
+                na_bmi_addr->bmi_addr, na_bmi_op_id->info.rma.base,
+                na_bmi_op_id->info.rma.msg_info.len,
+                &na_bmi_op_id->info.rma.actual_len, BMI_EXT_ALLOC,
+                na_bmi_op_id->info.rma.msg_info.rma_tag, na_bmi_op_id,
+                NA_BMI_CONTEXT(context)->context_id, NULL);
+            NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+                "BMI_post_recv() failed");
+
+            /* Immediate completion */
+            if (bmi_ret > 0) {
+                na_bool_t ack_completed;
+
+                hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count);
+
+                /* Process ack directly */
+                ret = na_bmi_process_rma_ack(na_bmi_op_id, &ack_completed);
+                NA_CHECK_NA_ERROR(error, ret, "Could not process ack");
+
+                if (ack_completed) {
+                    hg_atomic_incr32(
+                        &na_bmi_op_id->info.rma.op_completed_count);
+                    na_bmi_complete(na_bmi_op_id);
+                }
+            }
+            break;
+            /* Remote wants to do a get so do a send */
+        case NA_BMI_RMA_GET:
+            na_bmi_op_id->completion_data.callback_info.type = NA_CB_GET;
+            na_bmi_op_id->info.rma.base =
+                (void *) na_bmi_op_id->info.rma.msg_info.base;
+            na_bmi_op_id->info.rma.actual_len = 0;
+            na_bmi_op_id->info.rma.msg_op_id = 0;
+            na_bmi_op_id->info.rma.rma_op_id = 0;
+            na_bmi_op_id->info.rma.ack_op_id = 0;
+            na_bmi_op_id->info.rma.ack = NA_FALSE;
+            na_bmi_op_id->info.rma.ack_size = 0;
+            na_bmi_op_id->info.rma.flags |= 0;
+            na_bmi_op_id->info.rma.op_count = 1;
+            hg_atomic_init32(&na_bmi_op_id->info.rma.op_completed_count, 0);
+
+            /* Start sending data */
+            bmi_ret = BMI_post_send(&na_bmi_op_id->info.rma.rma_op_id,
+                na_bmi_addr->bmi_addr, na_bmi_op_id->info.rma.base,
+                na_bmi_op_id->info.rma.msg_info.len, BMI_EXT_ALLOC,
+                na_bmi_op_id->info.rma.msg_info.rma_tag, na_bmi_op_id,
+                NA_BMI_CONTEXT(context)->context_id, NULL);
+            NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+                "BMI_post_send() failed");
+
+            if (bmi_ret > 0) {
+                hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count);
+                na_bmi_complete(na_bmi_op_id);
+            }
+            break;
+        default:
+            NA_GOTO_ERROR(error, ret, NA_FAULT, "Operation not supported");
+    }
+
+    return ret;
+
+error:
+    if (na_bmi_op_id)
+        na_bmi_op_destroy(na_class, (na_op_id_t *) na_bmi_op_id);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_process_rma_ack(struct na_bmi_op_id *na_bmi_op_id, na_bool_t *completed)
+{
+    na_return_t ret = NA_SUCCESS;
+    int bmi_ret;
+
+    na_bmi_op_id->info.rma.ack = NA_TRUE;
+
+    /* Send an ack to tell the server that the data is here */
+    bmi_ret = BMI_post_send(&na_bmi_op_id->info.rma.ack_op_id,
+        na_bmi_op_id->na_bmi_addr->bmi_addr, &na_bmi_op_id->info.rma.ack,
+        sizeof(na_bool_t), BMI_EXT_ALLOC,
+        na_bmi_op_id->info.rma.msg_info.ack_tag, na_bmi_op_id,
+        NA_BMI_CONTEXT(na_bmi_op_id->context)->context_id, NULL);
+    NA_CHECK_ERROR(
+        bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR, "BMI_post_send() failed");
+
+    *completed = (bmi_ret > 0) ? NA_TRUE : NA_FALSE;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
+{
+    struct na_cb_info *callback_info = NULL;
+    hg_util_int32_t status;
+    na_bool_t op_internal = NA_FALSE;
+
+    /* Mark op id as completed before checking for cancelation */
+    status = hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
+
+    /* Init callback info */
+    callback_info = &na_bmi_op_id->completion_data.callback_info;
+
+    /* Check for current status before completing */
+    if (status & NA_BMI_OP_CANCELED) {
+        /* If it was canceled while being processed, set callback ret
+         * accordingly */
+        NA_LOG_DEBUG("Operation ID %p was canceled", (void *) na_bmi_op_id);
+        callback_info->ret = NA_CANCELED;
+    } else
+        callback_info->ret = NA_SUCCESS;
+
+    switch (callback_info->type) {
+        case NA_CB_RECV_UNEXPECTED:
+            if (callback_info->ret != NA_SUCCESS) {
+                /* In case of cancellation where no recv'd data */
+                callback_info->info.recv_unexpected.actual_buf_size = 0;
+                callback_info->info.recv_unexpected.source = NA_ADDR_NULL;
+                callback_info->info.recv_unexpected.tag = 0;
+            } else {
+                /* Increment addr ref count */
+                hg_atomic_incr32(&na_bmi_op_id->na_bmi_addr->ref_count);
+
+                /* Fill callback info */
+                callback_info->info.recv_unexpected.actual_buf_size =
+                    (na_size_t) na_bmi_op_id->info.msg.actual_buf_size;
+                callback_info->info.recv_unexpected.source =
+                    (na_addr_t) na_bmi_op_id->na_bmi_addr;
+                callback_info->info.recv_unexpected.tag =
+                    (na_tag_t) na_bmi_op_id->info.msg.tag;
+            }
+            break;
+        case NA_CB_SEND_UNEXPECTED:
+        case NA_CB_SEND_EXPECTED:
+        case NA_CB_RECV_EXPECTED:
+            break;
+        case NA_CB_PUT:
+        case NA_CB_GET:
+            if (na_bmi_op_id->info.rma.flags & NA_BMI_RMA_SVC)
+                op_internal = NA_TRUE;
+            break;
+        default:
+            NA_LOG_ERROR(
+                "Operation type %d not supported", callback_info->type);
+            break;
+    }
+
+    /* Add OP to NA completion queue */
+    if (op_internal)
+        na_bmi_op_destroy(na_bmi_op_id->na_class, (na_op_id_t *) na_bmi_op_id);
+    else
+        na_cb_completion_add(
+            na_bmi_op_id->context, &na_bmi_op_id->completion_data);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_bmi_release(void *arg)
+{
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
+
+    NA_CHECK_WARNING(na_bmi_op_id && (!(hg_atomic_get32(&na_bmi_op_id->status) &
+                                         NA_BMI_OP_COMPLETED)),
+        "Releasing resources from an uncompleted operation");
+
+    if (na_bmi_op_id->na_bmi_addr) {
+        na_bmi_addr_free(
+            na_bmi_op_id->na_class, (na_addr_t) na_bmi_op_id->na_bmi_addr);
+        na_bmi_op_id->na_bmi_addr = NULL;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -493,27 +1170,73 @@ static na_return_t
 na_bmi_initialize(
     na_class_t *na_class, const struct na_info *na_info, na_bool_t listen)
 {
-    char method_list[NA_BMI_MAX_ADDR_NAME] = {'\0'};
-    char *method_list_p = NULL;
-    char listen_addr[NA_BMI_MAX_ADDR_NAME] = {'\0'};
-    char *listen_addr_p = NULL;
-    char my_hostname[NA_BMI_MAX_ADDR_NAME] = {'\0'};
-    int flag = (listen) ? (BMI_INIT_SERVER | BMI_TCP_BIND_SPECIFIC) : 0;
+    char method_list[NA_BMI_ADDR_NAME_MAX] = {'\0'},
+         listen_addr[NA_BMI_ADDR_NAME_MAX] = {'\0'},
+         my_hostname[NA_BMI_ADDR_NAME_MAX] = {'\0'},
+         pref_anyip[16] = {'\0'}; /* for INADDR_ANY */
+    char *method_list_p = NULL, *listen_addr_p = NULL;
+    int flag = (listen) ? (BMI_INIT_SERVER | BMI_TCP_BIND_SPECIFIC) : 0,
+        port = 0;
     na_return_t ret = NA_SUCCESS;
-    int bmi_ret;
-    int port = 0;
+    int bmi_ret, i;
+    na_bool_t anyaddr = NA_FALSE;
 
     /* Allocate private data */
     na_class->plugin_class = malloc(sizeof(struct na_bmi_class));
-    if (!na_class->plugin_class) {
-        NA_LOG_ERROR("Could not allocate NA private data class");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    NA_CHECK_ERROR(na_class->plugin_class == NULL, error, ret, NA_NOMEM,
+        "Could not allocate NA private data class");
+
     memset(na_class->plugin_class, 0, sizeof(struct na_bmi_class));
     NA_BMI_CLASS(na_class)->protocol_name = strdup(na_info->protocol_name);
-    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_msg_queue);
-    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_op_queue);
+    NA_CHECK_ERROR(NA_BMI_CLASS(na_class)->protocol_name == NULL, error, ret,
+        NA_NOMEM, "Could not dup protocol name");
+
+    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.queue);
+    hg_thread_spin_init(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.lock);
+
+    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_op_queue.queue);
+    hg_thread_spin_init(&NA_BMI_CLASS(na_class)->unexpected_op_queue.lock);
+
+    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->addr_queue.queue);
+    hg_thread_spin_init(&NA_BMI_CLASS(na_class)->addr_queue.lock);
+
+    /* Initialize mutex/cond */
+    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
+
+    /* Set msg size limits */
+    NA_BMI_CLASS(na_class)->unexpected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
+            ? na_info->na_init_info->max_unexpected_size
+            : NA_BMI_UNEXPECTED_SIZE;
+    NA_BMI_CLASS(na_class)->expected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_expected_size)
+            ? na_info->na_init_info->max_expected_size
+            : NA_BMI_EXPECTED_SIZE;
+
+    /* Preallocate addresses */
+    for (i = 0; i < NA_BMI_ADDR_PREALLOC; i++) {
+        struct na_bmi_addr *na_bmi_addr = NULL;
+
+        ret = na_bmi_addr_create(0, NA_FALSE, NA_FALSE, &na_bmi_addr);
+        NA_CHECK_NA_ERROR(error, ret, "Could not create address");
+
+        HG_QUEUE_PUSH_TAIL(
+            &NA_BMI_CLASS(na_class)->addr_queue.queue, na_bmi_addr, entry);
+    }
+
+    /* Create addr hash-table */
+    NA_BMI_CLASS(na_class)->addr_map.map =
+        hg_hash_table_new(na_bmi_addr_key_hash, na_bmi_addr_key_equal);
+    NA_CHECK_ERROR(NA_BMI_CLASS(na_class)->addr_map.map == NULL, error, ret,
+        NA_NOMEM, "hg_hash_table_new() failed");
+    hg_hash_table_register_free_functions(
+        NA_BMI_CLASS(na_class)->addr_map.map, NULL, NULL);
+    hg_thread_rwlock_init(&NA_BMI_CLASS(na_class)->addr_map.lock);
+
+    /* Keep self address */
+    ret = na_bmi_addr_create(
+        0, NA_FALSE, NA_TRUE, &NA_BMI_CLASS(na_class)->src_addr);
+    NA_CHECK_NA_ERROR(error, ret, "Could not create src address");
 
     if (listen) {
         int desc_len = 0;
@@ -525,11 +1248,11 @@ na_bmi_initialize(
         /* Method list */
         strcpy(method_list, "bmi_");
         strncat(method_list, na_info->protocol_name,
-            NA_BMI_MAX_ADDR_NAME - strlen(method_list));
+            NA_BMI_ADDR_NAME_MAX - strlen(method_list));
 
         if (na_info->host_name) {
             /* Extract hostname */
-            strncpy(my_hostname, na_info->host_name, NA_BMI_MAX_ADDR_NAME - 1);
+            strncpy(my_hostname, na_info->host_name, NA_BMI_ADDR_NAME_MAX - 1);
             if (strstr(my_hostname, ":")) {
                 char *port_str;
 
@@ -543,20 +1266,6 @@ na_bmi_initialize(
             snprintf(my_hostname, sizeof(my_hostname), "0.0.0.0");
         }
 
-        /* Pick a default port */
-        if (!port)
-            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s",
-                na_info->protocol_name, my_hostname);
-        else
-            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
-                na_info->protocol_name, my_hostname, port);
-
-        if (desc_len > NA_BMI_MAX_ADDR_NAME) {
-            NA_LOG_ERROR("Exceeding max addr name");
-            ret = NA_SIZE_ERROR;
-            goto done;
-        }
-
         /* get pref IP addr by subnet for INADDR_ANY */
         if (strcmp(my_hostname, "0.0.0.0") == 0) {
             uint32_t subnet = 0, netmask = 0;
@@ -564,47 +1273,93 @@ na_bmi_initialize(
             if (na_info->na_init_info && na_info->na_init_info->ip_subnet) {
                 ret = na_ip_parse_subnet(
                     na_info->na_init_info->ip_subnet, &subnet, &netmask);
-                if (ret != NA_SUCCESS) {
-                    NA_LOG_ERROR("BMI_initialize() failed - NA_Parse_subnet");
-                    goto done;
-                }
+                NA_CHECK_NA_ERROR(
+                    error, ret, "BMI_initialize() failed - NA_Parse_subnet");
             }
-            ret = na_ip_pref_addr(
-                subnet, netmask, NA_BMI_CLASS(na_class)->pref_anyip);
-            if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("BMI_initialize() failed - NA_Pref_ipaddr");
-                goto done;
-            }
+            ret = na_ip_pref_addr(subnet, netmask, pref_anyip);
+            NA_CHECK_NA_ERROR(
+                error, ret, "BMI_initialize() failed - NA_Pref_ipaddr");
+            anyaddr = NA_TRUE;
         }
+
+        /* Pick a default port */
+        if (!port)
+            desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s",
+                na_info->protocol_name, my_hostname);
+        else
+            desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s:%d",
+                na_info->protocol_name, my_hostname, port);
+
+        NA_CHECK_ERROR(desc_len > NA_BMI_ADDR_NAME_MAX, error, ret, NA_OVERFLOW,
+            "Exceeding max addr name");
     }
 
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list_p, listen_addr_p, flag);
-    if (bmi_ret < 0) {
-        ret = NA_PROTOCOL_ERROR;
-        NA_LOG_ERROR("BMI_initialize() failed");
-        goto done;
-    } else
-        ret = NA_SUCCESS;
+    NA_CHECK_ERROR(
+        bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_initialize() failed");
 
-    /* Keep listen_addr and port */
-    NA_BMI_CLASS(na_class)->listen_addr =
-        (listen) ? strdup(listen_addr_p) : NULL;
-    NA_BMI_CLASS(na_class)->port = port;
+    /* Resolve listen info that will be used for self address */
+    if (listen) {
+        int desc_len = 0;
 
-    /* Initialize mutex/cond */
-    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
+        if (port <= 0) {
+            /* if port was not specified, then we need to query BMI */
+            BMI_get_info(0, BMI_TCP_GET_PORT, &port);
+        }
+
+        desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s:%d",
+            na_info->protocol_name, anyaddr ? pref_anyip : my_hostname, port);
+        NA_CHECK_ERROR(desc_len > NA_BMI_ADDR_NAME_MAX, error, ret, NA_OVERFLOW,
+            "Exceeding max addr name");
+
+        /* Resolve src addr */
+        bmi_ret = BMI_addr_lookup(
+            &NA_BMI_CLASS(na_class)->src_addr->bmi_addr, listen_addr);
+        NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+            "BMI_addr_lookup() failed");
+
+        /* Keep listen_addr and port */
+        NA_BMI_CLASS(na_class)->listen_addr = strdup(listen_addr_p);
+        NA_CHECK_ERROR(NA_BMI_CLASS(na_class)->listen_addr == NULL, error, ret,
+            NA_NOMEM, "Could not dup listen addr");
+        NA_BMI_CLASS(na_class)->port = port;
+    }
 
     /* Initialize atomic op */
     hg_atomic_set32(&NA_BMI_CLASS(na_class)->rma_tag, NA_BMI_RMA_TAG);
 
-done:
-    if (ret != NA_SUCCESS) {
+    return ret;
+
+error:
+    if (na_class->plugin_class) {
+        free(NA_BMI_CLASS(na_class)->protocol_name);
         free(NA_BMI_CLASS(na_class)->listen_addr);
+
+        hg_thread_spin_destroy(
+            &NA_BMI_CLASS(na_class)->unexpected_msg_queue.lock);
+        hg_thread_spin_destroy(
+            &NA_BMI_CLASS(na_class)->unexpected_op_queue.lock);
+        hg_thread_spin_destroy(&NA_BMI_CLASS(na_class)->addr_queue.lock);
+        hg_thread_mutex_destroy(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
+
+        /* Check that addr queue is empty */
+        while (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->addr_queue.queue)) {
+            struct na_bmi_addr *na_bmi_addr =
+                HG_QUEUE_FIRST(&NA_BMI_CLASS(na_class)->addr_queue.queue);
+            HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->addr_queue.queue, entry);
+            na_bmi_addr_destroy(na_bmi_addr);
+        }
+
+        if (NA_BMI_CLASS(na_class)->addr_map.map) {
+            hg_hash_table_free(NA_BMI_CLASS(na_class)->addr_map.map);
+            hg_thread_rwlock_destroy(&NA_BMI_CLASS(na_class)->addr_map.lock);
+        }
+
+        na_bmi_addr_destroy(NA_BMI_CLASS(na_class)->src_addr);
         free(na_class->plugin_class);
     }
+
     return ret;
 }
 
@@ -613,36 +1368,59 @@ static na_return_t
 na_bmi_finalize(na_class_t *na_class)
 {
     na_return_t ret = NA_SUCCESS;
+    na_bool_t empty;
     int bmi_ret;
 
-    if (!na_class->plugin_class) {
+    if (!na_class->plugin_class)
         goto done;
-    }
 
     /* Check that unexpected op queue is empty */
-    if (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_op_queue)) {
-        NA_LOG_ERROR("Unexpected op queue should be empty");
-        ret = NA_PROTOCOL_ERROR;
-    }
+    empty =
+        HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_op_queue.queue);
+    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+        "Unexpected op queue should be empty");
 
     /* Check that unexpected message queue is empty */
-    if (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_msg_queue)) {
-        NA_LOG_ERROR("Unexpected msg queue should be empty");
-        ret = NA_PROTOCOL_ERROR;
+    empty =
+        HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.queue);
+    NA_CHECK_ERROR(empty == NA_FALSE, done, ret, NA_BUSY,
+        "Unexpected msg queue should be empty");
+
+    /* Check that addr queue is empty */
+    while (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->addr_queue.queue)) {
+        struct na_bmi_addr *na_bmi_addr =
+            HG_QUEUE_FIRST(&NA_BMI_CLASS(na_class)->addr_queue.queue);
+        HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->addr_queue.queue, entry);
+        na_bmi_addr_destroy(na_bmi_addr);
     }
 
     /* Finalize BMI */
     bmi_ret = BMI_finalize();
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_finalize() failed");
-        ret = NA_PROTOCOL_ERROR;
+    NA_CHECK_ERROR(
+        bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR, "BMI_finalize() failed");
+
+    /* Free hash table */
+    if (NA_BMI_CLASS(na_class)->addr_map.map) {
+        hg_hash_table_iter_t iter;
+
+        hg_hash_table_iterate(NA_BMI_CLASS(na_class)->addr_map.map, &iter);
+
+        while (hg_hash_table_iter_has_more(&iter)) {
+            na_bmi_addr_destroy(hg_hash_table_iter_next(&iter));
+        }
+
+        hg_hash_table_free(NA_BMI_CLASS(na_class)->addr_map.map);
+        hg_thread_rwlock_destroy(&NA_BMI_CLASS(na_class)->addr_map.lock);
     }
 
+    /* Destroy src addr */
+    na_bmi_addr_destroy(NA_BMI_CLASS(na_class)->src_addr);
+
     /* Destroy mutex/cond */
+    hg_thread_spin_destroy(&NA_BMI_CLASS(na_class)->addr_queue.lock);
     hg_thread_mutex_destroy(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_destroy(
-        &NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_destroy(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
+    hg_thread_spin_destroy(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.lock);
+    hg_thread_spin_destroy(&NA_BMI_CLASS(na_class)->unexpected_op_queue.lock);
 
     free(NA_BMI_CLASS(na_class)->listen_addr);
     free(NA_BMI_CLASS(na_class)->protocol_name);
@@ -657,28 +1435,27 @@ static na_return_t
 na_bmi_context_create(
     na_class_t NA_UNUSED *na_class, void **context, na_uint8_t NA_UNUSED id)
 {
-    bmi_context_id *bmi_context = NULL;
+    struct na_bmi_context *na_bmi_context = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    bmi_context = (bmi_context_id *) malloc(sizeof(bmi_context_id));
-    if (!bmi_context) {
-        NA_LOG_ERROR("Could not allocate BMI context ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_bmi_context =
+        (struct na_bmi_context *) malloc(sizeof(struct na_bmi_context));
+    NA_CHECK_ERROR(na_bmi_context == NULL, error, ret, NA_NOMEM,
+        "Could not allocate BMI private context");
 
     /* Create a new BMI context */
-    bmi_ret = BMI_open_context(bmi_context);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_open_context() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    bmi_ret = BMI_open_context(&na_bmi_context->context_id);
+    NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+        "BMI_open_context() failed");
 
-    *context = bmi_context;
+    *context = na_bmi_context;
 
-done:
+    return ret;
+
+error:
+    free(na_bmi_context);
+
     return ret;
 }
 
@@ -686,47 +1463,51 @@ done:
 static na_return_t
 na_bmi_context_destroy(na_class_t NA_UNUSED *na_class, void *context)
 {
-    bmi_context_id *bmi_context = (bmi_context_id *) context;
-    na_return_t ret = NA_SUCCESS;
+    struct na_bmi_context *na_bmi_context = (struct na_bmi_context *) context;
 
     /* Close BMI context */
-    BMI_close_context(*bmi_context);
-    free(bmi_context);
+    BMI_close_context(na_bmi_context->context_id);
 
-    return ret;
+    free(na_bmi_context);
+
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
-static na_op_id_t
+static na_op_id_t *
 na_bmi_op_create(na_class_t NA_UNUSED *na_class)
 {
     struct na_bmi_op_id *na_bmi_op_id = NULL;
 
     na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        goto done;
-    }
+    NA_CHECK_ERROR_NORET(
+        na_bmi_op_id == NULL, done, "Could not allocate NA BMI operation ID");
     memset(na_bmi_op_id, 0, sizeof(struct na_bmi_op_id));
-    hg_atomic_set32(&na_bmi_op_id->ref_count, 1);
+
+    na_bmi_op_id->na_class = na_class;
+
     /* Completed by default */
-    hg_atomic_set32(&na_bmi_op_id->completed, 1);
+    hg_atomic_init32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
+
+    /* Set op ID release callbacks */
+    na_bmi_op_id->completion_data.plugin_callback = na_bmi_release;
+    na_bmi_op_id->completion_data.plugin_callback_args = na_bmi_op_id;
 
 done:
-    return (na_op_id_t) na_bmi_op_id;
+    return (na_op_id_t *) na_bmi_op_id;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+na_bmi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
 
-    if (hg_atomic_decr32(&na_bmi_op_id->ref_count)) {
-        /* Cannot free yet */
-        goto done;
-    }
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to free OP ID that was not completed");
+
     free(na_bmi_op_id);
 
 done:
@@ -735,68 +1516,54 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_lookup(
-    na_class_t NA_UNUSED *na_class, const char *name, na_addr_t *addr)
+na_bmi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
+    BMI_addr_t bmi_addr;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate addr */
-    na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
-    if (!na_bmi_addr) {
-        NA_LOG_ERROR("Could not allocate BMI addr");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_bmi_addr->bmi_addr = 0;
-    na_bmi_addr->unexpected = NA_FALSE;
-    na_bmi_addr->self = NA_FALSE;
-    hg_atomic_set32(&na_bmi_addr->ref_count, 1);
-
     /* Perform an address lookup */
-    bmi_ret = BMI_addr_lookup(&na_bmi_addr->bmi_addr, name);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_addr_lookup() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    bmi_ret = BMI_addr_lookup(&bmi_addr, name);
+    NA_CHECK_ERROR(
+        bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR, "BMI_addr_lookup() failed");
+
+    /* Retrieve target addr */
+    na_bmi_addr =
+        na_bmi_addr_map_lookup(&NA_BMI_CLASS(na_class)->addr_map, bmi_addr);
+    if (!na_bmi_addr) {
+        na_return_t na_ret;
+
+        NA_LOG_DEBUG("Address was not found, attempting to insert it (key=%ld)",
+            (long int) bmi_addr);
+
+        /* Insert new entry and create new address if needed */
+        na_ret =
+            na_bmi_addr_map_insert(&NA_BMI_CLASS(na_class)->addr_map, bmi_addr,
+                NA_FALSE, &NA_BMI_CLASS(na_class)->addr_queue, &na_bmi_addr);
+        NA_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_EXIST, done, ret,
+            na_ret, "Could not insert new address");
+    } else
+        NA_LOG_DEBUG("Address was found (key=%ld)", (long int) bmi_addr);
 
     *addr = (na_addr_t) na_bmi_addr;
 
 done:
-    if (ret != NA_SUCCESS) {
-        free(na_bmi_addr);
-    }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
+na_bmi_addr_self(na_class_t *na_class, na_addr_t *addr)
 {
-    struct na_bmi_addr *na_bmi_addr = NULL;
-    na_return_t ret = NA_SUCCESS;
+    struct na_bmi_addr *na_bmi_addr = NA_BMI_CLASS(na_class)->src_addr;
 
-    /* Allocate addr */
-    na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
-    if (!na_bmi_addr) {
-        NA_LOG_ERROR("Could not allocate BMI addr");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_bmi_addr->bmi_addr = 0;
-    na_bmi_addr->unexpected = NA_FALSE;
-    na_bmi_addr->self = NA_TRUE;
-    hg_atomic_set32(&na_bmi_addr->ref_count, 1);
+    /* Increment refcount */
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
 
     *addr = (na_addr_t) na_bmi_addr;
 
-done:
-    if (ret != NA_SUCCESS) {
-        free(na_bmi_addr);
-    }
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -816,28 +1583,24 @@ na_bmi_addr_dup(
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_bmi_addr_free(na_class_t *na_class, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
-    na_return_t ret = NA_SUCCESS;
 
     /* Cleanup peer_addr */
-    if (!na_bmi_addr) {
-        NA_LOG_ERROR("NULL BMI addr");
-        ret = NA_INVALID_PARAM;
-        return ret;
-    }
+    if (!na_bmi_addr)
+        goto done;
 
-    if (hg_atomic_decr32(&na_bmi_addr->ref_count)) {
+    if (hg_atomic_decr32(&na_bmi_addr->ref_count))
         /* Cannot free yet */
         goto done;
-    }
 
-    free(na_bmi_addr);
-    na_bmi_addr = NULL;
+    /* Remove from hash table */
+    na_bmi_addr_map_remove(&NA_BMI_CLASS(na_class)->addr_map, na_bmi_addr,
+        &NA_BMI_CLASS(na_class)->addr_queue);
 
 done:
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -845,19 +1608,15 @@ static na_bool_t
 na_bmi_addr_cmp(
     na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
 {
-    struct na_bmi_addr *na_bmi_addr1 = (struct na_bmi_addr *) addr1;
-    struct na_bmi_addr *na_bmi_addr2 = (struct na_bmi_addr *) addr2;
-
-    return (na_bmi_addr1->bmi_addr == na_bmi_addr2->bmi_addr);
+    return (((struct na_bmi_addr *) addr1)->bmi_addr ==
+            ((struct na_bmi_addr *) addr2)->bmi_addr);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_bool_t
 na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
-    struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
-
-    return na_bmi_addr->self;
+    return ((struct na_bmi_addr *) addr)->self;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -866,48 +1625,17 @@ na_bmi_addr_to_string(
     na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
-    char full_rev_addr[NA_BMI_MAX_ADDR_NAME + 3] = {'\0'};
+    char full_rev_addr[NA_BMI_ADDR_NAME_MAX + 3] = {'\0'};
     const char *bmi_rev_addr;
     na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
-    int listen_port = 0;
-    char *anyaddr;
-    int preflen;
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
     if (na_bmi_addr->self) {
         bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
-        if (!bmi_rev_addr) {
-            NA_LOG_ERROR("Cannot convert addr to string if not listening");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
-        }
-
-        /* if port was not specified, then we'll need to query BMI and
-         * append it to the listen_addr to produce something resolvable
-         * by remote peers
-         */
-        if (NA_BMI_CLASS(na_class)->port <= 0) {
-            BMI_get_info(0, BMI_TCP_GET_PORT, &listen_port);
-            snprintf(full_rev_addr, NA_BMI_MAX_ADDR_NAME + 3, "%s:%d",
-                bmi_rev_addr, listen_port);
-            /* populate state; we can reuse this next time without querying
-             * BMI or manipulating strings
-             */
-            free(NA_BMI_CLASS(na_class)->listen_addr);
-            NA_BMI_CLASS(na_class)->listen_addr = strdup(full_rev_addr);
-            NA_BMI_CLASS(na_class)->port = listen_port;
-            bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
-        }
-        anyaddr = strstr(bmi_rev_addr, "://0.0.0.0:");
-        if (anyaddr) { /* can't advertise inaddr_any */
-            preflen = (int) (anyaddr - bmi_rev_addr);
-            snprintf(full_rev_addr, sizeof(full_rev_addr), "%.*s://%s:%s",
-                preflen, bmi_rev_addr, NA_BMI_CLASS(na_class)->pref_anyip,
-                anyaddr + sizeof("://0.0.0.0:") - 1);
-            bmi_rev_addr = full_rev_addr;
-        }
+        NA_CHECK_ERROR(bmi_rev_addr == NULL, done, ret, NA_OPNOTSUPPORTED,
+            "Cannot convert addr to string if not listening");
     } else {
         if (na_bmi_addr->unexpected) {
             int desc_len = 0;
@@ -916,28 +1644,22 @@ na_bmi_addr_to_string(
                 BMI_addr_rev_lookup_unexpected(na_bmi_addr->bmi_addr);
 
             /* Work around address returned in different format */
-            desc_len = snprintf(full_rev_addr, NA_BMI_MAX_ADDR_NAME,
+            desc_len = snprintf(full_rev_addr, NA_BMI_ADDR_NAME_MAX,
                 "%s://%s:%d", NA_BMI_CLASS(na_class)->protocol_name,
                 bmi_rev_addr, NA_BMI_CLASS(na_class)->port);
-            if (desc_len > NA_BMI_MAX_ADDR_NAME) {
-                NA_LOG_ERROR("Exceeding max addr name");
-                ret = NA_SIZE_ERROR;
-                goto done;
-            }
+            NA_CHECK_ERROR(desc_len < 0 || desc_len > NA_BMI_ADDR_NAME_MAX,
+                done, ret, NA_OVERFLOW, "Exceeding max addr name");
+
             bmi_rev_addr = full_rev_addr;
-        } else {
+        } else
             bmi_rev_addr = BMI_addr_rev_lookup(na_bmi_addr->bmi_addr);
-        }
     }
 
     string_len = strlen(bmi_rev_addr);
     if (buf) {
-        if (string_len >= *buf_size) {
-            NA_LOG_ERROR("Buffer size too small to copy addr");
-            ret = NA_SIZE_ERROR;
-        } else {
-            strcpy(buf, bmi_rev_addr);
-        }
+        NA_CHECK_ERROR(string_len >= *buf_size, done, ret, NA_OVERFLOW,
+            "Buffer size too small to copy addr");
+        strcpy(buf, bmi_rev_addr);
     }
     *buf_size = string_len + 1;
 
@@ -947,29 +1669,23 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_bmi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
+na_bmi_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
-    na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
-
-    return max_unexpected_size;
+    return NA_BMI_CLASS(na_class)->unexpected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_bmi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
+na_bmi_msg_get_max_expected_size(const na_class_t *na_class)
 {
-    na_size_t max_expected_size = NA_BMI_EXPECTED_SIZE;
-
-    return max_expected_size;
+    return NA_BMI_CLASS(na_class)->expected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_tag_t
 na_bmi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 {
-    na_tag_t max_tag = NA_BMI_MAX_TAG;
-
-    return max_tag;
+    return NA_BMI_TAG_MAX;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -979,61 +1695,54 @@ na_bmi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) dest_addr;
-    bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
-    na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_SEND_UNEXPECTED;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->info.send_unexpected.op_id = 0;
-    na_bmi_op_id->cancel = 0;
+    NA_CHECK_ERROR(buf_size > NA_BMI_CLASS(na_class)->unexpected_size_max, done,
+        ret, NA_OVERFLOW, "Exceeds unexpected size, %zu", buf_size);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = na_bmi_op_id;
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
+    na_bmi_op_id->context = context;
+    na_bmi_op_id->completion_data.callback_info.type = NA_CB_SEND_UNEXPECTED;
+    na_bmi_op_id->completion_data.callback = callback;
+    na_bmi_op_id->completion_data.callback_info.arg = arg;
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+    na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
+
+    na_bmi_op_id->info.msg.buf.const_ptr = buf;
+    na_bmi_op_id->info.msg.buf_size = (bmi_size_t) buf_size;
+    na_bmi_op_id->info.msg.actual_buf_size = (bmi_size_t) buf_size;
+    na_bmi_op_id->info.msg.tag = (bmi_msg_tag_t) tag;
+    na_bmi_op_id->info.msg.op_id = 0;
 
     /* Post the BMI unexpected send request */
-    bmi_ret = BMI_post_sendunexpected(&na_bmi_op_id->info.send_unexpected.op_id,
-        na_bmi_addr->bmi_addr, buf, bmi_buf_size, BMI_EXT_ALLOC, bmi_tag,
-        na_bmi_op_id, *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_sendunexpected() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    bmi_ret = BMI_post_sendunexpected(&na_bmi_op_id->info.msg.op_id,
+        na_bmi_addr->bmi_addr, buf, (bmi_size_t) buf_size, BMI_EXT_ALLOC,
+        (bmi_msg_tag_t) tag, na_bmi_op_id, NA_BMI_CONTEXT(context)->context_id,
+        NULL);
+    NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+        "BMI_post_sendunexpected() failed");
 
     /* If immediate completion, directly add to completion queue */
-    if (bmi_ret) {
-        ret = na_bmi_complete(na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-    }
+    if (bmi_ret > 0)
+        na_bmi_complete(na_bmi_op_id);
 
 done:
-    if (ret != NA_SUCCESS) {
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
-    }
+    return ret;
+
+error:
+    hg_atomic_decr32(&na_bmi_addr->ref_count);
+    hg_atomic_set32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
+
     return ret;
 }
 
@@ -1043,284 +1752,181 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_op_id_t *op_id)
 {
-    struct na_bmi_unexpected_info *unexpected_info = NULL;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_unexpected_msg_queue *unexpected_msg_queue =
+        &NA_BMI_CLASS(na_class)->unexpected_msg_queue;
+    struct na_bmi_unexpected_info *na_bmi_unexpected_info;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
     na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_RECV_UNEXPECTED;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->info.recv_unexpected.buf = buf;
-    na_bmi_op_id->info.recv_unexpected.buf_size = (bmi_size_t) buf_size;
-    na_bmi_op_id->info.recv_unexpected.unexpected_info = NULL;
-    na_bmi_op_id->cancel = 0;
+    na_bmi_op_id->completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;
+    na_bmi_op_id->completion_data.callback = callback;
+    na_bmi_op_id->completion_data.callback_info.arg = arg;
+    na_bmi_op_id->na_bmi_addr = NULL;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = na_bmi_op_id;
-
-    /* Try to make progress here from the BMI unexpected queue */
-    do {
-        ret = na_bmi_progress_unexpected(na_class, context, 0);
-        if (ret != NA_SUCCESS && ret != NA_TIMEOUT) {
-            NA_LOG_ERROR("Could not check BMI unexpected message queue");
-            goto done;
-        }
-    } while (ret == NA_SUCCESS);
+    na_bmi_op_id->info.msg.buf.ptr = buf;
+    na_bmi_op_id->info.msg.buf_size = (bmi_size_t) buf_size;
+    na_bmi_op_id->info.msg.op_id = 0;
 
     /* Look for an unexpected message already received */
-    unexpected_info = na_bmi_msg_unexpected_pop(na_class);
+    hg_thread_spin_lock(&unexpected_msg_queue->lock);
+    na_bmi_unexpected_info = HG_QUEUE_FIRST(&unexpected_msg_queue->queue);
+    HG_QUEUE_POP_HEAD(&unexpected_msg_queue->queue, entry);
+    hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
-    if (unexpected_info) {
-        na_bmi_op_id->info.recv_unexpected.unexpected_info =
-            &unexpected_info->info;
-        ret = na_bmi_complete(na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
+    if (unlikely(na_bmi_unexpected_info)) {
+        na_bmi_op_id->na_bmi_addr = na_bmi_unexpected_info->na_bmi_addr;
+        na_bmi_op_id->info.msg.actual_buf_size =
+            na_bmi_unexpected_info->info.size;
+        na_bmi_op_id->info.msg.tag = na_bmi_unexpected_info->info.tag;
+
+        /* Copy buffers */
+        memcpy(na_bmi_op_id->info.msg.buf.ptr,
+            na_bmi_unexpected_info->info.buffer,
+            (size_t) na_bmi_unexpected_info->info.size);
+
+        BMI_unexpected_free(na_bmi_unexpected_info->info.addr,
+            na_bmi_unexpected_info->info.buffer);
+        free(na_bmi_unexpected_info);
+
+        na_bmi_complete(na_bmi_op_id);
     } else {
+        struct na_bmi_op_queue *unexpected_op_queue =
+            &NA_BMI_CLASS(na_class)->unexpected_op_queue;
+
+        na_bmi_op_id->info.msg.actual_buf_size = 0;
+        na_bmi_op_id->info.msg.tag = 0;
+
         /* Nothing has been received yet so add op_id to progress queue */
-        ret = na_bmi_msg_unexpected_op_push(na_class, na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not push operation ID");
-            goto done;
-        }
+        hg_thread_spin_lock(&unexpected_op_queue->lock);
+        HG_QUEUE_PUSH_TAIL(&unexpected_op_queue->queue, na_bmi_op_id, entry);
+        hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_QUEUED);
+        hg_thread_spin_unlock(&unexpected_op_queue->lock);
     }
-
-done:
-    if (ret != NA_SUCCESS) {
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
-    }
-    free(unexpected_info);
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_msg_unexpected_push(
-    na_class_t *na_class, struct na_bmi_unexpected_info *unexpected_info)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    if (!unexpected_info) {
-        NA_LOG_ERROR("NULL unexpected info");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
-
-    HG_QUEUE_PUSH_TAIL(
-        &NA_BMI_CLASS(na_class)->unexpected_msg_queue, unexpected_info, entry);
-
-    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static struct na_bmi_unexpected_info *
-na_bmi_msg_unexpected_pop(na_class_t *na_class)
-{
-    struct na_bmi_unexpected_info *unexpected_info;
-
-    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
-
-    unexpected_info =
-        HG_QUEUE_FIRST(&NA_BMI_CLASS(na_class)->unexpected_msg_queue);
-    HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->unexpected_msg_queue, entry);
-
-    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
-
-    return unexpected_info;
-}
-
-/*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_unexpected_op_push(
-    na_class_t *na_class, struct na_bmi_op_id *na_bmi_op_id)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("NULL operation ID");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
-
-    HG_QUEUE_PUSH_TAIL(
-        &NA_BMI_CLASS(na_class)->unexpected_op_queue, na_bmi_op_id, entry);
-
-    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static struct na_bmi_op_id *
-na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
-{
-    struct na_bmi_op_id *na_bmi_op_id;
-
-    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
-
-    na_bmi_op_id = HG_QUEUE_FIRST(&NA_BMI_CLASS(na_class)->unexpected_op_queue);
-    HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->unexpected_op_queue, entry);
-
-    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
-
-    return na_bmi_op_id;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
+na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) dest_addr;
-    bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
-    na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_SEND_EXPECTED;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->info.send_expected.op_id = 0;
-    na_bmi_op_id->cancel = 0;
+    NA_CHECK_ERROR(buf_size > NA_BMI_CLASS(na_class)->expected_size_max, done,
+        ret, NA_OVERFLOW, "Exceeds expected size, %zu", buf_size);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = na_bmi_op_id;
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
+    na_bmi_op_id->context = context;
+    na_bmi_op_id->completion_data.callback_info.type = NA_CB_SEND_EXPECTED;
+    na_bmi_op_id->completion_data.callback = callback;
+    na_bmi_op_id->completion_data.callback_info.arg = arg;
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+    na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
+
+    na_bmi_op_id->info.msg.buf.const_ptr = buf;
+    na_bmi_op_id->info.msg.buf_size = (bmi_size_t) buf_size;
+    na_bmi_op_id->info.msg.actual_buf_size = (bmi_size_t) buf_size;
+    na_bmi_op_id->info.msg.tag = (bmi_msg_tag_t) tag;
+    na_bmi_op_id->info.msg.op_id = 0;
 
     /* Post the BMI send request */
-    bmi_ret = BMI_post_send(&na_bmi_op_id->info.send_expected.op_id,
-        na_bmi_addr->bmi_addr, buf, bmi_buf_size, BMI_EXT_ALLOC, bmi_tag,
-        na_bmi_op_id, *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_send() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    bmi_ret =
+        BMI_post_send(&na_bmi_op_id->info.msg.op_id, na_bmi_addr->bmi_addr, buf,
+            (bmi_size_t) buf_size, BMI_EXT_ALLOC, (bmi_msg_tag_t) tag,
+            na_bmi_op_id, NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(
+        bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_post_send() failed");
 
     /* If immediate completion, directly add to completion queue */
-    if (bmi_ret) {
-        ret = na_bmi_complete(na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-    }
+    if (bmi_ret > 0)
+        na_bmi_complete(na_bmi_op_id);
 
 done:
-    if (ret != NA_SUCCESS) {
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
-    }
+    return ret;
+
+error:
+    hg_atomic_decr32(&na_bmi_addr->ref_count);
+    hg_atomic_set32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
+
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
+na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t source_addr,
     na_uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) source_addr;
-    bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
-    na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_RECV_EXPECTED;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->info.recv_expected.op_id = 0;
-    na_bmi_op_id->info.recv_expected.buf_size = bmi_buf_size;
-    na_bmi_op_id->info.recv_expected.actual_size = 0;
-    na_bmi_op_id->cancel = 0;
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_bmi_op_id;
+    na_bmi_op_id->context = context;
+    na_bmi_op_id->completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
+    na_bmi_op_id->completion_data.callback = callback;
+    na_bmi_op_id->completion_data.callback_info.arg = arg;
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+    na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
+
+    na_bmi_op_id->info.msg.buf.ptr = buf;
+    na_bmi_op_id->info.msg.buf_size = (bmi_size_t) buf_size;
+    na_bmi_op_id->info.msg.actual_buf_size = 0;
+    na_bmi_op_id->info.msg.tag = (bmi_msg_tag_t) tag;
+    na_bmi_op_id->info.msg.op_id = 0;
 
     /* Post the BMI recv request */
-    bmi_ret = BMI_post_recv(&na_bmi_op_id->info.recv_expected.op_id,
-        na_bmi_addr->bmi_addr, buf, bmi_buf_size,
-        &na_bmi_op_id->info.recv_expected.actual_size, BMI_EXT_ALLOC, bmi_tag,
-        na_bmi_op_id, *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_recv() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    bmi_ret =
+        BMI_post_recv(&na_bmi_op_id->info.msg.op_id, na_bmi_addr->bmi_addr, buf,
+            (bmi_size_t) buf_size, &na_bmi_op_id->info.msg.actual_buf_size,
+            BMI_EXT_ALLOC, (bmi_msg_tag_t) tag, na_bmi_op_id,
+            NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(
+        bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_post_recv() failed");
 
     /* If immediate completion, directly add to completion queue */
-    if (bmi_ret) {
-        ret = na_bmi_complete(na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-    }
+    if (bmi_ret > 0)
+        na_bmi_complete(na_bmi_op_id);
 
 done:
-    if (ret != NA_SUCCESS) {
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
-    }
+    return ret;
+
+error:
+    hg_atomic_decr32(&na_bmi_addr->ref_count);
+    hg_atomic_set32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
+
     return ret;
 }
 
@@ -1329,22 +1935,18 @@ static na_return_t
 na_bmi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
 {
-    na_ptr_t bmi_buf_base = (na_ptr_t) buf;
     struct na_bmi_mem_handle *na_bmi_mem_handle = NULL;
-    bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate memory handle (use calloc to avoid uninitialized transfer) */
     na_bmi_mem_handle = (struct na_bmi_mem_handle *) calloc(
         1, sizeof(struct na_bmi_mem_handle));
-    if (!na_bmi_mem_handle) {
-        NA_LOG_ERROR("Could not allocate NA BMI memory handle");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_bmi_mem_handle->base = bmi_buf_base;
-    na_bmi_mem_handle->size = (na_size_t) bmi_buf_size;
-    na_bmi_mem_handle->attr = (na_uint8_t) flags;
+    NA_CHECK_ERROR(na_bmi_mem_handle == NULL, done, ret, NA_NOMEM,
+        "Could not allocate NA BMI memory handle");
+
+    na_bmi_mem_handle->base = (na_ptr_t) buf;
+    na_bmi_mem_handle->len = (bmi_size_t) buf_size;
+    na_bmi_mem_handle->flags = flags & 0xff;
 
     *mem_handle = (na_mem_handle_t) na_bmi_mem_handle;
 
@@ -1357,28 +1959,8 @@ static na_return_t
 na_bmi_mem_handle_free(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
-    struct na_bmi_mem_handle *bmi_mem_handle =
-        (struct na_bmi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
+    free((struct na_bmi_mem_handle *) mem_handle);
 
-    free(bmi_mem_handle);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_mem_register(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
-{
-    return NA_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_mem_deregister(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
-{
     return NA_SUCCESS;
 }
 
@@ -1395,18 +1977,14 @@ static na_return_t
 na_bmi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
     na_size_t buf_size, na_mem_handle_t mem_handle)
 {
-    struct na_bmi_mem_handle *na_bmi_mem_handle =
-        (struct na_bmi_mem_handle *) mem_handle;
     na_return_t ret = NA_SUCCESS;
 
-    if (buf_size < sizeof(struct na_bmi_mem_handle)) {
-        NA_LOG_ERROR("Buffer size too small for serializing parameter");
-        ret = NA_SIZE_ERROR;
-        goto done;
-    }
+    NA_CHECK_ERROR(buf_size < sizeof(struct na_bmi_mem_handle), done, ret,
+        NA_OVERFLOW, "Buffer size too small for serializing parameter");
 
     /* Copy struct */
-    memcpy(buf, na_bmi_mem_handle, sizeof(struct na_bmi_mem_handle));
+    memcpy(buf, (struct na_bmi_mem_handle *) mem_handle,
+        sizeof(struct na_bmi_mem_handle));
 
 done:
     return ret;
@@ -1420,19 +1998,13 @@ na_bmi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     struct na_bmi_mem_handle *na_bmi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    if (buf_size < sizeof(struct na_bmi_mem_handle)) {
-        NA_LOG_ERROR("Buffer size too small for deserializing parameter");
-        ret = NA_SIZE_ERROR;
-        goto done;
-    }
+    NA_CHECK_ERROR(buf_size < sizeof(struct na_bmi_mem_handle), done, ret,
+        NA_OVERFLOW, "Buffer size too small for deserializing parameter");
 
     na_bmi_mem_handle =
         (struct na_bmi_mem_handle *) malloc(sizeof(struct na_bmi_mem_handle));
-    if (!na_bmi_mem_handle) {
-        NA_LOG_ERROR("Could not allocate NA BMI memory handle");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    NA_CHECK_ERROR(na_bmi_mem_handle == NULL, done, ret, NA_NOMEM,
+        "Could not allocate NA BMI memory handle");
 
     /* Copy struct */
     memcpy(na_bmi_mem_handle, buf, sizeof(struct na_bmi_mem_handle));
@@ -1451,137 +2023,127 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
     na_op_id_t *op_id)
 {
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    struct na_bmi_mem_handle *bmi_local_mem_handle =
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
+    struct na_bmi_mem_handle *na_bmi_mem_handle_local =
         (struct na_bmi_mem_handle *) local_mem_handle;
-    bmi_size_t bmi_local_offset = (bmi_size_t) local_offset;
-    struct na_bmi_mem_handle *bmi_remote_mem_handle =
+    struct na_bmi_mem_handle *na_bmi_mem_handle_remote =
         (struct na_bmi_mem_handle *) remote_mem_handle;
-    bmi_size_t bmi_remote_offset = (bmi_size_t) remote_offset;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) remote_addr;
-    bmi_size_t bmi_length = (bmi_size_t) length;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
-    struct na_bmi_rma_info *na_bmi_rma_info = NULL;
+    bmi_msg_tag_t rma_tag;
     na_return_t ret = NA_SUCCESS;
-    int bmi_ret;
+    int send_ret, recv_ret;
 
-    switch (bmi_remote_mem_handle->attr) {
+    switch (na_bmi_mem_handle_remote->flags) {
         case NA_MEM_READ_ONLY:
-            NA_LOG_ERROR("Registered memory requires write permission");
-            ret = NA_PERMISSION_ERROR;
-            goto done;
+            NA_GOTO_ERROR(done, ret, NA_PERMISSION,
+                "Registered memory requires write permission");
+            break;
         case NA_MEM_WRITE_ONLY:
         case NA_MEM_READWRITE:
             break;
         default:
-            NA_LOG_ERROR("Invalid memory access flag");
-            ret = NA_INVALID_PARAM;
-            goto done;
+            NA_GOTO_ERROR(
+                done, ret, NA_INVALID_ARG, "Invalid memory access flag");
     }
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
+    /* Check overflows */
+    NA_CHECK_ERROR(
+        (bmi_size_t) (local_offset + length) > na_bmi_mem_handle_local->len,
+        done, ret, NA_OVERFLOW,
+        "Exceeding length of region exposed (%zu + %zu > %zu)", local_offset,
+        length, na_bmi_mem_handle_local->len);
+    NA_CHECK_ERROR(
+        (bmi_size_t) (remote_offset + length) > na_bmi_mem_handle_remote->len,
+        done, ret, NA_OVERFLOW,
+        "Exceeding length of region exposed (%zu + %zu > %zu)", remote_offset,
+        length, na_bmi_mem_handle_remote->len);
+
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
     na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_PUT;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->info.put.request_op_id = 0;
-    na_bmi_op_id->info.put.transfer_op_id = 0;
-    hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_FALSE);
-    na_bmi_op_id->info.put.transfer_actual_size = 0;
-    na_bmi_op_id->info.put.completion_op_id = 0;
-    na_bmi_op_id->info.put.completion_flag = NA_FALSE;
-    na_bmi_op_id->info.put.completion_actual_size = 0;
-    na_bmi_op_id->info.put.internal_progress = NA_FALSE;
-    na_bmi_op_id->info.put.remote_addr = na_bmi_addr->bmi_addr;
-    na_bmi_op_id->info.put.rma_info = NULL;
-    na_bmi_op_id->cancel = 0;
+    na_bmi_op_id->completion_data.callback_info.type = NA_CB_PUT;
+    na_bmi_op_id->completion_data.callback = callback;
+    na_bmi_op_id->completion_data.callback_info.arg = arg;
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+    na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
 
-    /* Allocate rma info (use calloc to avoid uninitialized transfer) */
-    na_bmi_rma_info =
-        (struct na_bmi_rma_info *) calloc(1, sizeof(struct na_bmi_rma_info));
-    if (!na_bmi_rma_info) {
-        NA_LOG_ERROR("Could not allocate NA BMI RMA info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_bmi_rma_info->op = NA_BMI_RMA_PUT;
-    na_bmi_rma_info->base = bmi_remote_mem_handle->base;
-    na_bmi_rma_info->disp = bmi_remote_offset;
-    na_bmi_rma_info->count = bmi_length;
-    na_bmi_rma_info->transfer_tag = na_bmi_gen_rma_tag(na_class, 1);
-    na_bmi_rma_info->completion_tag = na_bmi_gen_rma_tag(na_class, 2);
-    na_bmi_op_id->info.put.rma_info = na_bmi_rma_info;
+    /* Generate a new base tag */
+    rma_tag = na_bmi_gen_rma_tag(na_class);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_bmi_op_id;
+    /* Fill RMA msg info */
+    na_bmi_op_id->info.rma.msg_info.op = NA_BMI_RMA_PUT;
+    na_bmi_op_id->info.rma.msg_info.base =
+        (na_ptr_t) na_bmi_mem_handle_remote->base + remote_offset;
+    na_bmi_op_id->info.rma.msg_info.len = (bmi_size_t) length;
+    na_bmi_op_id->info.rma.msg_info.rma_tag = rma_tag | NA_BMI_RMA_TAG;
+    na_bmi_op_id->info.rma.msg_info.ack_tag = rma_tag | NA_BMI_RMA_ACK_TAG;
 
-    /* Post the BMI unexpected send request */
-    bmi_ret = BMI_post_sendunexpected(&na_bmi_op_id->info.put.request_op_id,
-        na_bmi_addr->bmi_addr, na_bmi_rma_info, sizeof(struct na_bmi_rma_info),
-        BMI_EXT_ALLOC, NA_BMI_RMA_REQUEST_TAG, na_bmi_op_id, *bmi_context,
-        NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_sendunexpected() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    na_bmi_op_id->info.rma.base =
+        (char *) na_bmi_mem_handle_local->base + local_offset;
+    na_bmi_op_id->info.rma.actual_len = 0;
+    na_bmi_op_id->info.rma.ack_size = 0;
+    na_bmi_op_id->info.rma.msg_op_id = 0;
+    na_bmi_op_id->info.rma.rma_op_id = 0;
+    na_bmi_op_id->info.rma.ack_op_id = 0;
+    hg_atomic_init32(&na_bmi_op_id->info.rma.op_completed_count, 0);
+    na_bmi_op_id->info.rma.op_count = 3;
+    na_bmi_op_id->info.rma.ack = NA_FALSE;
+    na_bmi_op_id->info.rma.flags = 0;
 
-    /* Post the BMI send request */
-    bmi_ret = BMI_post_send(&na_bmi_op_id->info.put.transfer_op_id,
-        na_bmi_addr->bmi_addr,
-        (char *) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
-        BMI_EXT_ALLOC, na_bmi_rma_info->transfer_tag, na_bmi_op_id,
-        *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_send() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    /* Post the RMA msg request */
+    send_ret = BMI_post_sendunexpected(&na_bmi_op_id->info.rma.msg_op_id,
+        na_bmi_addr->bmi_addr, &na_bmi_op_id->info.rma.msg_info,
+        sizeof(struct na_bmi_rma_msg_info), BMI_EXT_ALLOC,
+        rma_tag | NA_BMI_RMA_MSG_TAG, na_bmi_op_id,
+        NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(send_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+        "BMI_post_sendunexpected() failed");
+    if (send_ret > 0)
+        hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count);
 
-    /* Immediate completion */
-    if (bmi_ret) {
-        hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_TRUE);
-    }
+    /* Post the RMA ack recv */
+    recv_ret = BMI_post_recv(&na_bmi_op_id->info.rma.ack_op_id,
+        na_bmi_addr->bmi_addr, &na_bmi_op_id->info.rma.ack, sizeof(na_bool_t),
+        &na_bmi_op_id->info.rma.ack_size, BMI_EXT_ALLOC,
+        na_bmi_op_id->info.rma.msg_info.ack_tag, na_bmi_op_id,
+        NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(
+        recv_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_post_recv() failed");
 
-    /* Post the BMI recv request */
-    bmi_ret = BMI_post_recv(&na_bmi_op_id->info.put.completion_op_id,
-        na_bmi_addr->bmi_addr, &na_bmi_op_id->info.put.completion_flag,
-        sizeof(na_bool_t), &na_bmi_op_id->info.put.completion_actual_size,
-        BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
-        *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_recv() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* If immediate completion, directly add to completion queue */
-    if (bmi_ret) {
-        ret = na_bmi_complete(na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-    }
+    /* Post the RMA send for the payload */
+    send_ret = BMI_post_send(&na_bmi_op_id->info.rma.rma_op_id,
+        na_bmi_addr->bmi_addr, na_bmi_op_id->info.rma.base, (bmi_size_t) length,
+        BMI_EXT_ALLOC, na_bmi_op_id->info.rma.msg_info.rma_tag, na_bmi_op_id,
+        NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(
+        send_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_post_send() failed");
+    if (send_ret > 0)
+        hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count);
 
 done:
-    if (ret != NA_SUCCESS) {
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
-        free(na_bmi_rma_info);
+    return ret;
+
+error:
+    if (na_bmi_op_id->info.rma.ack_op_id > 0) {
+        int bmi_ret;
+
+        na_bmi_op_id->info.rma.op_count--;
+        hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_CANCELED);
+
+        bmi_ret = BMI_cancel(na_bmi_op_id->info.rma.ack_op_id,
+            NA_BMI_CONTEXT(context)->context_id);
+        NA_CHECK_ERROR_DONE(bmi_ret < 0, "BMI_cancel() failed");
+    } else {
+        hg_atomic_decr32(&na_bmi_addr->ref_count);
+        hg_atomic_set32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
     }
+
     return ret;
 }
 
@@ -1593,116 +2155,117 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
     na_op_id_t *op_id)
 {
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    struct na_bmi_mem_handle *bmi_local_mem_handle =
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
+    struct na_bmi_mem_handle *na_bmi_mem_handle_local =
         (struct na_bmi_mem_handle *) local_mem_handle;
-    bmi_size_t bmi_local_offset = (bmi_size_t) local_offset;
-    struct na_bmi_mem_handle *bmi_remote_mem_handle =
+    struct na_bmi_mem_handle *na_bmi_mem_handle_remote =
         (struct na_bmi_mem_handle *) remote_mem_handle;
-    bmi_size_t bmi_remote_offset = (bmi_size_t) remote_offset;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) remote_addr;
-    bmi_size_t bmi_length = (bmi_size_t) length;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
-    struct na_bmi_rma_info *na_bmi_rma_info = NULL;
+    bmi_msg_tag_t rma_tag;
     na_return_t ret = NA_SUCCESS;
-    int bmi_ret;
+    int send_ret, recv_ret;
 
-    switch (bmi_remote_mem_handle->attr) {
+    switch (na_bmi_mem_handle_remote->flags) {
         case NA_MEM_WRITE_ONLY:
-            NA_LOG_ERROR("Registered memory requires read permission");
-            ret = NA_PERMISSION_ERROR;
-            goto done;
+            NA_GOTO_ERROR(done, ret, NA_PERMISSION,
+                "Registered memory requires read permission");
+            break;
         case NA_MEM_READ_ONLY:
         case NA_MEM_READWRITE:
             break;
         default:
-            NA_LOG_ERROR("Invalid memory access flag");
-            ret = NA_INVALID_PARAM;
-            goto done;
+            NA_GOTO_ERROR(
+                done, ret, NA_INVALID_ARG, "Invalid memory access flag");
     }
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
+    /* Check overflows */
+    NA_CHECK_ERROR(
+        (bmi_size_t) (local_offset + length) > na_bmi_mem_handle_local->len,
+        done, ret, NA_OVERFLOW,
+        "Exceeding length of region exposed (%zu + %zu > %zu)", local_offset,
+        length, na_bmi_mem_handle_local->len);
+    NA_CHECK_ERROR(
+        (bmi_size_t) (remote_offset + length) > na_bmi_mem_handle_remote->len,
+        done, ret, NA_OVERFLOW,
+        "Exceeding length of region exposed (%zu + %zu > %zu)", remote_offset,
+        length, na_bmi_mem_handle_remote->len);
+
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
     na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_GET;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->info.get.request_op_id = 0;
-    na_bmi_op_id->info.get.transfer_op_id = 0;
-    na_bmi_op_id->info.get.transfer_actual_size = 0;
-    na_bmi_op_id->info.get.internal_progress = NA_FALSE;
-    na_bmi_op_id->info.get.remote_addr = na_bmi_addr->bmi_addr;
-    na_bmi_op_id->info.get.rma_info = NULL;
-    na_bmi_op_id->cancel = 0;
+    na_bmi_op_id->completion_data.callback_info.type = NA_CB_GET;
+    na_bmi_op_id->completion_data.callback = callback;
+    na_bmi_op_id->completion_data.callback_info.arg = arg;
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+    na_bmi_op_id->na_bmi_addr = na_bmi_addr;
+    hg_atomic_set32(&na_bmi_op_id->status, 0);
 
-    /* Allocate rma info (use calloc to avoid uninitialized transfer) */
-    na_bmi_rma_info =
-        (struct na_bmi_rma_info *) calloc(1, sizeof(struct na_bmi_rma_info));
-    if (!na_bmi_rma_info) {
-        NA_LOG_ERROR("Could not allocate NA BMI RMA info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_bmi_rma_info->op = NA_BMI_RMA_GET;
-    na_bmi_rma_info->base = bmi_remote_mem_handle->base;
-    na_bmi_rma_info->disp = bmi_remote_offset;
-    na_bmi_rma_info->count = bmi_length;
-    na_bmi_rma_info->transfer_tag = na_bmi_gen_rma_tag(na_class, 3);
-    na_bmi_rma_info->completion_tag = 0; /* not used */
-    na_bmi_op_id->info.get.rma_info = na_bmi_rma_info;
+    /* Generate a new base tag */
+    rma_tag = na_bmi_gen_rma_tag(na_class);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = na_bmi_op_id;
+    /* Fill RMA msg info */
+    na_bmi_op_id->info.rma.msg_info.op = NA_BMI_RMA_GET;
+    na_bmi_op_id->info.rma.msg_info.base =
+        (na_ptr_t) na_bmi_mem_handle_remote->base + remote_offset;
+    na_bmi_op_id->info.rma.msg_info.len = (bmi_size_t) length;
+    na_bmi_op_id->info.rma.msg_info.rma_tag = rma_tag | NA_BMI_RMA_TAG;
+    na_bmi_op_id->info.rma.msg_info.ack_tag = 0;
 
-    /* Post the BMI unexpected send request */
-    bmi_ret = BMI_post_sendunexpected(&na_bmi_op_id->info.get.request_op_id,
-        na_bmi_addr->bmi_addr, na_bmi_rma_info, sizeof(struct na_bmi_rma_info),
-        BMI_EXT_ALLOC, NA_BMI_RMA_REQUEST_TAG, na_bmi_op_id, *bmi_context,
-        NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_sendunexpected() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    na_bmi_op_id->info.rma.base =
+        (char *) na_bmi_mem_handle_local->base + local_offset;
+    na_bmi_op_id->info.rma.actual_len = 0;
+    na_bmi_op_id->info.rma.ack_size = 0;
+    na_bmi_op_id->info.rma.msg_op_id = 0;
+    na_bmi_op_id->info.rma.rma_op_id = 0;
+    na_bmi_op_id->info.rma.ack_op_id = 0;
+    hg_atomic_init32(&na_bmi_op_id->info.rma.op_completed_count, 0);
+    na_bmi_op_id->info.rma.op_count = 2;
+    na_bmi_op_id->info.rma.ack = NA_FALSE;
+    na_bmi_op_id->info.rma.flags = 0;
 
-    /* Post the BMI recv request */
-    bmi_ret = BMI_post_recv(&na_bmi_op_id->info.get.transfer_op_id,
-        na_bmi_addr->bmi_addr,
-        (char *) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
-        &na_bmi_op_id->info.get.transfer_actual_size, BMI_EXT_ALLOC,
-        na_bmi_rma_info->transfer_tag, na_bmi_op_id, *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_recv() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    /* Post the RMA recv for the payload */
+    recv_ret = BMI_post_recv(&na_bmi_op_id->info.rma.rma_op_id,
+        na_bmi_addr->bmi_addr, na_bmi_op_id->info.rma.base, (bmi_size_t) length,
+        &na_bmi_op_id->info.rma.actual_len, BMI_EXT_ALLOC,
+        na_bmi_op_id->info.rma.msg_info.rma_tag, na_bmi_op_id,
+        NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(
+        recv_ret < 0, error, ret, NA_PROTOCOL_ERROR, "BMI_post_recv() failed");
 
-    /* If immediate completion, directly add to completion queue */
-    if (bmi_ret) {
-        ret = na_bmi_complete(na_bmi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-    }
+    /* Post the RMA msg request */
+    send_ret = BMI_post_sendunexpected(&na_bmi_op_id->info.rma.msg_op_id,
+        na_bmi_addr->bmi_addr, &na_bmi_op_id->info.rma.msg_info,
+        sizeof(struct na_bmi_rma_msg_info), BMI_EXT_ALLOC,
+        rma_tag | NA_BMI_RMA_MSG_TAG, na_bmi_op_id,
+        NA_BMI_CONTEXT(context)->context_id, NULL);
+    NA_CHECK_ERROR(send_ret < 0, error, ret, NA_PROTOCOL_ERROR,
+        "BMI_post_sendunexpected() failed");
+    if (send_ret > 0)
+        hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count);
 
 done:
-    if (ret != NA_SUCCESS) {
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
-        free(na_bmi_rma_info);
+    return ret;
+
+error:
+    if (na_bmi_op_id->info.rma.rma_op_id > 0) {
+        int bmi_ret;
+
+        na_bmi_op_id->info.rma.op_count--;
+        hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_CANCELED);
+
+        bmi_ret = BMI_cancel(na_bmi_op_id->info.rma.rma_op_id,
+            NA_BMI_CONTEXT(context)->context_id);
+        NA_CHECK_ERROR_DONE(bmi_ret < 0, "BMI_cancel() failed");
+    } else {
+        hg_atomic_decr32(&na_bmi_addr->ref_count);
+        hg_atomic_set32(&na_bmi_op_id->status, NA_BMI_OP_COMPLETED);
     }
+
     return ret;
 }
 
@@ -1713,23 +2276,21 @@ na_bmi_progress(
 {
     double remaining =
         timeout / 1000.0; /* Convert timeout in ms into seconds */
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
     do {
+        na_bool_t progressed = NA_FALSE;
         hg_time_t t1, t2;
 
         if (timeout)
             hg_time_get_current_ms(&t1);
 
         /* Try to make progress here from the BMI unexpected queue */
-        ret = na_bmi_progress_unexpected(na_class, context, 0);
-        if (ret != NA_SUCCESS) {
-            if (ret != NA_TIMEOUT) {
-                NA_LOG_ERROR("Could not make unexpected progress");
-                goto done;
-            }
-        } else
-            break; /* Progressed */
+        ret = na_bmi_progress_unexpected(na_class, context, 0, &progressed);
+        NA_CHECK_NA_ERROR(error, ret, "Could not make unexpected progress");
+
+        if (progressed)
+            return NA_SUCCESS;
 
         /* The rule is that the timeout should be passed to testcontext, and
          * that testcontext will return if there is an unexpected message.
@@ -1737,631 +2298,94 @@ na_bmi_progress(
          * testcontext will ignore the timeout and immediately return).
          * [verified this in the source] */
         ret = na_bmi_progress_expected(
-            na_class, context, (unsigned int) (remaining * 1000.0));
-        if (ret != NA_SUCCESS) {
-            if (ret != NA_TIMEOUT) {
-                NA_LOG_ERROR("Could not make expected progress");
-                goto done;
-            }
-        } else
-            break; /* Progressed */
+            context, (unsigned int) (remaining * 1000.0), &progressed);
+        NA_CHECK_NA_ERROR(error, ret, "Could not make expected progress");
+
+        if (progressed)
+            return NA_SUCCESS;
 
         if (timeout) {
             hg_time_get_current_ms(&t2);
             remaining -= hg_time_diff(t2, t1);
         }
-    } while (remaining > 0);
+    } while ((int) (remaining * 1000.0) > 0);
 
-done:
+    return NA_TIMEOUT;
+
+error:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_progress_unexpected(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout)
-{
-    int outcount = 0;
-    struct BMI_unexpected_info test_unexpected_info;
-    struct na_bmi_unexpected_info *unexpected_info = NULL;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
-    na_return_t ret = NA_SUCCESS;
-    int bmi_ret;
-
-    /* Prevent multiple threads from calling BMI_testunexpected concurrently */
-    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
-
-    /* Test unexpected message */
-    bmi_ret =
-        BMI_testunexpected(1, &outcount, &test_unexpected_info, (int) timeout);
-
-    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
-
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_testunexpected failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    if (outcount) {
-        if (test_unexpected_info.error_code != 0) {
-            NA_LOG_ERROR("BMI_testunexpected failed, error code set");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
-        }
-        /* If no error and message arrived, keep a copy of the struct in
-         * the unexpected message queue */
-        unexpected_info = (struct na_bmi_unexpected_info *) malloc(
-            sizeof(struct na_bmi_unexpected_info));
-        if (!unexpected_info) {
-            NA_LOG_ERROR("Could not allocate unexpected info");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-
-        memcpy(&unexpected_info->info, &test_unexpected_info,
-            sizeof(struct BMI_unexpected_info));
-
-        if (unexpected_info->info.tag == NA_BMI_RMA_REQUEST_TAG) {
-            /* Make RMA progress */
-            ret =
-                na_bmi_progress_rma(na_class, context, &unexpected_info->info);
-            if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not make RMA progress");
-                goto done;
-            }
-        } else {
-            na_bmi_op_id = na_bmi_msg_unexpected_op_pop(na_class);
-
-            if (na_bmi_op_id) {
-                /* If an op id was pushed, associate unexpected info to this
-                 * operation ID and complete operation */
-                na_bmi_op_id->info.recv_unexpected.unexpected_info =
-                    &unexpected_info->info;
-                ret = na_bmi_complete(na_bmi_op_id);
-                if (ret != NA_SUCCESS) {
-                    NA_LOG_ERROR("Could not complete operation");
-                    goto done;
-                }
-            } else {
-                /* Otherwise push the unexpected message into our
-                 * unexpected queue so that we can treat it later when a
-                 * recv_unexpected is posted */
-                ret = na_bmi_msg_unexpected_push(na_class, unexpected_info);
-                if (ret != NA_SUCCESS) {
-                    NA_LOG_ERROR("Could not push unexpected info");
-                    goto done;
-                }
-                /* It's pushed now and we don't want to free it */
-                unexpected_info = NULL;
-            }
-        }
-    } else {
-        ret = NA_TIMEOUT; /* No progress */
-    }
-
-done:
-    free(unexpected_info);
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_progress_expected(
-    na_class_t NA_UNUSED *na_class, na_context_t *context, unsigned int timeout)
-{
-    bmi_op_id_t bmi_op_id = 0;
-    int outcount = 0;
-    bmi_error_code_t error_code = 0;
-    bmi_size_t bmi_actual_size = 0;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    na_return_t ret = NA_SUCCESS;
-    int bmi_ret = 0;
-
-    /* Return as soon as something completes or timeout is reached */
-    bmi_ret = BMI_testcontext(1, &bmi_op_id, &outcount, &error_code,
-        &bmi_actual_size, (void **) &na_bmi_op_id, (int) timeout, *bmi_context);
-
-    /* TODO Sometimes bmi_ret is weird so check error_code as well */
-    if (bmi_ret < 0 && (error_code != 0)) {
-        NA_LOG_ERROR("BMI_testcontext failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    if (outcount && na_bmi_op_id) {
-        if ((error_code != 0) && (error_code != -BMI_ECANCEL)) {
-            NA_LOG_ERROR("BMI_testcontext failed, error code set");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
-        }
-
-        if (error_code == -BMI_ECANCEL) {
-            na_bmi_op_id->cancel |= NA_BMI_CANCEL_C;
-        }
-
-        switch (na_bmi_op_id->type) {
-            case NA_CB_RECV_UNEXPECTED:
-                NA_LOG_ERROR("Should not complete unexpected recv here");
-                break;
-            case NA_CB_SEND_UNEXPECTED:
-                ret = na_bmi_complete(na_bmi_op_id);
-                break;
-            case NA_CB_RECV_EXPECTED:
-                /* Set the actual size */
-                na_bmi_op_id->info.recv_expected.actual_size = bmi_actual_size;
-                ret = na_bmi_complete(na_bmi_op_id);
-                break;
-            case NA_CB_SEND_EXPECTED:
-                ret = na_bmi_complete(na_bmi_op_id);
-                break;
-            case NA_CB_PUT:
-                if (!hg_atomic_get32(
-                        &na_bmi_op_id->info.put.transfer_completed) &&
-                    na_bmi_op_id->info.put.transfer_op_id == bmi_op_id) {
-                    if (na_bmi_op_id->info.put.internal_progress) {
-                        hg_atomic_set32(
-                            &na_bmi_op_id->info.put.transfer_completed,
-                            NA_TRUE);
-                        /* Progress completion and send an ack after the put */
-                        ret = na_bmi_progress_rma_completion(na_bmi_op_id);
-                    } else {
-                        /* Nothing */
-                    }
-                } else if (na_bmi_op_id->info.put.completion_op_id ==
-                           bmi_op_id) {
-                    if (na_bmi_op_id->info.put.internal_progress) {
-                        hg_atomic_set32(&na_bmi_op_id->completed, 1);
-
-                        /* Transfer is now done so free RMA info */
-                        free(na_bmi_op_id->info.put.rma_info);
-                        na_bmi_op_id->info.put.rma_info = NULL;
-                        na_bmi_release(na_bmi_op_id);
-                    } else {
-                        /* Check ack completion flag */
-                        if (!na_bmi_op_id->info.put.completion_flag) {
-                            NA_LOG_ERROR(
-                                "Error during transfer, ack received is %u",
-                                na_bmi_op_id->info.put.completion_flag);
-                            ret = NA_PROTOCOL_ERROR;
-                            goto done;
-                        }
-                        /* No internal progress but actual put */
-                        ret = na_bmi_complete(na_bmi_op_id);
-                    }
-                } else if (na_bmi_op_id->info.put.request_op_id == bmi_op_id) {
-                    /* If request just completed, nothing to do, just ignore */
-                } else {
-                    NA_LOG_ERROR("Unexpected operation ID");
-                    ret = NA_PROTOCOL_ERROR;
-                    goto done;
-                }
-                break;
-            case NA_CB_GET:
-                if (na_bmi_op_id->info.get.transfer_op_id == bmi_op_id) {
-                    if (na_bmi_op_id->info.get.internal_progress) {
-                        hg_atomic_set32(&na_bmi_op_id->completed, 1);
-
-                        /* Transfer is now done so free RMA info */
-                        free(na_bmi_op_id->info.get.rma_info);
-                        na_bmi_op_id->info.get.rma_info = NULL;
-                        na_bmi_release(na_bmi_op_id);
-                    } else {
-                        /* No internal progress but actual get */
-                        ret = na_bmi_complete(na_bmi_op_id);
-                    }
-                } else if (na_bmi_op_id->info.get.request_op_id == bmi_op_id) {
-                    /* If request just completed, nothing to do, just ignore */
-                } else {
-                    NA_LOG_ERROR("Unexpected operation ID");
-                    ret = NA_PROTOCOL_ERROR;
-                    goto done;
-                }
-                break;
-            default:
-                NA_LOG_ERROR("Unknown type of operation ID");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-        }
-    } else {
-        ret = NA_TIMEOUT; /* No progress */
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
-    struct BMI_unexpected_info *unexpected_info)
-{
-    struct na_bmi_rma_info *na_bmi_rma_info = NULL;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
-    na_return_t ret = NA_SUCCESS;
-    int bmi_ret;
-
-    if (unexpected_info->size != sizeof(struct na_bmi_rma_info)) {
-        NA_LOG_ERROR("Unexpected message size does not match RMA info struct");
-        ret = NA_SIZE_ERROR;
-        goto done;
-    }
-    /* Allocate rma info */
-    na_bmi_rma_info =
-        (struct na_bmi_rma_info *) malloc(sizeof(struct na_bmi_rma_info));
-    if (!na_bmi_rma_info) {
-        NA_LOG_ERROR("Could not allocate NA BMI RMA info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    memcpy(na_bmi_rma_info, unexpected_info->buffer,
-        (size_t) unexpected_info->size);
-
-    /* Allocate na_op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    /* This is an internal operation so no user callback/arg */
-    na_bmi_op_id->context = context;
-    na_bmi_op_id->callback = NULL;
-    na_bmi_op_id->arg = NULL;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-
-    switch (na_bmi_rma_info->op) {
-        /* Remote wants to do a put so wait in a recv */
-        case NA_BMI_RMA_PUT:
-            na_bmi_op_id->type = NA_CB_PUT;
-            na_bmi_op_id->info.put.request_op_id = 0;
-            na_bmi_op_id->info.put.transfer_op_id = 0;
-            hg_atomic_set32(
-                &na_bmi_op_id->info.put.transfer_completed, NA_FALSE);
-            na_bmi_op_id->info.put.transfer_actual_size = 0;
-            na_bmi_op_id->info.put.completion_op_id = 0;
-            na_bmi_op_id->info.put.completion_flag = NA_FALSE;
-            na_bmi_op_id->info.put.completion_actual_size = 0;
-            na_bmi_op_id->info.put.internal_progress = NA_TRUE;
-            na_bmi_op_id->info.put.remote_addr = unexpected_info->addr;
-            na_bmi_op_id->info.put.rma_info = na_bmi_rma_info;
-            na_bmi_op_id->cancel = 0;
-
-            /* Start receiving data */
-            bmi_ret = BMI_post_recv(&na_bmi_op_id->info.put.transfer_op_id,
-                na_bmi_op_id->info.put.remote_addr,
-                (char *) na_bmi_rma_info->base + na_bmi_rma_info->disp,
-                na_bmi_rma_info->count,
-                &na_bmi_op_id->info.put.transfer_actual_size, BMI_EXT_ALLOC,
-                na_bmi_rma_info->transfer_tag, na_bmi_op_id, *bmi_context,
-                NULL);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_post_recv() failed");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
-
-            /* Immediate completion */
-            if (bmi_ret) {
-                hg_atomic_set32(
-                    &na_bmi_op_id->info.put.transfer_completed, NA_TRUE);
-                ret = na_bmi_progress_rma_completion(na_bmi_op_id);
-            }
-            break;
-            /* Remote wants to do a get so do a send */
-        case NA_BMI_RMA_GET:
-            na_bmi_op_id->type = NA_CB_GET;
-            na_bmi_op_id->info.get.request_op_id = 0;
-            na_bmi_op_id->info.get.transfer_op_id = 0;
-            na_bmi_op_id->info.get.transfer_actual_size = 0;
-            na_bmi_op_id->info.get.internal_progress = NA_TRUE;
-            na_bmi_op_id->info.get.remote_addr = unexpected_info->addr;
-            na_bmi_op_id->info.get.rma_info = na_bmi_rma_info;
-            na_bmi_op_id->cancel = 0;
-
-            /* Start sending data */
-            bmi_ret = BMI_post_send(&na_bmi_op_id->info.get.transfer_op_id,
-                na_bmi_op_id->info.get.remote_addr,
-                (char *) na_bmi_rma_info->base + na_bmi_rma_info->disp,
-                na_bmi_rma_info->count, BMI_EXT_ALLOC,
-                na_bmi_rma_info->transfer_tag, na_bmi_op_id, *bmi_context,
-                NULL);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_post_send() failed");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
-
-            if (bmi_ret) {
-                hg_atomic_set32(&na_bmi_op_id->completed, 1);
-
-                free(na_bmi_op_id->info.get.rma_info);
-                na_bmi_op_id->info.get.rma_info = NULL;
-                na_bmi_release(na_bmi_op_id);
-            }
-            break;
-        default:
-            NA_LOG_ERROR("Operation not supported");
-            ret = NA_INVALID_PARAM;
-            break;
-    }
-
-    BMI_unexpected_free(unexpected_info->addr, unexpected_info->buffer);
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
-        free(na_bmi_rma_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
-{
-    na_return_t ret = NA_SUCCESS;
-    struct na_bmi_rma_info *na_bmi_rma_info = NULL;
-    bmi_context_id *bmi_context =
-        (bmi_context_id *) na_bmi_op_id->context->plugin_context;
-    int bmi_ret;
-
-    /* Only use this to send an ack when the put completes */
-    if (na_bmi_op_id->type != NA_CB_PUT) {
-        NA_LOG_ERROR("Invalid operation ID type");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    na_bmi_rma_info = na_bmi_op_id->info.put.rma_info;
-    na_bmi_op_id->info.put.completion_flag = NA_TRUE;
-
-    /* Send an ack to tell the server that the data is here */
-    bmi_ret = BMI_post_send(&na_bmi_op_id->info.put.completion_op_id,
-        na_bmi_op_id->info.put.remote_addr,
-        &na_bmi_op_id->info.put.completion_flag, sizeof(na_bool_t),
-        BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
-        *bmi_context, NULL);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_post_send() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-    if (bmi_ret) {
-        hg_atomic_set32(&na_bmi_op_id->completed, 1);
-
-        free(na_bmi_op_id->info.put.rma_info);
-        na_bmi_op_id->info.put.rma_info = NULL;
-        na_bmi_release(na_bmi_op_id);
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Mark op id as completed */
-    hg_atomic_set32(&na_bmi_op_id->completed, 1);
-
-    /* Init callback info */
-    callback_info = &na_bmi_op_id->completion_data.callback_info;
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret =
-        ((na_bmi_op_id->cancel & NA_BMI_CANCEL_R) ? NA_CANCELED : ret);
-    callback_info->type = na_bmi_op_id->type;
-
-    switch (na_bmi_op_id->type) {
-        case NA_CB_SEND_UNEXPECTED:
-            break;
-        case NA_CB_RECV_UNEXPECTED: {
-            struct BMI_unexpected_info *unexpected_info = NULL;
-
-            unexpected_info =
-                na_bmi_op_id->info.recv_unexpected.unexpected_info;
-
-            if (unexpected_info) {
-                struct na_bmi_addr *na_bmi_addr = NULL;
-
-                /* Allocate addr */
-                na_bmi_addr =
-                    (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
-                if (!na_bmi_addr) {
-                    NA_LOG_ERROR("Could not allocate BMI addr");
-                    ret = NA_NOMEM_ERROR;
-                    goto done;
-                }
-
-                /* Copy buffer from bmi_unexpected_info */
-                if (unexpected_info->size >
-                    na_bmi_op_id->info.recv_unexpected.buf_size) {
-                    NA_LOG_ERROR("Buffer too small to recv unexpected data");
-                    free(na_bmi_addr);
-                    ret = NA_SIZE_ERROR;
-                    goto done;
-                }
-                memcpy(na_bmi_op_id->info.recv_unexpected.buf,
-                    unexpected_info->buffer, (size_t) unexpected_info->size);
-
-                na_bmi_addr->self = NA_FALSE;
-                na_bmi_addr->unexpected = NA_TRUE;
-                na_bmi_addr->bmi_addr = unexpected_info->addr;
-                hg_atomic_set32(&na_bmi_addr->ref_count, 1);
-
-                /* Fill callback info */
-                callback_info->info.recv_unexpected.actual_buf_size =
-                    (na_size_t) unexpected_info->size;
-                callback_info->info.recv_unexpected.source =
-                    (na_addr_t) na_bmi_addr;
-                callback_info->info.recv_unexpected.tag =
-                    (na_tag_t) unexpected_info->tag;
-
-                BMI_unexpected_free(
-                    unexpected_info->addr, unexpected_info->buffer);
-            } else {
-                /* In case of cancellation where no recv'd data */
-                callback_info->info.recv_unexpected.actual_buf_size = 0;
-                callback_info->info.recv_unexpected.source = NA_ADDR_NULL;
-                callback_info->info.recv_unexpected.tag = 0;
-            }
-        } break;
-        case NA_CB_SEND_EXPECTED:
-            break;
-        case NA_CB_RECV_EXPECTED:
-            /* Check buf_size and actual_size */
-            if (!(na_bmi_op_id->cancel & NA_BMI_CANCEL_R) &&
-                (na_bmi_op_id->info.recv_expected.actual_size >
-                    na_bmi_op_id->info.recv_expected.buf_size)) {
-                NA_LOG_ERROR("Expected recv size too large for buffer");
-                ret = NA_SIZE_ERROR;
-                goto done;
-            }
-            break;
-        case NA_CB_PUT:
-            /* Transfer is now done so free RMA info */
-            free(na_bmi_op_id->info.put.rma_info);
-            na_bmi_op_id->info.put.rma_info = NULL;
-            break;
-        case NA_CB_GET:
-            /* Transfer is now done so free RMA info */
-            free(na_bmi_op_id->info.get.rma_info);
-            na_bmi_op_id->info.get.rma_info = NULL;
-            break;
-        default:
-            NA_LOG_ERROR("Operation not supported");
-            ret = NA_INVALID_PARAM;
-            break;
-    }
-
-    na_bmi_op_id->completion_data.callback = na_bmi_op_id->callback;
-    na_bmi_op_id->completion_data.plugin_callback = na_bmi_release;
-    na_bmi_op_id->completion_data.plugin_callback_args = na_bmi_op_id;
-
-    ret = na_cb_completion_add(
-        na_bmi_op_id->context, &na_bmi_op_id->completion_data);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_release(void *arg)
-{
-    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
-
-    if (na_bmi_op_id && !hg_atomic_get32(&na_bmi_op_id->completed)) {
-        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
-    }
-    na_bmi_op_destroy(NULL, (na_op_id_t) na_bmi_op_id);
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
+na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
-    int bmi_ret;
+    hg_util_int32_t status;
 
-    if (hg_atomic_get32(&na_bmi_op_id->completed))
+    /* Exit if op has already completed */
+    status = hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_CANCELED);
+    if ((status & NA_BMI_OP_COMPLETED) || (status & NA_BMI_OP_ERRORED))
         goto done;
 
-    switch (na_bmi_op_id->type) {
+    NA_LOG_DEBUG("Canceling operation ID %p", (void *) na_bmi_op_id);
+
+    switch (na_bmi_op_id->completion_data.callback_info.type) {
         case NA_CB_SEND_UNEXPECTED:
-            bmi_ret = BMI_cancel(
-                na_bmi_op_id->info.send_unexpected.op_id, *bmi_context);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_cancel() failed");
-                ret = NA_PROTOCOL_ERROR;
-            }
-            na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
-            break;
-        case NA_CB_RECV_UNEXPECTED: {
-            struct na_bmi_op_id *na_bmi_pop_op_id = NULL;
-
-            /* Must remove op_id from unexpected op_id queue */
-            while (na_bmi_pop_op_id != na_bmi_op_id) {
-                na_bmi_pop_op_id = na_bmi_msg_unexpected_op_pop(na_class);
-
-                /* Push back unexpected op_id to queue if it does not match */
-                if (na_bmi_pop_op_id != na_bmi_op_id) {
-                    na_bmi_msg_unexpected_op_push(na_class, na_bmi_pop_op_id);
-                } else {
-                    na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
-                    na_bmi_complete(na_bmi_op_id);
-                }
-            }
-        } break;
         case NA_CB_SEND_EXPECTED:
-            bmi_ret = BMI_cancel(
-                na_bmi_op_id->info.send_expected.op_id, *bmi_context);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_cancel() failed");
-                ret = NA_PROTOCOL_ERROR;
-            }
-            na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
-            break;
         case NA_CB_RECV_EXPECTED:
-            bmi_ret = BMI_cancel(
-                na_bmi_op_id->info.recv_expected.op_id, *bmi_context);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_cancel() failed");
-                ret = NA_PROTOCOL_ERROR;
+            if (na_bmi_op_id->info.msg.op_id > 0) {
+                int bmi_ret = BMI_cancel(na_bmi_op_id->info.msg.op_id,
+                    NA_BMI_CONTEXT(context)->context_id);
+                NA_CHECK_ERROR(bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR,
+                    "BMI_cancel() failed");
             }
-            na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
             break;
+
+        case NA_CB_RECV_UNEXPECTED: {
+            struct na_bmi_op_queue *op_queue =
+                &NA_BMI_CLASS(na_class)->unexpected_op_queue;
+            na_bool_t canceled = NA_FALSE;
+
+            hg_thread_spin_lock(&op_queue->lock);
+            if (hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_QUEUED) {
+                HG_QUEUE_REMOVE(
+                    &op_queue->queue, na_bmi_op_id, na_bmi_op_id, entry);
+                hg_atomic_and32(&na_bmi_op_id->status, ~NA_BMI_OP_QUEUED);
+                canceled = NA_TRUE;
+            }
+            hg_thread_spin_unlock(&op_queue->lock);
+
+            if (canceled)
+                na_bmi_complete(na_bmi_op_id);
+        } break;
         case NA_CB_PUT:
-            /* cancel request (unexpected send) */
-            bmi_ret = 0;
-            bmi_ret |=
-                BMI_cancel(na_bmi_op_id->info.put.request_op_id, *bmi_context);
-
-            /* cancel put (expected send) */
-            bmi_ret |=
-                BMI_cancel(na_bmi_op_id->info.put.transfer_op_id, *bmi_context);
-
-            /* cancel ack (expected recv) */
-            bmi_ret |= BMI_cancel(
-                na_bmi_op_id->info.put.completion_op_id, *bmi_context);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_cancel() failed");
-                ret = NA_PROTOCOL_ERROR;
+            if (na_bmi_op_id->info.rma.ack_op_id > 0) {
+                int bmi_ret = BMI_cancel(na_bmi_op_id->info.rma.ack_op_id,
+                    NA_BMI_CONTEXT(context)->context_id);
+                NA_CHECK_ERROR(bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR,
+                    "BMI_cancel() failed");
             }
-            na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
-            break;
+            NA_FALLTHROUGH();
         case NA_CB_GET:
-            /* cancel request (unexpected send) */
-            bmi_ret = 0;
-
-            bmi_ret |=
-                BMI_cancel(na_bmi_op_id->info.get.request_op_id, *bmi_context);
-
-            /* cancel get (expected recv) */
-            bmi_ret |=
-                BMI_cancel(na_bmi_op_id->info.get.transfer_op_id, *bmi_context);
-            if (bmi_ret < 0) {
-                NA_LOG_ERROR("BMI_cancel() failed");
-                ret = NA_PROTOCOL_ERROR;
+            if (na_bmi_op_id->info.rma.msg_op_id > 0) {
+                int bmi_ret = BMI_cancel(na_bmi_op_id->info.rma.msg_op_id,
+                    NA_BMI_CONTEXT(context)->context_id);
+                NA_CHECK_ERROR(bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR,
+                    "BMI_cancel() failed");
             }
-            na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
+            if (na_bmi_op_id->info.rma.rma_op_id > 0) {
+                int bmi_ret = BMI_cancel(na_bmi_op_id->info.rma.rma_op_id,
+                    NA_BMI_CONTEXT(context)->context_id);
+                NA_CHECK_ERROR(bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR,
+                    "BMI_cancel() failed");
+            }
             break;
         default:
-            NA_LOG_ERROR("Operation not supported");
-            ret = NA_INVALID_PARAM;
-            break;
+            NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
+                "Operation type %d not supported",
+                na_bmi_op_id->completion_data.callback_info.type);
     }
 
 done:

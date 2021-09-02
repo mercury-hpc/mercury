@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -31,12 +31,27 @@ typedef OPA_int_t hg_atomic_int32_t;
 typedef OPA_ptr_t hg_atomic_int64_t; /* OPA has only limited 64-bit support */
 #    define HG_ATOMIC_VAR_INIT(x) OPA_PTR_T_INITIALIZER(x)
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
-#    include <stdatomic.h>
+#    ifndef __cplusplus
+#        include <stdatomic.h>
 typedef atomic_int hg_atomic_int32_t;
-#    if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
+#        if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
 typedef atomic_long hg_atomic_int64_t;
-#    else
+#        else
 typedef atomic_llong hg_atomic_int64_t;
+#        endif
+#    else
+#        include <atomic>
+typedef std::atomic_int hg_atomic_int32_t;
+#        if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
+typedef std::atomic_long hg_atomic_int64_t;
+#        else
+typedef std::atomic_llong hg_atomic_int64_t;
+#        endif
+using std::atomic_fetch_add_explicit;
+using std::atomic_thread_fence;
+using std::memory_order_acq_rel;
+using std::memory_order_acquire;
+using std::memory_order_release;
 #    endif
 #    define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
 #elif defined(__APPLE__)
@@ -423,8 +438,8 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
     ret = (compare_value == InterlockedCompareExchangeNoFence(
                                 &ptr->value, swap_value, compare_value));
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = (hg_util_bool_t)(
-        compare_value == OPA_cas_int(ptr, compare_value, swap_value));
+    ret = (hg_util_bool_t) (compare_value ==
+                            OPA_cas_int(ptr, compare_value, swap_value));
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_compare_exchange_strong_explicit(ptr, &compare_value,
         swap_value, memory_order_acq_rel, memory_order_acquire);
@@ -495,7 +510,7 @@ hg_atomic_incr64(hg_atomic_int64_t *ptr)
 #if defined(_WIN32)
     ret = InterlockedIncrementNoFence64(&ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = atomic_fetch_add_explicit(ptr, 1, memory_order_acq_rel) + 1;
+    ret = atomic_fetch_add_explicit(ptr, 1L, memory_order_acq_rel) + 1;
 #elif defined(__APPLE__)
     ret = OSAtomicIncrement64(&ptr->value);
 #else
@@ -517,7 +532,7 @@ hg_atomic_decr64(hg_atomic_int64_t *ptr)
 #if defined(_WIN32)
     ret = InterlockedDecrementNoFence64(&ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = atomic_fetch_sub_explicit(ptr, 1, memory_order_acq_rel) - 1;
+    ret = atomic_fetch_sub_explicit(ptr, 1L, memory_order_acq_rel) - 1;
 #elif defined(__APPLE__)
     ret = OSAtomicDecrement64(&ptr->value);
 #else
@@ -598,9 +613,9 @@ hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
     ret = (compare_value == InterlockedCompareExchangeNoFence64(
                                 &ptr->value, swap_value, compare_value));
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = (hg_util_bool_t)(
-        compare_value == (hg_util_int64_t) OPA_cas_ptr(
-                             ptr, (void *) compare_value, (void *) swap_value));
+    ret = (hg_util_bool_t) (compare_value == (hg_util_int64_t) OPA_cas_ptr(ptr,
+                                                 (void *) compare_value,
+                                                 (void *) swap_value));
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_compare_exchange_strong_explicit(ptr, &compare_value,
         swap_value, memory_order_acq_rel, memory_order_acquire);

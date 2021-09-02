@@ -1,7 +1,7 @@
-/*! @mainpage Mercury Documentation (Source Version @MERCURY_PACKAGE_VERSION@)
+/*! @mainpage Mercury Documentation (Source Version @MERCURY_VERSION_FULL@)
 
   @par Useful Mercury links:
-  @li Home: http://mcs.anl.gov/projects/mercury
+  @li Home: https://mercury-hpc.github.io/
   @li Mailing List: https://lists.mcs.anl.gov/mailman/listinfo/mercury
-  @li Dashboard: http://cdash.hdfgroup.org/index.php?project=MERCURY
+  @li Dashboard: https://mercury-cdash.hdfgroup.org/index.php?project=Mercury
  */

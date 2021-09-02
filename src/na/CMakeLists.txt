@@ -60,6 +60,8 @@ mark_as_advanced(NA_ALLOW_MULTI_PROGRESS)
 # External dependencies / NA plugins
 #------------------------------------------------------------------------------
 include(CheckIncludeFiles)
+include(CheckSymbolExists)
+include(CheckVariableExists)
 
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
@@ -156,6 +158,40 @@ if(NA_USE_OFI)
   )
 endif()
 
+# UCX
+option(NA_USE_UCX "Use UCX plugin." OFF)
+if(NA_USE_UCX)
+  find_package(UCX 1.9 REQUIRED)
+  message(STATUS "UCX include directory: ${UCX_INCLUDE_DIR}")
+  set(NA_PLUGINS ${NA_PLUGINS} ucx)
+  set(NA_HAS_UCX 1)
+  set(NA_INT_INCLUDE_DEPENDENCIES
+    ${NA_INT_INCLUDE_DEPENDENCIES}
+    ${UCX_INCLUDE_DIR}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${UCX_LIBRARIES}
+  )
+  # Additional cmake testing
+  set(CMAKE_REQUIRED_INCLUDES ${UCX_INCLUDE_DIR})
+  set(CMAKE_REQUIRED_LIBRARIES ${UCX_LIBRARIES})
+  if(CMAKE_BUILD_TYPE MATCHES "Tsan")
+    set(CMAKE_REQUIRED_FLAGS ${CMAKE_C_FLAGS_TSAN})
+  endif()
+
+  # Detect ucp_lib_query
+  check_symbol_exists(ucp_lib_query ucp/api/ucp.h NA_UCX_HAS_LIB_QUERY)
+  # Detect whether UCX has thread mode names
+  check_variable_exists(ucs_thread_mode_names NA_UCX_HAS_THREAD_MODE_NAMES)
+
+  unset(CMAKE_REQUIRED_INCLUDES)
+  unset(CMAKE_REQUIRED_LIBRARIES)
+  if(CMAKE_BUILD_TYPE MATCHES "Tsan")
+    unset(CMAKE_REQUIRED_FLAGS)
+  endif()
+endif()
+
 # SM
 option(NA_USE_SM "Use shared-memory plugin." ON)
 if(NA_USE_SM)
@@ -216,15 +252,10 @@ else()
   set(NA_LIBTYPE STATIC)
 endif()
 
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(NA_HAS_VERBOSE_ERROR 1)
-  if(MERCURY_ENABLE_DEBUG)
-    set(NA_HAS_DEBUG 1)
-  else()
-    set(NA_HAS_DEBUG 0)
-  endif()
+if(MERCURY_ENABLE_DEBUG)
+  set(NA_HAS_DEBUG 1)
 else()
-  set(NA_HAS_VERBOSE_ERROR 0)
+  set(NA_HAS_DEBUG 0)
 endif()
 
 configure_file(
@@ -268,12 +299,51 @@ if(NA_USE_OFI)
   )
 endif()
 
+if(NA_USE_UCX)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ucx.c
+  )
+endif()
+
 if(NA_HAS_SM)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.c
   )
 endif()
+
+#------------------------------------------------------------------------------
+# Specify project public header files to be installed
+#------------------------------------------------------------------------------
+set(NA_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_types.h
+)
+
+if(NA_HAS_MPI)
+  set(NA_PUBLIC_HEADERS
+    ${NA_PUBLIC_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
+  )
+endif()
+
+if(NA_HAS_SM)
+  set(NA_PUBLIC_HEADERS
+    ${NA_PUBLIC_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.h
+  )
+endif()
+
+#------------------------------------------------------------------------------
+# Specify project private header files
+#------------------------------------------------------------------------------
+set(NA_PRIVATE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
+)
 
 #----------------------------------------------------------------------------
 # Libraries
@@ -292,7 +362,9 @@ foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
 endforeach()
 
 # NA
-add_library(na ${NA_SRCS})
+add_library(na ${NA_SRCS}
+  ${NA_PRIVATE_HEADERS} ${NA_PUBLIC_HEADERS}
+)
 target_include_directories(na
   PUBLIC  "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
@@ -306,6 +378,9 @@ mercury_set_lib_options(na "na" ${NA_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)
 endif()
+set_target_properties(na PROPERTIES
+  PUBLIC_HEADER "${NA_PUBLIC_HEADERS}"
+)
 
 #---------------------------------------------------------------------------
 # Add Target(s) to CMake Install
@@ -317,42 +392,8 @@ install(
     ${NA_EXPORTED_TARGETS}
   LIBRARY DESTINATION ${NA_INSTALL_LIB_DIR}
   ARCHIVE DESTINATION ${NA_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${NA_INSTALL_INCLUDE_DIR}
   RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
-)
-
-#-----------------------------------------------------------------------------
-# Specify project header files to be installed
-#-----------------------------------------------------------------------------
-set(NA_HEADERS
-  ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_types.h
-)
-
-if(NA_HAS_MPI)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
-  )
-endif()
-
-if(NA_HAS_SM)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.h
-  )
-endif()
-
-#-----------------------------------------------------------------------------
-# Add file(s) to CMake Install
-#-----------------------------------------------------------------------------
-install(
-  FILES
-    ${NA_HEADERS}
-  DESTINATION
-    ${NA_INSTALL_INCLUDE_DIR}
-  COMPONENT
-    headers
 )
 
 #------------------------------------------------------------------------------

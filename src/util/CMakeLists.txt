@@ -15,9 +15,28 @@ set(MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
+include(CheckCSourceCompiles)
 include(CheckIncludeFiles)
 include(CheckSymbolExists)
 include(CheckTypeSize)
+
+# Check for __attribute__((constructor))
+check_c_source_compiles(
+  "
+  static void test_constructor(void) __attribute__((constructor));
+  int main(void) {return 0;}
+  "
+  HG_UTIL_HAS_ATTR_CONSTRUCTOR
+)
+
+# Check for __attribute__((constructor(priority)))
+check_c_source_compiles(
+  "
+  static void test_constructor(void) __attribute__((constructor(101)));
+  int main(void) {return 0;}
+  "
+  HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
+)
 
 # Threads
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
@@ -66,6 +85,13 @@ if(HG_UTIL_HAS_TIME_H)
   check_type_size(CLOCK_MONOTONIC_COARSE HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE)
 
   unset(CMAKE_EXTRA_INCLUDE_FILES)
+endif()
+
+# Debug
+if(MERCURY_ENABLE_DEBUG)
+  set(HG_UTIL_HAS_DEBUG 1)
+else()
+  set(HG_UTIL_HAS_DEBUG 0)
 endif()
 
 # Detect <sys/time.h>
@@ -130,12 +156,6 @@ else()
   set(MERCURY_UTIL_LIBTYPE STATIC)
 endif()
 
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(HG_UTIL_HAS_VERBOSE_ERROR 1)
-else()
-  set(HG_UTIL_HAS_VERBOSE_ERROR 0)
-endif()
-
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_config.h.in
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
@@ -146,10 +166,12 @@ configure_file(
 #------------------------------------------------------------------------------
 set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dlog.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
@@ -158,7 +180,43 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.c
+)
+
+#------------------------------------------------------------------------------
+# Specify project public header files to be installed
+#------------------------------------------------------------------------------
+set(MERCURY_UTIL_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dlog.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem_pool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_annotation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.h
+)
+
+#------------------------------------------------------------------------------
+# Specify project private header files
+#------------------------------------------------------------------------------
+set(MERCURY_UTIL_PRIVATE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
 )
 
 #----------------------------------------------------------------------------
@@ -173,7 +231,9 @@ foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
 endforeach()
 
 # UTIL
-add_library(mercury_util ${MERCURY_UTIL_SRCS})
+add_library(mercury_util ${MERCURY_UTIL_SRCS}
+  ${MERCURY_UTIL_PRIVATE_HEADERS} ${MERCURY_UTIL_PUBLIC_HEADERS}
+)
 if(THREADS_HAVE_PTHREAD_ARG)
   target_compile_options(mercury_util PUBLIC "${CMAKE_THREAD_LIBS_INIT}")
 endif()
@@ -189,6 +249,9 @@ mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_util)
 endif()
+set_target_properties(mercury_util PROPERTIES
+  PUBLIC_HEADER "${MERCURY_UTIL_PUBLIC_HEADERS}"
+)
 
 #---------------------------------------------------------------------------
 # Add Target(s) to CMake Install
@@ -200,44 +263,8 @@ install(
     ${MERCURY_EXPORTED_TARGETS}
   LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
   ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${MERCURY_INSTALL_INCLUDE_DIR}
   RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
-)
-
-#-----------------------------------------------------------------------------
-# Specify project header files to be installed
-#-----------------------------------------------------------------------------
-set(MERCURY_HEADERS
-  ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
-)
-
-#-----------------------------------------------------------------------------
-# Add file(s) to CMake Install
-#-----------------------------------------------------------------------------
-install(
-  FILES
-    ${MERCURY_HEADERS}
-  DESTINATION
-    ${MERCURY_INSTALL_INCLUDE_DIR}
-  COMPONENT
-    headers
 )
 
 #------------------------------------------------------------------------------

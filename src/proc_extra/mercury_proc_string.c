@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -9,6 +9,8 @@
  */
 
 #include "mercury_proc_string.h"
+
+#include <stdlib.h>
 
 /****************/
 /* Local Macros */

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -14,6 +14,8 @@
 #ifdef NA_HAS_MPI
 #    include "na_mpi.h"
 #endif
+
+#include "mercury_util.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -71,17 +73,15 @@ extern const char *na_test_opt_arg_g; /* flag argument (or value) */
 extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
-/* Default error log mask */
-#ifdef NA_HAS_VERBOSE_ERROR
-unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+/* Default log outlets */
+HG_LOG_SUBSYS_DECL_REGISTER(na_test, hg);
 
 /*---------------------------------------------------------------------------*/
 void
 na_test_usage(const char *execname)
 {
     printf("usage: %s [OPTIONS]\n", execname);
-    printf("    OPTIONS\n");
+    printf("    NA OPTIONS\n");
     printf("    -h, --help          Print a usage message and exit\n");
     printf("    -c, --comm          Select NA plugin\n"
            "                        NA plugins: bmi, mpi, cci, etc\n");
@@ -94,7 +94,6 @@ na_test_usage(const char *execname)
            "                        Default: any\n");
     printf("    -L, --listen        Listen for incoming messages\n");
     printf("    -S, --self_send     Send to self\n");
-    printf("    -a, --auth          Run auth key service\n");
     printf("    -k, --key           Pass auth key\n");
     printf("    -l, --loop          Number of loops (default: 1)\n");
     printf("    -b, --busy          Busy wait\n");
@@ -134,7 +133,7 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'H': /* hostname */
                 na_test_info->hostname = strdup(na_test_opt_arg_g);
                 break;
-            case 'P': /* hostname */
+            case 'P': /* port */
                 na_test_info->port = atoi(na_test_opt_arg_g);
                 break;
             case 'L': /* listen */
@@ -142,15 +141,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 's': /* static */
                 na_test_info->mpi_static = NA_TRUE;
-                if (na_test_info->protocol)
-                    free(na_test_info->protocol);
-                na_test_info->protocol = strdup("static");
                 break;
             case 'S': /* self */
                 na_test_info->self_send = NA_TRUE;
-                break;
-            case 'a': /* auth service */
-                na_test_info->auth = NA_TRUE;
                 break;
             case 'k': /* key */
                 na_test_info->key = strdup(na_test_opt_arg_g);
@@ -164,6 +157,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'C': /* number of contexts */
                 na_test_info->max_contexts =
                     (na_uint8_t) atoi(na_test_opt_arg_g);
+                break;
+            case 'Z': /* msg size */
+                na_test_info->max_msg_size = atoi(na_test_opt_arg_g);
                 break;
             case 'V': /* verbose */
                 na_test_info->verbose = NA_TRUE;
@@ -194,19 +190,19 @@ na_test_mpi_init(struct na_test_info *na_test_info)
 
     MPI_Initialized(&mpi_initialized);
     if (mpi_initialized) {
-        NA_LOG_WARNING("MPI was already initialized");
+        NA_TEST_LOG_WARNING("MPI was already initialized");
         goto done;
     }
     MPI_Finalized(&mpi_finalized);
     if (mpi_finalized) {
-        NA_LOG_ERROR("MPI was already finalized");
+        NA_TEST_LOG_ERROR("MPI was already finalized");
         goto done;
     }
 
 #    ifdef NA_MPI_HAS_GNI_SETUP
     /* Setup GNI job before initializing MPI */
     if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not setup GNI job");
+        NA_TEST_LOG_ERROR("Could not setup GNI job");
         return;
     }
 #    endif
@@ -215,7 +211,7 @@ na_test_mpi_init(struct na_test_info *na_test_info)
 
         MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
         if (provided != MPI_THREAD_MULTIPLE) {
-            NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
+            NA_TEST_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
         }
 
         /* Only if we do static MPMD MPI */
@@ -231,7 +227,7 @@ na_test_mpi_init(struct na_test_info *na_test_info)
             mpi_ret = MPI_Comm_split(
                 MPI_COMM_WORLD, color, global_rank, &na_test_info->mpi_comm);
             if (mpi_ret != MPI_SUCCESS) {
-                NA_LOG_ERROR("Could not split communicator");
+                NA_TEST_LOG_ERROR("Could not split communicator");
             }
 #    ifdef NA_HAS_MPI
             /* Set init comm that will be used to setup NA MPI */
@@ -273,7 +269,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
 
     info_string = (char *) malloc(sizeof(char) * NA_TEST_MAX_ADDR_NAME);
     if (!info_string) {
-        NA_LOG_ERROR("Could not allocate info string");
+        NA_TEST_LOG_ERROR("Could not allocate info string");
         ret = NA_NOMEM;
         goto done;
     }
@@ -302,38 +298,22 @@ na_test_gen_config(struct na_test_info *na_test_info)
         /* Enable CMA on systems with YAMA */
         if ((yama_val != '0') &&
             prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
-            NA_LOG_ERROR("Could not set ptracer\n");
+            NA_TEST_LOG_ERROR("Could not set ptracer\n");
             exit(1);
         }
 #endif
         if (na_test_info->listen) {
-            /* special-case SM (pid:id) */
+            /* special-case SM (pid/id) */
             sprintf(
                 info_string_ptr, "%d/%d", (int) getpid(), na_test_info->port);
         }
-    } else if ((strcmp("tcp", na_test_info->protocol) == 0) ||
-               (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0) ||
-               (strcmp("verbs", na_test_info->protocol) == 0) ||
-               (strcmp("psm2", na_test_info->protocol) == 0) ||
-               (strcmp("sockets", na_test_info->protocol) == 0)) {
-        if (!na_test_info->hostname) {
-            /* Nothing */
-        } else if (na_test_info->listen) {
-            sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
-                na_test_info->port + na_test_info->mpi_comm_rank);
-        } else
-            sprintf(info_string_ptr, "%s", na_test_info->hostname);
     } else if (strcmp("static", na_test_info->protocol) == 0) {
         /* Nothing */
     } else if (strcmp("dynamic", na_test_info->protocol) == 0) {
         /* Nothing */
-    } else if (strcmp("gni", na_test_info->protocol) == 0) {
+    } else if (na_test_info->hostname) {
         sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
             na_test_info->port + na_test_info->mpi_comm_rank);
-    } else {
-        NA_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
-        ret = NA_INVALID_ARG;
-        goto done;
     }
 
 done:
@@ -352,7 +332,7 @@ na_test_set_config(const char *addr_name)
 
     config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "w+");
     if (!config) {
-        NA_LOG_ERROR("Could not open config file from: %s",
+        NA_TEST_LOG_ERROR("Could not open config file from: %s",
             HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
@@ -368,12 +348,12 @@ na_test_get_config(char *addr_name, na_size_t len)
 
     config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "r");
     if (!config) {
-        NA_LOG_ERROR("Could not open config file from: %s",
+        NA_TEST_LOG_ERROR("Could not open config file from: %s",
             HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
     if (fgets(addr_name, (int) len, config) == NULL) {
-        NA_LOG_ERROR("Could not retrieve config name");
+        NA_TEST_LOG_ERROR("Could not retrieve config name");
         fclose(config);
         exit(1);
     }
@@ -389,6 +369,19 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     char *info_string = NULL;
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
+    const char *log_subsys = getenv("HG_LOG_SUBSYS");
+
+    if (!log_subsys) {
+        const char *log_level = getenv("HG_LOG_LEVEL");
+
+        /* Set log level */
+        if (!log_level)
+            log_level = "warning";
+
+        /* Set global log level */
+        NA_Set_log_level(log_level);
+        HG_Util_set_log_level(log_level);
+    }
 
     na_test_parse_options(argc, argv, na_test_info);
 
@@ -406,7 +399,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     /* Generate NA init string and get config options */
     info_string = na_test_gen_config(na_test_info);
     if (!info_string) {
-        NA_LOG_ERROR("Could not generate config string");
+        NA_TEST_LOG_ERROR("Could not generate config string");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -421,12 +414,16 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     }
     na_init_info.auth_key = na_test_info->key;
     na_init_info.max_contexts = na_test_info->max_contexts;
+    na_init_info.max_unexpected_size = (na_size_t) na_test_info->max_msg_size;
+    na_init_info.max_expected_size = (na_size_t) na_test_info->max_msg_size;
+    na_init_info.thread_mode =
+        na_test_info->use_threads ? 0 : NA_THREAD_MODE_SINGLE;
 
     printf("# Using info string: %s\n", info_string);
     na_test_info->na_class =
         NA_Initialize_opt(info_string, na_test_info->listen, &na_init_info);
     if (!na_test_info->na_class) {
-        NA_LOG_ERROR("Could not initialize NA");
+        NA_TEST_LOG_ERROR("Could not initialize NA");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -441,13 +438,13 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
             /* TODO only rank 0 */
             nret = NA_Addr_self(na_test_info->na_class, &self_addr);
             if (nret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not get self addr");
+                NA_TEST_LOG_ERROR("Could not get self addr");
             }
 
             nret = NA_Addr_to_string(na_test_info->na_class, addr_string,
                 &addr_string_len, self_addr);
             if (nret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not convert addr to string");
+                NA_TEST_LOG_ERROR("Could not convert addr to string");
             }
             NA_Addr_free(na_test_info->na_class, self_addr);
 
@@ -501,7 +498,7 @@ NA_Test_finalize(struct na_test_info *na_test_info)
 
     ret = NA_Finalize(na_test_info->na_class);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not finalize NA interface");
+        NA_TEST_LOG_ERROR("Could not finalize NA interface");
         goto done;
     }
     free(na_test_info->target_name);
@@ -537,5 +534,8 @@ NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info)
     MPI_Bcast(buf, count, MPI_BYTE, root, na_test_info->mpi_comm);
 #else
     (void) na_test_info;
+    (void) count;
+    (void) root;
+    (void) buf;
 #endif
 }

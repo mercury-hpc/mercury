@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -10,6 +10,7 @@
 
 #include "na_test.h"
 
+#include "mercury_poll.h"
 #include "mercury_request.h" /* For convenience */
 #include "mercury_time.h"
 
@@ -31,6 +32,8 @@ struct na_test_lat_info {
     na_context_t *context;
     hg_request_class_t *request_class;
     struct na_test_info na_test_info;
+    hg_poll_set_t *poll_set;
+    int fd;
 };
 
 struct na_test_source_recv_arg {
@@ -38,7 +41,7 @@ struct na_test_source_recv_arg {
     void *send_buf;
     void *send_buf_data;
     na_tag_t tag;
-    na_op_id_t send_op_id;
+    na_op_id_t *send_op_id;
     hg_request_t *request;
     struct na_test_lat_info *na_test_lat_info;
 };
@@ -77,6 +80,18 @@ na_test_request_progress(unsigned int timeout, void *arg)
     /* Safe to block */
     if (NA_Poll_try_wait(na_test_lat_info->na_class, na_test_lat_info->context))
         timeout_progress = timeout;
+
+    if (na_test_lat_info->poll_set && timeout_progress > 0) {
+        struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
+        unsigned int actual_events = 0;
+
+        hg_poll_wait(na_test_lat_info->poll_set, timeout_progress, 1,
+            &poll_event, &actual_events);
+        if (actual_events == 0)
+            return HG_UTIL_FAIL;
+
+        timeout_progress = 0;
+    }
 
     /* Progress */
     if (NA_Progress(na_test_lat_info->na_class, na_test_lat_info->context,
@@ -141,9 +156,9 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
         na_test_source_recv_arg->send_buf_data,
         na_cb_info->info.recv_unexpected.source, 0,
         na_cb_info->info.recv_unexpected.tag,
-        &na_test_source_recv_arg->send_op_id);
+        na_test_source_recv_arg->send_op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR(
+        NA_TEST_LOG_ERROR(
             "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
     }
 
@@ -171,8 +186,8 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
     struct na_test_source_recv_arg na_test_source_recv_arg = {0};
     char *send_buf = NULL, *recv_buf = NULL;
     void *send_buf_data, *recv_buf_data;
-    na_op_id_t send_op_id;
-    na_op_id_t recv_op_id;
+    na_op_id_t *send_op_id;
+    na_op_id_t *recv_op_id;
     hg_request_t *send_request = NULL;
     na_size_t unexpected_size =
         NA_Msg_get_max_unexpected_size(na_test_lat_info->na_class);
@@ -210,9 +225,9 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
         ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
             na_test_lat_info->context, na_test_recv_unexpected_cb,
             &na_test_source_recv_arg, recv_buf, unexpected_size, recv_buf_data,
-            &recv_op_id);
+            recv_op_id);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
+            NA_TEST_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
                 NA_Error_to_string(ret));
             goto done;
         }
@@ -245,6 +260,15 @@ main(int argc, char *argv[])
     na_test_lat_info.context = NA_Context_create(na_test_lat_info.na_class);
     na_test_lat_info.request_class = hg_request_init(
         na_test_request_progress, na_test_request_trigger, &na_test_lat_info);
+    na_test_lat_info.fd =
+        NA_Poll_get_fd(na_test_lat_info.na_class, na_test_lat_info.context);
+    if (na_test_lat_info.fd > 0) {
+        struct hg_poll_event poll_event = {
+            .events = HG_POLLIN, .data.ptr = NULL};
+        na_test_lat_info.poll_set = hg_poll_create();
+        hg_poll_add(
+            na_test_lat_info.poll_set, na_test_lat_info.fd, &poll_event);
+    }
 
     /* Process */
     na_test_loop_latency(&na_test_lat_info);
@@ -252,6 +276,10 @@ main(int argc, char *argv[])
     printf("Finalizing...\n");
 
     /* Finalize interface */
+    if (na_test_lat_info.fd > 0) {
+        hg_poll_remove(na_test_lat_info.poll_set, na_test_lat_info.fd);
+        hg_poll_destroy(na_test_lat_info.poll_set);
+    }
     hg_request_finalize(na_test_lat_info.request_class, NULL);
     NA_Context_destroy(na_test_lat_info.na_class, na_test_lat_info.context);
     NA_Test_finalize(&na_test_lat_info.na_test_info);

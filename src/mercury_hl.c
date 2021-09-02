@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -16,6 +16,9 @@
 /****************/
 /* Local Macros */
 /****************/
+
+/* Environment variable names (to be removed) */
+#define HG_PORT_NAME "MERCURY_PORT_NAME"
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -58,11 +61,6 @@ hg_request_class_t *HG_REQUEST_CLASS_DEFAULT = NULL;
 
 /* For convenience, register HG_Hl_finalize() */
 static hg_bool_t hg_atexit_g = HG_FALSE;
-
-/* Default error log mask */
-#ifdef HG_HAS_VERBOSE_ERROR
-unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
 
 /*---------------------------------------------------------------------------*/
 static int

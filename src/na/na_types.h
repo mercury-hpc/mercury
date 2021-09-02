@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -21,26 +21,53 @@
 
 typedef struct na_class na_class_t;     /* Opaque NA class */
 typedef struct na_context na_context_t; /* Opaque NA execution context */
-typedef void *na_addr_t;                /* Abstract NA address */
+typedef struct na_addr *na_addr_t;      /* Abstract NA address */
 typedef na_uint64_t na_size_t;          /* Size */
 typedef na_uint32_t na_tag_t;           /* Tag */
-typedef void *na_op_id_t;               /* Abstract operation id */
+typedef struct na_op_id na_op_id_t;     /* Opaque operation id */
 
-typedef void *na_mem_handle_t;   /* Abstract memory handle */
-typedef na_uint64_t na_offset_t; /* Offset */
+typedef struct na_mem_handle *na_mem_handle_t; /* Abstract memory handle */
+typedef na_uint64_t na_offset_t;               /* Offset */
 
 /* Init info */
 struct na_init_info {
-    const char *ip_subnet;     /* Preferred IP subnet */
-    const char *auth_key;      /* Authorization key */
-    na_uint32_t progress_mode; /* Progress mode */
-    na_uint8_t max_contexts;   /* Max contexts */
+    /* Preferred IP subnet to use. */
+    const char *ip_subnet;
+
+    /* Authorization key that can be used for communication. All processes
+     * should use the same key in order to communicate.
+     * NB. generation of keys is done through third-party libraries. */
+    const char *auth_key;
+
+    /* Max unexpected size hint that can be passed to control the size of
+     * unexpected messages. Note that the underlying plugin library may switch
+     * to different transfer protocols depending on the message size that is
+     * used. */
+    na_size_t max_unexpected_size;
+
+    /* Max expected size hint that can be passed to control the size of
+     * expected messages. Note that the underlying plugin library may switch
+     * to different transfer protocols depending on the message size that is
+     * used. */
+    na_size_t max_expected_size;
+
+    /* Progress mode flag. Setting NA_NO_BLOCK will force busy-spin on progress
+     * and remove any wait/notification calls. */
+    na_uint32_t progress_mode;
+
+    /* Maximum number of contexts that are expected to be created. */
+    na_uint8_t max_contexts;
+
+    /* Thread mode flags can be used to relax thread-safety when it is not
+     * needed. When setting NA_THREAD_MODE_SINGLE, only a single thread should
+     * access both NA classes and contexts at a time. */
+    na_uint8_t thread_mode;
 };
 
 /* Segment */
 struct na_segment {
-    na_ptr_t address; /* Address of the segment */
-    na_size_t size;   /* Size of the segment in bytes */
+    na_ptr_t base; /* Address of the segment */
+    na_size_t len; /* Size of the segment in bytes */
 };
 
 /* Return codes:
@@ -65,6 +92,7 @@ struct na_segment {
     X(NA_OPNOTSUPPORTED) /*!< operation not supported on endpoint */           \
     X(NA_ADDRINUSE)      /*!< address already in use */                        \
     X(NA_ADDRNOTAVAIL)   /*!< cannot assign requested address */               \
+    X(NA_HOSTUNREACH)    /*!< cannot reach host during operation */            \
     X(NA_TIMEOUT)        /*!< operation reached timeout */                     \
     X(NA_CANCELED)       /*!< operation canceled */                            \
     X(NA_RETURN_MAX)
@@ -74,14 +102,18 @@ typedef enum na_return { NA_RETURN_VALUES } na_return_t;
 #undef X
 
 /* Callback operation type */
-typedef enum na_cb_type {
-    NA_CB_SEND_UNEXPECTED, /*!< unexpected send callback */
-    NA_CB_RECV_UNEXPECTED, /*!< unexpected recv callback */
-    NA_CB_SEND_EXPECTED,   /*!< expected send callback */
-    NA_CB_RECV_EXPECTED,   /*!< expected recv callback */
-    NA_CB_PUT,             /*!< put callback */
-    NA_CB_GET              /*!< get callback */
-} na_cb_type_t;
+#define NA_CB_TYPES                                                            \
+    X(NA_CB_SEND_UNEXPECTED) /*!< unexpected send callback */                  \
+    X(NA_CB_RECV_UNEXPECTED) /*!< unexpected recv callback */                  \
+    X(NA_CB_SEND_EXPECTED)   /*!< expected send callback */                    \
+    X(NA_CB_RECV_EXPECTED)   /*!< expected recv callback */                    \
+    X(NA_CB_PUT)             /*!< put callback */                              \
+    X(NA_CB_GET)             /*!< get callback */                              \
+    X(NA_CB_MAX)
+
+#define X(a) a,
+typedef enum na_cb_type { NA_CB_TYPES } na_cb_type_t;
+#undef X
 
 /* Callback info structs */
 struct na_cb_info_recv_unexpected {
@@ -90,10 +122,15 @@ struct na_cb_info_recv_unexpected {
     na_tag_t tag;
 };
 
+struct na_cb_info_recv_expected {
+    na_size_t actual_buf_size;
+};
+
 /* Callback info struct */
 struct na_cb_info {
     union { /* Union of callback info structures */
         struct na_cb_info_recv_unexpected recv_unexpected;
+        struct na_cb_info_recv_expected recv_expected;
     } info;
     void *arg;         /* User data */
     na_cb_type_t type; /* Callback type */
@@ -109,8 +146,6 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /* Constant values */
 #define NA_ADDR_NULL       ((na_addr_t) 0)
-#define NA_OP_ID_NULL      ((na_op_id_t) 0)
-#define NA_OP_ID_IGNORE    ((na_op_id_t *) 1)
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t) 0)
 
 /* Max timeout */
@@ -134,10 +169,21 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_NO_BLOCK 0x01 /*!< no blocking progress */
 #define NA_NO_RETRY 0x02 /*!< no retry of operations in progress */
 
+/* Thread modes (default is thread-safe) */
+#define NA_THREAD_MODE_SINGLE_CLS                                              \
+    (0x01) /*!< only one thread will access class */
+#define NA_THREAD_MODE_SINGLE_CTX                                              \
+    (0x02) /*!< only one thread will access context */
+#define NA_THREAD_MODE_SINGLE                                                  \
+    (NA_THREAD_MODE_SINGLE_CLS | NA_THREAD_MODE_SINGLE_CTX)
+
 /* NA init info initializer */
 #define NA_INIT_INFO_INITIALIZER                                               \
+    (struct na_init_info)                                                      \
     {                                                                          \
-        NULL, NULL, 0, 1                                                       \
+        .ip_subnet = NULL, .auth_key = NULL, .max_unexpected_size = 0,         \
+        .max_expected_size = 0, .progress_mode = 0, .max_contexts = 1,         \
+        .thread_mode = 0                                                       \
     }
 
 #endif /* NA_TYPES_H */

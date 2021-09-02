@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -24,18 +24,18 @@
 /* MPI flags */
 #cmakedefine HG_TEST_HAS_PARALLEL
 #ifdef HG_TEST_HAS_PARALLEL
-#    cmakedefine MPIEXEC_EXECUTABLE "@MPIEXEC_EXECUTABLE@"
-#    cmakedefine MPIEXEC "@MPIEXEC@" /* For compatibility */
+#cmakedefine MPIEXEC_EXECUTABLE "@MPIEXEC_EXECUTABLE@"
+#cmakedefine MPIEXEC "@MPIEXEC@" /* For compatibility */
 #    ifndef MPIEXEC_EXECUTABLE
 #        define MPIEXEC_EXECUTABLE MPIEXEC
 #    endif
-#    cmakedefine MPIEXEC_NUMPROC_FLAG "@MPIEXEC_NUMPROC_FLAG@"
-#    cmakedefine MPIEXEC_PREFLAGS "@MPIEXEC_PREFLAGS@"
-#    cmakedefine MPIEXEC_POSTFLAGS "@MPIEXEC_POSTFLAGS@"
+#cmakedefine MPIEXEC_NUMPROC_FLAG "@MPIEXEC_NUMPROC_FLAG@"
+#cmakedefine MPIEXEC_PREFLAGS "@MPIEXEC_PREFLAGS@"
+#cmakedefine MPIEXEC_POSTFLAGS "@MPIEXEC_POSTFLAGS@"
 /* Server-specific flags if different */
-#    cmakedefine MPIEXEC_SERVER_PREFLAGS "@MPIEXEC_SERVER_PREFLAGS@"
-#    cmakedefine MPIEXEC_SERVER_POSTFLAGS "@MPIEXEC_SERVER_POSTFLAGS@"
-#    cmakedefine MPIEXEC_MAX_NUMPROCS (@MPIEXEC_MAX_NUMPROCS@)
+#cmakedefine MPIEXEC_SERVER_PREFLAGS "@MPIEXEC_SERVER_PREFLAGS@"
+#cmakedefine MPIEXEC_SERVER_POSTFLAGS "@MPIEXEC_SERVER_POSTFLAGS@"
+#cmakedefine MPIEXEC_MAX_NUMPROCS (@MPIEXEC_MAX_NUMPROCS@)
 #endif /* HG_TEST_HAS_PARALLEL */
 
 /* Timeout */
@@ -62,8 +62,6 @@
     } while (0)
 
 /* Test options */
-#cmakedefine HG_TEST_BUFFER_SIZE (@HG_TEST_BUFFER_SIZE@)
-#cmakedefine HG_TEST_MAX_HANDLES (@HG_TEST_MAX_HANDLES@)
 #cmakedefine HG_TEST_HAS_THREAD_POOL
 #cmakedefine HG_TEST_HAS_VERIFY_DATA
 #cmakedefine HG_TEST_PRINT_PARTIAL

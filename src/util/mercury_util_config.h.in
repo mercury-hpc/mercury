@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -76,6 +76,14 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 #    define HG_UTIL_INLINE __inline__
 #endif
 
+/* Check format arguments */
+#if defined(__GNUC__)
+#    define HG_UTIL_PRINTF_LIKE(_fmt, _firstarg)                               \
+        __attribute__((format(printf, _fmt, _firstarg)))
+#else
+#    define HG_UTIL_PRINTF_LIKE(_fmt, _firstarg)
+#endif
+
 /* Shared libraries */
 #cmakedefine HG_UTIL_BUILD_SHARED_LIBS
 #ifdef HG_UTIL_BUILD_SHARED_LIBS
@@ -90,11 +98,20 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 #    define HG_UTIL_PRIVATE
 #endif
 
+/* Define if has __attribute__((constructor)) */
+#cmakedefine HG_UTIL_HAS_ATTR_CONSTRUCTOR
+
+/* Define if has __attribute__((constructor(priority))) */
+#cmakedefine HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
+
 /* Define if has 'clock_gettime()' */
 #cmakedefine HG_UTIL_HAS_CLOCK_GETTIME
 
 /* Define if has CLOCK_MONOTONIC_COARSE */
 #cmakedefine HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE
+
+/* Define is has debug */
+#cmakedefine HG_UTIL_HAS_DEBUG
 
 /* Define if has eventfd_t type */
 #cmakedefine HG_UTIL_HAS_EVENTFD_T
@@ -134,8 +151,5 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 
 /* Define if has <time.h> */
 #cmakedefine HG_UTIL_HAS_TIME_H
-
-/* Define if has verbose error */
-#cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 
 #endif /* MERCURY_UTIL_CONFIG_H */

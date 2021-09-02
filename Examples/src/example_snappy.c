@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -13,10 +13,9 @@
 #include <snappy-c.h>
 #include <stdio.h>
 
-    /* wrapping a compression routine is a little different than a read or
-     * write, as one is transforming the data and needs to send it back to the
-     * initiator */
-
+/* wrapping a compression routine is a little different than a read or
+ * write, as one is transforming the data and needs to send it back to the
+ * initiator */
 
 /* Hold parameters for the bulk transfer callbacks */
 struct snappy_transfer_args {
@@ -58,28 +57,34 @@ static hg_return_t
 snappy_pull_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct snappy_transfer_args *snappy_transfer_args =
-            (struct snappy_transfer_args *) hg_cb_info->arg;
+        (struct snappy_transfer_args *) hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
     void *input;
     size_t input_length;
-    size_t source_length = HG_Bulk_get_size(snappy_transfer_args->local_input_bulk_handle);
+    size_t source_length =
+        HG_Bulk_get_size(snappy_transfer_args->local_input_bulk_handle);
 
     /* Get pointer to input buffer from local handle */
     HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0, source_length,
-            HG_BULK_READ_ONLY, 1, &input, &input_length, NULL);
+        HG_BULK_READ_ONLY, 1, &input, &input_length, NULL);
     printf("Transferred input buffer of length: %zu\n", input_length);
     print_buf(20, (int *) input);
 
     /* Allocate compressed buffer for compressing input data */
-    snappy_transfer_args->compressed_length = snappy_max_compressed_length(input_length);
-    snappy_transfer_args->compressed = malloc(snappy_transfer_args->compressed_length);
+    snappy_transfer_args->compressed_length =
+        snappy_max_compressed_length(input_length);
+    snappy_transfer_args->compressed =
+        malloc(snappy_transfer_args->compressed_length);
 
     /* Compress data */
     printf("Compressing buffer...\n");
-    snappy_transfer_args->ret = snappy_compress(input, input_length,
-            snappy_transfer_args->compressed, &snappy_transfer_args->compressed_length);
-    printf("Return value of snappy_compress is: %d\n", snappy_transfer_args->ret);
-    printf("Compressed buffer length is: %zu\n", snappy_transfer_args->compressed_length);
+    snappy_transfer_args->ret =
+        snappy_compress(input, input_length, snappy_transfer_args->compressed,
+            &snappy_transfer_args->compressed_length);
+    printf(
+        "Return value of snappy_compress is: %d\n", snappy_transfer_args->ret);
+    printf("Compressed buffer length is: %zu\n",
+        snappy_transfer_args->compressed_length);
     print_buf(5, (int *) snappy_transfer_args->compressed);
 
     /* Free bulk handles */
@@ -92,15 +97,17 @@ snappy_pull_cb(const struct hg_cb_info *hg_cb_info)
 
     /* Now set up bulk transfer for "push to origin" callback */
     HG_Bulk_create(HG_Get_info(snappy_transfer_args->handle)->hg_class, 1,
-            &snappy_transfer_args->compressed, &snappy_transfer_args->compressed_length,
-            HG_BULK_WRITE_ONLY, &snappy_transfer_args->local_compressed_bulk_handle);
+        &snappy_transfer_args->compressed,
+        &snappy_transfer_args->compressed_length, HG_BULK_READ_ONLY,
+        &snappy_transfer_args->local_compressed_bulk_handle);
 
     HG_Bulk_transfer(HG_Get_info(snappy_transfer_args->handle)->context,
-            snappy_push_cb, snappy_transfer_args,
-            HG_BULK_PUSH, HG_Get_info(snappy_transfer_args->handle)->addr,
-            snappy_transfer_args->snappy_compress_input.compressed_bulk_handle, 0, /* origin */
-            snappy_transfer_args->local_compressed_bulk_handle, 0, /* local */
-            snappy_transfer_args->compressed_length, HG_OP_ID_IGNORE);
+        snappy_push_cb, snappy_transfer_args, HG_BULK_PUSH,
+        HG_Get_info(snappy_transfer_args->handle)->addr,
+        snappy_transfer_args->snappy_compress_input.compressed_bulk_handle,
+        0,                                                     /* origin */
+        snappy_transfer_args->local_compressed_bulk_handle, 0, /* local */
+        snappy_transfer_args->compressed_length, HG_OP_ID_IGNORE);
 
     return ret;
 }
@@ -112,19 +119,20 @@ static hg_return_t
 snappy_push_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct snappy_transfer_args *snappy_transfer_args =
-            (struct snappy_transfer_args *) hg_cb_info->arg;
+        (struct snappy_transfer_args *) hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
     snappy_compress_out_t snappy_compress_output;
 
     /* Set output parameters to inform origin */
     snappy_compress_output.ret = snappy_transfer_args->ret;
-    snappy_compress_output.compressed_length = snappy_transfer_args->compressed_length;
+    snappy_compress_output.compressed_length =
+        snappy_transfer_args->compressed_length;
     printf("Transferred compressed buffer of length %zu\n",
-            snappy_transfer_args->compressed_length);
+        snappy_transfer_args->compressed_length);
 
     printf("Sending output parameters back to origin\n");
     HG_Respond(snappy_transfer_args->handle, snappy_compress_done_cb, NULL,
-            &snappy_compress_output);
+        &snappy_compress_output);
 
     /* Free bulk handles */
     printf("Freeing resources\n");
@@ -133,7 +141,7 @@ snappy_push_cb(const struct hg_cb_info *hg_cb_info)
 
     /* Free input */
     HG_Free_input(snappy_transfer_args->handle,
-            &snappy_transfer_args->snappy_compress_input);
+        &snappy_transfer_args->snappy_compress_input);
 
     /* Destroy handle (no longer need it, safe because of reference count) */
     HG_Destroy(snappy_transfer_args->handle);
@@ -162,8 +170,8 @@ snappy_compress_cb(hg_handle_t handle)
     struct snappy_transfer_args *snappy_transfer_args;
     size_t input_length;
 
-    snappy_transfer_args = (struct snappy_transfer_args *)
-            malloc(sizeof(struct snappy_transfer_args));
+    snappy_transfer_args = (struct snappy_transfer_args *) malloc(
+        sizeof(struct snappy_transfer_args));
     snappy_transfer_args->handle = handle;
 
     /* Get input parameters sent on origin through on HG_Forward() */
@@ -171,22 +179,22 @@ snappy_compress_cb(hg_handle_t handle)
 
     /* Now set up the bulk transfer and get the input length */
     input_length = HG_Bulk_get_size(
-            snappy_transfer_args->snappy_compress_input.input_bulk_handle);
+        snappy_transfer_args->snappy_compress_input.input_bulk_handle);
 
     /* The bulk 'handle' is basically a pointer, with the addition that 'handle'
      * could refer to more than one memory region. */
     HG_Bulk_create(HG_Get_info(handle)->hg_class, 1, NULL, &input_length,
-	    HG_BULK_READWRITE, &snappy_transfer_args->local_input_bulk_handle);
+        HG_BULK_READWRITE, &snappy_transfer_args->local_input_bulk_handle);
 
     /* Pull data from origin's memory into our own */
     /* Another way to do this is via HG_Bulk_access, which would allow mercury,
      * if "co-resident" to avoid a copy of data */
-    HG_Bulk_transfer(HG_Get_info(handle)->context,
-            snappy_pull_cb, snappy_transfer_args,
-            HG_BULK_PULL, HG_Get_info(handle)->addr,
-            snappy_transfer_args->snappy_compress_input.input_bulk_handle, 0, /* origin */
-            snappy_transfer_args->local_input_bulk_handle, 0, /* local */
-            input_length, HG_OP_ID_IGNORE);
+    HG_Bulk_transfer(HG_Get_info(handle)->context, snappy_pull_cb,
+        snappy_transfer_args, HG_BULK_PULL, HG_Get_info(handle)->addr,
+        snappy_transfer_args->snappy_compress_input.input_bulk_handle,
+        0,                                                /* origin */
+        snappy_transfer_args->local_input_bulk_handle, 0, /* local */
+        input_length, HG_OP_ID_IGNORE);
 
     return HG_SUCCESS;
 }
@@ -194,6 +202,6 @@ snappy_compress_cb(hg_handle_t handle)
 hg_id_t
 snappy_compress_register(hg_class_t *hg_class)
 {
-    return MERCURY_REGISTER(hg_class, "snappy_compress",
-            snappy_compress_in_t, snappy_compress_out_t, snappy_compress_cb);
+    return MERCURY_REGISTER(hg_class, "snappy_compress", snappy_compress_in_t,
+        snappy_compress_out_t, snappy_compress_cb);
 }
