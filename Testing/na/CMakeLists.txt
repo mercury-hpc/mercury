@@ -64,7 +64,7 @@ endfunction()
 # na_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
 add_library(na_test STATIC na_test.c na_test_getopt.c)
-target_link_libraries(na_test na ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
+target_link_libraries(na_test na mercury ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na_test)
 endif()

@@ -57,6 +57,10 @@
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
 
+/* PVAR profiling support */
+#include "../mercury_types.h"
+#include "../mercury_prof_pvar_impl.h"
+
 #include <rdma/fabric.h>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_domain.h>
@@ -188,6 +192,12 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_CQ_DEPTH (8192)
 /* CQ max err data size (fix to 48 to work around bug in gni provider code) */
 #define NA_OFI_CQ_MAX_ERR_DATA_SIZE (48)
+
+/* Number of retries when receiving FI_EINTR error */
+#define NA_OFI_MAX_EINTR_RETRY (1000)
+/* The magic number for na_ofi_op_id verification */
+#define NA_OFI_OP_ID_MAGIC_1    (0x1928374655627384ULL)
+#define NA_OFI_OP_ID_MAGIC_2    (0x8171615141312111ULL)
 
 /* The predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -2259,8 +2269,8 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
     if (na_ofi_domain->prov_type == NA_OFI_PROV_GNI) {
-        int32_t enable = 1;
-#    ifdef NA_OFI_GNI_HAS_UDREG
+        int enable = 1;
+# ifdef NA_OFI_GNI_HAS_UDREG
         char *other_reg_type = "udreg";
         int32_t udreg_limit = NA_OFI_GNI_UDREG_REG_LIMIT;
 
@@ -5242,6 +5252,8 @@ na_ofi_progress(
         hg_time_get_current_ms(&now);
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_na_ofi_completion_count);
+
     do {
         struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
         fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM] = {FI_ADDR_UNSPEC};
@@ -5275,6 +5287,8 @@ na_ofi_progress(
         /* Read from CQ and process events */
         ret = na_ofi_cq_read(context, NA_OFI_CQ_EVENT_NUM, cq_events, src_addrs,
             &src_err_addr_ptr, &src_err_addrlen, &actual_count);
+	HG_PROF_PVAR_UINT_COUNTER_SET(hg_pvar_hg_na_ofi_completion_count, actual_count);
+        
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, error, ret, "Could not read events from context CQ");
 

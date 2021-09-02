@@ -851,6 +851,18 @@ HG_Core_trigger(hg_core_context_t *context, unsigned int timeout,
     unsigned int max_count, unsigned int *actual_count);
 
 /**
+ * Get PVAR data associated with the core handle
+ *
+ * \param index [IN]            PVAR index
+ * \param handle [IN]           core handle
+ * \param buf [OUT]             buffer containing PVAR data
+ *
+ * \return void
+ */
+HG_PUBLIC void
+HG_Core_get_handle_pvar_data(int index, hg_core_handle_t handle, void *buf);
+
+/**
  * Cancel an ongoing operation.
  *
  * \param handle [IN]           HG handle
