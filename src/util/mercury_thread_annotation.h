@@ -13,7 +13,7 @@
 
 /* Enable thread safety attributes only with clang.
  * The attributes can be safely erased when compiling with other compilers. */
-#if defined(__clang__)
+#if defined(__clang__) && (__clang_major__ > 3)
 #    define HG_THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
 #else
 #    define HG_THREAD_ANNOTATION_ATTRIBUTE__(x) // no-op

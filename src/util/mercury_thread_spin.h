@@ -24,7 +24,7 @@ typedef pthread_spinlock_t HG_LOCK_CAPABILITY("spin") hg_thread_spin_t;
 #else
 /* Default to hg_thread_mutex_t if pthread_spinlock_t is not supported */
 #    include "mercury_thread_mutex.h"
-typedef hg_thread_mutex_t HG_LOCK_CAPABILITY("spin") hg_thread_spin_t;
+typedef hg_thread_mutex_t HG_LOCK_CAPABILITY("mutex") hg_thread_spin_t;
 #endif
 
 #ifdef __cplusplus
