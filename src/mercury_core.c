@@ -75,7 +75,7 @@
 #define HG_CORE_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, size)    \
     do {                                                                       \
         HG_CHECK_ERROR(buf_size_left < size, label, ret, HG_OVERFLOW,          \
-            "Buffer size too small (%zu)", buf_size_left);                     \
+            "Buffer size too small (%" PRIu64 ")", buf_size_left);             \
         memcpy(buf_ptr, data, size);                                           \
         buf_ptr += size;                                                       \
         buf_size_left -= size;                                                 \
@@ -88,7 +88,7 @@
 #define HG_CORE_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, size)    \
     do {                                                                       \
         HG_CHECK_ERROR(buf_size_left < size, label, ret, HG_OVERFLOW,          \
-            "Buffer size too small (%zu)", buf_size_left);                     \
+            "Buffer size too small (%" PRIu64 ")", buf_size_left);             \
         memcpy(data, buf_ptr, size);                                           \
         buf_ptr += size;                                                       \
         buf_size_left -= size;                                                 \
@@ -1130,7 +1130,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
             "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
 
 #ifdef NA_HAS_SM
-        if (context->core_context.na_sm_context) {
+        if (hg_core_class->na_sm_class && context->core_context.na_sm_context) {
             na_poll_fd = NA_Poll_get_fd(hg_core_class->na_sm_class,
                 context->core_context.na_sm_context);
             HG_CHECK_ERROR(na_poll_fd < 0, error, ret, HG_PROTOCOL_ERROR,
@@ -2043,8 +2043,10 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
             "Could not serialize NA SM address (%s)",
             NA_Error_to_string(na_ret));
+        /*
         buf_ptr += hg_core_addr->na_sm_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_sm_addr_serialize_size;
+*/
     } else {
         na_size_t na_sm_addr_serialize_size = 0;
 
@@ -2105,9 +2107,10 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
             "Could not deserialize NA SM address (%s)",
             NA_Error_to_string(na_ret));
+        /*
         buf_ptr += hg_core_addr->na_sm_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_sm_addr_serialize_size;
-
+        */
         is_self &= NA_Addr_is_self(hg_core_class->core_class.na_class,
             hg_core_addr->core_addr.na_addr);
     }
@@ -2819,7 +2822,7 @@ hg_core_respond(struct hg_core_private_handle *hg_core_handle,
     hg_core_handle->response_arg = arg;
 
     /* Set header */
-    hg_core_handle->out_header.msg.response.ret_code = ret_code;
+    hg_core_handle->out_header.msg.response.ret_code = (hg_int8_t) ret_code;
     hg_core_handle->out_header.msg.response.flags = flags;
     hg_core_handle->out_header.msg.response.cookie = hg_core_handle->cookie;
 
@@ -3107,7 +3110,8 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         hg_core_handle->in_buf_used =
             na_cb_info_recv_unexpected->actual_buf_size;
 
-        HG_LOG_DEBUG("Processing input for handle %p, tag=%u, buf_size=%zu",
+        HG_LOG_DEBUG(
+            "Processing input for handle %p, tag=%u, buf_size=%" PRIu64,
             (void *) hg_core_handle, hg_core_handle->tag,
             hg_core_handle->in_buf_used);
 
@@ -4775,8 +4779,8 @@ HG_Core_addr_get_serialize_size(hg_core_addr_t addr, unsigned long flags)
     ret = hg_core_addr_get_serialize_size(
         (struct hg_core_private_addr *) addr, flags & 0xff);
 
-    HG_LOG_DEBUG(
-        "Serialize size is %zu bytes for address (%p)", ret, (void *) addr);
+    HG_LOG_DEBUG("Serialize size is %" PRIu64 " bytes for address (%p)", ret,
+        (void *) addr);
 
 done:
     return ret;
@@ -5033,8 +5037,8 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     HG_CHECK_ERROR(
         handle->info.id == 0, done, ret, HG_INVALID_ARG, "NULL RPC ID");
 
-    HG_LOG_DEBUG("Forwarding handle (%p), payload size is %zu", (void *) handle,
-        payload_size);
+    HG_LOG_DEBUG("Forwarding handle (%p), payload size is %" PRIu64,
+        (void *) handle, payload_size);
 
     ret = hg_core_forward((struct hg_core_private_handle *) handle, callback,
         arg, flags, payload_size);
@@ -5054,7 +5058,7 @@ HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     HG_CHECK_ERROR(handle == HG_CORE_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG core handle");
 
-    HG_LOG_DEBUG("Responding on handle (%p), payload size is %zu",
+    HG_LOG_DEBUG("Responding on handle (%p), payload size is %" PRIu64,
         (void *) handle, payload_size);
 
     /* Explicit response return code is always success here */

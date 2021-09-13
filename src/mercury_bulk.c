@@ -44,7 +44,7 @@
 #define HG_BULK_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, size)    \
     do {                                                                       \
         HG_CHECK_ERROR(buf_size_left < size, label, ret, HG_OVERFLOW,          \
-            "Buffer size too small (%zu)", buf_size_left);                     \
+            "Buffer size too small (%" PRIu64 ")", buf_size_left);             \
         memcpy(buf_ptr, data, size);                                           \
         buf_ptr += size;                                                       \
         buf_size_left -= size;                                                 \
@@ -62,7 +62,7 @@
 #define HG_BULK_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, size)    \
     do {                                                                       \
         HG_CHECK_ERROR(buf_size_left < size, label, ret, HG_OVERFLOW,          \
-            "Buffer size too small (%zu)", buf_size_left);                     \
+            "Buffer size too small (%" PRIu64 ")", buf_size_left);             \
         memcpy(data, buf_ptr, size);                                           \
         buf_ptr += size;                                                       \
         buf_size_left -= size;                                                 \
@@ -574,7 +574,8 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
         }
     }
 
-    HG_LOG_DEBUG("Creating bulk handle with %u segment(s), len is %zu bytes",
+    HG_LOG_DEBUG("Creating bulk handle with %u segment(s), len is %" PRIu64
+                 " bytes",
         hg_bulk->desc.info.segment_count, hg_bulk->desc.info.len);
 
     /* Query max segment limit that NA plugin can handle */
@@ -1066,7 +1067,8 @@ hg_bulk_serialize(
         desc_info.flags &= (~HG_BULK_SM & 0xff);
 #endif
 
-    HG_LOG_DEBUG("Serializing bulk handle with %u segment(s), len is %zu bytes",
+    HG_LOG_DEBUG("Serializing bulk handle with %u segment(s), len is %" PRIu64
+                 " bytes",
         hg_bulk->desc.info.segment_count, hg_bulk->desc.info.len);
 
     /* Descriptor info */
@@ -1258,8 +1260,8 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
     HG_BULK_DECODE(error, ret, buf_ptr, buf_size_left, &hg_bulk->desc.info,
         struct hg_bulk_desc_info);
 
-    HG_LOG_DEBUG(
-        "Deserializing bulk handle with %u segment(s), len is %zu bytes",
+    HG_LOG_DEBUG("Deserializing bulk handle with %u segment(s), len is %" PRIu64
+                 " bytes",
         hg_bulk->desc.info.segment_count, hg_bulk->desc.info.len);
 
 #ifdef NA_HAS_SM
@@ -2657,9 +2659,8 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, unsigned long flags)
 
     ret = hg_bulk_get_serialize_size((struct hg_bulk *) handle, flags & 0xff);
 
-    HG_LOG_DEBUG(
-        "Serialize size with flags eager=%d, sm=%d, is %zu bytes for bulk "
-        "handle (%p)",
+    HG_LOG_DEBUG("Serialize size with flags eager=%d, sm=%d, is %" PRIu64
+                 " bytes for bulk handle (%p)",
         (flags & HG_BULK_EAGER) ? HG_TRUE : HG_FALSE,
         (flags & HG_BULK_SM) ? HG_TRUE : HG_FALSE, ret, (void *) handle);
 
@@ -2728,7 +2729,8 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         "NULL origin handle passed");
     HG_CHECK_ERROR((origin_offset + size) > hg_bulk_origin->desc.info.len, done,
         ret, HG_INVALID_ARG,
-        "Exceeding size of memory exposed by origin handle (%zu + %zu > %zu)",
+        "Exceeding size of memory exposed by origin handle (%" PRIu64
+        " + %" PRIu64 " > %" PRIu64 ")",
         origin_offset, size, hg_bulk_origin->desc.info.len);
     HG_CHECK_ERROR(hg_bulk_origin->addr != HG_CORE_ADDR_NULL, done, ret,
         HG_INVALID_ARG,
@@ -2740,7 +2742,8 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         "NULL origin handle passed");
     HG_CHECK_ERROR((local_offset + size) > hg_bulk_local->desc.info.len, done,
         ret, HG_INVALID_ARG,
-        "Exceeding size of memory exposed by local handle (%zu + %zu > %zu)",
+        "Exceeding size of memory exposed by local handle (%" PRIu64
+        " + %" PRIu64 " > %" PRIu64 ")",
         local_offset, size, hg_bulk_local->desc.info.len);
 
     /* Check permission flags */
@@ -2780,7 +2783,8 @@ HG_Bulk_bind_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         "NULL origin handle passed");
     HG_CHECK_ERROR((origin_offset + size) > hg_bulk_origin->desc.info.len, done,
         ret, HG_INVALID_ARG,
-        "Exceeding size of memory exposed by origin handle (%zu + %zu > %zu)",
+        "Exceeding size of memory exposed by origin handle (%" PRIu64
+        " + %" PRIu64 " > %" PRIu64 ")",
         origin_offset, size, hg_bulk_origin->desc.info.len);
     HG_CHECK_ERROR(hg_bulk_origin->addr == HG_CORE_ADDR_NULL, done, ret,
         HG_INVALID_ARG,
@@ -2792,7 +2796,8 @@ HG_Bulk_bind_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         "NULL origin handle passed");
     HG_CHECK_ERROR((local_offset + size) > hg_bulk_local->desc.info.len, done,
         ret, HG_INVALID_ARG,
-        "Exceeding size of memory exposed by local handle (%zu + %zu > %zu)",
+        "Exceeding size of memory exposed by local handle (%" PRIu64
+        " + %" PRIu64 " > %" PRIu64 ")",
         local_offset, size, hg_bulk_local->desc.info.len);
 
     /* Check permission flags */
@@ -2832,7 +2837,8 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
         "NULL origin handle passed");
     HG_CHECK_ERROR((origin_offset + size) > hg_bulk_origin->desc.info.len, done,
         ret, HG_INVALID_ARG,
-        "Exceeding size of memory exposed by origin handle (%zu + %zu > %zu)",
+        "Exceeding size of memory exposed by origin handle (%" PRIu64
+        " + %" PRIu64 " > %" PRIu64 ")",
         origin_offset, size, hg_bulk_origin->desc.info.len);
     HG_CHECK_ERROR(hg_bulk_origin->addr != HG_CORE_ADDR_NULL, done, ret,
         HG_INVALID_ARG,
@@ -2844,7 +2850,8 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
         "NULL origin handle passed");
     HG_CHECK_ERROR((local_offset + size) > hg_bulk_local->desc.info.len, done,
         ret, HG_INVALID_ARG,
-        "Exceeding size of memory exposed by local handle (%zu + %zu > %zu)",
+        "Exceeding size of memory exposed by local handle (%" PRIu64
+        " + %" PRIu64 " > %" PRIu64 ")",
         local_offset, size, hg_bulk_local->desc.info.len);
 
     /* Check permission flags */

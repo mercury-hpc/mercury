@@ -1641,7 +1641,8 @@ HG_Create(
         context->core_context, (hg_core_addr_t) addr, id, &core_handle);
     if (ret == HG_NOENTRY)
         goto done; /* silence error if invalid ID is used */
-    HG_CHECK_HG_ERROR(done, ret, "Cannot create HG handle with ID %lu (%s)", id,
+    HG_CHECK_HG_ERROR(done, ret,
+        "Cannot create HG handle with ID %" PRIu64 " (%s)", id,
         HG_Error_to_string(ret));
 
     /* Get data and HG info */

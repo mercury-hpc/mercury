@@ -60,8 +60,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
 
             /* Try to make everything fit in an eager buffer */
             if (hg_proc_get_flags(proc) & HG_PROC_BULK_EAGER) {
-                HG_LOG_DEBUG(
-                    "Proc size left is %zu bytes", hg_proc_get_size_left(proc));
+                HG_LOG_DEBUG("Proc size left is %" PRIu64 " bytes",
+                    hg_proc_get_size_left(proc));
                 buf_size = HG_Bulk_get_serialize_size(
                     *bulk_ptr, HG_BULK_EAGER | flags);
 
@@ -75,7 +75,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             } else /* We must recompute the serialize size without eager flag */
                 buf_size = HG_Bulk_get_serialize_size(*bulk_ptr, flags);
 
-            HG_LOG_DEBUG("Serialize size for bulk handle is %zu", buf_size);
+            HG_LOG_DEBUG(
+                "Serialize size for bulk handle is %" PRIu64, buf_size);
 
             /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);

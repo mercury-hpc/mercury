@@ -243,7 +243,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
                   (char *) hg_proc->current_buf->buf;
 
     /* Get one more page size buf */
-    new_buf_size = ((hg_size_t)(req_buf_size / page_size) + 1) * page_size;
+    new_buf_size = ((hg_size_t) (req_buf_size / page_size) + 1) * page_size;
     HG_CHECK_ERROR(new_buf_size <= hg_proc_get_size(proc), error, ret,
         HG_INVALID_ARG, "Buffer is already of the size requested");
 
@@ -255,7 +255,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     } else
         new_buf = realloc(hg_proc->extra_buf.buf, new_buf_size);
     HG_CHECK_ERROR(new_buf == NULL, error, ret, HG_NOMEM,
-        "Could not allocate buffer of size %zu", new_buf_size);
+        "Could not allocate buffer of size %" PRIu64, new_buf_size);
 
     if (!hg_proc->extra_buf.buf) {
         /* Copy proc_buf (should be small) */
@@ -304,7 +304,7 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
     hg_proc->current_buf->size_left -= data_size;
 #ifdef HG_HAS_XDR
     cur_pos = xdr_getpos(&hg_proc->current_buf->xdr);
-    xdr_setpos(&hg_proc->current_buf->xdr, (hg_uint32_t)(cur_pos + data_size));
+    xdr_setpos(&hg_proc->current_buf->xdr, (hg_uint32_t) (cur_pos + data_size));
 #endif
 
 done:
@@ -344,7 +344,7 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
     HG_CHECK_ERROR(hg_proc->extra_buf.buf == NULL, done, ret, HG_INVALID_ARG,
         "Extra buf is not set");
 
-    hg_proc->extra_buf.is_mine = (hg_bool_t)(!theirs);
+    hg_proc->extra_buf.is_mine = (hg_bool_t) (!theirs);
 
 done:
     return ret;
