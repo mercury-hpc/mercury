@@ -232,7 +232,7 @@ hg_mem_pool_alloc(
     struct hg_mem_pool *hg_mem_pool, size_t size, void **mr_handle)
 {
     struct hg_mem_pool_block *hg_mem_pool_block;
-    struct hg_mem_pool_chunk *hg_mem_pool_chunk;
+    struct hg_mem_pool_chunk *hg_mem_pool_chunk = NULL;
     void *mem_ptr = NULL;
 
     HG_UTIL_CHECK_ERROR(size > hg_mem_pool->chunk_size, done, mem_ptr, NULL,

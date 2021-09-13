@@ -407,8 +407,8 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     timeout_spec.tv_sec = ld.quot;
     timeout_spec.tv_nsec = ld.rem * 1000000L;
 
-    nfds = kevent(
-        poll_set->fd, NULL, 0, poll_set->events, max_events, &timeout_spec);
+    nfds = kevent(poll_set->fd, NULL, 0, poll_set->events, max_poll_events,
+        &timeout_spec);
     HG_UTIL_CHECK_ERROR(nfds == -1 && errno != EINTR, done, ret, HG_UTIL_FAIL,
         "kevent() failed (%s)", strerror(errno));
 
@@ -422,7 +422,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
 
     for (i = 0; i < nfds; ++i) {
         events[i].events = 0;
-        events[i].data.ptr = (hg_util_uint64_t) poll_set->events[i].udata;
+        events[i].data.ptr = poll_set->events[i].udata;
 
         if (poll_set->events[i].flags & EVFILT_READ)
             events[i].events |= HG_POLLIN;
