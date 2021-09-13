@@ -150,7 +150,7 @@ static const char *const na_ofi_prov_alt_name[] = {NA_OFI_PROV_TYPES};
 static na_uint32_t const na_ofi_prov_addr_format[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g) e,
-static unsigned long const na_ofi_prov_progress[] = {NA_OFI_PROV_TYPES};
+static enum fi_progress const na_ofi_prov_progress[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g) f,
 static unsigned long const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
@@ -1520,32 +1520,34 @@ na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len)
         case FI_SOCKADDR_IN:
             NA_CHECK_SUBSYS_ERROR_NORET(addr,
                 len != sizeof(struct na_ofi_sin_addr), out,
-                "Addr len (%zu) does not match for FI_SOCKADDR_IN (%zu)", len,
-                sizeof(struct na_ofi_sin_addr));
+                "Addr len (%" PRIu64
+                ") does not match for FI_SOCKADDR_IN (%zu)",
+                len, sizeof(struct na_ofi_sin_addr));
             return na_ofi_sin_to_key((const struct na_ofi_sin_addr *) addr);
         case FI_SOCKADDR_IN6:
             NA_CHECK_SUBSYS_ERROR_NORET(addr,
                 len != sizeof(struct na_ofi_sin6_addr), out,
-                "Addr len (%zu) does not match for FI_SOCKADDR_IN6 (%zu)", len,
-                sizeof(struct na_ofi_sin6_addr));
+                "Addr len (%" PRIu64
+                ") does not match for FI_SOCKADDR_IN6 (%zu)",
+                len, sizeof(struct na_ofi_sin6_addr));
             return na_ofi_sin6_to_key((const struct na_ofi_sin6_addr *) addr);
         case FI_ADDR_PSMX:
             NA_CHECK_SUBSYS_ERROR_NORET(addr,
                 len != sizeof(struct na_ofi_psm_addr), out,
-                "Addr len (%zu) does not match for FI_ADDR_PSMX (%zu)", len,
-                sizeof(struct na_ofi_psm_addr));
+                "Addr len (%" PRIu64 ") does not match for FI_ADDR_PSMX (%zu)",
+                len, sizeof(struct na_ofi_psm_addr));
             return na_ofi_psm_to_key((const struct na_ofi_psm_addr *) addr);
         case FI_ADDR_PSMX2:
             NA_CHECK_SUBSYS_ERROR_NORET(addr,
                 len != sizeof(struct na_ofi_psm2_addr), out,
-                "Addr len (%zu) does not match for FI_ADDR_PSMX2 (%zu)", len,
-                sizeof(struct na_ofi_psm2_addr));
+                "Addr len (%" PRIu64 ") does not match for FI_ADDR_PSMX2 (%zu)",
+                len, sizeof(struct na_ofi_psm2_addr));
             return na_ofi_psm2_to_key((const struct na_ofi_psm2_addr *) addr);
         case FI_ADDR_GNI:
             NA_CHECK_SUBSYS_ERROR_NORET(addr,
                 len != sizeof(struct na_ofi_gni_addr), out,
-                "Addr len (%zu) does not match for FI_ADDR_GNI (%zu)", len,
-                sizeof(struct na_ofi_gni_addr));
+                "Addr len (%" PRIu64 ") does not match for FI_ADDR_GNI (%zu)",
+                len, sizeof(struct na_ofi_gni_addr));
             return na_ofi_gni_to_key((const struct na_ofi_gni_addr *) addr);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
@@ -2595,7 +2597,7 @@ na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
         "fi_ep_bind() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Enable the endpoint for communication, and commits the bind operations */
-    ret = fi_enable(na_ofi_endpoint->fi_ep);
+    rc = fi_enable(na_ofi_endpoint->fi_ep);
     NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
         "fi_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
@@ -2697,8 +2699,8 @@ retry:
         goto retry;
     }
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "fi_getname() failed, rc: %d (%s), addrlen: %zu", rc, fi_strerror(-rc),
-        na_ofi_addr->addrlen);
+        "fi_getname() failed, rc: %d (%s), addrlen: %" PRIu64, rc,
+        fi_strerror(-rc), na_ofi_addr->addrlen);
 
     /* Get URI from address */
     ret = na_ofi_get_uri(
@@ -2822,7 +2824,7 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr)
     /* Do not call fi_av_remove() here to prevent multiple insert/remove calls
      * into AV */
     if (na_ofi_addr->remove) {
-        NA_LOG_SUBSYS_DEBUG(addr, "fi_addr=%" SCNx64 " ht_key=%" SCNx64,
+        NA_LOG_SUBSYS_DEBUG(addr, "fi_addr=%" PRIx64 " ht_key=%" PRIx64,
             na_ofi_addr->fi_addr, na_ofi_addr->ht_key);
         na_ofi_addr_ht_remove(na_ofi_addr->class->domain, &na_ofi_addr->fi_addr,
             &na_ofi_addr->ht_key);
@@ -3994,7 +3996,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_CHECK_SUBSYS_ERROR(fatal, context_max > priv->domain->context_max, out,
         ret, NA_INVALID_ARG,
         "Maximum number of requested contexts (%" PRIu8 ") exceeds provider "
-        "limitation(%zu)",
+        "limitation(%" PRIu64 ")",
         context_max, priv->domain->context_max);
     priv->context_max = context_max;
 
@@ -4014,7 +4016,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         NA_OFI_MEM_CHUNK_COUNT, NA_OFI_MEM_BLOCK_COUNT, na_ofi_mem_buf_register,
         na_ofi_mem_buf_deregister, (void *) priv->domain);
     NA_CHECK_SUBSYS_ERROR(cls, hg_mem_pool == NULL, out, ret, NA_NOMEM,
-        "Could not create memory pool with %d blocks of size %d x %zu bytes",
+        "Could not create memory pool with %d blocks of size %d x %" PRIu64
+        " bytes",
         NA_OFI_MEM_BLOCK_COUNT, NA_OFI_MEM_CHUNK_COUNT,
         MAX(priv->unexpected_size_max, priv->expected_size_max));
     priv->mem_pool = hg_mem_pool;
@@ -4577,7 +4580,8 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
 
     na_ofi_addr->addr = malloc(na_ofi_addr->addrlen);
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr->addr == NULL, error, ret, NA_NOMEM,
-        "Could not allocate %zu bytes for address", na_ofi_addr->addrlen);
+        "Could not allocate %" PRIu64 " bytes for address",
+        na_ofi_addr->addrlen);
     memcpy(na_ofi_addr->addr, p, na_ofi_addr->addrlen);
 
     /* Skip URI generation, URI will only be generated when needed */
@@ -4878,7 +4882,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
     /* Check that we do not exceed IOV limit */
     NA_CHECK_SUBSYS_ERROR(fatal,
         segment_count > NA_OFI_CLASS(na_class)->iov_max, error, ret,
-        NA_INVALID_ARG, "Segment count exceeds provider limit (%zu)",
+        NA_INVALID_ARG, "Segment count exceeds provider limit (%" PRIu64 ")",
         NA_OFI_CLASS(na_class)->iov_max);
 
     /* Allocate memory handle */
