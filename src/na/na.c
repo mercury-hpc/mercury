@@ -782,7 +782,7 @@ NA_Addr_to_string(
     *buf_size = buf_size_used + plugin_buf_size;
 
     NA_LOG_SUBSYS_DEBUG(addr,
-        "Generated string (%s) from address (%p), buf_size=%zu", buf_ptr,
+        "Generated string (%s) from address (%p), buf_size=%" PRIu64, buf_ptr,
         (void *) addr, *buf_size);
 
 done:
@@ -876,8 +876,8 @@ NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
     }
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "Allocated msg buffer (%p), size (%zu bytes), plugin data (%p)", ret,
-        buf_size, *plugin_data);
+        "Allocated msg buffer (%p), size (%" PRIu64 " bytes), plugin data (%p)",
+        ret, buf_size, *plugin_data);
 
 done:
     return ret;
@@ -931,7 +931,7 @@ NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
         ret = na_class->ops->msg_init_unexpected(na_class, buf, buf_size);
 
         NA_LOG_SUBSYS_DEBUG(
-            msg, "Init unexpected buf (%p), size (%zu)", buf, buf_size);
+            msg, "Init unexpected buf (%p), size (%" PRIu64 ")", buf, buf_size);
     }
 
 done:
@@ -957,7 +957,7 @@ NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size)
         ret = na_class->ops->msg_init_expected(na_class, buf, buf_size);
 
         NA_LOG_SUBSYS_DEBUG(
-            msg, "Init expected buf (%p), size (%zu)", buf, buf_size);
+            msg, "Init expected buf (%p), size (%" PRIu64 ")", buf, buf_size);
     }
 
 done:
@@ -988,7 +988,8 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
         na_class, buf, buf_size, flags, mem_handle);
 
     NA_LOG_SUBSYS_DEBUG(mem,
-        "Created new mem handle (%p), buf (%p), buf_size (%zu), flags (%lu)",
+        "Created new mem handle (%p), buf (%p), buf_size (%" PRIu64
+        "), flags (%lu)",
         (void *) *mem_handle, buf, buf_size, flags);
 
 done:
@@ -1020,7 +1021,7 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
         na_class, segments, segment_count, flags, mem_handle);
 
     NA_LOG_SUBSYS_DEBUG(mem,
-        "Created new mem handle (%p) with %zu segments, flags (%lu)",
+        "Created new mem handle (%p) with %" PRIu64 " segments, flags (%lu)",
         (void *) *mem_handle, segment_count, flags);
 
 done:

@@ -380,11 +380,13 @@ struct na_sm_class {
 static char *
 getlogin_safe(void);
 
+#ifdef NA_SM_HAS_CMA
 /**
  * Get value from ptrace_scope.
  */
 static int
 na_sm_get_ptrace_scope_value(void);
+#endif
 
 /**
  * Convert errno to NA return values.
@@ -456,12 +458,6 @@ na_sm_cmd_queue_push(
 static NA_INLINE na_bool_t
 na_sm_cmd_queue_pop(
     struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t *cmd_hdr_ptr);
-
-/**
- * Check whether queue is empty.
- */
-static NA_INLINE na_bool_t
-na_sm_cmd_queue_is_empty(struct na_sm_cmd_queue *na_sm_queue);
 
 /**
  * Generate key for addr map.
@@ -1189,6 +1185,7 @@ getlogin_safe(void)
     return passwd ? passwd->pw_name : "unknown";
 }
 
+#ifdef NA_SM_HAS_CMA
 /*---------------------------------------------------------------------------*/
 static int
 na_sm_get_ptrace_scope_value(void)
@@ -1211,6 +1208,7 @@ na_sm_get_ptrace_scope_value(void)
 done:
     return val;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -1293,7 +1291,8 @@ na_sm_shm_map(const char *name, na_size_t length, na_bool_t create)
 
     /* Check alignment */
     NA_CHECK_SUBSYS_WARNING(mem, length / page_size * page_size != length,
-        "Not aligned properly, page size=%zu bytes, length=%zu bytes",
+        "Not aligned properly, page size=%" PRIu64 " bytes, length=%" PRIu64
+        " bytes",
         page_size, length);
 
     return hg_mem_shm_map(name, length, create);
@@ -1411,13 +1410,6 @@ na_sm_cmd_queue_pop(
         (struct hg_atomic_queue *) na_sm_queue);
 
     return (likely(cmd_hdr_ptr->val)) ? NA_TRUE : NA_FALSE;
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
-na_sm_cmd_queue_is_empty(struct na_sm_cmd_queue *na_sm_queue)
-{
-    return hg_atomic_queue_is_empty((struct hg_atomic_queue *) na_sm_queue);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1779,7 +1771,7 @@ na_sm_event_create(const char NA_UNUSED *username, pid_t NA_UNUSED pid,
         NA_OVERFLOW, "NA_SM_GEN_FIFO_NAME() failed, rc: %d", rc);
 
     /* Create FIFO */
-    NA_LOG_SUBSYS_DEBUG("mkfifo() %s", fifo_name);
+    NA_LOG_SUBSYS_DEBUG(ctx, "mkfifo() %s", fifo_name);
     rc = mkfifo(fifo_name, S_IRUSR | S_IWUSR);
     NA_CHECK_SUBSYS_ERROR(ctx, rc == -1, error, ret, na_sm_errno_to_na(errno),
         "mkfifo() failed (%s)", strerror(errno));
@@ -2563,8 +2555,7 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     cmd_hdr.hdr.id = na_sm_endpoint->source_addr->id & 0xff;
     cmd_hdr.hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff;
 
-    NA_LOG_SUBSYS_DEBUG(addr,
-        "Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
+    NA_LOG_SUBSYS_DEBUG(addr, "Pushing cmd with %d for %d/%u/%u val=%" PRIu64,
         cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id, cmd_hdr.hdr.pair_idx,
         cmd_hdr.val);
 
@@ -2698,7 +2689,7 @@ na_sm_addr_release(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             na_bool_t rc;
 
             NA_LOG_SUBSYS_DEBUG(addr,
-                "Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
+                "Pushing cmd with %d for %d/%u/%u val=%" PRIu64,
                 cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id,
                 cmd_hdr.hdr.pair_idx, cmd_hdr.val);
 
@@ -3215,9 +3206,9 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     na_return_t ret = NA_SUCCESS;
 
     NA_LOG_SUBSYS_DEBUG(addr,
-        "Processing cmd with %d from %d/%" SCNu8 "/%" SCNu8 " val=%lu",
-        cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id & 0xff,
-        cmd_hdr.hdr.pair_idx & 0xff, cmd_hdr.val);
+        "Processing cmd with %d from %d/%u/%u val=%" PRIu64, cmd_hdr.hdr.type,
+        cmd_hdr.hdr.pid, cmd_hdr.hdr.id & 0xff, cmd_hdr.hdr.pair_idx & 0xff,
+        cmd_hdr.val);
 
     switch (cmd_hdr.hdr.type) {
         case NA_SM_RESERVED: {
@@ -3605,9 +3596,10 @@ na_sm_process_retries(
         /* Notify remote if notifications are enabled */
         if (na_sm_op_id->na_sm_addr == na_sm_endpoint->source_addr &&
             na_sm_op_id->na_sm_addr->rx_notify > 0) {
-            ret = hg_event_set(na_sm_op_id->na_sm_addr->rx_notify);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                msg, error, ret, "Could not send completion notification");
+            int rc1 = hg_event_set(na_sm_op_id->na_sm_addr->rx_notify);
+            NA_CHECK_SUBSYS_ERROR(msg, rc1 != HG_UTIL_SUCCESS, error, ret,
+                na_sm_errno_to_na(errno),
+                "Could not send completion notification");
         } else if (na_sm_op_id->na_sm_addr->tx_notify > 0) {
             ret = na_sm_event_set(na_sm_op_id->na_sm_addr->tx_notify);
             NA_CHECK_SUBSYS_NA_ERROR(
@@ -4085,7 +4077,7 @@ na_sm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    rc = snprintf(addr_string, NA_SM_MAX_FILENAME, "sm://%d/%" SCNu8,
+    rc = snprintf(addr_string, NA_SM_MAX_FILENAME, "sm://%d/%" PRIu8,
         na_sm_addr->pid, na_sm_addr->id);
     NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret,
         NA_OVERFLOW, "snprintf() failed, rc: %d", rc);
@@ -4213,7 +4205,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_bool_t rc;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds unexpected size, %zu", buf_size);
+        NA_OVERFLOW, "Exceeds unexpected size, %" PRIu64, buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4278,9 +4270,9 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     /* Notify remote if notifications are enabled */
     if (na_sm_addr == NA_SM_CLASS(na_class)->endpoint.source_addr &&
         na_sm_addr->rx_notify > 0) {
-        ret = hg_event_set(na_sm_addr->rx_notify);
-        NA_CHECK_SUBSYS_NA_ERROR(
-            msg, error, ret, "Could not send completion notification");
+        int rc1 = hg_event_set(na_sm_addr->rx_notify);
+        NA_CHECK_SUBSYS_ERROR(msg, rc1 != HG_UTIL_SUCCESS, error, ret,
+            na_sm_errno_to_na(errno), "Could not send completion notification");
     } else if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_set(na_sm_addr->tx_notify);
         NA_CHECK_SUBSYS_NA_ERROR(
@@ -4317,7 +4309,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds unexpected size, %zu", buf_size);
+        NA_OVERFLOW, "Exceeds unexpected size, %" PRIu64, buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4398,7 +4390,7 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_bool_t rc;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds expected size, %zu", buf_size);
+        NA_OVERFLOW, "Exceeds expected size, %" PRIu64, buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4464,9 +4456,9 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     /* Notify remote if notifications are enabled */
     if (na_sm_addr == NA_SM_CLASS(na_class)->endpoint.source_addr &&
         na_sm_addr->rx_notify > 0) {
-        ret = hg_event_set(na_sm_addr->rx_notify);
-        NA_CHECK_SUBSYS_NA_ERROR(
-            msg, error, ret, "Could not send completion notification");
+        int rc1 = hg_event_set(na_sm_addr->rx_notify);
+        NA_CHECK_SUBSYS_ERROR(msg, rc1 != HG_UTIL_SUCCESS, error, ret,
+            na_sm_errno_to_na(errno), "Could not send completion notification");
     } else if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_set(na_sm_addr->tx_notify);
         NA_CHECK_SUBSYS_NA_ERROR(
@@ -4504,7 +4496,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds expected size, %zu", buf_size);
+        NA_OVERFLOW, "Exceeds expected size, %" PRIu64, buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -5078,7 +5070,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 #endif
 #if defined(NA_SM_HAS_CMA) || defined(__APPLE__)
     NA_CHECK_SUBSYS_ERROR(rma, (na_size_t) nread != length, error, ret,
-        NA_MSGSIZE, "Read %ld bytes, was expecting %lu bytes", nread, length);
+        NA_MSGSIZE, "Read %" PRIu64 " bytes, was expecting %" PRIu64 " bytes",
+        nread, length);
 #endif
 
     /* Free before adding to completion queue */

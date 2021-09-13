@@ -95,7 +95,7 @@ struct na_cb_completion_data {
 #define NA_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, size)         \
     do {                                                                       \
         NA_CHECK_ERROR(buf_size_left < size, label, ret, NA_OVERFLOW,          \
-            "Buffer size too small (%zu)", buf_size_left);                     \
+            "Buffer size too small (%" PRIu64 ")", buf_size_left);             \
         memcpy(buf_ptr, data, size);                                           \
         buf_ptr += size;                                                       \
         buf_size_left -= size;                                                 \
@@ -114,7 +114,7 @@ struct na_cb_completion_data {
 #define NA_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, size)         \
     do {                                                                       \
         NA_CHECK_ERROR(buf_size_left < size, label, ret, NA_OVERFLOW,          \
-            "Buffer size too small (%zu)", buf_size_left);                     \
+            "Buffer size too small (%" PRIu64 ")", buf_size_left);             \
         memcpy(data, buf_ptr, size);                                           \
         buf_ptr += size;                                                       \
         buf_size_left -= size;                                                 \
