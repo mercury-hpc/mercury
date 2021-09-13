@@ -388,8 +388,9 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         error, ret, "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
 
     /* Pull bulk data */
-    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
-                      "target_offset=%zu",
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ", "
+                      "target_offset=%" PRIu64,
         bulk_args->transfer_size, bulk_args->origin_offset,
         bulk_args->target_offset);
     ret = HG_Bulk_transfer_id(hg_info->context, hg_test_bulk_transfer_cb,
@@ -461,8 +462,9 @@ HG_TEST_RPC_CB(hg_test_bulk_bind_write, handle)
         error, ret, "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
 
     /* Pull bulk data */
-    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
-                      "target_offset=%zu",
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ", "
+                      "target_offset=%" PRIu64,
         bulk_args->transfer_size, bulk_args->origin_offset,
         bulk_args->target_offset);
     ret = HG_Bulk_bind_transfer(hg_info->context, hg_test_bulk_bind_transfer_cb,

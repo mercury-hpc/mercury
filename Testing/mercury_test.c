@@ -247,7 +247,7 @@ hg_test_bulk_register(const void *buf, size_t size, void **handle, void *arg)
     hg_ret = HG_Bulk_create(hg_test_info->hg_class, 1, buf_ptr, buf_size,
         HG_BULK_READWRITE, &hg_bulk);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, HG_UTIL_FAIL,
-        "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
+        "HG_Bulk_create() failed (%s)", HG_Error_to_string(hg_ret));
     *handle = (void *) hg_bulk;
 
 done:
@@ -267,7 +267,7 @@ hg_test_bulk_deregister(void *handle, void *arg)
         /* Destroy bulk handle */
         hg_return_t hg_ret = HG_Bulk_free(hg_bulk);
         HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, HG_UTIL_FAIL,
-            "HG_Bulk_free() failed (%s)", HG_Error_to_string(ret));
+            "HG_Bulk_free() failed (%s)", HG_Error_to_string(hg_ret));
     }
 
 done:

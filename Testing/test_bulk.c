@@ -117,7 +117,7 @@ hg_test_bulk_null(hg_class_t *hg_class, hg_context_t *context,
     hg_request_class_t *request_class, hg_addr_t target_addr)
 {
     hg_request_t *request = NULL;
-    hg_handle_t handle;
+    hg_handle_t handle = HG_HANDLE_NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
@@ -147,8 +147,8 @@ hg_test_bulk_null(hg_class_t *hg_class, hg_context_t *context,
     bulk_write_in_struct.origin_offset = 0;
     bulk_write_in_struct.target_offset = 0;
     bulk_write_in_struct.bulk_handle = bulk_handle;
-    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
-                      "target_offset=%zu",
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ",  target_offset=%" PRIu64,
         bulk_write_in_struct.transfer_size, bulk_write_in_struct.origin_offset,
         bulk_write_in_struct.target_offset);
 
@@ -193,7 +193,7 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     hg_size_t origin_offset, hg_size_t target_offset)
 {
     hg_request_t *request = NULL;
-    hg_handle_t handle;
+    hg_handle_t handle = HG_HANDLE_NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
@@ -252,8 +252,8 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     bulk_write_in_struct.origin_offset = origin_offset;
     bulk_write_in_struct.target_offset = target_offset;
     bulk_write_in_struct.bulk_handle = bulk_handle;
-    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
-                      "target_offset=%zu",
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ",  target_offset=%" PRIu64,
         bulk_write_in_struct.transfer_size, bulk_write_in_struct.origin_offset,
         bulk_write_in_struct.target_offset);
 
@@ -298,7 +298,7 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     hg_size_t target_offset, hg_uint32_t origin_segment_count)
 {
     hg_request_t *request = NULL;
-    hg_handle_t handle;
+    hg_handle_t handle = HG_HANDLE_NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
@@ -350,8 +350,8 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     bulk_write_in_struct.origin_offset = origin_offset;
     bulk_write_in_struct.target_offset = target_offset;
     bulk_write_in_struct.bulk_handle = bulk_handle;
-    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
-                      "target_offset=%zu",
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ",  target_offset=%" PRIu64,
         bulk_write_in_struct.transfer_size, bulk_write_in_struct.origin_offset,
         bulk_write_in_struct.target_offset);
 
@@ -401,7 +401,7 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     hg_size_t transfer_size, hg_size_t origin_offset, hg_size_t target_offset)
 {
     hg_request_t *request = NULL;
-    hg_handle_t handle;
+    hg_handle_t handle = HG_HANDLE_NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
@@ -437,8 +437,8 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     bulk_write_in_struct.origin_offset = origin_offset;
     bulk_write_in_struct.target_offset = target_offset;
     bulk_write_in_struct.bulk_handle = bulk_handle;
-    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
-                      "target_offset=%zu",
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ",  target_offset=%" PRIu64,
         bulk_write_in_struct.transfer_size, bulk_write_in_struct.origin_offset,
         bulk_write_in_struct.target_offset);
 
