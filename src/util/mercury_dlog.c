@@ -67,17 +67,22 @@ hg_dlog_alloc(char *name, unsigned int lesize, int leloop)
 void
 hg_dlog_free(struct hg_dlog *d)
 {
-    while (!HG_LIST_IS_EMPTY(&d->cnts32)) {
-        struct hg_dlog_dcount32 *cp = HG_LIST_FIRST(&d->cnts32);
-        HG_LIST_REMOVE(cp, l);
-        free(cp);
-    }
+    struct hg_dlog_dcount32 *cp32 = HG_LIST_FIRST(&d->cnts32);
+    struct hg_dlog_dcount64 *cp64 = HG_LIST_FIRST(&d->cnts64);
 
-    while (!HG_LIST_IS_EMPTY(&d->cnts64)) {
-        struct hg_dlog_dcount64 *cp = HG_LIST_FIRST(&d->cnts64);
-        HG_LIST_REMOVE(cp, l);
+    while (cp32) {
+        struct hg_dlog_dcount32 *cp = cp32;
+        cp32 = HG_LIST_NEXT(cp, l);
         free(cp);
     }
+    HG_LIST_INIT(&d->cnts32);
+
+    while (cp64) {
+        struct hg_dlog_dcount64 *cp = cp64;
+        cp64 = HG_LIST_NEXT(cp, l);
+        free(cp);
+    }
+    HG_LIST_INIT(&d->cnts64);
 
     if (d->mallocd) {
         free(d->le);
