@@ -56,6 +56,11 @@ struct na_test_info {
 
 /* Default error macro */
 #include <mercury_log.h>
+
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 extern NA_PRIVATE HG_LOG_OUTLET_DECL(na_test);
 #define NA_TEST_LOG_ERROR(...)                                                 \
     HG_LOG_WRITE(na_test, HG_LOG_LEVEL_ERROR, __VA_ARGS__)

@@ -261,8 +261,8 @@ main(int argc, char *argv[])
         if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
             fprintf(stdout,
-                "# Loop %d times from size %zu to %zu byte(s) with %u "
-                "handle(s)\n",
+                "# Loop %d times from size %" PRIu64 " to %" PRIu64
+                " byte(s) with %u  handle(s)\n",
                 hg_test_info.na_test_info.loop, hg_test_info.buf_size_min,
                 hg_test_info.buf_size_max, nhandles);
 #ifdef HG_TEST_HAS_VERIFY_DATA

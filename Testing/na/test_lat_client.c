@@ -404,8 +404,9 @@ main(int argc, char *argv[])
 
     if (na_test_lat_info.na_test_info.mpi_comm_rank == 0) {
         fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
-        fprintf(stdout, "# Loop %d times from size %d to %zu byte(s)\n",
-            na_test_lat_info.na_test_info.loop, 1, max_size);
+        fprintf(stdout,
+            "# Loop %d times from size %" PRIu64 " to %" PRIu64 " byte(s)\n",
+            na_test_lat_info.na_test_info.loop, (na_size_t) 1, max_size);
 #ifdef HG_TEST_HAS_VERIFY_DATA
         fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif
