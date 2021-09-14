@@ -91,10 +91,9 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
 error:
     if (hg_proc) {
 #ifdef HG_HAS_CHECKSUMS
-        if (hash_method && hg_proc->checksum != MCHECKSUM_OBJECT_NULL) {
-            free(hg_proc->checksum_hash);
+        if (hg_proc->checksum != MCHECKSUM_OBJECT_NULL)
             mchecksum_destroy(hg_proc->checksum);
-        }
+        free(hg_proc->checksum_hash);
 #endif
         free(hg_proc);
     }
