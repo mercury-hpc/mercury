@@ -294,7 +294,7 @@ hg_mem_pool_alloc(
     } while (!hg_mem_pool_chunk);
 
     mem_ptr = &hg_mem_pool_chunk->chunk;
-    if (mr_handle)
+    if (mr_handle && hg_mem_pool_block)
         *mr_handle = hg_mem_pool_block->mr_handle;
 
 done:
