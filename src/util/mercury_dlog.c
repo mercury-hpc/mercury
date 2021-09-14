@@ -212,7 +212,7 @@ hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
 {
     char buf[BUFSIZ];
     int pid = getpid();
-    FILE *fp;
+    FILE *fp = NULL;
     unsigned int left, idx;
     struct hg_dlog_dcount32 *dc32;
     struct hg_dlog_dcount64 *dc64;
@@ -232,6 +232,7 @@ hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
         int try_ret = hg_thread_mutex_try_lock(&d->dlock);
         if (try_ret != HG_UTIL_SUCCESS) /* warn them, but keep going */ {
             fprintf(stderr, "hg_dlog_dump: WARN - lock failed\n");
+            fclose(fp);
             return;
         }
     } else
