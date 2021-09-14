@@ -139,7 +139,7 @@ hg_more_data_free_cb(hg_core_handle_t core_handle);
 /**
  * Core RPC callback.
  */
-static HG_INLINE hg_return_t
+static hg_return_t
 hg_core_rpc_cb(hg_core_handle_t core_handle);
 
 /**
@@ -315,12 +315,12 @@ hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
 {
     struct hg_private_handle *hg_handle;
     void *extra_buf;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
 
     /* Retrieve private data */
     hg_handle = (struct hg_private_handle *) HG_Core_get_data(core_handle);
     HG_CHECK_ERROR(
-        hg_handle == NULL, done, ret, HG_FAULT, "Could not get private data");
+        hg_handle == NULL, error, ret, HG_FAULT, "Could not get private data");
 
     switch (op) {
         case HG_INPUT:
@@ -330,21 +330,23 @@ hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
             extra_buf = hg_handle->out_extra_buf;
             break;
         default:
-            HG_GOTO_ERROR(done, ret, HG_INVALID_ARG, "Invalid HG op");
+            HG_GOTO_ERROR(error, ret, HG_INVALID_ARG, "Invalid HG op");
     }
 
     if (extra_buf) {
         /* We were forwarding to ourself and the extra buf is already set */
         ret = done_cb(core_handle);
         HG_CHECK_HG_ERROR(
-            done, ret, "Could not execute more data done callback");
+            error, ret, "Could not execute more data done callback");
     } else {
         /* We need to do a bulk transfer to get the extra data */
         ret = hg_get_extra_payload(hg_handle, op, done_cb);
-        HG_CHECK_HG_ERROR(done, ret, "Could not get extra payload");
+        HG_CHECK_HG_ERROR(error, ret, "Could not get extra payload");
     }
 
-done:
+    return HG_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -363,26 +365,35 @@ hg_more_data_free_cb(hg_core_handle_t core_handle)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_return_t
+static hg_return_t
 hg_core_rpc_cb(hg_core_handle_t core_handle)
 {
-    const struct hg_core_info *hg_core_info = HG_Core_get_info(core_handle);
-    const struct hg_proc_info *hg_proc_info =
-        (const struct hg_proc_info *) HG_Core_get_rpc_data(core_handle);
-    struct hg_private_handle *hg_handle =
-        (struct hg_private_handle *) HG_Core_get_data(core_handle);
-    hg_return_t ret = HG_SUCCESS;
+    const struct hg_core_info *hg_core_info;
+    struct hg_private_handle *hg_handle;
+    const struct hg_proc_info *hg_proc_info;
+    hg_return_t ret;
+
+    hg_core_info = HG_Core_get_info(core_handle);
+    HG_CHECK_ERROR(hg_core_info == NULL, error, ret, HG_INVALID_ARG, "No info");
+
+    hg_handle = (struct hg_private_handle *) HG_Core_get_data(core_handle);
+    HG_CHECK_ERROR(
+        hg_handle == NULL, error, ret, HG_INVALID_ARG, "NULL handle");
 
     hg_handle->handle.info.addr = (hg_addr_t) hg_core_info->addr;
     hg_handle->handle.info.context_id = hg_core_info->context_id;
     hg_handle->handle.info.id = hg_core_info->id;
 
+    hg_proc_info =
+        (const struct hg_proc_info *) HG_Core_get_rpc_data(core_handle);
+    HG_CHECK_ERROR(
+        hg_proc_info == NULL, error, ret, HG_INVALID_ARG, "No proc info");
     HG_CHECK_ERROR(hg_proc_info->rpc_cb == NULL, error, ret, HG_INVALID_ARG,
         "No RPC callback registered");
 
     ret = hg_proc_info->rpc_cb((hg_handle_t) hg_handle);
 
-    return ret;
+    return HG_SUCCESS;
 
 error:
     /* Need to decrement refcount on handle */
@@ -396,20 +407,18 @@ static HG_INLINE hg_return_t
 hg_core_addr_lookup_cb(const struct hg_core_cb_info *callback_info)
 {
     struct hg_op_id *hg_op_id = (struct hg_op_id *) callback_info->arg;
-    struct hg_cb_info hg_cb_info;
-    hg_return_t ret = HG_SUCCESS;
+    struct hg_cb_info hg_cb_info = {.arg = hg_op_id->arg,
+        .ret = callback_info->ret,
+        .type = hg_op_id->type,
+        .info.lookup.addr = (hg_addr_t) callback_info->info.lookup.addr};
 
-    hg_cb_info.arg = hg_op_id->arg;
-    hg_cb_info.ret = callback_info->ret;
-    hg_cb_info.type = hg_op_id->type;
-    hg_cb_info.info.lookup.addr = (hg_addr_t) callback_info->info.lookup.addr;
     if (hg_op_id->callback)
         hg_op_id->callback(&hg_cb_info);
 
     /* NB. OK to free after callback execution, op ID is not re-used */
     free(hg_op_id);
 
-    return ret;
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -870,9 +879,8 @@ hg_get_extra_payload_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_private_handle *hg_handle =
         (struct hg_private_handle *) callback_info->arg;
-    hg_return_t ret = HG_SUCCESS;
-
-    ret = hg_handle->extra_bulk_transfer_cb(hg_handle->handle.core_handle);
+    hg_return_t ret =
+        hg_handle->extra_bulk_transfer_cb(hg_handle->handle.core_handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not execute bulk transfer callback");
 
 done:
@@ -907,21 +915,17 @@ hg_core_forward_cb(const struct hg_core_cb_info *callback_info)
 {
     struct hg_private_handle *hg_handle =
         (struct hg_private_handle *) callback_info->arg;
-    hg_return_t ret = HG_SUCCESS;
 
     /* Execute callback */
     if (hg_handle->forward_cb) {
-        struct hg_cb_info hg_cb_info;
-
-        hg_cb_info.arg = hg_handle->forward_arg;
-        hg_cb_info.ret = callback_info->ret;
-        hg_cb_info.type = callback_info->type;
-        hg_cb_info.info.forward.handle = (hg_handle_t) hg_handle;
-
+        struct hg_cb_info hg_cb_info = {.arg = hg_handle->forward_arg,
+            .ret = callback_info->ret,
+            .type = callback_info->type,
+            .info.forward.handle = (hg_handle_t) hg_handle};
         hg_handle->forward_cb(&hg_cb_info);
     }
 
-    return ret;
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -930,29 +934,23 @@ hg_core_respond_cb(const struct hg_core_cb_info *callback_info)
 {
     struct hg_private_handle *hg_handle =
         (struct hg_private_handle *) callback_info->arg;
-    hg_return_t ret = HG_SUCCESS;
 
     /* Execute callback */
     if (hg_handle->respond_cb) {
-        struct hg_cb_info hg_cb_info;
-
-        hg_cb_info.arg = hg_handle->respond_arg;
-        hg_cb_info.ret = callback_info->ret;
-        hg_cb_info.type = callback_info->type;
-        hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
-
+        struct hg_cb_info hg_cb_info = {.arg = hg_handle->respond_arg,
+            .ret = callback_info->ret,
+            .type = callback_info->type,
+            .info.respond.handle = (hg_handle_t) hg_handle};
         hg_handle->respond_cb(&hg_cb_info);
     }
 
-    return ret;
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 {
-    hg_return_t ret = HG_SUCCESS;
-
     if (major)
         *major = HG_VERSION_MAJOR;
     if (minor)
@@ -960,7 +958,7 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
     if (patch)
         *patch = HG_VERSION_PATCH;
 
-    return ret;
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -995,11 +993,8 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     hg_thread_spin_init(&hg_class->register_lock);
 
     /* Save bulk eager information */
-    if (hg_init_info) {
-        hg_class->bulk_eager = !hg_init_info->no_bulk_eager;
-    } else {
-        hg_class->bulk_eager = HG_TRUE;
-    }
+    hg_class->bulk_eager =
+        (hg_init_info) ? !hg_init_info->no_bulk_eager : HG_TRUE;
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
@@ -1476,7 +1471,7 @@ HG_Addr_lookup1(hg_context_t *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
 {
     struct hg_op_id *hg_op_id = NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
 
     HG_CHECK_ERROR(
         context == NULL, error, ret, HG_INVALID_ARG, "NULL HG context");
@@ -1498,7 +1493,7 @@ HG_Addr_lookup1(hg_context_t *context, hg_cb_t callback, void *arg,
     HG_CHECK_HG_ERROR(
         error, ret, "Could not lookup %s (%s)", name, HG_Error_to_string(ret));
 
-    return ret;
+    return HG_SUCCESS;
 
 error:
     free(hg_op_id);
@@ -1647,12 +1642,19 @@ HG_Create(
 
     /* Get data and HG info */
     hg_handle = (struct hg_private_handle *) HG_Core_get_data(core_handle);
+    HG_CHECK_ERROR(
+        hg_handle == NULL, error, ret, HG_INVALID_ARG, "NULL handle");
     hg_handle->handle.info.addr = addr;
     hg_handle->handle.info.id = id;
 
     *handle = (hg_handle_t) hg_handle;
 
 done:
+    return ret;
+
+error:
+    HG_Core_destroy(core_handle);
+
     return ret;
 }
 
