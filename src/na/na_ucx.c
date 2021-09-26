@@ -823,6 +823,7 @@ const struct na_class_ops NA_PLUGIN_OPS(ucx) = {
 };
 
 /* Thread mode names */
+/*
 #ifndef NA_UCX_HAS_THREAD_MODE_NAMES
 #    define NA_UCX_THREAD_MODES                                                \
         X(UCS_THREAD_MODE_SINGLE, "single")                                    \
@@ -833,6 +834,7 @@ static const char *ucs_thread_mode_names[UCS_THREAD_MODE_LAST] = {
     NA_UCX_THREAD_MODES};
 #    undef X
 #endif
+*/
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -1847,14 +1849,27 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
     char **net_device_p, struct sockaddr_storage **sockaddr_p)
 {
     char *hostname = NULL;
+    char *device_delim = NULL;
     unsigned int port = 0;
     na_return_t ret = NA_SUCCESS;
 
     /* Set hostname (use default interface name if no hostname was passed) */
     if (hostname_info) {
-        hostname = strdup(hostname_info);
-        NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, done, ret, NA_NOMEM,
-            "strdup() of hostname failed");
+    	device_delim = strstr(hostname_info, "/");
+	if (device_delim) {
+	    char *addr_str = NULL;
+            strtok_r(hostname_info, "/", &addr_str);
+            hostname = strdup(addr_str);
+       	    NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, done, ret, NA_NOMEM,
+                          "strdup() of hostname failed");
+            /* put NULL in hostname_info string after device name */
+	    *(++device_delim) = '\0';
+	    *net_device_p = hostname_info;
+	} else {
+            hostname = strdup(hostname_info);
+       	    NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, done, ret, NA_NOMEM,
+                          "strdup() of hostname failed");
+	}
 
         /* TODO add support for IPv6 address parsing */
 
@@ -1891,6 +1906,7 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
     }
 
 done:
+    *net_device_p = hostname_info;
     free(hostname);
     return ret;
 }
