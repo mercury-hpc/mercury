@@ -302,11 +302,6 @@ na_test_gen_config(struct na_test_info *na_test_info)
             exit(1);
         }
 #endif
-        if (na_test_info->listen) {
-            /* special-case SM (pid/id) */
-            sprintf(
-                info_string_ptr, "%d/%d", (int) getpid(), na_test_info->port);
-        }
     } else if (strcmp("static", na_test_info->protocol) == 0) {
         /* Nothing */
     } else if (strcmp("dynamic", na_test_info->protocol) == 0) {
