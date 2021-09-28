@@ -205,10 +205,11 @@ Below is a list of the most common questions.
 
 - _Q: Is there any logging mechanism?_
 
-  A: To turn on error/warning/debug logs, the `HG_LOG_LEVEL` or
-  `HG_NA_LOG_LEVEL` environment variables can be set to either `error`,
-  `warning` or `debug` values. Note that for debugging output to be printed,
-  the CMake variable `MERCURY_ENABLE_DEBUG` must also be set at compile time.
+  A: To turn on error/warning/debug logs, the `HG_LOG_LEVEL` environment
+  variable can be set to either `error`, `warning` or `debug` values. Note that
+  for debugging output to be printed, the CMake variable `MERCURY_ENABLE_DEBUG`
+  must also be set at compile time. Specific subsystems can be selected using
+  the `HG_LOG_SUBSYS` environment variable.
 
 [mailing-lists]: http://mercury-hpc.github.io/help#mailing-lists
 [documentation]: http://mercury-hpc.github.io/documentation/
