@@ -606,7 +606,8 @@ main(int argc, char *argv[])
     HG_PASSED();
 #endif
 
-    if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "ofi") == 0) {
+    if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "ofi") == 0 ||
+        strcmp(HG_Class_get_name(hg_test_info.hg_class), "sm") == 0) {
         HG_TEST("bind contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
         hg_ret = hg_test_bulk_contig(hg_test_info.hg_class,
             hg_test_info.context, hg_test_info.request_class, 1, 0,
