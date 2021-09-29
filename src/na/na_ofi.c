@@ -5260,7 +5260,7 @@ na_ofi_progress(
             if (wait_hdl) {
                 /* Wait in wait set if provider does not support wait on FDs */
                 int rc = fi_wait(wait_hdl,
-                    (int) hg_time_to_ms(hg_time_subtract(now, deadline)));
+                    (int) hg_time_to_ms(hg_time_subtract(deadline, now)));
 
                 if (rc == -FI_EINTR) {
                     hg_time_get_current_ms(&now);
