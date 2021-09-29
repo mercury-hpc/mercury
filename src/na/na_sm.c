@@ -4979,7 +4979,7 @@ na_sm_progress(
         if (na_sm_endpoint->poll_set) {
             /* Make blocking progress */
             ret = na_sm_poll_wait(context, na_sm_endpoint,
-                hg_time_to_ms(hg_time_subtract(now, deadline)), &progressed);
+                hg_time_to_ms(hg_time_subtract(deadline, now)), &progressed);
             NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
                 "Could not make blocking progress on context");
         } else {
