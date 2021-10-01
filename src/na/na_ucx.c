@@ -37,6 +37,12 @@
 /* Default max msg size */
 #define NA_UCX_MSG_SIZE_MAX (4096)
 
+/* Address pool (enabled by default, comment out to disable) */
+#define NA_UCX_HAS_ADDR_POOL
+#define NA_UCX_ADDR_POOL_SIZE (64)
+
+#define NA_UCX_CONN_RETRY_MAX (1024)
+
 /* Memory pool (enabled by default, comment out to disable) */
 // #define NA_UCX_HAS_MEM_POOL
 #define NA_UCX_MEM_CHUNK_COUNT (256)
@@ -111,9 +117,13 @@ enum na_ucx_addr_status {
 
 /* Address */
 struct na_ucx_addr {
+    HG_QUEUE_ENTRY(na_ucx_addr) entry; /* Entry in addr pool */
     struct sockaddr_storage ss_addr;   /* Sock addr */
     ucs_sock_addr_t addr_key;          /* Address key */
     struct na_ucx_class *na_ucx_class; /* NA UCX class */
+    ucp_address_t *worker_addr;        /* Worker addr */
+    size_t worker_addr_len;            /* Worker addr len */
+    na_bool_t worker_addr_alloc;       /* Worker addr was allocated by us */
     ucp_ep_h ucp_ep;                   /* Currently only one EP per address */
     uint32_t conn_id;                  /* Connection ID (local) */
     uint32_t remote_conn_id;           /* Connection ID (remote) */
@@ -190,6 +200,12 @@ struct na_ucx_op_id {
     hg_atomic_int32_t status;           /* Operation status         */
 };
 
+/* Addr ppol */
+struct na_ucx_addr_pool {
+    HG_QUEUE_HEAD(na_ucx_addr) queue;
+    hg_thread_spin_t lock;
+};
+
 /* Op ID queue */
 struct na_ucx_op_queue {
     HG_QUEUE_HEAD(na_ucx_op_id) queue;
@@ -201,6 +217,7 @@ struct na_ucx_class {
     struct na_ucx_map addr_map;            /* Address map */
     struct na_ucx_map addr_conn;           /* Connection ID map */
     struct na_ucx_op_queue retry_op_queue; /* Retry op queue */
+    struct na_ucx_addr_pool addr_pool;     /* Addr pool */
     ucp_context_h ucp_context;             /* UCP context */
     ucp_worker_h ucp_worker;               /* Shared UCP worker */
     ucp_listener_h ucp_listener;           /* Listener handle if listening */
@@ -210,6 +227,7 @@ struct na_ucx_class {
     char *protocol_name;                   /* Protocol used */
     na_size_t unexpected_size_max;         /* Max unexpected size */
     na_size_t expected_size_max;           /* Max expected size */
+    hg_atomic_int32_t conn_id;             /* Connection ID */
     hg_atomic_int32_t ncontexts;           /* Number of contexts */
     na_bool_t no_wait;                     /* Wait disabled */
 };
@@ -263,12 +281,19 @@ static void
 na_ucp_worker_destroy(ucp_worker_h worker);
 
 /**
+ * Retrieve worker address.
+ */
+static na_return_t
+na_ucp_worker_get_address(
+    ucp_worker_h worker, ucp_address_t **addr_p, size_t *addr_len_p);
+
+/**
  * Create listener.
  */
 static na_return_t
 na_ucp_listener_create(ucp_worker_h context, const struct sockaddr *addr,
     socklen_t addrlen, void *listener_arg, ucp_listener_h *listener_p,
-    struct sockaddr_storage **listener_addr_p);
+    struct sockaddr_storage *listener_addr);
 
 /**
  * Destroy listener.
@@ -298,6 +323,13 @@ na_ucp_connect(ucp_worker_h worker, const struct sockaddr *addr,
     void *err_handler_arg, ucp_ep_h *ep_p);
 
 /**
+ * Create endpoint to worker using worker address (unconnected).
+ */
+static na_return_t
+na_ucp_connect_worker(ucp_worker_h worker, ucp_address_t *address,
+    ucp_err_handler_cb_t err_handler_cb, void *err_handler_arg, ucp_ep_h *ep_p);
+
+/**
  * Create endpoint.
  */
 static na_return_t
@@ -314,7 +346,7 @@ na_ucp_ep_error_cb(void *arg, ucp_ep_h ep, ucs_status_t status);
  * Get next connection ID.
  */
 static uint32_t
-na_ucp_conn_id_gen(void);
+na_ucp_conn_id_gen(struct na_ucx_class *na_ucx_class);
 
 /**
  * Exchange (send/recv) connection IDs.
@@ -466,57 +498,96 @@ static NA_INLINE int
 na_ucx_addr_key_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2);
 
 /**
- * Lookup addr key from map.
+ * Lookup addr from addr_key.
  */
 static NA_INLINE struct na_ucx_addr *
-na_ucx_addr_map_lookup(struct na_ucx_map *na_ucx_map,
-    const struct sockaddr *addr, socklen_t addrlen);
+na_ucx_addr_map_lookup(
+    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key);
 
 /**
- * Insert new addr key into map. Execute callback while write lock is acquired.
+ * Insert new addr using addr_key (if it does not already exist).
  */
 static na_return_t
 na_ucx_addr_map_insert(struct na_ucx_class *na_ucx_class,
-    struct na_ucx_map *na_ucx_map, const struct sockaddr *addr,
-    socklen_t addrlen, struct na_ucx_addr **na_ucx_addr_p);
+    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key,
+    struct na_ucx_addr **na_ucx_addr_p);
 
 /**
- * Remove addr key from map.
+ * Remove addr from map using addr_key.
  */
 static na_return_t
 na_ucx_addr_map_remove(
-    struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr);
+    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key);
 
+/**
+ * Hash connection ID.
+ */
 static NA_INLINE unsigned int
 na_ucx_addr_conn_hash(hg_hash_table_key_t key);
 
+/**
+ * Compare connection IDs.
+ */
 static NA_INLINE int
 na_ucx_addr_conn_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2);
 
+/**
+ * Lookup addr from connection ID.
+ */
 static NA_INLINE struct na_ucx_addr *
-na_ucx_addr_conn_lookup(struct na_ucx_map *na_ucx_map, uint32_t conn_id);
+na_ucx_addr_conn_lookup(struct na_ucx_map *na_ucx_map, uint32_t *conn_id);
 
+/**
+ * Insert new addr using connection ID (if it does not already exist).
+ */
 static na_return_t
 na_ucx_addr_conn_insert(
     struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr);
 
-static na_return_t
-na_ucx_addr_conn_remove(
-    struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr);
-
 /**
- * Create address.
+ * Remove addr from map using connection ID.
  */
 static na_return_t
-na_ucx_addr_create(struct na_ucx_class *na_ucx_class,
-    const struct sockaddr *addr, socklen_t addrlen,
-    struct na_ucx_addr **na_ucx_addr_p);
+na_ucx_addr_conn_remove(struct na_ucx_map *na_ucx_map, uint32_t *conn_id);
+
+/**
+ * Allocate empty address.
+ */
+static struct na_ucx_addr *
+na_ucx_addr_alloc(struct na_ucx_class *na_ucx_class);
 
 /**
  * Destroy address.
  */
 static void
 na_ucx_addr_destroy(struct na_ucx_addr *na_ucx_addr);
+
+#ifdef NA_UCX_HAS_ADDR_POOL
+/**
+ * Retrieve address from pool.
+ */
+static struct na_ucx_addr *
+na_ucx_addr_pool_get(struct na_ucx_class *na_ucx_class);
+#endif
+
+/**
+ * Release address without destroying it.
+ */
+static void
+na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr);
+
+/**
+ * Reset address.
+ */
+static void
+na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key);
+
+/**
+ * Create address.
+ */
+static na_return_t
+na_ucx_addr_create(struct na_ucx_class *na_ucx_class, ucs_sock_addr_t *addr_key,
+    struct na_ucx_addr **na_ucx_addr_p);
 
 /**
  * Increment ref count.
@@ -1042,9 +1113,25 @@ na_ucp_worker_destroy(ucp_worker_h worker)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_ucp_worker_get_address(
+    ucp_worker_h worker, ucp_address_t **addr_p, size_t *addr_len_p)
+{
+    ucs_status_t status;
+    na_return_t ret = NA_SUCCESS;
+
+    status = ucp_worker_get_address(worker, addr_p, addr_len_p);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, done, ret, NA_PROTOCOL_ERROR,
+        "ucp_worker_get_address() failed (%s)", ucs_status_string(status));
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_ucp_listener_create(ucp_worker_h worker, const struct sockaddr *addr,
     socklen_t addrlen, void *listener_arg, ucp_listener_h *listener_p,
-    struct sockaddr_storage **listener_addr_p)
+    struct sockaddr_storage *listener_addr)
 {
     ucp_listener_h listener = NULL;
     ucp_listener_params_t listener_params = {
@@ -1055,7 +1142,6 @@ na_ucp_listener_create(ucp_worker_h worker, const struct sockaddr *addr,
             .cb = na_ucp_listener_conn_cb, .arg = listener_arg}};
     ucp_listener_attr_t listener_attrs = {
         .field_mask = UCP_LISTENER_ATTR_FIELD_SOCKADDR};
-    struct sockaddr_storage *ss_addr = NULL;
     ucs_status_t status;
     na_return_t ret;
 
@@ -1074,21 +1160,14 @@ na_ucp_listener_create(ucp_worker_h worker, const struct sockaddr *addr,
         error, ret, NA_PROTONOSUPPORT,
         "listener attributes contain no sockaddr");
 
-    /* Allocate new addr to store result */
-    ss_addr = calloc(1, sizeof(*ss_addr));
-    NA_CHECK_SUBSYS_ERROR(cls, ss_addr == NULL, error, ret, NA_NOMEM,
-        "Could not allocate ss address");
-    memcpy(ss_addr, &listener_attrs.sockaddr, sizeof(*ss_addr));
-
     *listener_p = listener;
-    *listener_addr_p = ss_addr;
+    memcpy(listener_addr, &listener_attrs.sockaddr, sizeof(*listener_addr));
 
     return NA_SUCCESS;
 
 error:
     if (listener)
         ucp_listener_destroy(listener);
-    free(ss_addr);
     return ret;
 }
 
@@ -1107,7 +1186,9 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
     ucp_conn_request_attr_t conn_request_attrs = {
         .field_mask = UCP_CONN_REQUEST_ATTR_FIELD_CLIENT_ADDR};
     struct na_ucx_addr *na_ucx_addr = NULL;
+    ucs_sock_addr_t addr_key;
     ucs_status_t status;
+    unsigned int retry = 0;
     na_return_t na_ret;
 
     status = ucp_conn_request_query(conn_request, &conn_request_attrs);
@@ -1120,16 +1201,16 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
         error, "conn attributes contain no client addr");
 
     /* Lookup address from table */
-    na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map,
-        (const struct sockaddr *) &conn_request_attrs.client_address,
-        sizeof(conn_request_attrs.client_address));
+    addr_key = (ucs_sock_addr_t){
+        .addr = (const struct sockaddr *) &conn_request_attrs.client_address,
+        .addrlen = sizeof(conn_request_attrs.client_address)};
+    na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key);
     NA_CHECK_SUBSYS_ERROR_NORET(addr, na_ucx_addr != NULL, error,
         "An entry is already present for this address");
 
     /* Insert new entry and create new address */
-    na_ret = na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
-        (const struct sockaddr *) &conn_request_attrs.client_address,
-        sizeof(conn_request_attrs.client_address), &na_ucx_addr);
+    na_ret = na_ucx_addr_map_insert(
+        na_ucx_class, &na_ucx_class->addr_map, &addr_key, &na_ucx_addr);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, na_ret, "Could not insert new address");
 
@@ -1139,13 +1220,22 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, na_ret, "Could not accept connection request");
 
-    /* Generate connection ID */
-    na_ucx_addr->conn_id = na_ucp_conn_id_gen();
+    while (retry < NA_UCX_CONN_RETRY_MAX) {
+        /* Generate connection ID */
+        na_ucx_addr->conn_id = na_ucp_conn_id_gen(na_ucx_class);
 
-    /* Insert connection entry to lookup address by connection ID */
-    na_ret = na_ucx_addr_conn_insert(&na_ucx_class->addr_conn, na_ucx_addr);
-    NA_CHECK_SUBSYS_NA_ERROR(
-        addr, error, na_ret, "Could not insert new address");
+        /* Insert connection entry to lookup address by connection ID */
+        na_ret = na_ucx_addr_conn_insert(&na_ucx_class->addr_conn, na_ucx_addr);
+        if (na_ret == NA_SUCCESS)
+            break;
+        else if (na_ret == NA_EXIST) {
+            /* Attempt to use another connection ID */
+            retry++;
+            continue;
+        } else
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, na_ret, "Could not insert new address");
+    }
 
     /* Exchange IDs so that we can later use that ID to identify msg senders */
     na_ret = na_ucp_conn_id_exchange(na_ucx_addr->ucp_ep, &na_ucx_addr->conn_id,
@@ -1188,12 +1278,28 @@ na_ucp_connect(ucp_worker_h worker, const struct sockaddr *addr,
 }
 
 /*---------------------------------------------------------------------------*/
-static uint32_t
-na_ucp_conn_id_gen(void)
+static na_return_t
+na_ucp_connect_worker(ucp_worker_h worker, ucp_address_t *address,
+    ucp_err_handler_cb_t err_handler_cb, void *err_handler_arg, ucp_ep_h *ep_p)
 {
-    /* TODO improve that, not good enough */
-    static uint32_t conn_id = 1;
-    return conn_id++;
+    ucp_ep_params_t ep_params = {
+        .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS,
+        .address = address,
+        .conn_request = NULL};
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Connecting to worker ");
+
+    return na_ucp_ep_create(
+        worker, &ep_params, err_handler_cb, err_handler_arg, ep_p);
+}
+
+/*---------------------------------------------------------------------------*/
+static uint32_t
+na_ucp_conn_id_gen(struct na_ucx_class *na_ucx_class)
+{
+    return (hg_atomic_cas32(&na_ucx_class->conn_id, INT32_MAX, 0))
+               ? 1 /* Incremented value */
+               : (uint32_t) hg_atomic_incr32(&na_ucx_class->conn_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1445,7 +1551,8 @@ na_ucp_ep_create(ucp_worker_h worker, ucp_ep_params_t *ep_params,
 
     ep_params->field_mask |=
         UCP_EP_PARAM_FIELD_ERR_HANDLER | UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
-    ep_params->err_mode = UCP_ERR_HANDLING_MODE_PEER;
+    if (!(ep_params->field_mask & UCP_EP_PARAM_FIELD_REMOTE_ADDRESS))
+        ep_params->err_mode = UCP_ERR_HANDLING_MODE_PEER;
     ep_params->err_handler.cb = err_handler_cb;
     ep_params->err_handler.arg = err_handler_arg;
 
@@ -1468,7 +1575,7 @@ na_ucp_ep_error_cb(
 {
     struct na_ucx_addr *na_ucx_addr = (struct na_ucx_addr *) arg;
 
-    NA_LOG_SUBSYS_DEBUG(cls,
+    NA_LOG_SUBSYS_DEBUG(addr,
         "ep_err_handler() returned (%s) for address (conn_id=%d)",
         ucs_status_string(status), na_ucx_addr->conn_id);
 
@@ -1589,6 +1696,7 @@ na_ucp_msg_recv_unexpected_cb(void *request, ucs_status_t status,
     struct na_cb_info_recv_unexpected *recv_unexpected_info =
         &na_ucx_op_id->completion_data.callback_info.info.recv_unexpected;
     struct na_ucx_addr *source_addr = NULL;
+    uint32_t conn_id;
     na_return_t cb_ret;
 
     NA_LOG_SUBSYS_DEBUG(
@@ -1617,11 +1725,11 @@ na_ucp_msg_recv_unexpected_cb(void *request, ucs_status_t status,
     recv_unexpected_info->actual_buf_size = (na_size_t) info->length;
 
     /* Lookup source address */
-    source_addr = na_ucx_addr_conn_lookup(
-        &na_ucx_class->addr_conn, na_ucp_tag_to_conn_id(info->sender_tag));
+    conn_id = na_ucp_tag_to_conn_id(info->sender_tag);
+    source_addr = na_ucx_addr_conn_lookup(&na_ucx_class->addr_conn, &conn_id);
     NA_CHECK_SUBSYS_ERROR(msg, source_addr == NULL, done, cb_ret,
         NA_PROTOCOL_ERROR, "Could not find address for connection ID %" PRId32,
-        na_ucp_tag_to_conn_id(info->sender_tag));
+        conn_id);
     recv_unexpected_info->source = (na_addr_t) source_addr;
     na_ucx_addr_ref_incr(source_addr);
 
@@ -1774,6 +1882,7 @@ na_ucx_class_alloc(void)
     na_ucx_class = calloc(1, sizeof(*na_ucx_class));
     NA_CHECK_SUBSYS_ERROR_NORET(cls, na_ucx_class == NULL, error,
         "Could not allocate NA private data class");
+    hg_atomic_init32(&na_ucx_class->conn_id, 0);
 
     /* Init table lock */
     rc = hg_thread_rwlock_init(&na_ucx_class->addr_map.lock);
@@ -1790,6 +1899,12 @@ na_ucx_class_alloc(void)
     NA_CHECK_SUBSYS_ERROR_NORET(
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
     HG_QUEUE_INIT(&na_ucx_class->retry_op_queue.queue);
+
+    /* Initialize addr pool */
+    rc = hg_thread_spin_init(&na_ucx_class->addr_pool.lock);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
+    HG_QUEUE_INIT(&na_ucx_class->addr_pool.queue);
 
     /* Create address map */
     na_ucx_class->addr_map.map =
@@ -1832,6 +1947,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
     (void) hg_thread_rwlock_destroy(&na_ucx_class->addr_map.lock);
     (void) hg_thread_rwlock_destroy(&na_ucx_class->addr_conn.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->retry_op_queue.lock);
+    (void) hg_thread_spin_destroy(&na_ucx_class->addr_pool.lock);
 
 #ifdef NA_UCX_HAS_MEM_POOL
     hg_mem_pool_destroy(na_ucx_class->mem_pool);
@@ -1922,16 +2038,14 @@ na_ucx_addr_key_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE struct na_ucx_addr *
-na_ucx_addr_map_lookup(struct na_ucx_map *na_ucx_map,
-    const struct sockaddr *addr, socklen_t addrlen)
+na_ucx_addr_map_lookup(struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key)
 {
-    ucs_sock_addr_t sockaddr = {.addr = addr, .addrlen = addrlen};
     hg_hash_table_value_t value = NULL;
 
     /* Lookup key */
     hg_thread_rwlock_rdlock(&na_ucx_map->lock);
     value =
-        hg_hash_table_lookup(na_ucx_map->map, (hg_hash_table_key_t) &sockaddr);
+        hg_hash_table_lookup(na_ucx_map->map, (hg_hash_table_key_t) addr_key);
     hg_thread_rwlock_release_rdlock(&na_ucx_map->lock);
 
     return (value == HG_HASH_TABLE_NULL) ? NULL : (struct na_ucx_addr *) value;
@@ -1940,26 +2054,25 @@ na_ucx_addr_map_lookup(struct na_ucx_map *na_ucx_map,
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ucx_addr_map_insert(struct na_ucx_class *na_ucx_class,
-    struct na_ucx_map *na_ucx_map, const struct sockaddr *addr,
-    socklen_t addrlen, struct na_ucx_addr **na_ucx_addr_p)
+    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key,
+    struct na_ucx_addr **na_ucx_addr_p)
 {
     struct na_ucx_addr *na_ucx_addr = NULL;
-    ucs_sock_addr_t addr_key = {.addr = addr, .addrlen = addrlen};
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ucx_map->lock);
 
     /* Look up again to prevent race between lock release/acquire */
     na_ucx_addr = (struct na_ucx_addr *) hg_hash_table_lookup(
-        na_ucx_map->map, (hg_hash_table_key_t) &addr_key);
+        na_ucx_map->map, (hg_hash_table_key_t) addr_key);
     if (na_ucx_addr) {
         ret = NA_EXIST; /* Entry already exists */
         goto done;
     }
 
     /* Allocate address */
-    ret = na_ucx_addr_create(na_ucx_class, addr, addrlen, &na_ucx_addr);
+    ret = na_ucx_addr_create(na_ucx_class, addr_key, &na_ucx_addr);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not allocate NA UCX addr");
 
@@ -1975,7 +2088,7 @@ done:
 
     *na_ucx_addr_p = na_ucx_addr;
 
-    return NA_SUCCESS;
+    return ret;
 
 error:
     hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
@@ -1987,19 +2100,17 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_map_remove(
-    struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr)
+na_ucx_addr_map_remove(struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key)
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ucx_map->lock);
-    if (hg_hash_table_lookup(na_ucx_map->map,
-            (hg_hash_table_key_t) &na_ucx_addr->addr_key) == HG_HASH_TABLE_NULL)
+    if (hg_hash_table_lookup(na_ucx_map->map, (hg_hash_table_key_t) addr_key) ==
+        HG_HASH_TABLE_NULL)
         goto unlock;
 
-    rc = hg_hash_table_remove(
-        na_ucx_map->map, (hg_hash_table_key_t) &na_ucx_addr->addr_key);
+    rc = hg_hash_table_remove(na_ucx_map->map, (hg_hash_table_key_t) addr_key);
     NA_CHECK_SUBSYS_ERROR_DONE(addr, rc == 0, "Could not remove key");
 
 unlock:
@@ -2024,14 +2135,14 @@ na_ucx_addr_conn_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE struct na_ucx_addr *
-na_ucx_addr_conn_lookup(struct na_ucx_map *na_ucx_map, uint32_t conn_id)
+na_ucx_addr_conn_lookup(struct na_ucx_map *na_ucx_map, uint32_t *conn_id)
 {
     hg_hash_table_value_t value = NULL;
 
     /* Lookup key */
     hg_thread_rwlock_rdlock(&na_ucx_map->lock);
     value =
-        hg_hash_table_lookup(na_ucx_map->map, (hg_hash_table_key_t) &conn_id);
+        hg_hash_table_lookup(na_ucx_map->map, (hg_hash_table_key_t) conn_id);
     hg_thread_rwlock_release_rdlock(&na_ucx_map->lock);
 
     return (value == HG_HASH_TABLE_NULL) ? NULL : (struct na_ucx_addr *) value;
@@ -2076,19 +2187,17 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_conn_remove(
-    struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr)
+na_ucx_addr_conn_remove(struct na_ucx_map *na_ucx_map, uint32_t *conn_id)
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ucx_map->lock);
-    if (hg_hash_table_lookup(na_ucx_map->map,
-            (hg_hash_table_key_t) &na_ucx_addr->conn_id) == HG_HASH_TABLE_NULL)
+    if (hg_hash_table_lookup(na_ucx_map->map, (hg_hash_table_key_t) conn_id) ==
+        HG_HASH_TABLE_NULL)
         goto unlock;
 
-    rc = hg_hash_table_remove(
-        na_ucx_map->map, (hg_hash_table_key_t) &na_ucx_addr->conn_id);
+    rc = hg_hash_table_remove(na_ucx_map->map, (hg_hash_table_key_t) conn_id);
     NA_CHECK_SUBSYS_ERROR_DONE(addr, rc == 0, "Could not remove key");
 
 unlock:
@@ -2098,44 +2207,126 @@ unlock:
 }
 
 /*---------------------------------------------------------------------------*/
+static struct na_ucx_addr *
+na_ucx_addr_alloc(struct na_ucx_class *na_ucx_class)
+{
+    struct na_ucx_addr *na_ucx_addr;
+
+    na_ucx_addr = calloc(1, sizeof(*na_ucx_addr));
+    if (na_ucx_addr)
+        na_ucx_addr->na_ucx_class = na_ucx_class;
+
+    return na_ucx_addr;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ucx_addr_destroy(struct na_ucx_addr *na_ucx_addr)
+{
+    NA_LOG_SUBSYS_DEBUG(addr, "Destroying address %p", (void *) na_ucx_addr);
+
+    na_ucx_addr_release(na_ucx_addr);
+    free(na_ucx_addr);
+}
+
+/*---------------------------------------------------------------------------*/
+#ifdef NA_UCX_HAS_ADDR_POOL
+static struct na_ucx_addr *
+na_ucx_addr_pool_get(struct na_ucx_class *na_ucx_class)
+{
+    struct na_ucx_addr *na_ucx_addr = NULL;
+
+    hg_thread_spin_lock(&na_ucx_class->addr_pool.lock);
+    na_ucx_addr = HG_QUEUE_FIRST(&na_ucx_class->addr_pool.queue);
+    if (na_ucx_addr) {
+        HG_QUEUE_POP_HEAD(&na_ucx_class->addr_pool.queue, entry);
+        hg_thread_spin_unlock(&na_ucx_class->addr_pool.lock);
+    } else {
+        hg_thread_spin_unlock(&na_ucx_class->addr_pool.lock);
+        /* Fallback to allocation if pool is empty */
+        na_ucx_addr = na_ucx_addr_alloc(na_ucx_class);
+    }
+
+    return na_ucx_addr;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr)
+{
+    if (na_ucx_addr->ucp_ep != NULL) {
+        ucp_ep_close_nb(na_ucx_addr->ucp_ep, UCP_EP_CLOSE_MODE_FORCE);
+        na_ucx_addr->ucp_ep = NULL;
+    }
+    if (na_ucx_addr->addr_key.addr)
+        na_ucx_addr_map_remove(
+            &na_ucx_addr->na_ucx_class->addr_map, &na_ucx_addr->addr_key);
+    if (na_ucx_addr->conn_id)
+        na_ucx_addr_conn_remove(
+            &na_ucx_addr->na_ucx_class->addr_conn, &na_ucx_addr->conn_id);
+    if (na_ucx_addr->worker_addr != NULL) {
+        if (na_ucx_addr->worker_addr_alloc)
+            free(na_ucx_addr->worker_addr);
+        else
+            ucp_worker_release_address(na_ucx_addr->na_ucx_class->ucp_worker,
+                na_ucx_addr->worker_addr);
+        na_ucx_addr->worker_addr = NULL;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key)
+{
+    na_ucx_addr->ucp_ep = NULL;
+    hg_atomic_init32(&na_ucx_addr->refcount, 1);
+    hg_atomic_init32(&na_ucx_addr->status, NA_UCX_ADDR_INIT);
+
+    if (addr_key && addr_key->addr) {
+        memcpy(&na_ucx_addr->ss_addr, addr_key->addr, addr_key->addrlen);
+
+        /* Point key back to ss_addr */
+        na_ucx_addr->addr_key.addr =
+            (const struct sockaddr *) &na_ucx_addr->ss_addr;
+        na_ucx_addr->addr_key.addrlen = addr_key->addrlen;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_create(struct na_ucx_class *na_ucx_class,
-    const struct sockaddr *addr, socklen_t addrlen,
+na_ucx_addr_create(struct na_ucx_class *na_ucx_class, ucs_sock_addr_t *addr_key,
     struct na_ucx_addr **na_ucx_addr_p)
 {
     struct na_ucx_addr *na_ucx_addr;
     na_return_t ret;
 
-    na_ucx_addr = calloc(1, sizeof(*na_ucx_addr));
+#ifdef NA_UCX_HAS_ADDR_POOL
+    na_ucx_addr = na_ucx_addr_pool_get(na_ucx_class);
+#else
+    na_ucx_addr = na_ucx_addr_alloc(na_ucx_class);
+#endif
     NA_CHECK_SUBSYS_ERROR(addr, na_ucx_addr == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA UCX addr");
-    na_ucx_addr->na_ucx_class = na_ucx_class;
 
-    if (addr)
-        memcpy(&na_ucx_addr->ss_addr, addr, addrlen);
+    na_ucx_addr_reset(na_ucx_addr, addr_key);
 
-    /* Point key back to ss_addr */
-    na_ucx_addr->addr_key.addr =
-        (const struct sockaddr *) &na_ucx_addr->ss_addr;
-    na_ucx_addr->addr_key.addrlen = addrlen;
-
-    na_ucx_addr->ucp_ep = NULL;
-    hg_atomic_init32(&na_ucx_addr->refcount, 1);
-    hg_atomic_init32(&na_ucx_addr->status, NA_UCX_ADDR_INIT);
-
-    if (addr) {
+#ifdef NA_HAS_DEBUG
+    if (addr_key && addr_key->addr) {
         char host_string[NI_MAXHOST];
         char serv_string[NI_MAXSERV];
         int rc;
 
-        rc = getnameinfo(addr, addrlen, host_string, sizeof(host_string),
-            serv_string, sizeof(serv_string), NI_NUMERICHOST | NI_NUMERICSERV);
+        rc = getnameinfo(addr_key->addr, addr_key->addrlen, host_string,
+            sizeof(host_string), serv_string, sizeof(serv_string),
+            NI_NUMERICHOST | NI_NUMERICSERV);
         NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, NA_PROTOCOL_ERROR,
             "getnameinfo() failed (%s)", gai_strerror(rc));
 
         NA_LOG_SUBSYS_DEBUG(
             addr, "Created new address for %s:%s", host_string, serv_string);
     }
+#endif
 
     NA_LOG_SUBSYS_DEBUG(addr, "Created address %p", (void *) na_ucx_addr);
 
@@ -2145,19 +2336,6 @@ na_ucx_addr_create(struct na_ucx_class *na_ucx_class,
 
 error:
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_ucx_addr_destroy(struct na_ucx_addr *na_ucx_addr)
-{
-    NA_LOG_SUBSYS_DEBUG(addr, "Destroying address %p", (void *) na_ucx_addr);
-
-    if (na_ucx_addr->ucp_ep)
-        ucp_ep_close_nb(na_ucx_addr->ucp_ep, UCP_EP_CLOSE_MODE_FORCE);
-    na_ucx_addr_map_remove(&na_ucx_addr->na_ucx_class->addr_map, na_ucx_addr);
-    na_ucx_addr_conn_remove(&na_ucx_addr->na_ucx_class->addr_conn, na_ucx_addr);
-    free(na_ucx_addr);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2172,7 +2350,19 @@ static NA_INLINE void
 na_ucx_addr_ref_decr(struct na_ucx_addr *na_ucx_addr)
 {
     if (hg_atomic_decr32(&na_ucx_addr->refcount) == 0) {
+#ifdef NA_UCX_HAS_ADDR_POOL
+        struct na_ucx_addr_pool *addr_pool =
+            &na_ucx_addr->na_ucx_class->addr_pool;
+
+        na_ucx_addr_release(na_ucx_addr);
+
+        /* Push address back to addr pool */
+        hg_thread_spin_lock(&addr_pool->lock);
+        HG_QUEUE_PUSH_TAIL(&addr_pool->queue, na_ucx_addr, entry);
+        hg_thread_spin_unlock(&addr_pool->lock);
+#else
         na_ucx_addr_destroy(na_ucx_addr);
+#endif
     }
 }
 
@@ -2181,6 +2371,7 @@ static na_return_t
 na_ucx_addr_resolve(
     struct na_ucx_class *na_ucx_class, struct na_ucx_addr *na_ucx_addr)
 {
+    unsigned int retry = 0;
     na_return_t ret;
 
     /* Let only one thread at a time resolving the address */
@@ -2195,15 +2386,24 @@ na_ucx_addr_resolve(
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not connect UCP endpoint");
 
-    /* Generate connection ID */
-    na_ucx_addr->conn_id = na_ucp_conn_id_gen();
-    NA_LOG_SUBSYS_DEBUG(
-        addr, "Generated connection ID %" PRId32, na_ucx_addr->conn_id);
+    while (retry < NA_UCX_CONN_RETRY_MAX) {
+        /* Generate connection ID */
+        na_ucx_addr->conn_id = na_ucp_conn_id_gen(na_ucx_class);
+        NA_LOG_SUBSYS_DEBUG(
+            addr, "Generated connection ID %" PRId32, na_ucx_addr->conn_id);
 
-    /* Insert connection entry to lookup address by connection ID */
-    ret = na_ucx_addr_conn_insert(&na_ucx_class->addr_conn, na_ucx_addr);
-    NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not insert new address");
-
+        /* Insert connection entry to lookup address by connection ID */
+        ret = na_ucx_addr_conn_insert(&na_ucx_class->addr_conn, na_ucx_addr);
+        if (ret == NA_SUCCESS)
+            break;
+        else if (ret == NA_EXIST) {
+            /* Attempt to use another connection ID */
+            retry++;
+            continue;
+        } else
+            NA_CHECK_SUBSYS_NA_ERROR(
+                addr, error, ret, "Could not insert new address");
+    }
     /* Exchange IDs so that we can later use that ID to identify msg senders */
     ret = na_ucp_conn_id_exchange(na_ucx_addr->ucp_ep, &na_ucx_addr->conn_id,
         &na_ucx_addr->remote_conn_id, na_ucx_addr);
@@ -2520,7 +2720,7 @@ na_ucx_release(void *arg)
             (!(hg_atomic_get32(&na_ucx_op_id->status) & NA_UCX_OP_COMPLETED)),
         "Releasing resources from an uncompleted operation");
 
-    if (na_ucx_op_id->addr) {
+    if (na_ucx_op_id && na_ucx_op_id->addr != NULL) {
         na_ucx_addr_ref_decr(na_ucx_op_id->addr);
         na_ucx_op_id->addr = NULL;
     }
@@ -2572,14 +2772,18 @@ na_ucx_initialize(
     ucp_lib_attr_t ucp_lib_attrs;
 #endif
     char *net_device = NULL;
-    struct sockaddr_storage *listen_ss_addr = NULL,
-                            *ucp_listener_ss_addr = NULL;
+    struct sockaddr_storage *listen_ss_addr = NULL;
+    struct sockaddr_storage ucp_listener_ss_addr;
+    ucs_sock_addr_t addr_key = {.addr = NULL, .addrlen = 0};
     ucp_config_t *config;
     na_bool_t no_wait = NA_FALSE;
     na_size_t unexpected_size_max = 0, expected_size_max = 0;
     ucs_thread_mode_t context_thread_mode = UCS_THREAD_MODE_SINGLE,
                       worker_thread_mode = UCS_THREAD_MODE_MULTI;
     na_return_t ret;
+#ifdef NA_UCX_HAS_ADDR_POOL
+    unsigned int i;
+#endif
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucs_status_t status;
 #endif
@@ -2680,17 +2884,32 @@ na_ucx_initialize(
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not create UCX listener");
 
+        addr_key = (ucs_sock_addr_t){
+            .addr = (const struct sockaddr *) &ucp_listener_ss_addr,
+            .addrlen = sizeof(ucp_listener_ss_addr)};
+
         /* No longer needed */
         free(listen_ss_addr);
         listen_ss_addr = NULL;
     }
 
+#ifdef NA_UCX_HAS_ADDR_POOL
+    /* Create pool of addresses */
+    for (i = 0; i < NA_UCX_ADDR_POOL_SIZE; i++) {
+        struct na_ucx_addr *na_ucx_addr = na_ucx_addr_alloc(na_ucx_class);
+        HG_QUEUE_PUSH_TAIL(&na_ucx_class->addr_pool.queue, na_ucx_addr, entry);
+    }
+#endif
+
     /* Create self address */
-    ret = na_ucx_addr_create(na_ucx_class,
-        (const struct sockaddr *) ucp_listener_ss_addr,
-        sizeof(*ucp_listener_ss_addr), &na_ucx_class->self_addr);
-    free(ucp_listener_ss_addr);
+    ret = na_ucx_addr_create(na_ucx_class, &addr_key, &na_ucx_class->self_addr);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create self address");
+
+    /* Attach worker address */
+    ret = na_ucp_worker_get_address(na_ucx_class->ucp_worker,
+        &na_ucx_class->self_addr->worker_addr,
+        &na_ucx_class->self_addr->worker_addr_len);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not get worker address");
 
     /* Register initial mempool */
 #ifdef NA_UCX_HAS_MEM_POOL
@@ -2740,6 +2959,16 @@ na_ucx_finalize(na_class_t *na_class)
             (struct na_ucx_addr *) hg_hash_table_iter_next(&addr_table_iter);
         na_ucx_addr_destroy(na_ucx_addr);
     }
+
+#ifdef NA_UCX_HAS_ADDR_POOL
+    /* Free addresse pool */
+    while (!HG_QUEUE_IS_EMPTY(&na_ucx_class->addr_pool.queue)) {
+        struct na_ucx_addr *na_ucx_addr =
+            HG_QUEUE_FIRST(&na_ucx_class->addr_pool.queue);
+        HG_QUEUE_POP_HEAD(&na_ucx_class->addr_pool.queue, entry);
+        na_ucx_addr_destroy(na_ucx_addr);
+    }
+#endif
 
     na_ucx_class_free(na_ucx_class);
     na_class->plugin_class = NULL;
@@ -2802,6 +3031,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
     struct addrinfo hints, *hostname_res = NULL;
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
     struct na_ucx_addr *na_ucx_addr = NULL;
+    ucs_sock_addr_t addr_key = {.addr = NULL, .addrlen = 0};
     na_return_t ret;
     int rc;
 
@@ -2832,8 +3062,9 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
         "getaddrinfo() failed (%s)", gai_strerror(rc));
 
     /* Lookup address from table */
-    na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map,
-        hostname_res->ai_addr, hostname_res->ai_addrlen);
+    addr_key = (ucs_sock_addr_t){
+        .addr = hostname_res->ai_addr, .addrlen = hostname_res->ai_addrlen};
+    na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key);
 
     if (!na_ucx_addr) {
         na_return_t na_ret;
@@ -2843,8 +3074,8 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
             host_string);
 
         /* Insert new entry and create new address if needed */
-        na_ret = na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
-            hostname_res->ai_addr, hostname_res->ai_addrlen, &na_ucx_addr);
+        na_ret = na_ucx_addr_map_insert(
+            na_ucx_class, &na_ucx_class->addr_map, &addr_key, &na_ucx_addr);
         freeaddrinfo(hostname_res);
         NA_CHECK_SUBSYS_ERROR(addr, na_ret != NA_SUCCESS && na_ret != NA_EXIST,
             error, ret, na_ret, "Could not insert new address");
@@ -2924,9 +3155,9 @@ na_ucx_addr_to_string(
     NA_CHECK_SUBSYS_ERROR(addr, na_ucx_addr->addr_key.addrlen == 0, error, ret,
         NA_OPNOTSUPPORTED, "Cannot convert address to string");
 
-    rc = getnameinfo((const struct sockaddr *) &na_ucx_addr->ss_addr,
-        sizeof(na_ucx_addr->ss_addr), host_string, sizeof(host_string),
-        serv_string, sizeof(serv_string), NI_NUMERICHOST | NI_NUMERICSERV);
+    rc = getnameinfo(na_ucx_addr->addr_key.addr, na_ucx_addr->addr_key.addrlen,
+        host_string, sizeof(host_string), serv_string, sizeof(serv_string),
+        NI_NUMERICHOST | NI_NUMERICSERV);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, NA_PROTOCOL_ERROR,
         "getnameinfo() failed (%s)", gai_strerror(rc));
 
@@ -2951,30 +3182,88 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_size_t
-na_ucx_addr_get_serialize_size(
-    na_class_t NA_UNUSED *na_class, na_addr_t NA_UNUSED addr)
+na_ucx_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
-    /* TODO */
-    return 0;
+    return ((struct na_ucx_addr *) addr)->worker_addr_len + sizeof(size_t);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_serialize(na_class_t NA_UNUSED *na_class, void NA_UNUSED *buf,
-    na_size_t NA_UNUSED buf_size, na_addr_t NA_UNUSED addr)
+na_ucx_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
+    na_size_t buf_size, na_addr_t addr)
 {
-    /* TODO */
-    return NA_SUCCESS;
+    struct na_ucx_addr *na_ucx_addr = (struct na_ucx_addr *) addr;
+    char *buf_ptr = (char *) buf;
+    na_size_t buf_size_left = buf_size;
+    na_return_t ret = NA_SUCCESS;
+
+    NA_CHECK_SUBSYS_ERROR(addr, na_ucx_addr->worker_addr == NULL, done, ret,
+        NA_PROTONOSUPPORT,
+        "Serialization of addresses can only be done if worker address is "
+        "available");
+    NA_CHECK_SUBSYS_ERROR(addr, na_ucx_addr->worker_addr_len > buf_size, done,
+        ret, NA_OVERFLOW,
+        "Space left to encode worker address is not sufficient");
+
+    /* Encode worker_addr_len and worker_addr */
+    NA_ENCODE(done, ret, buf_ptr, buf_size_left, &na_ucx_addr->worker_addr_len,
+        size_t);
+    memcpy(buf_ptr, na_ucx_addr->worker_addr, na_ucx_addr->worker_addr_len);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_deserialize(na_class_t NA_UNUSED *na_class,
-    na_addr_t NA_UNUSED *addr_p, const void NA_UNUSED *buf,
-    na_size_t NA_UNUSED buf_size)
+na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addr_p,
+    const void *buf, na_size_t buf_size)
 {
-    /* TODO */
+    struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
+    struct na_ucx_addr *na_ucx_addr = NULL;
+    const char *buf_ptr = (const char *) buf;
+    na_size_t buf_size_left = buf_size;
+    ucp_address_t *worker_addr = NULL;
+    size_t worker_addr_len = 0;
+    na_return_t ret;
+
+    /* Encode worker_addr_len and worker_addr */
+    NA_DECODE(error, ret, buf_ptr, buf_size_left, &worker_addr_len, size_t);
+
+    NA_CHECK_SUBSYS_ERROR(addr, buf_size_left < worker_addr_len, error, ret,
+        NA_OVERFLOW, "Space left to decode worker address is not sufficient");
+
+    worker_addr = (ucp_address_t *) malloc(worker_addr_len);
+    NA_CHECK_SUBSYS_ERROR(addr, worker_addr == NULL, error, ret, NA_NOMEM,
+        "Could not allocate worker_addr");
+    memcpy(worker_addr, buf_ptr, worker_addr_len);
+
+    /* Create new address */
+    ret = na_ucx_addr_create(na_ucx_class, NULL, &na_ucx_addr);
+    NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not create address");
+
+    /* Attach worker address */
+    na_ucx_addr->worker_addr = worker_addr;
+    na_ucx_addr->worker_addr_len = worker_addr_len;
+    na_ucx_addr->worker_addr_alloc = NA_TRUE;
+
+    /* Create EP */
+    ret = na_ucp_connect_worker(na_ucx_class->ucp_worker, worker_addr,
+        na_ucp_ep_error_cb, na_ucx_addr, &na_ucx_addr->ucp_ep);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        addr, error, ret, "Could not connect to remote worker");
+
+    *addr_p = (na_addr_t) na_ucx_addr;
+
     return NA_SUCCESS;
+
+error:
+    if (na_ucx_addr)
+        na_ucx_addr_destroy(na_ucx_addr);
+    if (worker_addr)
+        free(worker_addr);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
