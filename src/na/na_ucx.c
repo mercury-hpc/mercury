@@ -1962,6 +1962,7 @@ static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
     char **net_device_p, struct sockaddr_storage **sockaddr_p)
 {
+    char **ifa_name_p = NULL;
     char *hostname = NULL;
     unsigned int port = 0;
     na_return_t ret = NA_SUCCESS;
@@ -1974,19 +1975,31 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
 
         /* TODO add support for IPv6 address parsing */
 
-        /* Extract hostname / port */
+        /* Extract hostname : port */
         if (strstr(hostname, ":")) {
             char *port_str = NULL;
             strtok_r(hostname, ":", &port_str);
             port = (unsigned int) strtoul(port_str, NULL, 10);
         }
+
+        /* Extract net_device if explicitly listed with '/' before IP */
+        if (strstr(hostname, "/")) {
+            char *host_str = NULL;
+            strtok_r(hostname, "/", &host_str);
+
+            *net_device_p = hostname;
+            hostname = strdup(host_str);
+            NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, done, ret, NA_NOMEM,
+                "strdup() of hostname failed");
+        } else
+            ifa_name_p = net_device_p;
     }
 
     /* TODO add support for IPv6 wildcards */
 
     if (hostname && strcmp(hostname, "0.0.0.0") != 0) {
         /* Try to get matching IP/device */
-        ret = na_ip_check_interface(hostname, port, net_device_p, sockaddr_p);
+        ret = na_ip_check_interface(hostname, port, ifa_name_p, sockaddr_p);
         NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "Could not check interfaces");
     } else {
         char pref_anyip[NI_MAXHOST];
@@ -2864,6 +2877,10 @@ na_ucx_initialize(
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "Could not initialize UCX config");
 
+    /* No longer needed */
+    free(net_device);
+    net_device = NULL;
+
     /* Create UCP context and release config */
     ret = na_ucp_context_create(config, no_wait, context_thread_mode,
         &na_ucx_class->ucp_context, &na_ucx_class->ucp_request_size);
@@ -2930,6 +2947,7 @@ na_ucx_initialize(
     return NA_SUCCESS;
 
 error:
+    free(net_device);
     free(listen_ss_addr);
     if (na_ucx_class)
         na_ucx_class_free(na_ucx_class);
