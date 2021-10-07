@@ -6,6 +6,11 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 - __[NA UCX]__
     - Add initial support for UCX. As opposed to other plugins, the UCX plugin is able through the `ucx+all` init string to decide on which protocol to use.
+- __[NA SM]__
+    - Update default addressing format to follow `PID-ID` instead of `PID/ID`
+    - Allow for passing of arbitrary SM init URIs
+    - Enable support for bulk handle address binding
+    - Add `sm_info_string` field to HG init info, which allows for specific init URIs to be used for SM when `auto_sm` is enabled.
 - __[NA]__
     - Add `thread_mode` to NA init options and add `NA_THREAD_MODE_SINGLE` to relax thread-safety requirements.
     - Add `na_cb_info_recv_expected` to return `actual_buf_size`.
@@ -26,6 +31,9 @@ This version brings bug fixes and updates to our v2.0.0 release.
 - __[NA OFI]__
     - Fix handling of completion queue events and completion of retried operations that fail.
     - Fix progress loop to reduce time calls.
+- __[NA SM]__
+    - Refactoring and clean up of sends/cancelation/retries/rma/address keys.
+    - Remove use of usernames from SM paths.
 - __[HG util]__
     - Prevent use of `CLOCK_MONOTONIC_COARSE` on PPC platforms and default to `CLOCK_MONOTONIC`.
     - Fix debug logs that were not freed at exit.
@@ -34,6 +42,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
 - __[HG/HG util/NA]__
     - Fix thread safety warnings and potential thread locking issues.
     - Fix log level set routines that were not enabling the underlying log sub-system.
+    - Avoid reading system timers and optimize handling of timeouts. 
 - __[HG bulk]__
     - Fix erroneous call to `NA_Mem_deregister()` when handle is deserialized.
     - Correctly mark op as canceled if canceled from NA.
@@ -41,6 +50,9 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Correctly print HG handle debug information.
     - In short responses like ACKs, leave room at the front of a buffer for
     the NA header, and expect the header to be present.
+- __[General]__
+    - Warning and static analysis issues were fixed.
+
 
 ## :warning: Known Issues
 
@@ -50,4 +62,3 @@ This version brings bug fixes and updates to our v2.0.0 release.
         - __Please note that libfabric v1.13.0 and v1.13.1 have address management issues with that provider. We do not recommend upgrading to these versions at the moment.__
 - __[NA UCX]__
     - `NA_Addr_to_string()` cannot be used on non-listening processes to convert a self-address to a string.
-    - Serialization of addresses is currently not supported and will be supported in future UCX releases.
