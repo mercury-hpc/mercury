@@ -54,6 +54,12 @@ struct hg_init_info {
      * Default is: false */
     hg_bool_t auto_sm;
 
+    /* Overrides the default info string used to initialize the NA shared-memory
+     * interface when auto_sm is set to true (e.g., "foo-bar" will create
+     * shared-memory objects and directories using "foo-bar" as a suffix).
+     * Default is: null */
+    const char *sm_info_string;
+
     /* Controls whether mercury should _NOT_ attempt to transfer small bulk data
      * along with the RPC request.
      * Default is: false */
@@ -150,8 +156,8 @@ typedef enum {
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE, HG_FALSE,    \
-            HG_FALSE                                                           \
+        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, NULL, HG_FALSE,        \
+            HG_FALSE, HG_FALSE                                                 \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
