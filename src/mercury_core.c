@@ -935,11 +935,21 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 
     /* Initialize SM plugin */
     if (auto_sm) {
+        char info_string[HG_CORE_ADDR_MAX_SIZE], *info_string_p;
         na_return_t na_ret;
 
+        if (hg_init_info && hg_init_info->sm_info_string) {
+            int rc = snprintf(info_string, HG_CORE_ADDR_MAX_SIZE, "na+sm://%s",
+                hg_init_info->sm_info_string);
+            HG_CHECK_ERROR(rc < 0 || rc > HG_CORE_ADDR_MAX_SIZE, error, ret,
+                HG_OVERFLOW, "snprintf() failed, rc: %d", rc);
+            info_string_p = info_string;
+        } else
+            info_string_p = "na+sm";
+
         /* Initialize NA SM first so that tmp directories are created */
-        hg_core_class->core_class.na_sm_class =
-            NA_Initialize_opt("na+sm", na_listen, &hg_init_info->na_init_info);
+        hg_core_class->core_class.na_sm_class = NA_Initialize_opt(
+            info_string_p, na_listen, &hg_init_info->na_init_info);
         HG_CHECK_ERROR(hg_core_class->core_class.na_sm_class == NULL, error,
             ret, HG_NA_ERROR, "Could not initialize NA SM class");
 
