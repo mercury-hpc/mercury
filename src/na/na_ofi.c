@@ -88,7 +88,7 @@
  * Specify the version of OFI is coded to, the provider will select struct
  * layouts that are compatible with this version.
  */
-#define NA_OFI_VERSION FI_VERSION(1, 5)
+#define NA_OFI_VERSION FI_VERSION(1, 7)
 
 /* Default basic bits */
 #define NA_OFI_MR_BASIC_REQ (FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY)
