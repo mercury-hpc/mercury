@@ -189,9 +189,6 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* CQ max err data size (fix to 48 to work around bug in gni provider code) */
 #define NA_OFI_CQ_MAX_ERR_DATA_SIZE (48)
 
-/* The predefined RMA KEY for MR_SCALABLE */
-#define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
-
 /* Uncomment to register SGL regions */
 // #define NA_OFI_USE_REGV
 
@@ -454,13 +451,12 @@ struct na_ofi_domain {
     struct fid_fabric *fi_fabric;    /* Fabric handle            */
     struct fid_domain *fi_domain;    /* Domain handle            */
     struct fi_info *fi_prov;         /* Provider info            */
-    struct fid_mr *fi_mr;            /* Global MR handle         */
-    na_uint64_t fi_mr_key;           /* Global MR key            */
     struct fid_av *fi_av;            /* Address vector handle    */
     hg_hash_table_t *addr_ht;        /* Address hash_table       */
     char *prov_name;                 /* Provider name            */
     na_size_t context_max;           /* Max contexts available   */
     na_size_t eager_msg_size_max;    /* Max eager msg size       */
+    hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
     enum na_ofi_prov_type prov_type; /* Provider type            */
     na_bool_t no_wait;               /* Wait disabled on domain  */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered  */
@@ -765,6 +761,12 @@ static int
 na_ofi_mem_buf_deregister(void *handle, void *arg);
 
 /**
+ * Generate key for memory registration.
+ */
+static uint64_t
+na_ofi_mem_key_gen(struct na_ofi_domain *na_ofi_domain);
+
+/**
  * Msg send.
  */
 static na_return_t
@@ -800,10 +802,10 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
  * Create new RMA IOV for transferring length data.
  */
 static NA_INLINE void
-na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    na_uint64_t key, unsigned long iov_start_index,
-    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
-    unsigned long new_iovcnt);
+na_ofi_rma_iov_translate(struct na_ofi_domain *na_ofi_domain,
+    const struct iovec *iov, unsigned long iovcnt, na_uint64_t key,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    struct fi_rma_iov *new_iov, unsigned long new_iovcnt);
 
 /**
  * Do RMA operation (put/get).
@@ -2181,6 +2183,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain == NULL, error, ret, NA_NOMEM,
         "Could not allocate na_ofi_domain");
     memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
+    hg_atomic_init64(&na_ofi_domain->requested_key, 0);
     hg_atomic_init32(&na_ofi_domain->refcount, 1);
 
     HG_LOG_ADD_COUNTER32(
@@ -2294,32 +2297,6 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     }
 #endif
 
-    /* If memory does not need to be backed up by physical pages at the time of
-     * registration, export all memory range for RMA
-     * (this is equivalent to FI_MR_SCALABLE) */
-    if (!(na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_ALLOCATED)) {
-        uint64_t requested_key =
-            (!(na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_PROV_KEY))
-                ? NA_OFI_RMA_KEY
-                : 0;
-
-        rc = fi_mr_reg(na_ofi_domain->fi_domain, NULL, UINT64_MAX,
-            FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV | FI_READ |
-                FI_WRITE,
-            0 /* offset */, requested_key, 0 /* flags */, &na_ofi_domain->fi_mr,
-            NULL /* context */);
-        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-            "fi_mr_reg failed(), rc: %d (%s), mr_reg_count: %d", rc,
-            fi_strerror(-rc), hg_atomic_get32(na_ofi_domain->mr_reg_count));
-        hg_atomic_incr32(na_ofi_domain->mr_reg_count);
-
-        /* Requested key may not be the same, currently RxM provider forces
-         * the underlying provider to provide keys and ignores user-provided
-         * key.
-         */
-        na_ofi_domain->fi_mr_key = fi_mr_key(na_ofi_domain->fi_mr);
-    }
-
     /* Open fi address vector */
     av_attr.type = FI_AV_MAP;
     av_attr.rx_ctx_bits = NA_OFI_SEP_RX_CTX_BITS;
@@ -2374,15 +2351,6 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     if (na_ofi_domain->entry.next || na_ofi_domain->entry.prev)
         HG_LIST_REMOVE(na_ofi_domain, entry);
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
-
-    /* Close MR */
-    if (na_ofi_domain->fi_mr) {
-        rc = fi_close(&na_ofi_domain->fi_mr->fid);
-        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-            "fi_close() MR failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        na_ofi_domain->fi_mr = NULL;
-        hg_atomic_decr32(na_ofi_domain->mr_reg_count);
-    }
 
     /* Close AV */
     if (na_ofi_domain->fi_av) {
@@ -2978,6 +2946,15 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+static uint64_t
+na_ofi_mem_key_gen(struct na_ofi_domain *na_ofi_domain)
+{
+    return (hg_atomic_cas64(&na_ofi_domain->requested_key, INT64_MAX, 0))
+               ? 1 /* Incremented value */
+               : (uint64_t) hg_atomic_incr64(&na_ofi_domain->requested_key);
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_msg_send(struct na_ofi_class *na_ofi_class, na_context_t *context,
     na_cb_type_t cb_type, na_cb_t callback, void *arg, const void *buf,
@@ -3106,17 +3083,23 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    na_uint64_t key, unsigned long iov_start_index,
-    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
-    unsigned long new_iovcnt)
+na_ofi_rma_iov_translate(struct na_ofi_domain *na_ofi_domain,
+    const struct iovec *iov, unsigned long iovcnt, na_uint64_t key,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    struct fi_rma_iov *new_iov, unsigned long new_iovcnt)
 {
+    uint64_t addr;
     na_size_t remaining_len = len;
     unsigned long i, iov_index;
 
+    /* Reference by virtual address, rather than a 0-based offset */
+    addr = (na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
+               ? (uint64_t) iov[iov_start_index].iov_base
+               : (uint64_t) iov[iov_start_index].iov_base -
+                     (uint64_t) iov[0].iov_base;
+
     /* Offset is only within first segment */
-    new_iov[0].addr =
-        (uint64_t) iov[iov_start_index].iov_base + iov_start_offset;
+    new_iov[0].addr = addr + iov_start_offset;
     new_iov[0].len =
         MIN(remaining_len, iov[iov_start_index].iov_len - iov_start_offset);
     new_iov[0].key = key;
@@ -3125,7 +3108,11 @@ na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
     for (i = 1, iov_index = iov_start_index + 1;
          remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
          i++, iov_index++) {
-        new_iov[i].addr = (uint64_t) iov[iov_index].iov_base;
+        addr = (na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
+                   ? (uint64_t) iov[iov_index].iov_base
+                   : (uint64_t) iov[iov_index].iov_base -
+                         (uint64_t) iov[0].iov_base;
+        new_iov[i].addr = addr;
         new_iov[i].len = MIN(remaining_len, iov[iov_index].iov_len);
         new_iov[i].key = key;
 
@@ -3223,9 +3210,9 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     } else
         riov = na_ofi_op_id->info.rma.remote_iov.s;
 
-    na_ofi_rma_iov_translate(remote_iov, remote_iovcnt, remote_key,
-        remote_iov_start_index, remote_iov_start_offset, length, riov,
-        na_ofi_op_id->info.rma.remote_iovcnt);
+    na_ofi_rma_iov_translate(na_ofi_class->domain, remote_iov, remote_iovcnt,
+        remote_key, remote_iov_start_index, remote_iov_start_offset, length,
+        riov, na_ofi_op_id->info.rma.remote_iovcnt);
 
     na_ofi_op_id->info.rma.fi_addr =
         fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS);
@@ -4958,21 +4945,10 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
-    const struct iovec *iov = NULL;
-    const struct iovec null_iov = {0, 0};
-    size_t count = 0;
+    uint64_t requested_key;
     na_uint64_t access;
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
-
-    /* Nothing to do for providers that do not need physically backed
-     * virtual addresses (FI_MR_SCALABLE) */
-    if (!(domain->fi_prov->domain_attr->mr_mode & FI_MR_ALLOCATED)) {
-        /* Use global handle and key */
-        na_ofi_mem_handle->fi_mr = domain->fi_mr;
-        na_ofi_mem_handle->desc.info.fi_mr_key = domain->fi_mr_key;
-        goto out;
-    }
 
     /* Set access mode */
     switch (na_ofi_mem_handle->desc.info.flags) {
@@ -4991,18 +4967,15 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
             break;
     }
 
-    /* Use virtual addresses only when provider needs it */
-    if (domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR) {
-        count = na_ofi_mem_handle->desc.info.iovcnt;
-        iov = NA_OFI_IOV(na_ofi_mem_handle);
-    } else {
-        count = 1;
-        iov = &null_iov;
-    }
+    /* Let the provider provide its own key otherwise generate our own */
+    requested_key = (domain->fi_prov->domain_attr->mr_mode & FI_MR_PROV_KEY)
+                        ? 0
+                        : na_ofi_mem_key_gen(domain);
 
     /* Register region */
-    rc = fi_mr_regv(domain->fi_domain, iov, count, access, 0 /* offset */,
-        0 /* requested key */, 0 /* flags */, &na_ofi_mem_handle->fi_mr,
+    rc = fi_mr_regv(domain->fi_domain, NA_OFI_IOV(na_ofi_mem_handle),
+        na_ofi_mem_handle->desc.info.iovcnt, access, 0 /* offset */,
+        requested_key, 0 /* flags */, &na_ofi_mem_handle->fi_mr,
         NULL /* context */);
     NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
         "fi_mr_regv() failed, rc: %d (%s), mr_reg_count: %d", rc,
@@ -5027,15 +5000,13 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    if (!(domain->fi_prov->domain_attr->mr_mode & FI_MR_ALLOCATED) ||
-        !na_ofi_mem_handle->fi_mr)
-        goto out;
-
     /* close MR handle */
-    rc = fi_close(&na_ofi_mem_handle->fi_mr->fid);
-    NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-        "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-    hg_atomic_decr32(domain->mr_reg_count);
+    if (na_ofi_mem_handle->fi_mr != NULL) {
+        rc = fi_close(&na_ofi_mem_handle->fi_mr->fid);
+        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+            "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        hg_atomic_decr32(domain->mr_reg_count);
+    }
 
 out:
     return ret;
