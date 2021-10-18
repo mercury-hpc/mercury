@@ -59,6 +59,6 @@ This version brings bug fixes and updates to our v2.0.0 release.
 - __[NA OFI]__
     - [tcp/verbs;ofi_rxm] Using more than 256 peers requires `FI_UNIVERSE_SIZE` to be set.
     - [tcp;ofi_rxm] Remains unstable, use `sockets` as a fallback in case of issues.
-        - __Please note that libfabric v1.13.0 and v1.13.1 have address management issues with that provider. We do not recommend upgrading to these versions at the moment.__
+        - __Please note that libfabric v1.13.0 and v1.13.1 have address management issues with that transport. Please either downgrade to v1.12.1 (or earlier) or upgrade to v1.13.2 (or later).__
 - __[NA UCX]__
     - `NA_Addr_to_string()` cannot be used on non-listening processes to convert a self-address to a string.
