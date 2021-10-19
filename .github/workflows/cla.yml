@@ -6,7 +6,8 @@ on:
     types: [opened,closed,synchronize]
 
 jobs:
-  CLAssistant:
+  pr_commented:
+    if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
       - name: "CLA Assistant"
