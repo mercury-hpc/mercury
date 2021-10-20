@@ -26,6 +26,12 @@ PREFIX=${RUNNER_TEMP}/${INSTALL_DIR}
 
 set -e
 
+# Source intel env when using icc
+if [[ ${CC} == 'icc' ]]; then
+  ICC_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/compiler/ | grep -v latest | sort | tail -1)
+  source /opt/intel/oneapi/compiler/"$ICC_LATEST_VERSION"/env/vars.sh
+fi
+
 # BMI
 cd $HOME && wget --no-check-certificate http://xgitlab.cels.anl.gov/sds/bmi/-/archive/${BMI_VERSION}/bmi-${BMI_VERSION}.tar.bz2;
 tar -xjf bmi-${BMI_VERSION}.tar.bz2;
