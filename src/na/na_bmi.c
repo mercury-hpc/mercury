@@ -764,7 +764,7 @@ na_bmi_progress_expected(
         case NA_CB_RECV_EXPECTED:
             /* Set the actual size */
             na_bmi_op_id->info.msg.actual_buf_size = bmi_actual_size;
-            NA_FALLTHROUGH();
+            NA_FALLTHROUGH;
         case NA_CB_SEND_UNEXPECTED:
         case NA_CB_SEND_EXPECTED:
             na_bmi_complete(na_bmi_op_id);
@@ -2367,7 +2367,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
                 NA_CHECK_ERROR(bmi_ret < 0, done, ret, NA_PROTOCOL_ERROR,
                     "BMI_cancel() failed");
             }
-            NA_FALLTHROUGH();
+            NA_FALLTHROUGH;
         case NA_CB_GET:
             if (na_bmi_op_id->info.rma.msg_op_id > 0) {
                 int bmi_ret = BMI_cancel(na_bmi_op_id->info.rma.msg_op_id,

@@ -50,51 +50,36 @@ typedef na_uint64_t na_ptr_t;
 /* Public Macros */
 /*****************/
 
-/* Visibility of symbols */
-#if defined(_WIN32)
-#    define NA_ABI_IMPORT __declspec(dllimport)
-#    define NA_ABI_EXPORT __declspec(dllexport)
-#    define NA_ABI_HIDDEN
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-#    define NA_ABI_IMPORT __attribute__((visibility("default")))
-#    define NA_ABI_EXPORT __attribute__((visibility("default")))
-#    define NA_ABI_HIDDEN __attribute__((visibility("hidden")))
-#else
-#    define NA_ABI_IMPORT
-#    define NA_ABI_EXPORT
-#    define NA_ABI_HIDDEN
-#endif
+#include <mercury_compiler_attributes.h>
 
-/* Inline macro */
+/* Unused return values */
+#define NA_WARN_UNUSED_RESULT HG_ATTR_WARN_UNUSED_RESULT
+
+/* Remove warnings when plugin does not use callback arguments */
+#define NA_UNUSED HG_ATTR_UNUSED
+
+/* Alignment */
+#define NA_ALIGNED(x) HG_ATTR_ALIGNED(x)
+
+/* Fallthrough */
+#define NA_FALLTHROUGH HG_ATTR_FALLTHROUGH
+
+/* Inline */
 #ifdef _WIN32
 #    define NA_INLINE __inline
 #else
 #    define NA_INLINE __inline__
 #endif
 
-/* Unused return values */
-#if defined(__GNUC__)
-#    define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
-#else
-#    define NA_WARN_UNUSED_RESULT
-#endif
-
-/* Fallthrough macro */
-#if defined(__GNUC__) && (__GNUC__ >= 7)
-#    define NA_FALLTHROUGH() __attribute__((fallthrough))
-#else
-#    define NA_FALLTHROUGH()
-#endif
-
 /* Shared libraries */
 #cmakedefine NA_BUILD_SHARED_LIBS
 #ifdef NA_BUILD_SHARED_LIBS
 #    ifdef na_EXPORTS
-#        define NA_PUBLIC NA_ABI_EXPORT
+#        define NA_PUBLIC HG_ATTR_ABI_EXPORT
 #    else
-#        define NA_PUBLIC NA_ABI_IMPORT
+#        define NA_PUBLIC HG_ATTR_ABI_IMPORT
 #    endif
-#    define NA_PRIVATE NA_ABI_HIDDEN
+#    define NA_PRIVATE HG_ATTR_ABI_HIDDEN
 #else
 #    define NA_PUBLIC
 #    define NA_PRIVATE

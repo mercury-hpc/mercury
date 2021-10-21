@@ -213,13 +213,11 @@ struct na_sm_msg_queue {
     unsigned int prod_size;
     unsigned int prod_mask;
     hg_util_uint64_t drops;
-    hg_atomic_int32_t cons_head
-        __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
+    hg_atomic_int32_t cons_head NA_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
     hg_atomic_int32_t cons_tail;
     unsigned int cons_size;
     unsigned int cons_mask;
-    hg_atomic_int64_t ring[NA_SM_NUM_BUFS]
-        __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
+    hg_atomic_int64_t ring[NA_SM_NUM_BUFS] NA_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
 };
 
 /* Shared queue pair */
@@ -250,14 +248,13 @@ struct na_sm_cmd_queue {
     unsigned int prod_size;
     unsigned int prod_mask;
     hg_util_uint64_t drops;
-    hg_atomic_int32_t cons_head
-        __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
+    hg_atomic_int32_t cons_head NA_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
     hg_atomic_int32_t cons_tail;
     unsigned int cons_size;
     unsigned int cons_mask;
     /* To be safe, make the queue twice as large */
-    hg_atomic_int64_t ring[NA_SM_MAX_PEERS * 2]
-        __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
+    hg_atomic_int64_t ring[NA_SM_MAX_PEERS * 2] NA_ALIGNED(
+        HG_MEM_CACHE_LINE_SIZE);
 };
 
 /* Address key */
@@ -270,10 +267,10 @@ struct na_sm_addr_key {
 struct na_sm_region {
     struct na_sm_addr_key addr_key;  /* Region IDs */
     struct na_sm_copy_buf copy_bufs; /* Pool of msg buffers */
-    struct na_sm_queue_pair queue_pairs[NA_SM_MAX_PEERS]
-        __attribute__((aligned(NA_SM_PAGE_SIZE))); /* Msg queue pairs */
-    struct na_sm_cmd_queue cmd_queue;              /* Cmd queue */
-    na_sm_cacheline_atomic_int256_t available;     /* Available pairs */
+    struct na_sm_queue_pair queue_pairs[NA_SM_MAX_PEERS] NA_ALIGNED(
+        NA_SM_PAGE_SIZE);                      /* Msg queue pairs */
+    struct na_sm_cmd_queue cmd_queue;          /* Cmd queue */
+    na_sm_cacheline_atomic_int256_t available; /* Available pairs */
 };
 
 /* Poll type */

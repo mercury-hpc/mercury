@@ -129,7 +129,7 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
         switch (hg_proc_get_op(proc)) {
             case HG_DECODE:
                 struct_data->buf = malloc(struct_data->buf_size);
-                HG_FALLTHROUGH();
+                HG_FALLTHROUGH;
             case HG_ENCODE:
                 ret =
                     hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);

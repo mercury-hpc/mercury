@@ -69,12 +69,11 @@ struct hg_atomic_queue {
     unsigned int prod_size;
     unsigned int prod_mask;
     hg_util_uint64_t drops;
-    hg_atomic_int32_t cons_head
-        __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
+    hg_atomic_int32_t cons_head HG_UTIL_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
     hg_atomic_int32_t cons_tail;
     unsigned int cons_size;
     unsigned int cons_mask;
-    hg_atomic_int64_t ring[] __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
+    hg_atomic_int64_t ring[] HG_UTIL_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
 };
 
 /*****************/

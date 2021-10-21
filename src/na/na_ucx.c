@@ -3507,7 +3507,7 @@ na_ucx_mem_handle_free(
             break;
         case NA_UCX_MEM_HANDLE_REMOTE_UNPACKED:
             ucp_rkey_destroy(na_ucx_mem_handle->ucp_mr.rkey);
-            NA_FALLTHROUGH();
+            NA_FALLTHROUGH;
         case NA_UCX_MEM_HANDLE_REMOTE_PACKED:
             free(na_ucx_mem_handle->rkey_buf);
             break;

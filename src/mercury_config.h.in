@@ -59,20 +59,7 @@ typedef hg_uint8_t hg_bool_t;
 /* Reflects any library code changes */
 #define HG_VERSION_PATCH @MERCURY_VERSION_PATCH@
 
-/* Visibility of symbols */
-#if defined(_WIN32)
-#    define HG_ABI_IMPORT __declspec(dllimport)
-#    define HG_ABI_EXPORT __declspec(dllexport)
-#    define HG_ABI_HIDDEN
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-#    define HG_ABI_IMPORT __attribute__((visibility("default")))
-#    define HG_ABI_EXPORT __attribute__((visibility("default")))
-#    define HG_ABI_HIDDEN __attribute__((visibility("hidden")))
-#else
-#    define HG_ABI_IMPORT
-#    define HG_ABI_EXPORT
-#    define HG_ABI_HIDDEN
-#endif
+#include <mercury_compiler_attributes.h>
 
 /* Inline macro */
 #ifdef _WIN32
@@ -82,21 +69,17 @@ typedef hg_uint8_t hg_bool_t;
 #endif
 
 /* Fallthrough macro */
-#if defined(__GNUC__) && (__GNUC__ >= 7)
-#    define HG_FALLTHROUGH() __attribute__((fallthrough))
-#else
-#    define HG_FALLTHROUGH()
-#endif
+#define HG_FALLTHROUGH HG_ATTR_FALLTHROUGH
 
 /* Shared libraries */
 #cmakedefine HG_BUILD_SHARED_LIBS
 #ifdef HG_BUILD_SHARED_LIBS
 #    ifdef mercury_EXPORTS
-#        define HG_PUBLIC HG_ABI_EXPORT
+#        define HG_PUBLIC HG_ATTR_ABI_EXPORT
 #    else
-#        define HG_PUBLIC HG_ABI_IMPORT
+#        define HG_PUBLIC HG_ATTR_ABI_IMPORT
 #    endif
-#    define HG_PRIVATE HG_ABI_HIDDEN
+#    define HG_PRIVATE HG_ATTR_ABI_HIDDEN
 #else
 #    define HG_PUBLIC
 #    define HG_PRIVATE
