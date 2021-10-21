@@ -20,15 +20,6 @@ include(CheckIncludeFiles)
 include(CheckSymbolExists)
 include(CheckTypeSize)
 
-# Check for __attribute__((constructor))
-check_c_source_compiles(
-  "
-  static void test_constructor(void) __attribute__((constructor));
-  int main(void) {return 0;}
-  "
-  HG_UTIL_HAS_ATTR_CONSTRUCTOR
-)
-
 # Check for __attribute__((constructor(priority)))
 check_c_source_compiles(
   "
@@ -190,6 +181,7 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_compiler_attributes.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dlog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h

@@ -21,13 +21,13 @@
 
 /* Make sure it executes first */
 #ifdef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
-#    define HG_UTIL_CONSTRUCTOR_1 __attribute__((constructor(101)))
+#    define HG_UTIL_CONSTRUCTOR_1 HG_ATTR_CONSTRUCTOR_PRIORITY(101)
 #else
 #    define HG_UTIL_CONSTRUCTOR_1
 #endif
 
 /* Destructor (used to finalize log outlets) */
-#define HG_UTIL_DESTRUCTOR __attribute__((destructor))
+#define HG_UTIL_DESTRUCTOR HG_ATTR_DESTRUCTOR
 
 /* Max number of subsystems that can be tracked */
 #define HG_LOG_SUBSYS_MAX (16)

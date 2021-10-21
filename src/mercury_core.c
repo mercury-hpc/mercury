@@ -4132,7 +4132,6 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
         hg_core_cb_info.ret = hg_core_handle->ret;
         switch (hg_core_handle->op_type) {
             case HG_CORE_FORWARD_SELF:
-                HG_FALLTHROUGH();
             case HG_CORE_FORWARD:
                 hg_cb = hg_core_handle->request_callback;
                 hg_core_cb_info.arg = hg_core_handle->request_arg;
