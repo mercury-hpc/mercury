@@ -40,15 +40,6 @@ struct na_cb_completion_data {
 /* Public Macros */
 /*****************/
 
-/* Remove warnings when plugin does not use callback arguments */
-#if defined(__cplusplus)
-#    define NA_UNUSED
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-#    define NA_UNUSED __attribute__((unused))
-#else
-#    define NA_UNUSED
-#endif
-
 /* Remove warnings from variables that are only used for debug */
 #ifdef NDEBUG
 #    define NA_DEBUG_USED NA_UNUSED
