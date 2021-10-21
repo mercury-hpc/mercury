@@ -73,14 +73,14 @@ endif()
 if(APPLE)
   set(OFI_PROTOCOLS "sockets")
 else()
-  # Disable sockets with Tsan and Debug builds (OFI issues)
-  if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan"
-    OR MERCURY_BUILD_CONFIGURATION MATCHES "Debug")
+  # Disable sockets with Tsan builds (OFI issues)
+  if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan")
     set(OFI_PROTOCOLS "tcp")
   else()
     set(OFI_PROTOCOLS "sockets;tcp")
   endif()
 endif()
+set(UCX_PROTOCOLS "tcp")
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
 if(NOT DEFINED dashboard_model)
@@ -255,6 +255,7 @@ NA_USE_SM:BOOL=${USE_SM}
 NA_USE_OFI:BOOL=${USE_OFI}
 NA_OFI_TESTING_PROTOCOL:STRING=${OFI_PROTOCOLS}
 NA_USE_UCX:BOOL=${USE_UCX}
+NA_UCX_TESTING_PROTOCOL:STRING=${UCX_PROTOCOLS}
 NA_MPI_TESTING_PROTOCOL:STRING=static
 
 MERCURY_TESTING_ENABLE_PARALLEL:BOOL=${USE_MPI}
