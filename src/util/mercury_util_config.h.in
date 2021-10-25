@@ -18,41 +18,17 @@
 /*************************************/
 
 /* Type definitions */
-#ifdef _WIN32
-typedef signed __int64 hg_util_int64_t;
-typedef signed __int32 hg_util_int32_t;
-typedef signed __int16 hg_util_int16_t;
-typedef signed __int8 hg_util_int8_t;
-typedef unsigned __int64 hg_util_uint64_t;
-typedef unsigned __int32 hg_util_uint32_t;
-typedef unsigned __int16 hg_util_uint16_t;
-typedef unsigned __int8 hg_util_uint8_t;
-#else
-#    include <stddef.h>
-#    include <stdint.h>
-typedef int64_t hg_util_int64_t;
-typedef int32_t hg_util_int32_t;
-typedef int16_t hg_util_int16_t;
-typedef int8_t hg_util_int8_t;
-typedef uint64_t hg_util_uint64_t;
-typedef uint32_t hg_util_uint32_t;
-typedef uint16_t hg_util_uint16_t;
-typedef uint8_t hg_util_uint8_t;
-#endif
-typedef hg_util_uint8_t hg_util_bool_t;
-typedef hg_util_uint64_t hg_util_ptr_t;
-
-/* True / false */
-#define HG_UTIL_TRUE  1
-#define HG_UTIL_FALSE 0
-
-/* Return codes */
-#define HG_UTIL_SUCCESS 0
-#define HG_UTIL_FAIL    -1
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 /*****************/
 /* Public Macros */
 /*****************/
+
+/* Return codes */
+#define HG_UTIL_SUCCESS 0
+#define HG_UTIL_FAIL    -1
 
 #include <mercury_compiler_attributes.h>
 
@@ -64,10 +40,10 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 #endif
 
 /* Alignment */
-#define HG_UTIL_ALIGNED(x) HG_ATTR_ALIGNED(x)
+#define HG_UTIL_ALIGNED(x, a) HG_ATTR_ALIGNED(x, a)
 
 /* Check format arguments */
-#define HG_UTIL_PRINTF(_fmt, _firstarg) HG_ATTR_FORMAT(printf, _fmt, _firstarg)
+#define HG_UTIL_PRINTF(_fmt, _firstarg) HG_ATTR_PRINTF(_fmt, _firstarg)
 
 /* Shared libraries */
 #cmakedefine HG_UTIL_BUILD_SHARED_LIBS

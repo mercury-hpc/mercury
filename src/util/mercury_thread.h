@@ -17,6 +17,7 @@
 #include "mercury_util_config.h"
 
 #ifdef _WIN32
+#    define _WINSOCKAPI_
 #    include <windows.h>
 typedef HANDLE hg_thread_t;
 typedef LPTHREAD_START_ROUTINE hg_thread_func_t;
@@ -36,7 +37,7 @@ typedef pthread_key_t hg_thread_key_t;
 #        define HG_CPU_SETSIZE 1024
 #        define HG_NCPUBITS    (8 * sizeof(hg_cpu_mask_t))
 /* Type for array elements in 'cpu_set_t'.  */
-typedef hg_util_uint64_t hg_cpu_mask_t;
+typedef uint64_t hg_cpu_mask_t;
 typedef struct {
     hg_cpu_mask_t bits[HG_CPU_SETSIZE / HG_NCPUBITS];
 } hg_cpu_set_t;

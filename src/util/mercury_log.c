@@ -131,7 +131,7 @@ static const char *const hg_log_colors_g[] = {
 
 /* Init */
 #ifndef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
-static hg_util_bool_t hg_log_init_g = HG_UTIL_FALSE;
+static bool hg_log_init_g = false;
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -439,7 +439,7 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 #ifndef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
     if (!hg_log_init_g) {
         /* Set here to prevent infinite loop */
-        hg_log_init_g = HG_UTIL_TRUE;
+        hg_log_init_g = true;
         hg_log_init();
     }
 #endif

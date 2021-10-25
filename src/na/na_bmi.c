@@ -800,7 +800,7 @@ na_bmi_progress_expected(
 
             /* Complete op ID when reached expected completion count */
             if (hg_atomic_incr32(&na_bmi_op_id->info.rma.op_completed_count) ==
-                (hg_util_int32_t) na_bmi_op_id->info.rma.op_count)
+                (int32_t) na_bmi_op_id->info.rma.op_count)
                 na_bmi_complete(na_bmi_op_id);
             break;
         case NA_CB_RECV_UNEXPECTED:
@@ -1038,7 +1038,7 @@ static void
 na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
 {
     struct na_cb_info *callback_info = NULL;
-    hg_util_int32_t status;
+    int32_t status;
     na_bool_t op_internal = NA_FALSE;
 
     /* Mark op id as completed before checking for cancelation */
@@ -2322,7 +2322,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
-    hg_util_int32_t status;
+    int32_t status;
 
     /* Exit if op has already completed */
     status = hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_CANCELED);

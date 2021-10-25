@@ -3822,7 +3822,7 @@ na_ucx_cancel(
     na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t *op_id)
 {
     struct na_ucx_op_id *na_ucx_op_id = (struct na_ucx_op_id *) op_id;
-    hg_util_int32_t status;
+    int32_t status;
 
     /* Exit if op has already completed */
     status = hg_atomic_get32(&na_ucx_op_id->status);

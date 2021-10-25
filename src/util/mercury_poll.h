@@ -22,13 +22,13 @@ typedef struct hg_poll_set hg_poll_set_t;
 typedef union hg_poll_data {
     void *ptr;
     int fd;
-    hg_util_uint32_t u32;
-    hg_util_uint64_t u64;
+    uint32_t u32;
+    uint64_t u64;
 } hg_poll_data_t;
 
 struct hg_poll_event {
-    hg_util_uint32_t events; /* Poll events */
-    hg_poll_data_t data;     /* User data variable */
+    uint32_t events;     /* Poll events */
+    hg_poll_data_t data; /* User data variable */
 };
 
 /*****************/

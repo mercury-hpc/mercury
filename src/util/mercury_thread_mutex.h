@@ -16,6 +16,7 @@
 #include "mercury_thread_annotation.h"
 
 #ifdef _WIN32
+#    define _WINSOCKAPI_
 #    include <windows.h>
 #    define HG_THREAD_MUTEX_INITIALIZER NULL
 typedef CRITICAL_SECTION hg_thread_mutex_t;

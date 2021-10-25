@@ -212,12 +212,12 @@ struct na_sm_msg_queue {
     hg_atomic_int32_t prod_tail;
     unsigned int prod_size;
     unsigned int prod_mask;
-    hg_util_uint64_t drops;
-    hg_atomic_int32_t cons_head NA_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
+    uint64_t drops;
+    NA_ALIGNED(hg_atomic_int32_t cons_head, HG_MEM_CACHE_LINE_SIZE);
     hg_atomic_int32_t cons_tail;
     unsigned int cons_size;
     unsigned int cons_mask;
-    hg_atomic_int64_t ring[NA_SM_NUM_BUFS] NA_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
+    NA_ALIGNED(hg_atomic_int64_t ring[NA_SM_NUM_BUFS], HG_MEM_CACHE_LINE_SIZE);
 };
 
 /* Shared queue pair */
@@ -247,14 +247,14 @@ struct na_sm_cmd_queue {
     hg_atomic_int32_t prod_tail;
     unsigned int prod_size;
     unsigned int prod_mask;
-    hg_util_uint64_t drops;
-    hg_atomic_int32_t cons_head NA_ALIGNED(HG_MEM_CACHE_LINE_SIZE);
+    uint64_t drops;
+    NA_ALIGNED(hg_atomic_int32_t cons_head, HG_MEM_CACHE_LINE_SIZE);
     hg_atomic_int32_t cons_tail;
     unsigned int cons_size;
     unsigned int cons_mask;
     /* To be safe, make the queue twice as large */
-    hg_atomic_int64_t ring[NA_SM_MAX_PEERS * 2] NA_ALIGNED(
-        HG_MEM_CACHE_LINE_SIZE);
+    NA_ALIGNED(
+        hg_atomic_int64_t ring[NA_SM_MAX_PEERS * 2], HG_MEM_CACHE_LINE_SIZE);
 };
 
 /* Address key */
@@ -267,7 +267,7 @@ struct na_sm_addr_key {
 struct na_sm_region {
     struct na_sm_addr_key addr_key;  /* Region IDs */
     struct na_sm_copy_buf copy_bufs; /* Pool of msg buffers */
-    struct na_sm_queue_pair queue_pairs[NA_SM_MAX_PEERS] NA_ALIGNED(
+    NA_ALIGNED(struct na_sm_queue_pair queue_pairs[NA_SM_MAX_PEERS],
         NA_SM_PAGE_SIZE);                      /* Msg queue pairs */
     struct na_sm_cmd_queue cmd_queue;          /* Cmd queue */
     na_sm_cacheline_atomic_int256_t available; /* Available pairs */
@@ -1142,12 +1142,12 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
 /* Debug information */
 #ifdef NA_HAS_DEBUG
 static char *
-lltoa(hg_util_uint64_t val, char *string, int radix)
+lltoa(uint64_t val, char *string, int radix)
 {
     int i = sizeof(val) * 8;
 
-    for (; val && i; --i, val /= (hg_util_uint64_t) radix)
-        string[i - 1] = "0123456789abcdef"[val % (hg_util_uint64_t) radix];
+    for (; val && i; --i, val /= (uint64_t) radix)
+        string[i - 1] = "0123456789abcdef"[val % (uint64_t) radix];
 
     return &string[i];
 }
@@ -1553,7 +1553,7 @@ na_sm_region_open(
 
         /* Initialize copy buf (all buffers are available by default) */
         hg_atomic_init64(
-            &na_sm_region->copy_bufs.available.val, ~((hg_util_int64_t) 0));
+            &na_sm_region->copy_bufs.available.val, ~((int64_t) 0));
         memset(&na_sm_region->copy_bufs.buf, 0,
             sizeof(na_sm_region->copy_bufs.buf));
 
@@ -1563,8 +1563,7 @@ na_sm_region_open(
 
         /* Initialize queue pairs */
         for (i = 0; i < 4; i++)
-            hg_atomic_init64(
-                &na_sm_region->available.val[i], ~((hg_util_int64_t) 0));
+            hg_atomic_init64(&na_sm_region->available.val[i], ~((int64_t) 0));
 
         for (i = 0; i < NA_SM_MAX_PEERS; i++) {
             na_sm_msg_queue_init(&na_sm_region->queue_pairs[i].rx_queue);
@@ -1963,7 +1962,7 @@ na_sm_event_get(int event, na_bool_t *signaled)
 #ifdef HG_UTIL_HAS_SYSEVENTFD_H
     int rc;
 
-    rc = hg_event_get(event, (hg_util_bool_t *) signaled);
+    rc = hg_event_get(event, (bool *) signaled);
     NA_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, done, ret,
         na_sm_errno_to_na(errno), "hg_event_get() failed");
 #else
@@ -2397,11 +2396,11 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
     unsigned int j = 0;
 
     do {
-        hg_util_int64_t bits = (hg_util_int64_t) 1;
+        int64_t bits = (int64_t) 1;
         unsigned int i = 0;
 
         do {
-            hg_util_int64_t available =
+            int64_t available =
                 hg_atomic_get64(&na_sm_region->available.val[j]);
             if (!available) {
                 j++;
@@ -2423,7 +2422,7 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
                 available = hg_atomic_get64(&na_sm_region->available.val[j]);
                 NA_LOG_SUBSYS_DEBUG(addr,
                     "Reserved pair index %u\n### Available: %s", (i + (j * 64)),
-                    lltoa((hg_util_uint64_t) available, buf, 2));
+                    lltoa((uint64_t) available, buf, 2));
 #endif
                 *index = (na_uint8_t) (i + (j * 64));
                 return NA_SUCCESS;
@@ -2441,8 +2440,8 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
 static NA_INLINE void
 na_sm_queue_pair_release(struct na_sm_region *na_sm_region, na_uint8_t index)
 {
-    hg_atomic_or64(&na_sm_region->available.val[index / 64],
-        (hg_util_int64_t) 1 << index % 64);
+    hg_atomic_or64(
+        &na_sm_region->available.val[index / 64], (int64_t) 1 << index % 64);
     NA_LOG_SUBSYS_DEBUG(addr, "Released pair index %u", index);
 }
 
@@ -2607,7 +2606,7 @@ static void
 na_sm_addr_ref_decr(struct na_sm_addr *na_sm_addr)
 {
     struct na_sm_endpoint *na_sm_endpoint = na_sm_addr->endpoint;
-    hg_util_int32_t refcount = hg_atomic_decr32(&na_sm_addr->refcount);
+    int32_t refcount = hg_atomic_decr32(&na_sm_addr->refcount);
     na_bool_t resolved =
         hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED;
 
@@ -3099,12 +3098,11 @@ error:
 static NA_INLINE na_return_t
 na_sm_buf_reserve(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int *index)
 {
-    hg_util_int64_t bits = (hg_util_int64_t) 1;
+    int64_t bits = (int64_t) 1;
     unsigned int i = 0;
 
     do {
-        hg_util_int64_t available =
-            hg_atomic_get64(&na_sm_copy_buf->available.val);
+        int64_t available = hg_atomic_get64(&na_sm_copy_buf->available.val);
         if (!available) {
             /* Nothing available */
             break;
@@ -3123,7 +3121,7 @@ na_sm_buf_reserve(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int *index)
             char buf[65] = {'\0'};
             available = hg_atomic_get64(&na_sm_copy_buf->available.val);
             NA_LOG_SUBSYS_DEBUG(msg, "Reserved bit index %u\n### Available: %s",
-                i, lltoa((hg_util_uint64_t) available, buf, 2));
+                i, lltoa((uint64_t) available, buf, 2));
 #endif
             *index = i;
             return NA_SUCCESS;
@@ -3139,8 +3137,7 @@ na_sm_buf_reserve(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int *index)
 static NA_INLINE void
 na_sm_buf_release(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int index)
 {
-    hg_atomic_or64(
-        &na_sm_copy_buf->available.val, (hg_util_int64_t) 1 << index);
+    hg_atomic_or64(&na_sm_copy_buf->available.val, (int64_t) 1 << index);
     NA_LOG_SUBSYS_DEBUG(msg, "Released bit index %u", index);
 }
 
@@ -3807,7 +3804,7 @@ na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
 
     /* TODO we should be able to safely remove EFD_SEMAPHORE behavior */
     /* Local notification only */
-    rc = hg_event_get(poll_addr->tx_notify, (hg_util_bool_t *) progressed);
+    rc = hg_event_get(poll_addr->tx_notify, (bool *) progressed);
     NA_CHECK_SUBSYS_ERROR(msg, rc != HG_UTIL_SUCCESS, done, ret,
         na_sm_errno_to_na(errno), "Could not get completion notification");
 
@@ -5011,7 +5008,7 @@ na_sm_cancel(
 {
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     struct na_sm_op_queue *op_queue = NULL;
-    hg_util_int32_t status;
+    int32_t status;
     na_return_t ret;
 
     /* Exit if op has already completed */

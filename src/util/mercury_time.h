@@ -14,6 +14,7 @@
 #include "mercury_util_config.h"
 
 #if defined(_WIN32)
+#    define _WINSOCKAPI_
 #    include <windows.h>
 #elif defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
 #    include <time.h>
@@ -239,9 +240,9 @@ hg_time_get_current(hg_time_t *tv)
 
     t.QuadPart -= offset.QuadPart;
     t_usec = (double) t.QuadPart / freq_to_usec;
-    t.QuadPart = t_usec;
-    tv->tv_sec = t.QuadPart / 1000000;
-    tv->tv_usec = t.QuadPart % 1000000;
+    t.QuadPart = (LONGLONG) t_usec;
+    tv->tv_sec = (long) (t.QuadPart / 1000000);
+    tv->tv_usec = (long) (t.QuadPart % 1000000);
 
     return HG_UTIL_SUCCESS;
 }

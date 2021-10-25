@@ -14,7 +14,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef _WIN32
+#    include <process.h>
+#else
+#    include <unistd.h>
+#endif
 
 /****************/
 /* Local Macros */
@@ -211,11 +215,17 @@ void
 hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
 {
     char buf[BUFSIZ];
-    int pid = getpid();
+    int pid;
     FILE *fp = NULL;
     unsigned int left, idx;
     struct hg_dlog_dcount32 *dc32;
     struct hg_dlog_dcount64 *dc64;
+
+#ifdef _WIN32
+    pid = _getpid();
+#else
+    pid = getpid();
+#endif
 
     if (addpid)
         snprintf(buf, sizeof(buf), "%s-%d.log", base, pid);

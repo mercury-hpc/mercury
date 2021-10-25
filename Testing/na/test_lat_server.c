@@ -112,7 +112,7 @@ na_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
     if (NA_Trigger(na_test_lat_info->context, timeout, 1, NULL,
             &actual_count) != NA_SUCCESS)
         ret = HG_UTIL_FAIL;
-    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+    *flag = (actual_count) ? true : false;
 
     return ret;
 }

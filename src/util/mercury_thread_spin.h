@@ -16,6 +16,7 @@
 #include "mercury_thread_annotation.h"
 
 #if defined(_WIN32)
+#    define _WINSOCKAPI_
 #    include <windows.h>
 typedef volatile LONG hg_thread_spin_t;
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)

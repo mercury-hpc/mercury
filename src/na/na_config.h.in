@@ -59,7 +59,7 @@ typedef na_uint64_t na_ptr_t;
 #define NA_UNUSED HG_ATTR_UNUSED
 
 /* Alignment */
-#define NA_ALIGNED(x) HG_ATTR_ALIGNED(x)
+#define NA_ALIGNED(x, a) HG_ATTR_ALIGNED(x, a)
 
 /* Fallthrough */
 #define NA_FALLTHROUGH HG_ATTR_FALLTHROUGH

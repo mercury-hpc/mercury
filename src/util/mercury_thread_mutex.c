@@ -65,7 +65,9 @@ hg_thread_mutex_init_fast(hg_thread_mutex_t *mutex)
 {
     int ret = HG_UTIL_SUCCESS;
 
-#ifdef HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP
+#if defined(_WIN32)
+    ret = hg_thread_mutex_init(mutex);
+#elif defined(HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP)
     /* Set type to PTHREAD_MUTEX_ADAPTIVE_NP to improve performance */
     ret = hg_thread_mutex_init_posix(mutex, PTHREAD_MUTEX_ADAPTIVE_NP);
 #else
