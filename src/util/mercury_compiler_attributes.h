@@ -24,7 +24,7 @@
  * In the meantime, to support gcc < 5, we implement __has_attribute
  * by hand.
  */
-#ifndef __has_attribute
+#if !defined(__has_attribute) && defined(__GNUC__) && (__GNUC__ >= 4)
 #    define __has_attribute(x)                          __GCC4_has_attribute_##x
 #    define __GCC4_has_attribute___visibility__         1
 #    define __GCC4_has_attribute___warn_unused_result__ 1
@@ -50,43 +50,62 @@
 #endif
 
 /* Unused return values */
-#if __has_attribute(__warn_unused_result__)
+#if defined(_WIN32)
+#    define HG_ATTR_WARN_UNUSED_RESULT _Check_return_
+#elif __has_attribute(__warn_unused_result__)
 #    define HG_ATTR_WARN_UNUSED_RESULT __attribute__((__warn_unused_result__))
 #else
 #    define HG_ATTR_WARN_UNUSED_RESULT
 #endif
 
 /* Remove warnings when plugin does not use callback arguments */
-#if __has_attribute(__unused__)
+#if defined(_WIN32)
+#    define HG_ATTR_UNUSED
+#elif __has_attribute(__unused__)
 #    define HG_ATTR_UNUSED __attribute__((__unused__))
 #else
 #    define HG_ATTR_UNUSED
 #endif
 
 /* Alignment */
-#if __has_attribute(__aligned__)
-#    define HG_ATTR_ALIGNED(x) __attribute__((__aligned__(x)))
+#if defined(_WIN32)
+#    define HG_ATTR_ALIGNED(x, a) __declspec(align(a)) x
+#elif __has_attribute(__aligned__)
+#    define HG_ATTR_ALIGNED(x, a) x __attribute__((__aligned__(a)))
 #else
-#    define HG_ATTR_ALIGNED(x)
+#    define HG_ATTR_ALIGNED(x, a)
 #endif
 
 /* Check format arguments */
-#if __has_attribute(__format__)
-#    define HG_ATTR_FORMAT(_func, _fmt, _firstarg)                             \
-        __attribute__((__format__(_func, _fmt, _firstarg)))
+#if defined(_WIN32)
+#    define HG_ATTR_PRINTF(_fmt, _firstarg)
+#elif __has_attribute(__format__)
+#    define HG_ATTR_PRINTF(_fmt, _firstarg)                                    \
+        __attribute__((__format__(printf, _fmt, _firstarg)))
 #else
-#    define HG_ATTR_FORMAT(_func, _fmt, _firstarg)
+#    define HG_ATTR_PRINTF(_fmt, _firstarg)
 #endif
 
 /* Constructor (not optional) */
-#define HG_ATTR_CONSTRUCTOR             __attribute__((__constructor__))
-#define HG_ATTR_CONSTRUCTOR_PRIORITY(x) __attribute__((__constructor__(x)))
+#if defined(_WIN32)
+#    define HG_ATTR_CONSTRUCTOR
+#    define HG_ATTR_CONSTRUCTOR_PRIORITY(x)
+#else
+#    define HG_ATTR_CONSTRUCTOR             __attribute__((__constructor__))
+#    define HG_ATTR_CONSTRUCTOR_PRIORITY(x) __attribute__((__constructor__(x)))
+#endif
 
 /* Destructor (not optional) */
-#define HG_ATTR_DESTRUCTOR __attribute__((__destructor__))
+#if defined(_WIN32)
+#    define HG_ATTR_DESTRUCTOR
+#else
+#    define HG_ATTR_DESTRUCTOR __attribute__((__destructor__))
+#endif
 
 /* Fallthrough (prevent icc from throwing warnings) */
-#if __has_attribute(__fallthrough__) && !defined(__INTEL_COMPILER)
+#if defined(_WIN32) /* clang-format off */
+#    define HG_ATTR_FALLTHROUGH do {} while (0) /* fallthrough */ /* clang-format on */
+#elif __has_attribute(__fallthrough__) && !defined(__INTEL_COMPILER)
 #    define HG_ATTR_FALLTHROUGH __attribute__((__fallthrough__))
 #else /* clang-format off */
 #    define HG_ATTR_FALLTHROUGH do {} while (0) /* fallthrough */

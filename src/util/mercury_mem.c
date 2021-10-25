@@ -13,6 +13,7 @@
 #include "mercury_util_error.h"
 
 #ifdef _WIN32
+#    define _WINSOCKAPI_
 #    include <windows.h>
 #else
 #    include <errno.h>
@@ -100,7 +101,7 @@ hg_mem_header_free(size_t header_size, size_t alignment, void *mem_ptr)
 
 /*---------------------------------------------------------------------------*/
 void *
-hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create)
+hg_mem_shm_map(const char *name, size_t size, bool create)
 {
     void *mem_ptr = NULL;
 #ifdef _WIN32

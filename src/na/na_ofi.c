@@ -5288,7 +5288,7 @@ na_ofi_cancel(
     na_class_t NA_UNUSED *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
-    hg_util_int32_t status;
+    int32_t status;
     na_return_t ret;
 
     /* Exit if op has already completed */

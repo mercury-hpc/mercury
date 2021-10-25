@@ -2399,7 +2399,7 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_bool_t self_notify)
 {
     struct hg_cb_info *callback_info = NULL;
     hg_return_t ret = HG_SUCCESS;
-    hg_util_int32_t status;
+    int32_t status;
 
     /* Mark op id as completed before checking for cancelation */
     status = hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_COMPLETED);
@@ -2449,7 +2449,7 @@ hg_bulk_cancel(struct hg_bulk_op_id *hg_bulk_op_id)
 {
     na_op_id_t **na_op_ids;
     hg_return_t ret = HG_SUCCESS;
-    hg_util_int32_t status;
+    int32_t status;
     unsigned int i;
 
     /* Exit if op has already completed */

@@ -791,7 +791,7 @@ hg_core_gen_request_tag(struct hg_core_private_class *hg_core_class)
 
     /* Compare and swap tag if reached max tag */
     if (!hg_atomic_cas32(&hg_core_class->request_tag,
-            (hg_util_int32_t) hg_core_class->request_max_tag, 0)) {
+            (int32_t) hg_core_class->request_max_tag, 0)) {
         /* Increment tag */
         request_tag = (na_tag_t) hg_atomic_incr32(&hg_core_class->request_tag);
     }
@@ -1012,7 +1012,7 @@ error:
 static hg_return_t
 hg_core_finalize(struct hg_core_private_class *hg_core_class)
 {
-    hg_util_int32_t n_addrs, n_contexts;
+    int32_t n_addrs, n_contexts;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
@@ -1136,7 +1136,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
         HG_CHECK_ERROR(context->poll_set == NULL, error, ret, HG_NOMEM,
             "Could not create poll set");
 
-        event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_NA;
+        event.data.u32 = (uint32_t) HG_CORE_POLL_NA;
         rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
             "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
@@ -1148,7 +1148,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
             HG_CHECK_ERROR(na_poll_fd < 0, error, ret, HG_PROTOCOL_ERROR,
                 "Could not get NA SM poll fd");
 
-            event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_SM;
+            event.data.u32 = (uint32_t) HG_CORE_POLL_SM;
             rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
                 "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
@@ -1162,7 +1162,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
                 HG_NOMEM, "Could not create event");
 
             /* Add event to context poll set */
-            event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_LOOPBACK;
+            event.data.u32 = (uint32_t) HG_CORE_POLL_LOOPBACK;
             rc = hg_poll_add(
                 context->poll_set, context->completion_queue_notify, &event);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
@@ -1195,7 +1195,7 @@ error:
 static hg_return_t
 hg_core_context_destroy(struct hg_core_private_context *context)
 {
-    hg_util_int32_t n_handles;
+    int32_t n_handles;
     hg_bool_t empty;
     hg_return_t ret = HG_SUCCESS;
     int rc;
@@ -1490,12 +1490,12 @@ done:
 static hg_return_t
 hg_core_context_lists_wait(struct hg_core_private_context *context)
 {
-    hg_util_bool_t created_list_empty = HG_UTIL_FALSE;
-    hg_util_bool_t pending_list_empty = HG_UTIL_FALSE;
+    bool created_list_empty = false;
+    bool pending_list_empty = false;
 #ifdef NA_HAS_SM
-    hg_util_bool_t sm_pending_list_empty = HG_UTIL_FALSE;
+    bool sm_pending_list_empty = false;
 #else
-    hg_util_bool_t sm_pending_list_empty = HG_UTIL_TRUE;
+    bool sm_pending_list_empty = true;
 #endif
     /* Convert timeout in ms into seconds */
     hg_time_t deadline, now;
@@ -2618,7 +2618,7 @@ static hg_return_t
 hg_core_forward(struct hg_core_private_handle *hg_core_handle,
     hg_core_cb_t callback, void *arg, hg_uint8_t flags, hg_size_t payload_size)
 {
-    hg_util_int32_t status;
+    int32_t status;
     hg_size_t header_size;
     hg_return_t ret = HG_SUCCESS;
 
@@ -3017,7 +3017,7 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
             !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
             "Received NA_CANCELED event on handle that was not canceled");
     } else if (callback_info->ret != NA_SUCCESS) {
-        hg_util_int32_t status;
+        int32_t status;
 
         HG_LOG_ERROR("NA callback returned error (%s)",
             NA_Error_to_string(callback_info->ret));
@@ -3577,7 +3577,7 @@ hg_core_complete_na(
 
     /* Add handle to completion queue when expected operations have completed */
     if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count) ==
-            (hg_util_int32_t) hg_core_handle->na_op_count &&
+            (int32_t) hg_core_handle->na_op_count &&
         *completed) {
         /* Mark as completed */
         ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
@@ -3602,7 +3602,7 @@ hg_core_complete(hg_core_handle_t handle)
     struct hg_completion_entry *hg_completion_entry =
         &hg_core_handle->hg_completion_entry;
     hg_return_t ret = HG_SUCCESS;
-    hg_util_int32_t status;
+    int32_t status;
 
     /* Mark op id as completed before checking for cancelation, also mark the
      * operation as queued to track when it will be released from the completion
@@ -3953,8 +3953,8 @@ hg_core_progress_loopback_notify(
     int rc;
 
     /* TODO we should be able to safely remove EFD_SEMAPHORE behavior */
-    rc = hg_event_get(
-        context->completion_queue_notify, (hg_util_bool_t *) progressed_ptr);
+    rc =
+        hg_event_get(context->completion_queue_notify, (bool *) progressed_ptr);
     HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
         "Could not get completion notification");
 
@@ -4182,7 +4182,7 @@ static hg_return_t
 hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
-    hg_util_int32_t status;
+    int32_t status;
 
     HG_CHECK_ERROR(hg_core_handle->is_self, done, ret, HG_OPNOTSUPPORTED,
         "Local cancellation is not supported");
@@ -4939,7 +4939,7 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
     na_context_t *na_context;
     na_addr_t na_addr = NA_ADDR_NULL;
     hg_return_t ret = HG_SUCCESS;
-    hg_util_int32_t status;
+    int32_t status;
 
     HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
         "NULL HG core handle");

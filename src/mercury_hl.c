@@ -85,7 +85,7 @@ hg_hl_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 
     if (HG_Trigger(context, timeout, 1, &actual_count) != HG_SUCCESS)
         ret = HG_UTIL_FAIL;
-    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+    *flag = (actual_count) ? true : false;
 
     return ret;
 }
