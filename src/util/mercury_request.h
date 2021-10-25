@@ -173,14 +173,14 @@ hg_request_get_data(hg_request_t *request);
 static HG_UTIL_INLINE void
 hg_request_reset(hg_request_t *request)
 {
-    hg_atomic_set32(&request->completed, HG_UTIL_FALSE);
+    hg_atomic_set32(&request->completed, (int32_t) false);
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
 hg_request_complete(hg_request_t *request)
 {
-    hg_atomic_set32(&request->completed, HG_UTIL_TRUE);
+    hg_atomic_set32(&request->completed, (int32_t) true);
 }
 
 /*---------------------------------------------------------------------------*/

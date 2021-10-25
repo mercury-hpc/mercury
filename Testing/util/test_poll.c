@@ -12,7 +12,7 @@ main(void)
     hg_poll_set_t *poll_set;
     struct hg_poll_event events[2];
     unsigned int nevents = 0;
-    hg_util_bool_t signaled = HG_UTIL_FALSE;
+    bool signaled = false;
     int event_fd1, event_fd2, ret = EXIT_SUCCESS;
 
     poll_set = hg_poll_create();

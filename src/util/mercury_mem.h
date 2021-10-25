@@ -100,7 +100,7 @@ hg_mem_header_free(size_t header_size, size_t alignment, void *mem_ptr);
  * \return a pointer to the mapped memory region, or NULL in case of failure
  */
 HG_UTIL_PUBLIC void *
-hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create);
+hg_mem_shm_map(const char *name, size_t size, bool create);
 
 /**
  * Unmap a previously mapped region and close the file.

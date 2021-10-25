@@ -215,7 +215,7 @@ hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
         return HG_UTIL_FAIL;
 
     if (flag)
-        *flag = (count > 0) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+        *flag = (count > 0) ? true : false;
 
     return HG_UTIL_SUCCESS;
 }

@@ -1,8 +1,8 @@
 #------------------------------------------------------------------------------
 # Setup cmake module
 #------------------------------------------------------------------------------
-set(MERCURY_UTIL_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
+#set(MERCURY_UTIL_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
+#set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
 
 #------------------------------------------------------------------------------
 # Include source and build directories
@@ -109,23 +109,6 @@ if(NOT WIN32)
   set(CMAKE_EXTRA_INCLUDE_FILES stdatomic.h)
   check_type_size(atomic_long HG_UTIL_ATOMIC_LONG_WIDTH)
   unset(CMAKE_EXTRA_INCLUDE_FILES)
-  # OpenPA
-  option(MERCURY_USE_OPA "Use OpenPA for atomics." OFF)
-  # Force use of OPA if <stdatomic.h> is not found
-  if(NOT HG_UTIL_HAS_STDATOMIC_H)
-    set(MERCURY_USE_OPA "ON" CACHE BOOL "Use OpenPA for atomics." FORCE)
-  endif()
-  mark_as_advanced(MERCURY_USE_OPA)
-  if(MERCURY_USE_OPA)
-    # Use OpenPA if stdatomic is not available
-    find_package(OPA REQUIRED)
-    message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
-    set(HG_UTIL_HAS_OPA_PRIMITIVES_H 1)
-    set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
-      ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-      ${OPA_INCLUDE_DIRS}
-    )
-  endif()
 endif()
 
 # Colored output

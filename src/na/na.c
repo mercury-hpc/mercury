@@ -1206,7 +1206,7 @@ NA_Progress(
         (struct na_private_context *) context;
     double remaining =
         timeout_ms / 1000.0; /* Convert timeout in ms into seconds */
-    hg_util_int32_t old, num;
+    int32_t old, num;
     na_return_t ret = NA_TIMEOUT;
 
     NA_CHECK_SUBSYS_ERROR(
@@ -1227,8 +1227,8 @@ NA_Progress(
         hg_time_t t1, t2;
 
         old = hg_atomic_get32(&na_private_context->progressing) &
-              (hg_util_int32_t) ~NA_PROGRESS_LOCK;
-        num = old | (hg_util_int32_t) NA_PROGRESS_LOCK;
+              (int32_t) ~NA_PROGRESS_LOCK;
+        num = old | (int32_t) NA_PROGRESS_LOCK;
         if (hg_atomic_cas32(&na_private_context->progressing, old, num))
             break; /* No other thread is progressing */
 
@@ -1246,7 +1246,7 @@ NA_Progress(
 
         num = hg_atomic_get32(&na_private_context->progressing);
         /* Do not need to enter condition if lock is already released */
-        if (((num & (hg_util_int32_t) NA_PROGRESS_LOCK) != 0) &&
+        if (((num & (int32_t) NA_PROGRESS_LOCK) != 0) &&
             (hg_thread_cond_timedwait(&na_private_context->progress_cond,
                  &na_private_context->progress_mutex,
                  (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS)) {
@@ -1279,7 +1279,7 @@ NA_Progress(
 unlock:
     do {
         old = hg_atomic_get32(&na_private_context->progressing);
-        num = (old - 1) ^ (hg_util_int32_t) NA_PROGRESS_LOCK;
+        num = (old - 1) ^ (int32_t) NA_PROGRESS_LOCK;
     } while (!hg_atomic_cas32(&na_private_context->progressing, old, num));
 
     if (num > 0) {

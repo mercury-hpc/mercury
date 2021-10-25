@@ -10,9 +10,9 @@ int
 main(void)
 {
     hg_atomic_int32_t atomic_int32;
-    hg_util_int32_t val32, init_val32;
+    int32_t val32, init_val32;
     hg_atomic_int64_t atomic_int64;
-    hg_util_int64_t val64, init_val64;
+    int64_t val64, init_val64;
     int ret = EXIT_SUCCESS;
 
     /* Init32 test */
@@ -121,7 +121,7 @@ main(void)
     /* Cas32 test */
     init_val32 = hg_atomic_get32(&atomic_int32);
     val32 = 128;
-    if (hg_atomic_cas32(&atomic_int32, init_val32, val32) == HG_UTIL_FALSE) {
+    if (!hg_atomic_cas32(&atomic_int32, init_val32, val32)) {
         fprintf(stderr,
             "Error in hg_atomic_cas32: could not swap values"
             "with %" PRId32 ", is %" PRId32 ", expected %" PRId32 "\n",
@@ -136,7 +136,7 @@ main(void)
         ret = EXIT_FAILURE;
         goto done;
     }
-    if (hg_atomic_cas32(&atomic_int32, 1, 0) == HG_UTIL_TRUE) {
+    if (hg_atomic_cas32(&atomic_int32, 1, 0)) {
         fprintf(stderr, "Error in hg_atomic_cas32: should not swap values\n");
         ret = EXIT_FAILURE;
         goto done;
@@ -248,7 +248,7 @@ main(void)
     /* Cas64 test */
     init_val64 = hg_atomic_get64(&atomic_int64);
     val64 = 128;
-    if (hg_atomic_cas64(&atomic_int64, init_val64, val64) == HG_UTIL_FALSE) {
+    if (!hg_atomic_cas64(&atomic_int64, init_val64, val64)) {
         fprintf(stderr,
             "Error in hg_atomic_cas64: could not swap values"
             "with %" PRId64 ", is %" PRId64 ", expected %" PRId64 "\n",
@@ -263,7 +263,7 @@ main(void)
         ret = EXIT_FAILURE;
         goto done;
     }
-    if (hg_atomic_cas64(&atomic_int64, 1, 0) == HG_UTIL_TRUE) {
+    if (hg_atomic_cas64(&atomic_int64, 1, 0)) {
         fprintf(stderr, "Error in hg_atomic_cas64: should not swap values\n");
         ret = EXIT_FAILURE;
         goto done;

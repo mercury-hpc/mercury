@@ -71,16 +71,20 @@ hg_event_set(int fd);
  * Get event notification.
  *
  * \param fd [IN]               event file descriptor
- * \param notified [IN]         boolean set to HG_UTIL_TRUE if event received
+ * \param notified [IN]         boolean set to true if event received
  *
  * \return Non-negative on success or negative on failure
  */
 static HG_UTIL_INLINE int
-hg_event_get(int fd, hg_util_bool_t *notified);
+hg_event_get(int fd, bool *notified);
 
 /*---------------------------------------------------------------------------*/
 #if defined(_WIN32)
-/* TODO */
+static HG_UTIL_INLINE int
+hg_event_set(int fd)
+{
+    return HG_UTIL_FAIL; /* TODO */
+}
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
 #    ifdef HG_UTIL_HAS_EVENTFD_T
 static HG_UTIL_INLINE int
@@ -119,18 +123,23 @@ hg_event_set(int fd)
 
 /*---------------------------------------------------------------------------*/
 #if defined(_WIN32)
+static HG_UTIL_INLINE int
+hg_event_get(int fd, bool *signaled)
+{
+    return HG_UTIL_FAIL; /* TODO */
+}
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
 #    ifdef HG_UTIL_HAS_EVENTFD_T
 static HG_UTIL_INLINE int
-hg_event_get(int fd, hg_util_bool_t *signaled)
+hg_event_get(int fd, bool *signaled)
 {
     eventfd_t count = 0;
 
     if ((eventfd_read(fd, &count) == 0) && count)
-        *signaled = HG_UTIL_TRUE;
+        *signaled = true;
     else {
         if (errno == EAGAIN)
-            *signaled = HG_UTIL_FALSE;
+            *signaled = false;
         else
             return HG_UTIL_FAIL;
     }
@@ -139,15 +148,15 @@ hg_event_get(int fd, hg_util_bool_t *signaled)
 }
 #    else
 static HG_UTIL_INLINE int
-hg_event_get(int fd, hg_util_bool_t *signaled)
+hg_event_get(int fd, bool *signaled)
 {
     eventfd_t count = 0;
     ssize_t s = read(fd, &count, sizeof(eventfd_t));
     if ((s == sizeof(eventfd_t)) && count)
-        *signaled = HG_UTIL_TRUE;
+        *signaled = true;
     else {
         if (errno == EAGAIN)
-            *signaled = HG_UTIL_FALSE;
+            *signaled = false;
         else
             return HG_UTIL_FAIL;
     }
@@ -157,7 +166,7 @@ hg_event_get(int fd, hg_util_bool_t *signaled)
 #    endif
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
 static HG_UTIL_INLINE int
-hg_event_get(int fd, hg_util_bool_t *signaled)
+hg_event_get(int fd, bool *signaled)
 {
     struct kevent kev;
     int nfds;
@@ -168,8 +177,7 @@ hg_event_get(int fd, hg_util_bool_t *signaled)
     if (nfds == -1)
         return HG_UTIL_FAIL;
 
-    *signaled = ((nfds > 0) && (kev.ident == HG_EVENT_IDENT)) ? HG_UTIL_TRUE
-                                                              : HG_UTIL_FALSE;
+    *signaled = ((nfds > 0) && (kev.ident == HG_EVENT_IDENT)) ? true : false;
 
     return HG_UTIL_SUCCESS;
 }

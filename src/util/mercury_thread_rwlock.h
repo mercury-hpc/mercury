@@ -54,8 +54,9 @@
 #include "mercury_thread_annotation.h"
 
 #ifdef _WIN32
+#    define _WINSOCKAPI_
 #    include <windows.h>
-typedef PSRWLOCK hg_thread_rwlock_t;
+typedef SRWLOCK hg_thread_rwlock_t;
 #else
 #    include <pthread.h>
 typedef pthread_rwlock_t HG_LOCK_CAPABILITY("rwlock") hg_thread_rwlock_t;

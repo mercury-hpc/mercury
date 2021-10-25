@@ -48,7 +48,10 @@
 
 struct hg_poll_set {
     hg_thread_mutex_t lock;
-#if defined(HG_UTIL_HAS_SYSEPOLL_H)
+#if defined(_WIN32)
+    /* TODO */
+    HANDLE *events; /* placeholder */
+#elif defined(HG_UTIL_HAS_SYSEPOLL_H)
     struct epoll_event *events;
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
     struct kevent *events;
@@ -371,7 +374,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
 
     for (i = 0; i < nfds; ++i) {
         events[i].events = 0;
-        events[i].data.u64 = (hg_util_uint64_t) poll_set->events[i].data.u64;
+        events[i].data.u64 = poll_set->events[i].data.u64;
 
         if (poll_set->events[i].events & EPOLLIN)
             events[i].events |= HG_POLLIN;
@@ -443,7 +446,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     }
 #else
     int nevent = 0, rc;
-    hg_util_bool_t signaled;
+    bool signaled;
 
     rc = hg_event_get(poll_set->fd, &signaled);
     HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_UTIL_FAIL,
@@ -476,7 +479,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     /* An event on one of the fds has occurred. */
     for (i = 0; i < (int) poll_set->nfds && nevent < nfds; ++i) {
         events[i].events = 0;
-        events[i].data.u64 = (hg_util_uint64_t) poll_set->event_data[i].u64;
+        events[i].data.u64 = poll_set->event_data[i].u64;
 
         if (poll_set->events[i].revents & POLLIN)
             events[i].events |= HG_POLLIN;
