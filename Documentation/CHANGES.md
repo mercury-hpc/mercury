@@ -29,8 +29,10 @@ This version brings bug fixes and updates to our v2.0.0 release.
 ## Bug fixes
 
 - __[NA OFI]__
+    - Require at least v1.7.0 of libfabric.
     - Fix handling of completion queue events and completion of retried operations that fail.
     - Fix progress loop to reduce time calls.
+    - Force per-region registration for all providers and remove deprecated FI_MR_SCALABLE type of registrations and global MR keys.
 - __[NA SM]__
     - Refactoring and clean up of sends/cancelation/retries/rma/address keys.
     - Remove use of usernames from SM paths.
@@ -39,6 +41,9 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Fix debug logs that were not freed at exit.
     - Remove return value of mutex lock/unlock routines.
     - Fix log subsys to prevent setting duplicates.
+    - Simplify handling of compiler attributes and add `mercury_compiler_attributes.h` module.
+    - Remove `hg_util_` integer types and use `stdint.h`.
+    - Remove OpenPA dependency for atomics and use built-in atomics instead (requires gcc >= 4.7).
 - __[HG/HG util/NA]__
     - Fix thread safety warnings and potential thread locking issues.
     - Fix log level set routines that were not enabling the underlying log sub-system.
@@ -47,6 +52,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Fix erroneous call to `NA_Mem_deregister()` when handle is deserialized.
     - Correctly mark op as canceled if canceled from NA.
 - __[HG Core]__
+    - Fix error handling when NA send fails during an `HG_Forward()` operation.
     - Correctly print HG handle debug information.
     - In short responses like ACKs, leave room at the front of a buffer for
     the NA header, and expect the header to be present.
