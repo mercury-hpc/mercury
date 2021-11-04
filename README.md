@@ -13,7 +13,7 @@ and allows any function call to be serialized.
 Mercury is a core component of the [Mochi][mochi-link] ecosystem of
 microservices.
 
-Please see the accompanying COPYING file for license details.
+Please see the accompanying LICENSE.txt file for license details.
 
 Contributions and patches are welcomed but require a Contributor License
 Agreement (CLA) to be filled out. Please contact us if you are interested
@@ -227,3 +227,4 @@ Below is a list of the most common questions.
 [spack-release-link]: https://spack.readthedocs.io/en/latest/package_list.html#mercury
 [yama]: https://www.kernel.org/doc/Documentation/security/Yama.txt
 [mochi-link]: https://github.com/mochi-hpc/
+
