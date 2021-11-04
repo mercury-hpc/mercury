@@ -1,11 +1,8 @@
 /*
- * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
- * Copyright (C) 2014 UT-Battelle, LLC. All rights reserved.
- * Chicago Argonne, LLC and The HDF Group. All rights reserved.
+ * Copyright (c) 2013-2021 UChicago Argonne, LLC and The HDF Group.
+ * Copyright (c) 2014 UT-Battelle, LLC.
  *
- * The full copyright notice, including terms governing use, modification, and
- * redistribution, is contained in the COPYING file that can be found at the
- * root of the source code distribution tree.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "na_plugin.h"

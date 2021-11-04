@@ -2,6 +2,7 @@ Mercury
 =======
 [![Build status][github-ci-svg]][github-ci-link]
 [![Latest version][mercury-release-svg]][mercury-release-link]
+[![Spack version][spack-release-svg]][spack-release-link]
 
 Mercury is an RPC framework specifically designed for use in HPC systems
 that allows asynchronous transfer of parameters and execution requests,
@@ -220,7 +221,9 @@ Below is a list of the most common questions.
 [ucx]: https://openucx.readthedocs.io/en/master/running.html#ucx-build-and-install
 [github-ci-svg]: https://github.com/mercury-hpc/mercury/actions/workflows/ci.yml/badge.svg?branch=master
 [github-ci-link]: https://github.com/mercury-hpc/mercury/actions/workflows/ci.yml
-[mercury-release-svg]: https://img.shields.io/github/release/mercury-hpc/mercury.svg
-[mercury-release-link]: https://github.com/mercury-hpc/mercury/releases/latest
+[mercury-release-svg]: https://img.shields.io/github/release/mercury-hpc/mercury/all.svg
+[mercury-release-link]: https://github.com/mercury-hpc/mercury/releases
+[spack-release-svg]: https://img.shields.io/spack/v/mercury.svg
+[spack-release-link]: https://spack.readthedocs.io/en/latest/package_list.html#mercury
 [yama]: https://www.kernel.org/doc/Documentation/security/Yama.txt
 [mochi-link]: https://github.com/mochi-hpc/
