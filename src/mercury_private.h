@@ -59,7 +59,7 @@ hg_core_context_get_bulk_op_pool(struct hg_core_context *core_context);
 /**
  * Add entry to completion queue.
  */
-HG_PRIVATE hg_return_t
+HG_PRIVATE void
 hg_core_completion_add(struct hg_core_context *core_context,
     struct hg_completion_entry *hg_completion_entry, hg_bool_t self_notify);
 

@@ -199,9 +199,9 @@ struct hg_bulk_op_id {
     na_class_t *na_class;                 /* NA class */
     na_context_t *na_context;             /* NA context */
     hg_atomic_int32_t status;             /* Operation status */
+    hg_atomic_int32_t ret_status;         /* Return status */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_atomic_int32_t ref_count;          /* Refcount */
-    hg_return_t err_ret;                  /* Return value if errored status */
     hg_uint32_t op_count;                 /* Number of ongoing operations */
     hg_bool_t reuse;                      /* Re-use op ID once ref_count is 0 */
 };
@@ -493,8 +493,9 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info);
 /**
  * Complete operation ID.
  */
-static hg_return_t
-hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_bool_t self_notify);
+static void
+hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_return_t ret,
+    hg_bool_t self_notify);
 
 /**
  * Cancel operation ID.
@@ -1579,6 +1580,7 @@ hg_bulk_op_create(
 
     /* Completed by default */
     hg_atomic_init32(&hg_bulk_op_id->status, HG_BULK_OP_COMPLETED);
+    hg_atomic_init32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS);
 
     hg_bulk_op_id->callback_info.type = HG_CB_BULK;
     hg_bulk_op_id->op_count = 1; /* Default */
@@ -1936,7 +1938,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
 
     /* Reset status */
     hg_atomic_set32(&hg_bulk_op_id->status, 0);
-    hg_bulk_op_id->err_ret = HG_SUCCESS;
+    hg_atomic_set32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS);
 
     /* Expected op count */
     hg_bulk_op_id->op_count = (size > 0) ? 1 : 0; /* Default */
@@ -1944,8 +1946,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
 
     if (size == 0) {
         /* Complete immediately */
-        ret = hg_bulk_complete(hg_bulk_op_id, HG_TRUE);
-        HG_CHECK_HG_ERROR(error, ret, "Could not complete bulk operation");
+        hg_bulk_complete(hg_bulk_op_id, HG_SUCCESS, HG_TRUE);
     } else if (HG_Core_addr_is_self(origin_addr) ||
                ((origin_flags & HG_BULK_EAGER) && (op != HG_BULK_PUSH))) {
         hg_bulk_op_id->na_class = NULL;
@@ -2052,8 +2053,7 @@ hg_bulk_transfer_self(hg_bulk_op_t op,
         size);
 
     /* Complete immediately */
-    ret = hg_bulk_complete(hg_bulk_op_id, HG_TRUE);
-    HG_CHECK_HG_ERROR(done, ret, "Could not complete bulk operation");
+    hg_bulk_complete(hg_bulk_op_id, HG_SUCCESS, HG_TRUE);
 
 done:
     return ret;
@@ -2355,8 +2355,9 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         (struct hg_bulk_op_id *) callback_info->arg;
     hg_bool_t completed = HG_TRUE;
 
-    /* If canceled, mark handle as canceled */
-    if (callback_info->ret == NA_CANCELED) {
+    if (callback_info->ret == NA_SUCCESS) {
+        /* Nothing */
+    } else if (callback_info->ret == NA_CANCELED) {
         HG_CHECK_WARNING(
             hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_COMPLETED,
             "Operation was completed");
@@ -2364,79 +2365,48 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         HG_CHECK_WARNING(
             !(hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_CANCELED),
             "Received NA_CANCELED event on op ID that was not canceled");
-        /* Operations can be canceled by NA */
-        if (!(hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_CANCELED))
-            hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_CANCELED);
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("NA callback returned error (%s)",
-            NA_Error_to_string(callback_info->ret));
 
+        hg_atomic_cas32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS,
+            (int32_t) HG_CANCELED);
+    } else { /* All other errors */
         /* Mark handle as errored */
         hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_ERRORED);
-        if (hg_bulk_op_id->err_ret == HG_SUCCESS)
-            hg_bulk_op_id->err_ret = (hg_return_t) callback_info->ret;
+
+        /* Keep first non-success ret status */
+        hg_atomic_cas32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS,
+            (int32_t) callback_info->ret);
+        HG_LOG_ERROR("NA callback returned error (%s)",
+            NA_Error_to_string(callback_info->ret));
     }
 
-    /* When all NA transfers that correspond to bulk operation complete
-     * add HG user callback to completion queue
-     */
+    /* When all NA transfers that correspond to the bulk operation complete,
+     * complete the bulk operation. */
     if ((hg_uint32_t) hg_atomic_incr32(&hg_bulk_op_id->op_completed_count) ==
         hg_bulk_op_id->op_count) {
-        hg_return_t ret = hg_bulk_complete(hg_bulk_op_id, HG_FALSE);
-        HG_CHECK_ERROR_DONE(ret != HG_SUCCESS, "Could not complete operation");
+        hg_bulk_complete(hg_bulk_op_id,
+            (hg_return_t) hg_atomic_get32(&hg_bulk_op_id->ret_status),
+            HG_FALSE);
     }
 
     return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_bool_t self_notify)
+static void
+hg_bulk_complete(
+    struct hg_bulk_op_id *hg_bulk_op_id, hg_return_t ret, hg_bool_t self_notify)
 {
-    struct hg_cb_info *callback_info = NULL;
-    hg_return_t ret = HG_SUCCESS;
-    int32_t status;
+    /* Mark op id as completed */
+    hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_COMPLETED);
 
-    /* Mark op id as completed before checking for cancelation */
-    status = hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_COMPLETED);
+    /* Forward status to callback */
+    hg_bulk_op_id->callback_info.ret = ret;
 
-    /* Init callback info */
-    callback_info = &hg_bulk_op_id->callback_info;
+    hg_bulk_op_id->hg_completion_entry.op_type = HG_BULK;
+    hg_bulk_op_id->hg_completion_entry.op_id.hg_bulk_op_id = hg_bulk_op_id;
 
-    /* Check for current status before completing */
-    if (status & HG_BULK_OP_CANCELED) {
-        /* If it was canceled while being processed, set callback ret
-         * accordingly */
-        HG_LOG_DEBUG("Operation ID %p is canceled", (void *) hg_bulk_op_id);
-        callback_info->ret = HG_CANCELED;
-    } else if (status & HG_BULK_OP_ERRORED) {
-        /* If it was errored, set callback ret accordingly */
-        HG_LOG_DEBUG("Operation ID %p is errored", (void *) hg_bulk_op_id);
-        callback_info->ret = hg_bulk_op_id->err_ret;
-    } else
-        callback_info->ret = HG_SUCCESS;
-
-    if (callback_info->info.bulk.origin_handle->desc.info.flags &
-        HG_BULK_EAGER) {
-        /* In the case of eager bulk transfer, directly trigger the operation
-         * to avoid potential deadlocks */
-        ret = hg_bulk_trigger_entry(hg_bulk_op_id);
-        HG_CHECK_HG_ERROR(done, ret, "Could not trigger completion entry");
-    } else {
-        struct hg_completion_entry *hg_completion_entry =
-            &hg_bulk_op_id->hg_completion_entry;
-
-        hg_completion_entry->op_type = HG_BULK;
-        hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
-
-        ret = hg_core_completion_add(
-            hg_bulk_op_id->core_context, hg_completion_entry, self_notify);
-        HG_CHECK_HG_ERROR(
-            done, ret, "Could not add HG completion entry to completion queue");
-    }
-
-done:
-    return ret;
+    hg_core_completion_add(hg_bulk_op_id->core_context,
+        &hg_bulk_op_id->hg_completion_entry, self_notify);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2444,16 +2414,21 @@ static hg_return_t
 hg_bulk_cancel(struct hg_bulk_op_id *hg_bulk_op_id)
 {
     na_op_id_t **na_op_ids;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
     int32_t status;
     unsigned int i;
 
     /* Exit if op has already completed */
-    status = hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_CANCELED);
-    if ((status & HG_BULK_OP_COMPLETED) || (status & HG_BULK_OP_ERRORED))
-        goto done;
+    status = hg_atomic_get32(&hg_bulk_op_id->status);
+    if ((status & HG_BULK_OP_COMPLETED) || (status & HG_BULK_OP_ERRORED) ||
+        (status & HG_BULK_OP_CANCELED))
+        return HG_SUCCESS;
 
-        /* Cancel all NA operations issued */
+    /* Let only one thread call NA_Cancel() */
+    if (hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_CANCELED) &
+        HG_BULK_OP_CANCELED)
+        return HG_SUCCESS;
+
 #ifdef NA_HAS_SM
     if (hg_bulk_op_id->na_class ==
         hg_bulk_op_id->core_context->core_class->na_sm_class)
@@ -2462,14 +2437,17 @@ hg_bulk_cancel(struct hg_bulk_op_id *hg_bulk_op_id)
 #endif
         na_op_ids = HG_BULK_NA_OP_IDS(hg_bulk_op_id);
 
+    /* Cancel all NA operations issued */
     for (i = 0; i < hg_bulk_op_id->op_count; i++) {
         na_return_t na_ret = NA_Cancel(
             hg_bulk_op_id->na_class, hg_bulk_op_id->na_context, na_op_ids[i]);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
             "Could not cancel NA op ID (%s)", NA_Error_to_string(na_ret));
     }
 
-done:
+    return HG_SUCCESS;
+
+error:
     return ret;
 }
 
