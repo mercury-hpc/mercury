@@ -35,10 +35,10 @@
 #define hg_core_header_proc_hg_uint32_t_dec(x) ntohl(x & 0xffffffff)
 #define hg_core_header_proc_hg_uint64_t_enc(x)                                 \
     (((hg_uint64_t) htonl(x & 0xffffffff) << 32) |                             \
-        htonl((hg_uint32_t)(x >> 32)))
+        htonl((hg_uint32_t) (x >> 32)))
 #define hg_core_header_proc_hg_uint64_t_dec(x)                                 \
     (((hg_uint64_t) ntohl(x & 0xffffffff) << 32) |                             \
-        ntohl((hg_uint32_t)(x >> 32)))
+        ntohl((hg_uint32_t) (x >> 32)))
 
 /* Signed values */
 #define hg_core_header_proc_hg_int8_t_enc(x)                                   \
@@ -280,7 +280,9 @@ hg_core_header_request_verify(const struct hg_core_header *hg_core_header)
         done, ret, HG_PROTOCOL_ERROR, "Invalid HG byte");
 
     HG_CHECK_ERROR(header->protocol != HG_CORE_PROTOCOL_VERSION, done, ret,
-        HG_PROTONOSUPPORT, "Invalid protocol version");
+        HG_PROTONOSUPPORT,
+        "Invalid protocol version, using %" PRIx8 ", expected %x",
+        header->protocol, HG_CORE_PROTOCOL_VERSION);
 
 done:
     return ret;
