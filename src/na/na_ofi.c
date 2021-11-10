@@ -4912,7 +4912,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     /* Set access mode */
     switch (na_ofi_mem_handle->desc.info.flags) {
         case NA_MEM_READ_ONLY:
-            access = FI_REMOTE_READ | FI_WRITE;
+            access = FI_REMOTE_READ;
             break;
         case NA_MEM_WRITE_ONLY:
             access = FI_REMOTE_WRITE | FI_READ;
