@@ -2868,9 +2868,7 @@ na_ofi_mem_buf_register(const void *buf, size_t len, void **handle, void *arg)
         struct fid_mr *mr_hdl = NULL;
         int rc;
 
-        rc = fi_mr_reg(na_ofi_domain->fi_domain, buf, len,
-            FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV | FI_READ |
-                FI_WRITE,
+        rc = fi_mr_reg(na_ofi_domain->fi_domain, buf, len, FI_SEND | FI_RECV,
             0 /* offset */, 0 /* requested key */, 0 /* flags */, &mr_hdl,
             NULL /* context */);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, HG_UTIL_FAIL,
