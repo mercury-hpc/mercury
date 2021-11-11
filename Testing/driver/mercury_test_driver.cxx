@@ -501,7 +501,7 @@ HGTestDriver::Main(int argc, char* argv[])
 
     if (mpiError) {
         cerr
-            << "HGTestDriver: Error string found in ouput, HGTestDriver returning "
+            << "HGTestDriver: Error string found in output, HGTestDriver returning "
             << mpiError << "\n";
         return mpiError;
     }
