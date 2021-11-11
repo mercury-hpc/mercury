@@ -3552,11 +3552,11 @@ na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     switch (na_ucx_mem_handle->desc.flags) {
         case NA_MEM_READ_ONLY:
             mem_map_params.prot =
-                UCP_MEM_MAP_PROT_REMOTE_READ | UCP_MEM_MAP_PROT_LOCAL_WRITE;
+                UCP_MEM_MAP_PROT_REMOTE_READ | UCP_MEM_MAP_PROT_LOCAL_READ;
             break;
         case NA_MEM_WRITE_ONLY:
             mem_map_params.prot =
-                UCP_MEM_MAP_PROT_REMOTE_WRITE | UCP_MEM_MAP_PROT_LOCAL_READ;
+                UCP_MEM_MAP_PROT_REMOTE_WRITE | UCP_MEM_MAP_PROT_LOCAL_WRITE;
             break;
         case NA_MEM_READWRITE:
             mem_map_params.prot =
