@@ -51,11 +51,14 @@ This version brings bug fixes and updates to our v2.0.0 release.
 - __[HG bulk]__
     - Fix erroneous call to `NA_Mem_deregister()` when handle is deserialized.
     - Correctly mark op as canceled if canceled from NA.
+    - Clean up and simplify handling of NA error return codes in callback.
 - __[HG Core]__
     - Fix error handling when NA send fails during an `HG_Forward()` operation.
+    - Correctly map NA error return code back to HG error return code in user callback.
     - Correctly print HG handle debug information.
     - In short responses like ACKs, leave room at the front of a buffer for
     the NA header, and expect the header to be present.
+    - Fix potential issue on context destroy where handles could have been reposted while finalizing if RPCs were still in the queue.
 - __[General]__
     - Warning and static analysis issues were fixed.
 
