@@ -44,7 +44,7 @@
 #define HG_CORE_BULK_OP_INIT_COUNT (256)
 
 /* Timeout on finalize */
-#define HG_CORE_CLEANUP_TIMEOUT (1000)
+#define HG_CORE_CLEANUP_TIMEOUT (5000)
 
 /* Max number of events for progress */
 #define HG_CORE_MAX_EVENTS        (1)
@@ -1389,9 +1389,7 @@ static hg_return_t
 hg_core_context_unpost(struct hg_core_private_context *context)
 {
     struct hg_core_private_handle *hg_core_handle;
-    unsigned int actual_count;
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
 
     /* Prevent repost of handles */
     context->finalizing = HG_TRUE;
@@ -1419,28 +1417,6 @@ hg_core_context_unpost(struct hg_core_private_context *context)
 #endif
     hg_thread_spin_unlock(&context->pending_list_lock);
 
-    /* Trigger everything we can from NA, if something completed it will
-     * be moved to the HG context completion queue */
-    do {
-        na_ret = NA_Trigger(
-            context->core_context.na_context, 0, 1, NULL, &actual_count);
-    } while ((na_ret == NA_SUCCESS) && actual_count);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
-        (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
-        NA_Error_to_string(na_ret));
-
-#ifdef NA_HAS_SM
-    if (context->core_context.na_sm_context) {
-        do {
-            na_ret = NA_Trigger(
-                context->core_context.na_sm_context, 0, 1, NULL, &actual_count);
-        } while ((na_ret == NA_SUCCESS) && actual_count);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
-            (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
-            NA_Error_to_string(na_ret));
-    }
-#endif
-
     /* Check that operations have completed */
     ret = hg_core_context_lists_wait(context);
     HG_CHECK_HG_ERROR(done, ret, "Could not wait on HG core handle list");
@@ -1464,18 +1440,16 @@ hg_core_context_check_pending(struct hg_core_private_context *context,
 
     /* Check if we need more handles */
     hg_thread_spin_lock(&context->pending_list_lock);
-
 #ifdef NA_HAS_SM
-    if (na_class == context->core_context.core_class->na_sm_class) {
+    if (na_class == context->core_context.core_class->na_sm_class)
         pending_empty = HG_LIST_IS_EMPTY(&context->sm_pending_list);
-    } else
+    else
 #endif
         pending_empty = HG_LIST_IS_EMPTY(&context->pending_list);
-
     hg_thread_spin_unlock(&context->pending_list_lock);
 
     /* If pending list is empty, post more handles */
-    if (pending_empty) {
+    if (pending_empty && !context->finalizing) {
         ret =
             hg_core_context_post(context, na_class, na_context, request_count);
         HG_CHECK_HG_ERROR(done, ret, "Could not post additional handles");
@@ -1490,55 +1464,48 @@ static hg_return_t
 hg_core_context_lists_wait(struct hg_core_private_context *context)
 {
     bool created_list_empty = false;
-    bool pending_list_empty = false;
-#ifdef NA_HAS_SM
-    bool sm_pending_list_empty = false;
-#else
-    bool sm_pending_list_empty = true;
-#endif
-    /* Convert timeout in ms into seconds */
     hg_time_t deadline, now;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, hg_ret;
 
     hg_time_get_current_ms(&now);
     deadline = hg_time_add(now, hg_time_from_ms(HG_CORE_CLEANUP_TIMEOUT));
 
-    do {
+    /* Make first progress pass without waiting to empty trigger queues */
+    hg_ret = hg_core_progress(context, 0);
+    HG_CHECK_ERROR(hg_ret != HG_SUCCESS && hg_ret != HG_TIMEOUT, done, ret,
+        hg_ret, "Could not make progress");
+
+    for (;;) {
         unsigned int actual_count = 0;
-        hg_return_t trigger_ret, progress_ret;
 
         /* Trigger everything we can from HG */
         do {
-            trigger_ret = hg_core_trigger(context, 0, 1, &actual_count);
-        } while ((trigger_ret == HG_SUCCESS) && actual_count);
-        HG_CHECK_ERROR(trigger_ret != HG_SUCCESS && trigger_ret != HG_TIMEOUT,
-            done, ret, trigger_ret, "Could not trigger entry");
+            hg_ret = hg_core_trigger(context, 0, 1, &actual_count);
+        } while ((hg_ret == HG_SUCCESS) && actual_count);
+        HG_CHECK_ERROR(hg_ret != HG_SUCCESS && hg_ret != HG_TIMEOUT, done, ret,
+            hg_ret, "Could not trigger entry");
 
+        /* When created list is empty, pending list and list of handles in use
+         * should be empty */
         hg_thread_spin_lock(&context->created_list_lock);
         created_list_empty = HG_LIST_IS_EMPTY(&context->created_list);
         hg_thread_spin_unlock(&context->created_list_lock);
-
-        hg_thread_spin_lock(&context->pending_list_lock);
-        pending_list_empty = HG_LIST_IS_EMPTY(&context->pending_list);
-#ifdef NA_HAS_SM
-        sm_pending_list_empty = HG_LIST_IS_EMPTY(&context->sm_pending_list);
-#endif
-        hg_thread_spin_unlock(&context->pending_list_lock);
-
-        if (created_list_empty && pending_list_empty && sm_pending_list_empty)
+        if (created_list_empty)
             break;
 
-        progress_ret = hg_core_progress(
-            context, hg_time_to_ms(hg_time_subtract(deadline, now)));
-        HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
-            done, ret, progress_ret, "Could not make progress");
-
+        /* Gives a chance to always call trigger after progress */
         hg_time_get_current_ms(&now);
-    } while (hg_time_less(now, deadline) || !pending_list_empty ||
-             !sm_pending_list_empty);
+        if (!hg_time_less(now, deadline))
+            break;
 
-    HG_LOG_DEBUG("Context list status: %d, %d, %d", created_list_empty,
-        pending_list_empty, sm_pending_list_empty);
+        hg_ret = hg_core_progress(
+            context, hg_time_to_ms(hg_time_subtract(deadline, now)));
+        HG_CHECK_ERROR(hg_ret != HG_SUCCESS && hg_ret != HG_TIMEOUT, done, ret,
+            hg_ret, "Could not make progress");
+    }
+
+    HG_LOG_DEBUG("Created list empty: %d (timeout=%u ms)", created_list_empty,
+        hg_time_to_ms(hg_time_subtract(deadline, now)));
 
 done:
     return ret;
