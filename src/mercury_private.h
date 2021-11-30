@@ -51,6 +51,18 @@ extern "C" {
 #endif
 
 /**
+ * Increment bulk handle counter.
+ */
+HG_PRIVATE void
+hg_core_bulk_incr(hg_core_class_t *hg_core_class);
+
+/**
+ * Decrement bulk handle counter.
+ */
+HG_PRIVATE void
+hg_core_bulk_decr(hg_core_class_t *hg_core_class);
+
+/**
  * Get bulk op pool.
  */
 HG_PRIVATE struct hg_bulk_op_pool *
