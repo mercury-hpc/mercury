@@ -136,6 +136,7 @@ struct hg_core_private_class {
     na_tag_t request_max_tag;                            /* Max value for tag */
     hg_atomic_int32_t n_contexts;   /* Atomic used for number of contexts */
     hg_atomic_int32_t n_addrs;      /* Atomic used for number of addrs */
+    hg_atomic_int32_t n_bulks;      /* Atomic used for number of bulk handles */
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     hg_thread_spin_t func_map_lock; /* Function map lock */
     na_uint32_t progress_mode;      /* NA progress mode */
@@ -984,6 +985,9 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     /* No addr created yet */
     hg_atomic_init32(&hg_core_class->n_addrs, 0);
 
+    /* No bulk created yet */
+    hg_atomic_init32(&hg_core_class->n_bulks, 0);
+
     /* Create new function map */
     hg_core_class->func_map =
         hg_hash_table_new(hg_core_int_hash, hg_core_int_equal);
@@ -1010,12 +1014,17 @@ error:
 static hg_return_t
 hg_core_finalize(struct hg_core_private_class *hg_core_class)
 {
-    int32_t n_addrs, n_contexts;
+    int32_t n_addrs, n_contexts, n_bulks;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
     if (!hg_core_class)
         goto done;
+
+    n_bulks = hg_atomic_get32(&hg_core_class->n_bulks);
+    HG_CHECK_ERROR(n_bulks != 0, done, ret, HG_BUSY,
+        "HG bulk handles must be destroyed before finalizing HG (%d remaining)",
+        n_bulks);
 
     n_contexts = hg_atomic_get32(&hg_core_class->n_contexts);
     HG_CHECK_ERROR(n_contexts != 0, done, ret, HG_BUSY,
@@ -1059,6 +1068,22 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_core_bulk_incr(hg_core_class_t *hg_core_class)
+{
+    hg_atomic_incr32(
+        &((struct hg_core_private_class *) hg_core_class)->n_bulks);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_core_bulk_decr(hg_core_class_t *hg_core_class)
+{
+    hg_atomic_decr32(
+        &((struct hg_core_private_class *) hg_core_class)->n_bulks);
 }
 
 /*---------------------------------------------------------------------------*/

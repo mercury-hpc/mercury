@@ -636,6 +636,7 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
 #endif
     }
     hg_bulk->registered = HG_TRUE;
+    hg_core_bulk_incr(core_class);
 
     *hg_bulk_ptr = hg_bulk;
 
@@ -717,6 +718,7 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
     if (hg_bulk->desc.info.segment_count > HG_BULK_STATIC_MAX)
         free(segments);
 
+    hg_core_bulk_decr(hg_bulk->core_class);
     free(hg_bulk);
 
 done:
@@ -1394,6 +1396,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
     HG_CHECK_WARNING(buf_size_left != 0,
         "Buffer size left for decoding bulk handle is not zero");
 
+    hg_core_bulk_incr(hg_bulk->core_class);
     *hg_bulk_ptr = hg_bulk;
 
     return ret;
