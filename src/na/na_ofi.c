@@ -3690,6 +3690,11 @@ na_ofi_op_cancel(struct na_ofi_op_id *na_ofi_op_id)
         op, "fi_cancel() rc: %d (%s)", (int) rc, fi_strerror((int) -rc));
     (void) rc;
 
+    if (na_ofi_op_id->na_ofi_class->domain->prov_type == NA_OFI_PROV_VERBS &&
+        na_ofi_op_id->completion_data.callback_info.type != NA_CB_RECV_UNEXPECTED &&
+        na_ofi_op_id->completion_data.callback_info.type != NA_CB_RECV_EXPECTED)
+        na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+
     /* Work around segfault on fi_cq_signal() in some providers */
     if (na_ofi_prov_flags[na_ofi_op_id->na_ofi_class->domain->prov_type] &
         NA_OFI_SIGNAL) {
