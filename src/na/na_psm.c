@@ -1,45 +1,13 @@
-/*
- * Copyright (c) 2020-2021, Carnegie Mellon University.
- * All rights reserved.
+/**
+ * Copyright (c) 2013-2021 UChicago Argonne, LLC and The HDF Group.
+ * Copyright (c) 2021 Carnegie Mellon University.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT
- * HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
- * WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
-/*
- * na_psm.c  mercury NA driver for the qlogic/intel PSM interface
- * 27-Oct-2020  chuck@ece.cmu.edu
+/**
+ * mercury NA driver for the qlogic/intel PSM interface
  */
-
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-#include <arpa/inet.h>   /* ntohl, htonl */
 
 #include "na_plugin.h"
 
@@ -52,29 +20,33 @@
  */
 #ifdef PSM2
 
-#include <psm2.h>
-#include <psm2_mq.h>
+#    include <psm2.h>
+#    include <psm2_mq.h>
 
-#include "na_psm2.h"      /* wrappers */
+#    include "na_psm2.h" /* wrappers */
 
-#define NA_PSM_NAME "psm2"
-#define NA_PSM_PLUGIN_VARIABLE NA_PLUGIN_OPS(psm2)
+#    define NA_PSM_NAME            "psm2"
+#    define NA_PSM_PLUGIN_VARIABLE NA_PLUGIN_OPS(psm2)
 
 #else
 
-#include <psm.h>
-#include <psm_mq.h>
+#    include <psm.h>
+#    include <psm_mq.h>
 
 /* locally defined struct aliases */
 typedef struct psm_optkey psm_optkey_t;
 typedef struct psm_ep_open_opts psm_ep_open_opts_t;
 
-#define NA_PSM_NAME "psm"
-#define NA_PSM_PLUGIN_VARIABLE NA_PLUGIN_OPS(psm)
+#    define NA_PSM_NAME            "psm"
+#    define NA_PSM_PLUGIN_VARIABLE NA_PLUGIN_OPS(psm)
 
 #endif /* PSM2 */
 
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
+#include <arpa/inet.h> /* ntohl, htonl */
 
 /******************************************************************************
  * compile time defs and configuration
@@ -104,9 +76,8 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * (but internally they uses the size param to choose what mode to use).
  * XXXCDC: what values make sense here?
  */
-#define NA_PSM_MAX_EXPECTED    4096
-#define NA_PSM_MAX_UNEXPECTED  4096
-
+#define NA_PSM_MAX_EXPECTED   4096
+#define NA_PSM_MAX_UNEXPECTED 4096
 
 /*
  * tag management.  data sent with psm_isend() is tagged with a uint64_t.
@@ -126,11 +97,11 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * of the PSM tag to convey an RMA sequence number and status info.
  */
 
-#define NA_PSM_TAG_NINTBITS 2      /* bits reserved for internal use */
-#define NA_PSM_MAX_TAG (((uint64_t)~0) >> NA_PSM_TAG_NINTBITS)
-#define NA_PSM_INTBIT_MASK (~NA_PSM_MAX_TAG)
+#define NA_PSM_TAG_NINTBITS 2 /* bits reserved for internal use */
+#define NA_PSM_MAX_TAG      (((uint64_t) ~0) >> NA_PSM_TAG_NINTBITS)
+#define NA_PSM_INTBIT_MASK  (~NA_PSM_MAX_TAG)
 
-#define NA_PSM_USRTAG_MASK 0xffffffff   /* to get lower 32 bits of psm tag */
+#define NA_PSM_USRTAG_MASK 0xffffffff /* to get lower 32 bits of psm tag */
 
 /*
  * unexpected messages are sent with the NA_PSM_TAG_UNEXPECTED tag bit
@@ -140,7 +111,7 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * receive buffers to PSM with irecv() so that PSM has a place to
  * put unexpected data.
  */
-#define NA_PSM_TAG_UNEXPECTED     (0x1ULL << 63)
+#define NA_PSM_TAG_UNEXPECTED (0x1ULL << 63)
 
 /*
  * control messages are internally generated messages used for control
@@ -148,7 +119,7 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * or expected.   we post a pool of internal buffers for receiving
  * unexpected control messages.
  */
-#define NA_PSM_TAG_CONTROL        (0x1ULL << 62)
+#define NA_PSM_TAG_CONTROL (0x1ULL << 62)
 
 /*
  * for expected control messages, we use 2 of the lower 32 bit of
@@ -161,37 +132,37 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * unexpected control message (see below).  expected control messages
  * carry user data as a payload.
  */
-#define NA_PSM_TAG_ECRMASK     0xc0000000     /* to get the reserved bits */
-#define NA_PSM_TAG_ECSEQMASK   0x3fffffff     /* to get sequence number */
+#define NA_PSM_TAG_ECRMASK   0xc0000000 /* to get the reserved bits */
+#define NA_PSM_TAG_ECSEQMASK 0x3fffffff /* to get sequence number */
 
 /* ECSELECT is the tag select bits for an expected control irecv */
 #define NA_PSM_TAG_ECSELECT ~((uint64_t) NA_PSM_TAG_ECRMASK)
 
 /* rma_tag in payload of unexpected control message has an opcode */
-#define NA_PSM_TAG_OP_PUT      0x00000000     /* a 'put' operation */
-#define NA_PSM_TAG_OP_GET      0x40000000     /* a 'get' operation */
+#define NA_PSM_TAG_OP_PUT 0x00000000 /* a 'put' operation */
+#define NA_PSM_TAG_OP_GET 0x40000000 /* a 'get' operation */
 
 /* tag in an expected ctrl msg sent by target has status/error code */
-#define NA_PSM_TAG_ST_OK       0x00000000     /* no error */
-#define NA_PSM_TAG_ST_EPERM    0x40000000     /* permission error */
-#define NA_PSM_TAG_ST_ENOSPC   0x80000000     /* no space (i/o doesn't fit) */
-#define NA_PSM_TAG_ST_EINVAL   0xc0000000     /* invalid args */
+#define NA_PSM_TAG_ST_OK     0x00000000 /* no error */
+#define NA_PSM_TAG_ST_EPERM  0x40000000 /* permission error */
+#define NA_PSM_TAG_ST_ENOSPC 0x80000000 /* no space (i/o doesn't fit) */
+#define NA_PSM_TAG_ST_EINVAL 0xc0000000 /* invalid args */
 
 /*
  * unexpected control (UC) message are fixed in length.   the NA must
  * post a pool of UC buffers with irecv at startup so we are ready to
  * receive them.
  */
-#define NA_PSM_UCMSG_COUNT 256  /* size of pool of posted ucmsg buffers */
-#define NA_PSM_UCMSG_NARGS 4    /* number of 64 bit arg vals in a ucmsg */
+#define NA_PSM_UCMSG_COUNT 256 /* size of pool of posted ucmsg buffers */
+#define NA_PSM_UCMSG_NARGS 4   /* number of 64 bit arg vals in a ucmsg */
 
 /*
  * args in a UCMSG are assigned as follows...
  */
-#define NA_PSM_UCARG_SENDER 0   /* sender's epid */
-#define NA_PSM_UCARG_HANDLE 1   /* target memory handle */
-#define NA_PSM_UCARG_OFFSET 2   /* offset from base of target memory handle */
-#define NA_PSM_UCARG_LENGTH 3   /* number of data bytes in RMA op */
+#define NA_PSM_UCARG_SENDER 0 /* sender's epid */
+#define NA_PSM_UCARG_HANDLE 1 /* target memory handle */
+#define NA_PSM_UCARG_OFFSET 2 /* offset from base of target memory handle */
+#define NA_PSM_UCARG_LENGTH 3 /* number of data bytes in RMA op */
 
 /*
  * NA_PSM_OP code values.   these are used in both the na_psm op_id
@@ -199,17 +170,17 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * does not need a opcode as it can be directly resolved without having
  * to save any state in an op_id.
  */
-#define NA_PSM_OP_SEND        1   /* send (unexpected or expected) */
-#define NA_PSM_OP_RECV        2   /* recv (unexpected or expected) */
-#define NA_PSM_OP_PUT         3   /* RMA put op (local side) */
-#define NA_PSM_OP_PUT_TARGET  4   /* RMA put op (target side) */
-#define NA_PSM_OP_GET         5   /* RMA get op (local side) */
-#define NA_PSM_OP_PUTSNDCTL   6   /* RMA put send control message subop */
-#define NA_PSM_OP_PUTSNDDATA  7   /* RMA put send data subop */
-#define NA_PSM_OP_PUTRCVSTS   8   /* RMA put recv status from target subop */
-#define NA_PSM_OP_PUTRCVDATA  9   /* RMA put recv data (on target) subop */
-#define NA_PSM_OP_GETSNDCTL  10   /* RMA get send control message subop */
-#define NA_PSM_OP_GETRCV     11   /* RMA get recv target response subop */
+#define NA_PSM_OP_SEND       1  /* send (unexpected or expected) */
+#define NA_PSM_OP_RECV       2  /* recv (unexpected or expected) */
+#define NA_PSM_OP_PUT        3  /* RMA put op (local side) */
+#define NA_PSM_OP_PUT_TARGET 4  /* RMA put op (target side) */
+#define NA_PSM_OP_GET        5  /* RMA get op (local side) */
+#define NA_PSM_OP_PUTSNDCTL  6  /* RMA put send control message subop */
+#define NA_PSM_OP_PUTSNDDATA 7  /* RMA put send data subop */
+#define NA_PSM_OP_PUTRCVSTS  8  /* RMA put recv status from target subop */
+#define NA_PSM_OP_PUTRCVDATA 9  /* RMA put recv data (on target) subop */
+#define NA_PSM_OP_GETSNDCTL  10 /* RMA get send control message subop */
+#define NA_PSM_OP_GETRCV     11 /* RMA get recv target response subop */
 
 /******************************************************************************
  * psm na's private data structures
@@ -225,18 +196,18 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
  * locking).
  */
 struct na_psm_addr {
-    struct na_psm_class *pcls;     /* class we belong to */
+    struct na_psm_class *pcls; /* class we belong to */
 
-    int origin;                    /* who created us?  just for reference */
-#define PSM_ORG_SELF      0        /* address is us, created at init */
-#define PSM_ORG_LOOKUP    1        /* address created by lookup */
-#define PSM_ORG_DESER     2        /* address created via deserialize */
-#define PSM_ORG_RECV      3        /* address created by unexpectec recv */
+    int origin;          /* who created us?  just for reference */
+#define PSM_ORG_SELF   0 /* address is us, created at init */
+#define PSM_ORG_LOOKUP 1 /* address created by lookup */
+#define PSM_ORG_DESER  2 /* address created via deserialize */
+#define PSM_ORG_RECV   3 /* address created by unexpectec recv */
 
-    psm_epid_t epid;               /* epid number for this address */
-    psm_epaddr_t epaddr;           /* opaque epaddr pointer for this address */
-    hg_atomic_int32_t nrefs;       /* ref count */
-    HG_LIST_ENTRY(na_psm_addr) q;  /* linkage off of na_psm_class alist */
+    psm_epid_t epid;              /* epid number for this address */
+    psm_epaddr_t epaddr;          /* opaque epaddr pointer for this address */
+    hg_atomic_int32_t nrefs;      /* ref count */
+    HG_LIST_ENTRY(na_psm_addr) q; /* linkage off of na_psm_class alist */
 };
 
 /*
@@ -258,10 +229,10 @@ struct na_psm_ucmsg {
  * multiple subops to complete.
  */
 struct na_psm_subop {
-    psm_mq_req_t psm_handle;       /* handle to underlying psm op */
-    psm_mq_status_t psm_status;    /* valid @end, after psm_mq_test call */
-    int subop;                     /* type of suboperation */
-    struct na_psm_op_id *owner;    /* op_id that owns us */
+    psm_mq_req_t psm_handle;    /* handle to underlying psm op */
+    psm_mq_status_t psm_status; /* valid @end, after psm_mq_test call */
+    int subop;                  /* type of suboperation */
+    struct na_psm_op_id *owner; /* op_id that owns us */
 };
 
 /*
@@ -281,23 +252,23 @@ struct na_psm_subop {
  * messages -- could be useful for debugging).
  */
 struct na_psm_op_id {
-    int op;                        /* type of operation */
-    struct na_psm_class *pcls;     /* psm class we belong to */
-    na_context_t *context;         /* na_context_t we belong to */
-    int busy;                      /* +1 per active subop (lock/w busy_lock) */
-    int completed;                 /* op_id added to completion queue */
-    int cancel;                    /* op canceled */
-    struct na_cb_completion_data completion_data;  /* callback info here */
+    int op;                    /* type of operation */
+    struct na_psm_class *pcls; /* psm class we belong to */
+    na_context_t *context;     /* na_context_t we belong to */
+    int busy;                  /* +1 per active subop (lock/w busy_lock) */
+    int completed;             /* op_id added to completion queue */
+    int cancel;                /* op canceled */
+    struct na_cb_completion_data completion_data; /* callback info here */
     HG_LIST_ENTRY(na_psm_op_id) q; /* class busyops list (lock/w busy_lock) */
     struct na_psm_subop datasub;   /* data transfer subop */
     const void *datasub_buf;       /* buffer associated w/datasub */
 
     /* the following are only used for RMA put/get operations */
-    hg_atomic_int32_t rma_refs;            /* rma complete when drop to 0 */
-    struct na_psm_addr *initiator;         /* 'put' target only, for status */
-    struct na_psm_subop ucsendsub;         /* ucmsg send subop */
-    uint64_t ucsargs[NA_PSM_UCMSG_NARGS];  /* args buffer for ucsendsub */
-    struct na_psm_subop putrcvsub;         /* put-only: status recv at end */
+    hg_atomic_int32_t rma_refs;           /* rma complete when drop to 0 */
+    struct na_psm_addr *initiator;        /* 'put' target only, for status */
+    struct na_psm_subop ucsendsub;        /* ucmsg send subop */
+    uint64_t ucsargs[NA_PSM_UCMSG_NARGS]; /* args buffer for ucsendsub */
+    struct na_psm_subop putrcvsub;        /* put-only: status recv at end */
 };
 
 /*
@@ -306,8 +277,8 @@ struct na_psm_op_id {
  * or remote system.   remote memory is accessed using put()/get().
  */
 struct na_psm_mem_handle {
-    int is_local;           /* is our memory on the local system? */
-    uint64_t token;         /* unique token for remote put()/get() ops */
+    int is_local;   /* is our memory on the local system? */
+    uint64_t token; /* unique token for remote put()/get() ops */
 };
 
 /*
@@ -318,10 +289,10 @@ struct na_psm_mem_handle {
  * sending bulk handles over the network).
  */
 struct na_psm_local_mem_handle {
-    struct na_psm_mem_handle handle;  /* embedded struct: must be first */
-    void *base;                       /* pointer to our memory */
-    na_size_t size;                   /* size of our memory */
-    na_uint8_t attr;                  /* protection */
+    struct na_psm_mem_handle handle; /* embedded struct: must be first */
+    void *base;                      /* pointer to our memory */
+    na_size_t size;                  /* size of our memory */
+    na_uint8_t attr;                 /* protection */
     HG_LIST_ENTRY(na_psm_local_mem_handle) q; /* linkage (off class) */
 };
 
@@ -345,32 +316,31 @@ struct na_psm_local_mem_handle {
  */
 struct na_psm_class {
     /* set once at init time */
-    na_bool_t listen;         /* cached copy from init, not relevant to psm */
-    psm_ep_t psm_ep;          /* my endpoint */
-    psm_mq_t psm_mq;          /* matched queue for psm_ep */
-    struct na_psm_addr self;  /* my addressing information */
-    uint64_t ext_tagbits;     /* extra epid-ish tag bits we set in send tags */
+    na_bool_t listen;        /* cached copy from init, not relevant to psm */
+    psm_ep_t psm_ep;         /* my endpoint */
+    psm_mq_t psm_mq;         /* matched queue for psm_ep */
+    struct na_psm_addr self; /* my addressing information */
+    uint64_t ext_tagbits;    /* extra epid-ish tag bits we set in send tags */
     /* progress params */
-    int prog_peeks_per_try;   /* #ipeeks to try before yield/sleep */
-    int prog_just_yield;      /* don't sleep, just yield */
-    double prog_sleeptime;    /* sleep time (fp, in seconds) */
+    int prog_peeks_per_try; /* #ipeeks to try before yield/sleep */
+    int prog_just_yield;    /* don't sleep, just yield */
+    double prog_sleeptime;  /* sleep time (fp, in seconds) */
 
-    hg_thread_mutex_t alist_lock;       /* address list lock */
-    HG_LIST_HEAD(na_psm_addr) alist;    /* address list (locked by above) */
+    hg_thread_mutex_t alist_lock;    /* address list lock */
+    HG_LIST_HEAD(na_psm_addr) alist; /* address list (locked by above) */
 
     hg_thread_mutex_t busy_lock;        /* busy op list lock */
     HG_LIST_HEAD(na_psm_op_id) busyops; /* busy ops list */
 
-    hg_thread_mutex_t ipeek_lock;       /* lock mq ipeek/test calls */
+    hg_thread_mutex_t ipeek_lock; /* lock mq ipeek/test calls */
 
-    hg_thread_mutex_t lhand_lock;       /* local handle lock */
-    HG_LIST_HEAD(na_psm_local_mem_handle) lhands;  /* local handles */
-    uint32_t lhand_seq;                 /* sequence number for local handles */
+    hg_thread_mutex_t lhand_lock;                 /* local handle lock */
+    HG_LIST_HEAD(na_psm_local_mem_handle) lhands; /* local handles */
+    uint32_t lhand_seq; /* sequence number for local handles */
 
-    struct na_psm_ucmsg ucmsgs[NA_PSM_UCMSG_COUNT];  /* fixed pool of ucmsgs */
-    hg_atomic_int32_t rma_seqno;        /* used to generate psm rma_tags */
+    struct na_psm_ucmsg ucmsgs[NA_PSM_UCMSG_COUNT]; /* fixed pool of ucmsgs */
+    hg_atomic_int32_t rma_seqno; /* used to generate psm rma_tags */
 };
-
 
 /******************************************************************************
  * local/static variables
@@ -380,15 +350,15 @@ struct na_psm_class {
 static hg_thread_mutex_t psm_init_lock = HG_THREAD_MUTEX_INITIALIZER;
 static int psm_init_done = 0;
 
-
 /******************************************************************************
  * required forward declared prototypes
  */
-static na_return_t na_psm_addr_free(na_class_t NA_UNUSED *na_class,
-                                    na_addr_t addr);
-static na_op_id_t *na_psm_op_create(na_class_t NA_UNUSED *na_class);
-static na_return_t na_psm_op_destroy(na_class_t NA_UNUSED *na_class,
-                                     na_op_id_t *op_id);
+static na_return_t
+na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr);
+static na_op_id_t *
+na_psm_op_create(na_class_t NA_UNUSED *na_class);
+static na_return_t
+na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id);
 
 /******************************************************************************
  * helpful macros
@@ -401,27 +371,29 @@ static na_return_t na_psm_op_destroy(na_class_t NA_UNUSED *na_class,
  *
  * note: the psm library timeouts do not sleep, they spin in a poll loop
  */
-#define SEC_TO_NSEC(X) ((X) * 1000000000LL)
+#define SEC_TO_NSEC(X) ((X) *1000000000LL)
 
 /*
  * psm_enc64: break a uint64 up into two uint32s and encode each in network
  * byte order using htonl().  a work around the lack of a standard API for
  * encoding uint64s for portable network transport.
  */
-#define psm_enc64(BUF,IN) do {                                     \
-        uint32_t _tmp[2];                                          \
-        _tmp[0] = htonl((uint64_t)(IN) >> 32);                     \
-        _tmp[1] = htonl((uint64_t)(IN) & 0xffffffff);              \
-        memcpy((BUF), _tmp, sizeof(_tmp));                         \
+#define psm_enc64(BUF, IN)                                                     \
+    do {                                                                       \
+        uint32_t _tmp[2];                                                      \
+        _tmp[0] = htonl((uint64_t) (IN) >> 32);                                \
+        _tmp[1] = htonl((uint64_t) (IN) &0xffffffff);                          \
+        memcpy((BUF), _tmp, sizeof(_tmp));                                     \
     } while (0)
 
 /*
  * psm_dec64: decode buffer encoded by psm_enc64() back into a uint64_t
  */
-#define psm_dec64(BUF,OUT) do {                                    \
-        uint32_t _tmp[2];                                          \
-        memcpy(_tmp, (BUF), sizeof(_tmp));                         \
-        (OUT) = ((uint64_t)ntohl(_tmp[0]) << 32) | ntohl(_tmp[1]); \
+#define psm_dec64(BUF, OUT)                                                    \
+    do {                                                                       \
+        uint32_t _tmp[2];                                                      \
+        memcpy(_tmp, (BUF), sizeof(_tmp));                                     \
+        (OUT) = ((uint64_t) ntohl(_tmp[0]) << 32) | ntohl(_tmp[1]);            \
     } while (0)
 
 /******************************************************************************
@@ -522,8 +494,8 @@ na_psm_release(void *arg)
  * much.
  */
 static na_return_t
-na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid,
-    int origin, struct na_psm_addr **addr)
+na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid, int origin,
+    struct na_psm_addr **addr)
 {
     struct na_psm_addr *toadd, *naddr;
     int found;
@@ -531,10 +503,10 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid,
     psm_epaddr_t epaddr;
 
     /* maybe we already have looked this one up?  check the cache */
-    toadd = NULL;    /* only non-null if we malloc */
+    toadd = NULL; /* only non-null if we malloc */
     found = 0;
     hg_thread_mutex_lock(&pc->alist_lock);
-    HG_LIST_FOREACH(naddr, &pc->alist, q) {
+    HG_LIST_FOREACH (naddr, &pc->alist, q) {
         if (naddr->epid == epid) {
             found++;
             hg_atomic_incr32(&naddr->nrefs);
@@ -549,11 +521,11 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid,
      * not in cache.  we need to create a new na_psm_addr for this epid.
      * must make sync psm_ep_connect() call to get the epaddr.
      */
-    perr = psm_ep_connect(pc->psm_ep, 1, &epid, NULL, &perr2,
-                          &epaddr, SEC_TO_NSEC(5));
+    perr = psm_ep_connect(
+        pc->psm_ep, 1, &epid, NULL, &perr2, &epaddr, SEC_TO_NSEC(5));
     if (perr != PSM_OK) {
-        NA_LOG_ERROR("connect %" PRIx64 " failed (%s)",
-                     epid, psm_error_get_string(perr));
+        NA_LOG_ERROR("connect %" PRIx64 " failed (%s)", epid,
+            psm_error_get_string(perr));
         return NA_TIMEOUT;
     }
 
@@ -575,17 +547,17 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid,
      */
     hg_thread_mutex_lock(&pc->alist_lock);
     found = 0;
-    HG_LIST_FOREACH(naddr, &pc->alist, q) {
+    HG_LIST_FOREACH (naddr, &pc->alist, q) {
         if (naddr->epid == epid) {
             found++;
             break;
         }
     }
-    if (found) {     /* lost the race */
+    if (found) { /* lost the race */
         free(toadd);
         toadd = NULL;
         hg_atomic_incr32(&naddr->nrefs);
-    } else {         /* safe to add to alist */
+    } else {                               /* safe to add to alist */
         psm_epaddr_setctxt(epaddr, toadd); /* set psm bck ptr */
         naddr = toadd;
         HG_LIST_INSERT_HEAD(&pc->alist, naddr, q);
@@ -593,7 +565,7 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid,
     hg_thread_mutex_unlock(&pc->alist_lock);
 
 done:
-    *addr = naddr;         /* return addr pointer to caller */
+    *addr = naddr; /* return addr pointer to caller */
     if (toadd)
         NA_LOG_DEBUG("alist added epid=%" PRIx64 " origin=%d", epid, origin);
     else
@@ -616,16 +588,16 @@ na_psm_opid_setbusy(struct na_psm_class *pc, struct na_psm_op_id *pop, int v)
     hg_thread_mutex_lock(&pc->busy_lock);
 
     if (v < 0) {
-        new_busy = pop->busy + v;    /* add to current value */
+        new_busy = pop->busy + v; /* add to current value */
         if (new_busy < 0)
-            new_busy = 0;            /* don't let it drop below zero */
+            new_busy = 0; /* don't let it drop below zero */
     } else {
         new_busy = v;
     }
 
-    if (pop->busy == 0 && new_busy) {             /* transition to busy */
+    if (pop->busy == 0 && new_busy) { /* transition to busy */
         HG_LIST_INSERT_HEAD(&pc->busyops, pop, q);
-    } else if (pop->busy && new_busy == 0) {      /* transition to unbusy */
+    } else if (pop->busy && new_busy == 0) { /* transition to unbusy */
         HG_LIST_REMOVE(pop, q);
     }
 
@@ -648,9 +620,9 @@ na_psm_opid_setbusy(struct na_psm_class *pc, struct na_psm_op_id *pop, int v)
  * while we are starting it... they have to wait until we complete.)
  */
 static na_return_t
-na_psm_msg_send(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest_addr, uint64_t psmtag, na_op_id_t *op_id)
+na_psm_msg_send(na_class_t *na_class, na_context_t *context, na_cb_t callback,
+    void *arg, const void *buf, na_size_t buf_size, na_addr_t dest_addr,
+    uint64_t psmtag, na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
     struct na_psm_addr *naddr;
@@ -660,7 +632,7 @@ na_psm_msg_send(na_class_t *na_class, na_context_t *context,
     /* extract psm-specific struct pointers from args */
     pc = na_class->plugin_class;
     naddr = (struct na_psm_addr *) dest_addr;
-    pop = (struct na_psm_op_id *) op_id;    /* caller did na_psm_op_create() */
+    pop = (struct na_psm_op_id *) op_id; /* caller did na_psm_op_create() */
 
     /* sanity checks, should never fire */
     if (pop == NULL || pop->busy || pop->completed) {
@@ -677,25 +649,24 @@ na_psm_msg_send(na_class_t *na_class, na_context_t *context,
     pop->context = context;
     pop->cancel = 0;
     pop->completion_data.callback_info.arg = arg;
-    pop->completion_data.callback_info.type =
-        (psmtag & NA_PSM_TAG_UNEXPECTED) ? NA_CB_SEND_UNEXPECTED
-                                         : NA_CB_SEND_EXPECTED;
-    pop->completion_data.callback_info.ret = NA_SUCCESS;  /* to start */
+    pop->completion_data.callback_info.type = (psmtag & NA_PSM_TAG_UNEXPECTED)
+                                                  ? NA_CB_SEND_UNEXPECTED
+                                                  : NA_CB_SEND_EXPECTED;
+    pop->completion_data.callback_info.ret = NA_SUCCESS; /* to start */
     pop->completion_data.callback = callback;
     /* only one subop needed for a send */
     /* note: psmtag not saved in pop (currently not needed after send op) */
-    pop->datasub.psm_status.error_code = PSM_OK;   /* init this, to be safe */
+    pop->datasub.psm_status.error_code = PSM_OK; /* init this, to be safe */
     pop->datasub.subop = pop->op;
-    pop->datasub.psm_handle = NULL;   /* to be safe */
+    pop->datasub.psm_handle = NULL; /* to be safe */
     pop->datasub_buf = buf;
 
     /* add to busyops and start the operation */
-    na_psm_opid_setbusy(pc, pop, 1);  /* only 1 subop for send */
+    na_psm_opid_setbusy(pc, pop, 1); /* only 1 subop for send */
 
     /* pass the message down to the psm lib */
-    perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/,
-                        psmtag, buf, buf_size, &pop->datasub,
-                        &pop->datasub.psm_handle);
+    perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/, psmtag, buf,
+        buf_size, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
 
@@ -706,12 +677,11 @@ na_psm_msg_send(na_class_t *na_class, na_context_t *context,
         return NA_PROTOCOL_ERROR;
     }
 
-    NA_LOG_DEBUG("sent tag=%" PRIx64 ", op_id=%p, h=%p, buf=%p, len=%d",
-                 psmtag, pop, pop->datasub.psm_handle, buf, (int)buf_size);
+    NA_LOG_DEBUG("sent tag=%" PRIx64 ", op_id=%p, h=%p, buf=%p, len=%d", psmtag,
+        pop, pop->datasub.psm_handle, buf, (int) buf_size);
 
     return NA_SUCCESS;
 }
-
 
 /*
  * na_psm_msg_recv: post a buffer for receiving a message.  this function
@@ -725,9 +695,9 @@ na_psm_msg_send(na_class_t *na_class, na_context_t *context,
  * until we complete.)
  */
 static na_return_t
-na_psm_msg_recv(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t *op_id, uint64_t psmtag, uint64_t psmtagsel)
+na_psm_msg_recv(na_class_t *na_class, na_context_t *context, na_cb_t callback,
+    void *arg, void *buf, na_size_t buf_size, na_op_id_t *op_id,
+    uint64_t psmtag, uint64_t psmtagsel)
 {
     struct na_psm_class *pc;
     struct na_psm_op_id *pop;
@@ -735,7 +705,7 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context,
 
     /* extract psm-specific struct pointers from args */
     pc = na_class->plugin_class;
-    pop = (struct na_psm_op_id *) op_id;    /* caller did na_psm_op_create() */
+    pop = (struct na_psm_op_id *) op_id; /* caller did na_psm_op_create() */
 
     /* sanity checks, should never fire */
     if (pop == NULL || pop->busy || pop->completed) {
@@ -751,19 +721,19 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context,
     pop->context = context;
     pop->cancel = 0;
     pop->completion_data.callback_info.arg = arg;
-    pop->completion_data.callback_info.type =
-        (psmtag & NA_PSM_TAG_UNEXPECTED) ? NA_CB_RECV_UNEXPECTED
-                                         : NA_CB_RECV_EXPECTED;
-    pop->completion_data.callback_info.ret = NA_SUCCESS;  /* to start */
+    pop->completion_data.callback_info.type = (psmtag & NA_PSM_TAG_UNEXPECTED)
+                                                  ? NA_CB_RECV_UNEXPECTED
+                                                  : NA_CB_RECV_EXPECTED;
+    pop->completion_data.callback_info.ret = NA_SUCCESS; /* to start */
     pop->completion_data.callback = callback;
     /* only one subop needed for a recv */
-    pop->datasub.psm_status.error_code = PSM_OK;   /* init this, to be safe */
+    pop->datasub.psm_status.error_code = PSM_OK; /* init this, to be safe */
     pop->datasub.subop = pop->op;
-    pop->datasub.psm_handle = NULL;   /* to be safe */
+    pop->datasub.psm_handle = NULL; /* to be safe */
     pop->datasub_buf = buf;
 
     /* add to busyops and start the operation */
-    na_psm_opid_setbusy(pc, pop, 1);  /* only  subop for recv */
+    na_psm_opid_setbusy(pc, pop, 1); /* only  subop for recv */
 
     /*
      * call irecv to post the buffer for a future recv
@@ -774,9 +744,8 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context,
      * us posting a buffer for it (socket-based NAs have to deal with
      * data that arrives before a recv is posted).
      */
-    perr = psm_mq_irecv(pc->psm_mq, psmtag, psmtagsel,
-                        0 /*flags*/, buf, buf_size, &pop->datasub,
-                        &pop->datasub.psm_handle);
+    perr = psm_mq_irecv(pc->psm_mq, psmtag, psmtagsel, 0 /*flags*/, buf,
+        buf_size, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
 
@@ -789,8 +758,7 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context,
 
     NA_LOG_DEBUG("tag=%" PRIx64 ", sel=%" PRIx64
                  ", op_id=%p, h=%p, buf=%p, len=%d",
-                  psmtag, psmtagsel, pop, pop->datasub.psm_handle,
-                  buf, (int)buf_size);
+        psmtag, psmtagsel, pop, pop->datasub.psm_handle, buf, (int) buf_size);
 
     return NA_SUCCESS;
 }
@@ -816,10 +784,11 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context,
  * internal reserved bits in the tag.
  */
 static uint64_t
-na_psm_epid_ext_tagbits(psm_epid_t epid) {
+na_psm_epid_ext_tagbits(psm_epid_t epid)
+{
     uint64_t bits;
 
-    bits = epid & ~(((uint64_t)~0) >> 8);   /* shmidx */
+    bits = epid & ~(((uint64_t) ~0) >> 8); /* shmidx */
     bits |= ((epid & 0xffffff00) << 24);   /*lid, subctx, ctx*/
     return bits;
 }
@@ -831,14 +800,14 @@ static na_return_t
 na_psm_msgtag_err(uint64_t msgtag)
 {
     switch (msgtag & NA_PSM_TAG_ECRMASK) {
-    case NA_PSM_TAG_ST_EPERM:
-        return NA_PERMISSION;
-    case NA_PSM_TAG_ST_ENOSPC:
-        return NA_OVERFLOW;
-    case NA_PSM_TAG_ST_EINVAL:
-        return NA_INVALID_ARG;
+        case NA_PSM_TAG_ST_EPERM:
+            return NA_PERMISSION;
+        case NA_PSM_TAG_ST_ENOSPC:
+            return NA_OVERFLOW;
+        case NA_PSM_TAG_ST_EINVAL:
+            return NA_INVALID_ARG;
     }
-    return NA_SUCCESS;   /* must be NA_PSM_TAG_ST_OK */
+    return NA_SUCCESS; /* must be NA_PSM_TAG_ST_OK */
 }
 
 /*
@@ -851,8 +820,8 @@ na_psm_msgtag_err(uint64_t msgtag)
  * on an op_id).
  */
 static int
-na_psm_progress_op(struct na_psm_op_id *pop, struct na_psm_subop *subop,
-    int op_idled)
+na_psm_progress_op(
+    struct na_psm_op_id *pop, struct na_psm_subop *subop, int op_idled)
 {
     na_return_t ret;
     uint64_t i64epid, tag, wanted;
@@ -862,274 +831,278 @@ na_psm_progress_op(struct na_psm_op_id *pop, struct na_psm_subop *subop,
     psm_mq_req_t tmp_psmhand;
 
     switch (subop->subop) {
-    /*
-     * basic send subop completed.  since this op only has one subop,
-     * we expect op_idled to be true.   we need to look for errors and
-     * complete the request.
-     */
-    case NA_PSM_OP_SEND:
-        if (!op_idled) {
-            NA_LOG_ERROR("completed send didn't idle req");
-            break;   /* what else can we do if it isn't idle? */
-        }
-        if (subop->psm_status.error_code != PSM_OK) {
-            NA_LOG_ERROR("send error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
-        }
-        pop->completed = 1;
-        NA_LOG_DEBUG("done SEND op_id=%p, ret=%d", pop, cbi->ret);
-        na_cb_completion_add(pop->context, &pop->completion_data);
-        completed = 1;
-
-        break;
-
-    /*
-     * basic recv subop completed.  since this op only has one subop,
-     * we expect op_idled to be true.   we check for errors.  for
-     * unexpected receives, we may need to create an address structure
-     * for the remote end if we don't already have one.   then we can
-     * complete the request.
-     */
-    case NA_PSM_OP_RECV:
-        if (!op_idled) {
-            NA_LOG_ERROR("completed recv didn't idle req");
-            break;   /* what else can we do if it isn't idle? */
-        }
-        if (subop->psm_status.error_code != PSM_OK) {
-
-            /* got a PSM-level error? */
-            NA_LOG_ERROR("recv error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
-
-        } else if (pop->cancel) {
-
-            /* user canceled it, so stop now */
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_CANCELED;
-
-        } else if (cbi->type == NA_CB_RECV_UNEXPECTED) {
-
-            /* additional processing for unexpected recv */
-
-            /* parse unexpected header to get address */
-            if (subop->psm_status.nbytes < NA_PSM_ADDR_SERSIZE) {
-
-                NA_LOG_ERROR("short recv (%d), no epid",
-                    subop->psm_status.nbytes);
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
-
-            } else {
-
-                /* if successful, calle must free addr when done with it */
-                psm_dec64(pop->datasub_buf, i64epid);
-                ret = na_psm_addr_lookup_epid(pop->pcls, i64epid, PSM_ORG_RECV,
-                   (struct na_psm_addr **) &cbi->info.recv_unexpected.source);
-
-                if (ret != NA_SUCCESS && cbi->ret == NA_SUCCESS)
-                    cbi->ret = ret;
-
-                cbi->info.recv_unexpected.actual_buf_size =
-                    subop->psm_status.nbytes;
-                cbi->info.recv_unexpected.tag =
-                    subop->psm_status.msg_tag & NA_PSM_USRTAG_MASK;
+        /*
+         * basic send subop completed.  since this op only has one subop,
+         * we expect op_idled to be true.   we need to look for errors and
+         * complete the request.
+         */
+        case NA_PSM_OP_SEND:
+            if (!op_idled) {
+                NA_LOG_ERROR("completed send didn't idle req");
+                break; /* what else can we do if it isn't idle? */
             }
-        }
-
-        /* sanity check lengths if no errors, shouldn't ever fire */
-        if (cbi->ret == NA_SUCCESS &&
-            subop->psm_status.nbytes < subop->psm_status.msg_length) {
-            NA_LOG_WARNING("truncated recv %d<%d",
-                subop->psm_status.nbytes, subop->psm_status.msg_length);
-        }
-
-        pop->completed = 1;
-        NA_LOG_DEBUG("done RECV op_id=%p, ret=%d", pop, cbi->ret);
-        na_cb_completion_add(pop->context, &pop->completion_data);
-        completed = 1;
-
-        break;
-
-    /*
-     * "put" RMA op: initiator side sends
-     *     - unexpected control msg send completed.
-     *     - data send completed.
-     */
-    case NA_PSM_OP_PUTSNDCTL:
-    case NA_PSM_OP_PUTSNDDATA:
-        if (subop->psm_status.error_code != PSM_OK) {
-            NA_LOG_ERROR("put %s error: %s",
-                         (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "sndctl"
-                                                               : "snddata",
-                         psm_error_get_string(subop->psm_status.error_code));
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
-
-            /* attempt to cancel the irecv if it is running */
-            hg_thread_mutex_lock(&pop->pcls->ipeek_lock);
-            if (pop->putrcvsub.psm_handle)
-                (void) psm_mq_cancel(&pop->putrcvsub.psm_handle);
-            hg_thread_mutex_unlock(&pop->pcls->ipeek_lock);
-        }
-
-        if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
+            if (subop->psm_status.error_code != PSM_OK) {
+                NA_LOG_ERROR("send error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_PROTOCOL_ERROR;
+            }
             pop->completed = 1;
-            NA_LOG_DEBUG("done PUTSND%s op_id=%p, ret=%d",
-                (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA",
-                pop, cbi->ret);
+            NA_LOG_DEBUG("done SEND op_id=%p, ret=%d", pop, cbi->ret);
             na_cb_completion_add(pop->context, &pop->completion_data);
             completed = 1;
-        } else {
-            NA_LOG_DEBUG("advance PUTSND%s op_id=%p, ret=%d",
-                (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA",
-                pop, cbi->ret);
-        }
-        break;
 
-    /*
-     * "put" RMA op: initiator side status receive
-     */
-    case NA_PSM_OP_PUTRCVSTS:
-        if (subop->psm_status.error_code != PSM_OK) {
-            NA_LOG_ERROR("put rcvsts error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
-        } else if (cbi->ret == NA_SUCCESS) {
+            break;
 
-            /* extract user-level error code */
-            cbi->ret = na_psm_msgtag_err(subop->psm_status.msg_tag);
+        /*
+         * basic recv subop completed.  since this op only has one subop,
+         * we expect op_idled to be true.   we check for errors.  for
+         * unexpected receives, we may need to create an address structure
+         * for the remote end if we don't already have one.   then we can
+         * complete the request.
+         */
+        case NA_PSM_OP_RECV:
+            if (!op_idled) {
+                NA_LOG_ERROR("completed recv didn't idle req");
+                break; /* what else can we do if it isn't idle? */
+            }
+            if (subop->psm_status.error_code != PSM_OK) {
 
-        }
+                /* got a PSM-level error? */
+                NA_LOG_ERROR("recv error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_PROTOCOL_ERROR;
 
-        if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
-            pop->completed = 1;
-            NA_LOG_DEBUG("done PUTRCVSTS op_id=%p, ret=%d", pop, cbi->ret);
-            na_cb_completion_add(pop->context, &pop->completion_data);
-            completed = 1;
-        } else {
-            NA_LOG_DEBUG("advance PUTRCVSTS op_id=%p, ret=%d", pop, cbi->ret);
-        }
-        break;
+            } else if (pop->cancel) {
 
-    /*
-     * "put" RMA op: target side data receive.  this happens if we
-     * approved the put and issued the irecv() for it into our (the
-     * target) memory.  since we are the target, there is no local
-     * higher-level operation to complete... the op_id is internally
-     * allocated.  we send an untracked status reply to complete.
-     *
-     *   note: PUTRCVDATA does not need or use pop->rma_refs, since
-     *         there is only 1 subop (no races to worry about).  this
-     *         is the only rma-related case that does not use rma_refs.
-     */
-    case NA_PSM_OP_PUTRCVDATA:
+                /* user canceled it, so stop now */
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_CANCELED;
 
-        tag = subop->psm_status.msg_tag & NA_PSM_TAG_ECSELECT;
+            } else if (cbi->type == NA_CB_RECV_UNEXPECTED) {
 
-        if (subop->psm_status.error_code != PSM_OK) {
-            /* send back some sort of error... unlikely to ever happen? */
-            tag |= NA_PSM_TAG_ST_EINVAL;
+                /* additional processing for unexpected recv */
 
-            NA_LOG_ERROR("put rcvdata error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-        } else {
-            tag |= NA_PSM_TAG_ST_OK;
-        }
+                /* parse unexpected header to get address */
+                if (subop->psm_status.nbytes < NA_PSM_ADDR_SERSIZE) {
 
-        /* send back status to initiator (untracked, no payload) */
-        perr = psm_mq_isend(pop->pcls->psm_mq, pop->initiator->epaddr,
-                            0 /*flags*/, tag, NULL, 0, NULL, &tmp_psmhand);
-        if (perr != PSM_OK) {
-            /* nothing else we can do if status send failed... */
-            NA_LOG_ERROR("put rcvdata isend error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-        }
+                    NA_LOG_ERROR(
+                        "short recv (%d), no epid", subop->psm_status.nbytes);
+                    if (cbi->ret == NA_SUCCESS)
+                        cbi->ret = NA_PROTOCOL_ERROR;
 
-        /* drop ref to initiator address and clear it */
-        na_psm_addr_free((na_class_t *)pop->pcls, (na_addr_t)pop->initiator);
-        pop->initiator = NULL;
+                } else {
 
-        /* op_id is done!  it is internal, so no na_cb_completion_add() call */
-        if (!op_idled) {  /* shouldn't happen */
-            NA_LOG_ERROR("put rcvdata req wasn't idled");
-        } else {
-            NA_LOG_DEBUG("done PUTRCVDATA op_id=%p", pop);
-            na_psm_op_destroy((na_class_t *)pop->pcls, (na_op_id_t *)pop);
-        }
-        break;
+                    /* if successful, calle must free addr when done with it */
+                    psm_dec64(pop->datasub_buf, i64epid);
+                    ret = na_psm_addr_lookup_epid(pop->pcls, i64epid,
+                        PSM_ORG_RECV,
+                        (struct na_psm_addr **) &cbi->info.recv_unexpected
+                            .source);
 
-    /*
-     * "get" RMA op: initiator side sends
-     *     - unexpected control msg send completed.
-     */
-    case NA_PSM_OP_GETSNDCTL:
-        if (subop->psm_status.error_code != PSM_OK) {
-            NA_LOG_ERROR("get sndctl error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
+                    if (ret != NA_SUCCESS && cbi->ret == NA_SUCCESS)
+                        cbi->ret = ret;
 
-            /* attempt to cancel the irecv if it is running */
-            hg_thread_mutex_lock(&pop->pcls->ipeek_lock);
-            if (pop->datasub.psm_handle)
-                (void) psm_mq_cancel(&pop->datasub.psm_handle);
-            hg_thread_mutex_unlock(&pop->pcls->ipeek_lock);
-        }
-
-        if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
-            pop->completed = 1;
-            NA_LOG_DEBUG("done GETSNDCTL op_id=%p, ret=%d", pop, cbi->ret);
-            na_cb_completion_add(pop->context, &pop->completion_data);
-            completed = 1;
-        } else {
-            NA_LOG_DEBUG("advance GETSNDCTL op_id=%p, ret=%d", pop, cbi->ret);
-        }
-        break;
-
-    /*
-     * "get" RMA op: initiator side recv
-     *     - we either get back the data or a payloadless msg w/error code
-     */
-    case NA_PSM_OP_GETRCV:
-        if (subop->psm_status.error_code != PSM_OK) {
-            NA_LOG_ERROR("get getrcv error: %s",
-                         psm_error_get_string(subop->psm_status.error_code));
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_PROTOCOL_ERROR;
-        } else if (cbi->ret == NA_SUCCESS) {
-
-            /* extract user-level error code */
-            cbi->ret = na_psm_msgtag_err(subop->psm_status.msg_tag);
-            if (cbi->ret == NA_SUCCESS) {
-                psm_dec64(&pop->ucsargs[NA_PSM_UCARG_LENGTH], wanted);
-                if (wanted != subop->psm_status.nbytes) {
-                    NA_LOG_WARNING("get mismatch "
-                     "want=%" PRId64 ", got=%" PRId32 "!",
-                     wanted, subop->psm_status.nbytes);
+                    cbi->info.recv_unexpected.actual_buf_size =
+                        subop->psm_status.nbytes;
+                    cbi->info.recv_unexpected.tag =
+                        subop->psm_status.msg_tag & NA_PSM_USRTAG_MASK;
                 }
             }
 
-        }
+            /* sanity check lengths if no errors, shouldn't ever fire */
+            if (cbi->ret == NA_SUCCESS &&
+                subop->psm_status.nbytes < subop->psm_status.msg_length) {
+                NA_LOG_WARNING("truncated recv %d<%d", subop->psm_status.nbytes,
+                    subop->psm_status.msg_length);
+            }
 
-        if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
             pop->completed = 1;
-            NA_LOG_DEBUG("done GETRCV op_id=%p, ret=%d", pop, cbi->ret);
+            NA_LOG_DEBUG("done RECV op_id=%p, ret=%d", pop, cbi->ret);
             na_cb_completion_add(pop->context, &pop->completion_data);
             completed = 1;
-        } else {
-            NA_LOG_DEBUG("advance GETRCV op_id=%p, ret=%d", pop, cbi->ret);
-        }
-        break;
 
-    default:
-        /* this should never happen */
-        NA_LOG_ERROR("invalid subop %d!", subop->subop);
-        break;
+            break;
+
+        /*
+         * "put" RMA op: initiator side sends
+         *     - unexpected control msg send completed.
+         *     - data send completed.
+         */
+        case NA_PSM_OP_PUTSNDCTL:
+        case NA_PSM_OP_PUTSNDDATA:
+            if (subop->psm_status.error_code != PSM_OK) {
+                NA_LOG_ERROR("put %s error: %s",
+                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "sndctl"
+                                                          : "snddata",
+                    psm_error_get_string(subop->psm_status.error_code));
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_PROTOCOL_ERROR;
+
+                /* attempt to cancel the irecv if it is running */
+                hg_thread_mutex_lock(&pop->pcls->ipeek_lock);
+                if (pop->putrcvsub.psm_handle)
+                    (void) psm_mq_cancel(&pop->putrcvsub.psm_handle);
+                hg_thread_mutex_unlock(&pop->pcls->ipeek_lock);
+            }
+
+            if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
+                pop->completed = 1;
+                NA_LOG_DEBUG("done PUTSND%s op_id=%p, ret=%d",
+                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA", pop,
+                    cbi->ret);
+                na_cb_completion_add(pop->context, &pop->completion_data);
+                completed = 1;
+            } else {
+                NA_LOG_DEBUG("advance PUTSND%s op_id=%p, ret=%d",
+                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA", pop,
+                    cbi->ret);
+            }
+            break;
+
+        /*
+         * "put" RMA op: initiator side status receive
+         */
+        case NA_PSM_OP_PUTRCVSTS:
+            if (subop->psm_status.error_code != PSM_OK) {
+                NA_LOG_ERROR("put rcvsts error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_PROTOCOL_ERROR;
+            } else if (cbi->ret == NA_SUCCESS) {
+
+                /* extract user-level error code */
+                cbi->ret = na_psm_msgtag_err(subop->psm_status.msg_tag);
+            }
+
+            if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
+                pop->completed = 1;
+                NA_LOG_DEBUG("done PUTRCVSTS op_id=%p, ret=%d", pop, cbi->ret);
+                na_cb_completion_add(pop->context, &pop->completion_data);
+                completed = 1;
+            } else {
+                NA_LOG_DEBUG(
+                    "advance PUTRCVSTS op_id=%p, ret=%d", pop, cbi->ret);
+            }
+            break;
+
+        /*
+         * "put" RMA op: target side data receive.  this happens if we
+         * approved the put and issued the irecv() for it into our (the
+         * target) memory.  since we are the target, there is no local
+         * higher-level operation to complete... the op_id is internally
+         * allocated.  we send an untracked status reply to complete.
+         *
+         *   note: PUTRCVDATA does not need or use pop->rma_refs, since
+         *         there is only 1 subop (no races to worry about).  this
+         *         is the only rma-related case that does not use rma_refs.
+         */
+        case NA_PSM_OP_PUTRCVDATA:
+
+            tag = subop->psm_status.msg_tag & NA_PSM_TAG_ECSELECT;
+
+            if (subop->psm_status.error_code != PSM_OK) {
+                /* send back some sort of error... unlikely to ever happen? */
+                tag |= NA_PSM_TAG_ST_EINVAL;
+
+                NA_LOG_ERROR("put rcvdata error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+            } else {
+                tag |= NA_PSM_TAG_ST_OK;
+            }
+
+            /* send back status to initiator (untracked, no payload) */
+            perr = psm_mq_isend(pop->pcls->psm_mq, pop->initiator->epaddr,
+                0 /*flags*/, tag, NULL, 0, NULL, &tmp_psmhand);
+            if (perr != PSM_OK) {
+                /* nothing else we can do if status send failed... */
+                NA_LOG_ERROR("put rcvdata isend error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+            }
+
+            /* drop ref to initiator address and clear it */
+            na_psm_addr_free(
+                (na_class_t *) pop->pcls, (na_addr_t) pop->initiator);
+            pop->initiator = NULL;
+
+            /* op_id is done!  it is internal, so no na_cb_completion_add() call
+             */
+            if (!op_idled) { /* shouldn't happen */
+                NA_LOG_ERROR("put rcvdata req wasn't idled");
+            } else {
+                NA_LOG_DEBUG("done PUTRCVDATA op_id=%p", pop);
+                na_psm_op_destroy((na_class_t *) pop->pcls, (na_op_id_t *) pop);
+            }
+            break;
+
+        /*
+         * "get" RMA op: initiator side sends
+         *     - unexpected control msg send completed.
+         */
+        case NA_PSM_OP_GETSNDCTL:
+            if (subop->psm_status.error_code != PSM_OK) {
+                NA_LOG_ERROR("get sndctl error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_PROTOCOL_ERROR;
+
+                /* attempt to cancel the irecv if it is running */
+                hg_thread_mutex_lock(&pop->pcls->ipeek_lock);
+                if (pop->datasub.psm_handle)
+                    (void) psm_mq_cancel(&pop->datasub.psm_handle);
+                hg_thread_mutex_unlock(&pop->pcls->ipeek_lock);
+            }
+
+            if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
+                pop->completed = 1;
+                NA_LOG_DEBUG("done GETSNDCTL op_id=%p, ret=%d", pop, cbi->ret);
+                na_cb_completion_add(pop->context, &pop->completion_data);
+                completed = 1;
+            } else {
+                NA_LOG_DEBUG(
+                    "advance GETSNDCTL op_id=%p, ret=%d", pop, cbi->ret);
+            }
+            break;
+
+        /*
+         * "get" RMA op: initiator side recv
+         *     - we either get back the data or a payloadless msg w/error code
+         */
+        case NA_PSM_OP_GETRCV:
+            if (subop->psm_status.error_code != PSM_OK) {
+                NA_LOG_ERROR("get getrcv error: %s",
+                    psm_error_get_string(subop->psm_status.error_code));
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_PROTOCOL_ERROR;
+            } else if (cbi->ret == NA_SUCCESS) {
+
+                /* extract user-level error code */
+                cbi->ret = na_psm_msgtag_err(subop->psm_status.msg_tag);
+                if (cbi->ret == NA_SUCCESS) {
+                    psm_dec64(&pop->ucsargs[NA_PSM_UCARG_LENGTH], wanted);
+                    if (wanted != subop->psm_status.nbytes) {
+                        NA_LOG_WARNING("get mismatch "
+                                       "want=%" PRId64 ", got=%" PRId32 "!",
+                            wanted, subop->psm_status.nbytes);
+                    }
+                }
+            }
+
+            if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
+                pop->completed = 1;
+                NA_LOG_DEBUG("done GETRCV op_id=%p, ret=%d", pop, cbi->ret);
+                na_cb_completion_add(pop->context, &pop->completion_data);
+                completed = 1;
+            } else {
+                NA_LOG_DEBUG("advance GETRCV op_id=%p, ret=%d", pop, cbi->ret);
+            }
+            break;
+
+        default:
+            /* this should never happen */
+            NA_LOG_ERROR("invalid subop %d!", subop->subop);
+            break;
     }
 
     return completed;
@@ -1142,10 +1115,10 @@ na_psm_progress_op(struct na_psm_op_id *pop, struct na_psm_subop *subop,
  */
 static void
 na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
-                      struct na_psm_ucmsg *ucmsg)
+    struct na_psm_ucmsg *ucmsg)
 {
     psm_error_t perr;
-    psm_mq_req_t tmp;   /* not needed */
+    psm_mq_req_t tmp; /* not needed */
     uint64_t op, rma_tag, status, initiator, token, offset, length;
     struct na_psm_addr *naddr;
     struct na_psm_local_mem_handle *lh;
@@ -1171,8 +1144,8 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
         goto finish;
     }
     rma_tag = psmstat->msg_tag & NA_PSM_TAG_ECSELECT;
-    rma_tag = rma_tag & ~NA_PSM_TAG_UNEXPECTED;   /* clear unexpected bit */
-    status = NA_PSM_TAG_ST_OK;   /* so far, so good... */
+    rma_tag = rma_tag & ~NA_PSM_TAG_UNEXPECTED; /* clear unexpected bit */
+    status = NA_PSM_TAG_ST_OK;                  /* so far, so good... */
 
     /* decode the header */
     psm_dec64(&ucmsg->args[NA_PSM_UCARG_SENDER], initiator);
@@ -1181,8 +1154,8 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     psm_dec64(&ucmsg->args[NA_PSM_UCARG_LENGTH], length);
 
     /* get the initiator's address structure (gains a reference) */
-    if (na_psm_addr_lookup_epid(pc, initiator,
-                                PSM_ORG_RECV, &naddr) != NA_SUCCESS) {
+    if (na_psm_addr_lookup_epid(pc, initiator, PSM_ORG_RECV, &naddr) !=
+        NA_SUCCESS) {
         NA_LOG_ERROR("lookup fail epid=%" PRIx64, initiator);
         goto finish;
     }
@@ -1190,7 +1163,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     /* use the token to find the target local memory handle being used */
     lh_base = NULL;
     hg_thread_mutex_lock(&pc->lhand_lock);
-    HG_LIST_FOREACH(lh, &pc->lhands, q) {
+    HG_LIST_FOREACH (lh, &pc->lhands, q) {
         if (lh->handle.token == token) {
             /* copy key bits out so we can drop lhand_lock */
             lh_base = lh->base;
@@ -1226,8 +1199,8 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     if (op == NA_PSM_TAG_OP_GET) {
 
         /* this untracked send can complete the op */
-        perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/,
-                            rma_tag, userdata, length, NULL, &tmp_psmhand);
+        perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/, rma_tag,
+            userdata, length, NULL, &tmp_psmhand);
 
         if (perr != PSM_OK) {
             /* unlikely.. try sending an error */
@@ -1237,11 +1210,11 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
         } else {
             NA_LOG_DEBUG("get-target:epid=%" PRIx64 " tag=%" PRIx64
                          " p=%p len=%d handled",
-                         naddr->epid, rma_tag, userdata, (int) length);
+                naddr->epid, rma_tag, userdata, (int) length);
         }
 
         /* drop address reference now that we've sent the data */
-        na_psm_addr_free((na_class_t *)pc, (na_addr_t)naddr);
+        na_psm_addr_free((na_class_t *) pc, (na_addr_t) naddr);
 
         goto finish;
     }
@@ -1250,7 +1223,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
      * 'put' is more complicated... we need to create an internal
      * op_id to wait for the inititator to send us the data.
      */
-    pop = (struct na_psm_op_id *)na_psm_op_create((na_class_t *)pc);
+    pop = (struct na_psm_op_id *) na_psm_op_create((na_class_t *) pc);
     if (!pop) {
         /* unlikely.. try sending an error */
         NA_LOG_ERROR("pop alloc failed");
@@ -1260,19 +1233,18 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     pop->op = NA_PSM_OP_PUT_TARGET;
     pop->datasub.subop = NA_PSM_OP_PUTRCVDATA;
     pop->datasub_buf = userdata;
-    pop->initiator = naddr;    /* so we can send status later, holding ref */
+    pop->initiator = naddr; /* so we can send status later, holding ref */
 
     /* add to busyops and start the operation */
-    na_psm_opid_setbusy(pc, pop, 1);  /* only  subop for put recv */
+    na_psm_opid_setbusy(pc, pop, 1); /* only  subop for put recv */
 
-    perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT,
-                        0 /*flags*/, userdata, length,
-                        &pop->datasub, &pop->datasub.psm_handle);
+    perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT, 0 /*flags*/,
+        userdata, length, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
         /* unlikely.. dump pop and try sending an error */
         na_psm_opid_setbusy(pc, pop, 0);
-        na_psm_op_destroy((na_class_t *)pc, (na_op_id_t *)pop);
+        na_psm_op_destroy((na_class_t *) pc, (na_op_id_t *) pop);
         NA_LOG_ERROR("pop irecv failed: %s", psm_error_get_string(perr));
         status = NA_PSM_TAG_ST_EINVAL;
         goto send_error_now;
@@ -1280,8 +1252,8 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
 
     NA_LOG_DEBUG("put-target:epid=%" PRIx64 " tag=%" PRIx64
                  " h=%p p=%p len=%d op_id=%p start",
-                naddr->epid, rma_tag, pop->datasub.psm_handle,
-                userdata, (int) length, pop);
+        naddr->epid, rma_tag, pop->datasub.psm_handle, userdata, (int) length,
+        pop);
     /*
      * done for now.   processing will resume in the NA_PSM_OP_PUTRCVDATA
      * case of na_psm_progress_op().  note that pop is holding the address
@@ -1289,7 +1261,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
      */
     goto finish;
 
-    send_error_now:
+send_error_now:
 
     /*
      * for a put the initiator has already posted the data to PSM
@@ -1301,8 +1273,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
 
         /* this irecv is untracked */
         perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT,
-                            0 /*flags*/, &discard, sizeof(discard),
-                            NULL, &tmp_psmhand);
+            0 /*flags*/, &discard, sizeof(discard), NULL, &tmp_psmhand);
 
         if (perr != PSM_OK) {
             NA_LOG_WARNING("put discard err (%s)", psm_error_get_string(perr));
@@ -1312,7 +1283,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
 
     /* send back status to initiator now (untracked, no payload) */
     perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/,
-                        rma_tag | status, NULL, 0, NULL, &tmp_psmhand);
+        rma_tag | status, NULL, 0, NULL, &tmp_psmhand);
 
     if (perr != PSM_OK) {
         NA_LOG_ERROR("snd err (%s)", psm_error_get_string(perr));
@@ -1320,16 +1291,15 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     }
 
     /* drop address reference now as well... */
-    na_psm_addr_free((na_class_t *)pc, (na_addr_t)naddr);
+    na_psm_addr_free((na_class_t *) pc, (na_addr_t) naddr);
 
     /* fall through */
 
-    finish:    /* repost the buffer for future ucmsgs */
+finish: /* repost the buffer for future ucmsgs */
 
-    perr = psm_mq_irecv(pc->psm_mq, NA_PSM_TAG_UNEXPECTED|NA_PSM_TAG_CONTROL,
-                        NA_PSM_INTBIT_MASK, 0 /*flags*/,
-                        (void*) ucmsg, sizeof(*ucmsg),
-                        ucmsg /*context*/, &tmp);
+    perr = psm_mq_irecv(pc->psm_mq, NA_PSM_TAG_UNEXPECTED | NA_PSM_TAG_CONTROL,
+        NA_PSM_INTBIT_MASK, 0 /*flags*/, (void *) ucmsg, sizeof(*ucmsg),
+        ucmsg /*context*/, &tmp);
     if (perr != PSM_OK) {
         /* should never happen ... */
         NA_LOG_ERROR("repost failed (%s)", psm_error_get_string(perr));
@@ -1359,8 +1329,8 @@ na_psm_check_protocol(const char NA_UNUSED *protocol_name)
  * our state structure.
  */
 static na_return_t
-na_psm_initialize(na_class_t *na_class,
-                  const struct na_info NA_UNUSED *na_info, na_bool_t listen)
+na_psm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
+    na_bool_t listen)
 {
     na_bool_t bret;
     struct na_psm_class *pc;
@@ -1368,7 +1338,7 @@ na_psm_initialize(na_class_t *na_class,
     psm_error_t perr, perr2;
     int lcv;
 
-    bret = na_psm_psmlib_init();    /* bring up underlying PSM lib */
+    bret = na_psm_psmlib_init(); /* bring up underlying PSM lib */
     if (bret != NA_TRUE)
         return NA_NOENTRY;
 
@@ -1382,12 +1352,12 @@ na_psm_initialize(na_class_t *na_class,
     /* pc now allocated, must free it if we hit an error */
     memset(pc, 0, sizeof(*pc));
 
-    pc->listen = listen;   /* save a copy, psm doesn't use it though */
+    pc->listen = listen; /* save a copy, psm doesn't use it though */
 
     /* open psm_ep_t endpoint */
     psm_ep_open_opts_get_defaults(&o_opts);
-    perr = psm_ep_open(NA_PSM_DEFAULT_UUID, &o_opts, &pc->psm_ep,
-                       &pc->self.epid);
+    perr =
+        psm_ep_open(NA_PSM_DEFAULT_UUID, &o_opts, &pc->psm_ep, &pc->self.epid);
     if (perr != PSM_OK) {
         NA_LOG_ERROR("psm open failed (%s)", psm_error_get_string(perr));
         goto error;
@@ -1402,14 +1372,14 @@ na_psm_initialize(na_class_t *na_class,
 
     /* connect to ourself so that we have our epaddr struct pointer */
     perr = psm_ep_connect(pc->psm_ep, 1, &pc->self.epid, NULL, &perr2,
-                          &pc->self.epaddr, SEC_TO_NSEC(5));
+        &pc->self.epaddr, SEC_TO_NSEC(5));
     if (perr != PSM_OK) {
-        NA_LOG_ERROR("psm self ep_connect failed (%s)",
-                     psm_error_get_string(perr));
+        NA_LOG_ERROR(
+            "psm self ep_connect failed (%s)", psm_error_get_string(perr));
         goto error;
     }
-    NA_LOG_DEBUG("up, my epid=%" PRIx64 ", my epaddr=%p",
-                  pc->self.epid, pc->self.epaddr);
+    NA_LOG_DEBUG("up, my epid=%" PRIx64 ", my epaddr=%p", pc->self.epid,
+        pc->self.epaddr);
 
     /* fill out the rest of our self address info and init address list */
     pc->self.pcls = pc;
@@ -1453,16 +1423,15 @@ na_psm_initialize(na_class_t *na_class,
     pc->lhand_seq = random();
 
     /* post unexpected control recv buffers */
-    for (lcv = 0 ; lcv < NA_PSM_UCMSG_COUNT ; lcv++) {
-        psm_mq_req_t tmp;   /* not needed */
-        perr = psm_mq_irecv(pc->psm_mq,
-                            NA_PSM_TAG_UNEXPECTED|NA_PSM_TAG_CONTROL,
-                            NA_PSM_INTBIT_MASK, 0 /*flags*/,
-                            (void*) &pc->ucmsgs[lcv], sizeof(pc->ucmsgs[lcv]),
-                            &pc->ucmsgs[lcv] /*context*/, &tmp);
+    for (lcv = 0; lcv < NA_PSM_UCMSG_COUNT; lcv++) {
+        psm_mq_req_t tmp; /* not needed */
+        perr =
+            psm_mq_irecv(pc->psm_mq, NA_PSM_TAG_UNEXPECTED | NA_PSM_TAG_CONTROL,
+                NA_PSM_INTBIT_MASK, 0 /*flags*/, (void *) &pc->ucmsgs[lcv],
+                sizeof(pc->ucmsgs[lcv]), &pc->ucmsgs[lcv] /*context*/, &tmp);
         if (perr != PSM_OK) {
             NA_LOG_ERROR("irecv ucmsg %d failed: %s", lcv,
-                         psm_error_get_string(perr));  /* shouldn't happen */
+                psm_error_get_string(perr)); /* shouldn't happen */
             goto error;
         }
     }
@@ -1474,7 +1443,7 @@ na_psm_initialize(na_class_t *na_class,
      */
     return NA_SUCCESS;
 
-error:  /* already printed error */
+error: /* already printed error */
     if (pc->psm_mq) {
         perr = psm_mq_finalize(pc->psm_mq);
     }
@@ -1506,14 +1475,14 @@ na_psm_finalize(na_class_t *na_class)
     psm_error_t perr;
 
     pc = na_class->plugin_class;
-    if (pc == NULL)                      /* just to be safe, unlikely */
+    if (pc == NULL) /* just to be safe, unlikely */
         return NA_SUCCESS;
 
     /* verify that higher-level code has cleared out the busyops */
     hg_thread_mutex_lock(&pc->busy_lock);
     cnt = 0;
     HG_LIST_FOREACH (pop, &pc->busyops, q) {
-          cnt++;
+        cnt++;
     }
     hg_thread_mutex_unlock(&pc->busy_lock);
     if (cnt) {
@@ -1553,7 +1522,7 @@ na_psm_finalize(na_class_t *na_class)
     perr = psm_ep_close(pc->psm_ep, PSM_EP_CLOSE_GRACEFUL, SEC_TO_NSEC(5));
     if (perr != PSM_OK) {
         NA_LOG_DEBUG("psm_ep_close: %s", psm_error_get_string(perr));
-        if (perr == PSM_EP_CLOSE_TIMEOUT)  /* force it if needed */
+        if (perr == PSM_EP_CLOSE_TIMEOUT) /* force it if needed */
             perr = psm_ep_close(pc->psm_ep, PSM_EP_CLOSE_FORCE, 0);
     }
 
@@ -1587,7 +1556,7 @@ na_psm_op_create(na_class_t NA_UNUSED *na_class)
     pop->completion_data.plugin_callback_args = pop;
     pop->datasub.owner = pop->ucsendsub.owner = pop->putrcvsub.owner = pop;
     hg_atomic_set32(&pop->rma_refs, 0);
-    return (na_op_id_t *) pop;            /* cast to opaque struct ptr */
+    return (na_op_id_t *) pop; /* cast to opaque struct ptr */
 }
 
 /*
@@ -1601,10 +1570,10 @@ na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 
     if (pop->busy || pop->completed || rma_refs) {
         /* this should never happen.  raise an error and don't free */
-        NA_LOG_ERROR("op active (busy=%d,comp=%d,rma=%d)",
-                     pop->busy, pop->completed, rma_refs);
+        NA_LOG_ERROR("op active (busy=%d,comp=%d,rma=%d)", pop->busy,
+            pop->completed, rma_refs);
     } else {
-        free(pop);     /* XXX:pool? */
+        free(pop); /* XXX:pool? */
     }
     return NA_SUCCESS;
 }
@@ -1630,8 +1599,8 @@ na_psm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 
     epid = i64epid;
 
-    return na_psm_addr_lookup_epid(pc, epid, PSM_ORG_LOOKUP,
-                                   (struct na_psm_addr **) addr);
+    return na_psm_addr_lookup_epid(
+        pc, epid, PSM_ORG_LOOKUP, (struct na_psm_addr **) addr);
 }
 
 /*
@@ -1704,7 +1673,7 @@ na_psm_addr_cmp(
     struct na_psm_addr *naddr2 = (struct na_psm_addr *) addr2;
 
     /* easy: just need to compare the two epids */
-    return(naddr1->epid == naddr2->epid);
+    return (naddr1->epid == naddr2->epid);
 }
 
 /*
@@ -1715,7 +1684,7 @@ na_psm_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
 
-    return(naddr->origin == PSM_ORG_SELF);  /* SELF set at init time */
+    return (naddr->origin == PSM_ORG_SELF); /* SELF set at init time */
 }
 
 /*
@@ -1723,7 +1692,7 @@ na_psm_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
  */
 static na_return_t
 na_psm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
-                      na_size_t *buf_size, na_addr_t addr)
+    na_size_t *buf_size, na_addr_t addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
     char tmpbuf[32];
@@ -1749,8 +1718,8 @@ na_psm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
  * using a intermdiate server in the middle of the chain.)
  */
 static na_size_t
-na_psm_addr_get_serialize_size(na_class_t NA_UNUSED *na_class,
-                               na_addr_t NA_UNUSED addr)
+na_psm_addr_get_serialize_size(
+    na_class_t NA_UNUSED *na_class, na_addr_t NA_UNUSED addr)
 {
     return NA_PSM_ADDR_SERSIZE;
 }
@@ -1766,7 +1735,7 @@ na_psm_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
 
     if (buf_size < NA_PSM_ADDR_SERSIZE) {
         NA_LOG_ERROR("bufsiz err %" PRId64, buf_size);
-        return(NA_OVERFLOW);
+        return (NA_OVERFLOW);
     }
 
     psm_enc64(buf, naddr->epid);
@@ -1778,20 +1747,20 @@ na_psm_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
  * is holding a reference to the address.
  */
 static na_return_t
-na_psm_addr_deserialize(na_class_t *na_class, na_addr_t *addr,
-    const void *buf, na_size_t buf_size)
+na_psm_addr_deserialize(
+    na_class_t *na_class, na_addr_t *addr, const void *buf, na_size_t buf_size)
 {
     uint64_t i64epid;
     na_return_t ret;
 
     if (buf_size < NA_PSM_ADDR_SERSIZE) {
         NA_LOG_ERROR("bufsiz err %" PRId64, buf_size);
-        return(NA_OVERFLOW);
+        return (NA_OVERFLOW);
     }
     psm_dec64(buf, i64epid);
 
-    ret = na_psm_addr_lookup_epid((struct na_psm_class *)na_class,
-              i64epid, PSM_ORG_DESER, (struct na_psm_addr **) addr);
+    ret = na_psm_addr_lookup_epid((struct na_psm_class *) na_class, i64epid,
+        PSM_ORG_DESER, (struct na_psm_addr **) addr);
 
     return ret;
 }
@@ -1893,7 +1862,7 @@ na_psm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     psmtag = NA_PSM_TAG_UNEXPECTED | pc->ext_tagbits | tag;
 
     ret = na_psm_msg_send(na_class, context, callback, arg, buf, buf_size,
-                          dest_addr, psmtag , op_id);
+        dest_addr, psmtag, op_id);
     return ret;
 }
 
@@ -1910,11 +1879,11 @@ na_psm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     uint64_t psmtag, psmtagsel;
     na_return_t ret;
 
-    psmtag = NA_PSM_TAG_UNEXPECTED;    /* want only the unexpected bit */
-    psmtagsel = NA_PSM_INTBIT_MASK;    /* only need internal bits */
+    psmtag = NA_PSM_TAG_UNEXPECTED; /* want only the unexpected bit */
+    psmtagsel = NA_PSM_INTBIT_MASK; /* only need internal bits */
 
     ret = na_psm_msg_recv(na_class, context, callback, arg, buf, buf_size,
-                          op_id, psmtag, psmtagsel);
+        op_id, psmtag, psmtagsel);
     return ret;
 }
 
@@ -1941,7 +1910,7 @@ na_psm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     psmtag = pc->ext_tagbits | tag;
 
     ret = na_psm_msg_send(na_class, context, callback, arg, buf, buf_size,
-                          dest_addr, psmtag , op_id);
+        dest_addr, psmtag, op_id);
     return ret;
 }
 
@@ -1966,10 +1935,10 @@ na_psm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
      */
     psmtag = na_psm_epid_ext_tagbits(naddr->epid);
     psmtag |= tag;
-    psmtagsel = ~0;    /* use all the tag bits for filtering */
+    psmtagsel = ~0; /* use all the tag bits for filtering */
 
     ret = na_psm_msg_recv(na_class, context, callback, arg, buf, buf_size,
-                          op_id, psmtag, psmtagsel);
+        op_id, psmtag, psmtagsel);
     return ret;
 }
 
@@ -1986,13 +1955,13 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
 
     pc = na_class->plugin_class;
 
-    lp = (struct na_psm_local_mem_handle *)malloc(sizeof(*lp));
+    lp = (struct na_psm_local_mem_handle *) malloc(sizeof(*lp));
     if (!lp) {
         NA_LOG_ERROR("malloc failed");
         return NA_NOMEM;
     }
 
-    lp->handle.is_local = 1;  /* handle is embedded in local_mem_handle */
+    lp->handle.is_local = 1; /* handle is embedded in local_mem_handle */
     /* handle.token done below when we have the lhand_lock */
     lp->base = buf;
     lp->size = buf_size;
@@ -2004,8 +1973,8 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     HG_LIST_INSERT_HEAD(&pc->lhands, lp, q);
     hg_thread_mutex_unlock(&pc->lhand_lock);
 
-    NA_LOG_DEBUG("mh=%p (buf=%p,sz=%d,at=%d,tok=%" PRIx64")", lp,
-        buf, (int)buf_size, flags, lp->handle.token);
+    NA_LOG_DEBUG("mh=%p (buf=%p,sz=%d,at=%d,tok=%" PRIx64 ")", lp, buf,
+        (int) buf_size, flags, lp->handle.token);
     *mem_handle = (na_mem_handle_t) lp;
     return NA_SUCCESS;
 }
@@ -2044,7 +2013,7 @@ na_psm_mem_handle_get_serialize_size(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
 {
     struct na_psm_mem_handle dummy;
-    return sizeof(dummy.token);       /* we just send the token */
+    return sizeof(dummy.token); /* we just send the token */
 }
 
 /*
@@ -2121,15 +2090,14 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *userdata;
     uint64_t rma_tag;
     psm_error_t perr;
-    static uint32_t dummy = 0;   /* shared dummy buffer for irecv */
+    static uint32_t dummy = 0; /* shared dummy buffer for irecv */
 
     /* extract psm-specific struct pointers from args */
     pc = na_class->plugin_class;
-    naddr = (struct na_psm_addr *) remote_addr;  /* i.e. the target */
-    pop = (struct na_psm_op_id *) op_id;    /* caller did na_psm_op_create() */
+    naddr = (struct na_psm_addr *) remote_addr; /* i.e. the target */
+    pop = (struct na_psm_op_id *) op_id; /* caller did na_psm_op_create() */
     lochand = (struct na_psm_local_mem_handle *) local_mem_handle;
     remhand = (struct na_psm_mem_handle *) remote_mem_handle;
-
 
     /* sanity checks, should never fire */
     if (pop == NULL || pop->busy || pop->completed ||
@@ -2145,7 +2113,8 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (local_offset >= lochand->size ||
         length > lochand->size - local_offset) {
         NA_LOG_ERROR("local range err.  size=%" PRId64 ", off=%" PRId64
-                      ",len=%" PRId64, lochand->size, local_offset, length);
+                     ",len=%" PRId64,
+            lochand->size, local_offset, length);
         return NA_OVERFLOW;
     }
 
@@ -2165,7 +2134,7 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     pop->cancel = 0;
     pop->completion_data.callback_info.arg = arg;
     pop->completion_data.callback_info.type = NA_CB_PUT;
-    pop->completion_data.callback_info.ret = NA_SUCCESS;  /* to start */
+    pop->completion_data.callback_info.ret = NA_SUCCESS; /* to start */
     pop->completion_data.callback = callback;
 
     /* we'll need all 3 subops for a put, init err and handle to be safe */
@@ -2190,8 +2159,8 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* need to setup control msg args too... */
     psm_enc64(&pop->ucsargs[NA_PSM_UCARG_SENDER], pc->self.epid);
-    memcpy(&pop->ucsargs[NA_PSM_UCARG_HANDLE],
-           &remhand->token, sizeof(remhand->token));  /* opaque to target */
+    memcpy(&pop->ucsargs[NA_PSM_UCARG_HANDLE], &remhand->token,
+        sizeof(remhand->token)); /* opaque to target */
     psm_enc64(&pop->ucsargs[NA_PSM_UCARG_OFFSET], remote_offset);
     psm_enc64(&pop->ucsargs[NA_PSM_UCARG_LENGTH], length);
 
@@ -2207,17 +2176,16 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     pop->datasub_buf = userdata;
 
     /* put it on the busy list, then we can start the subops */
-    na_psm_opid_setbusy(pc, pop, 3);  /* 3 subops for a put */
+    na_psm_opid_setbusy(pc, pop, 3); /* 3 subops for a put */
 
     /* queue unexpected control message for sending */
     perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/,
-        NA_PSM_TAG_UNEXPECTED | NA_PSM_TAG_OP_PUT | rma_tag,
-        pop->ucsargs, sizeof(pop->ucsargs), &pop->ucsendsub,
-        &pop->ucsendsub.psm_handle);
+        NA_PSM_TAG_UNEXPECTED | NA_PSM_TAG_OP_PUT | rma_tag, pop->ucsargs,
+        sizeof(pop->ucsargs), &pop->ucsendsub, &pop->ucsendsub.psm_handle);
 
     if (perr != PSM_OK) {
-        na_psm_opid_setbusy(pc, pop, 0);     /* unbusy */
-        hg_atomic_set32(&pop->rma_refs, 0);  /* failed to start any */
+        na_psm_opid_setbusy(pc, pop, 0);    /* unbusy */
+        hg_atomic_set32(&pop->rma_refs, 0); /* failed to start any */
 
         NA_LOG_ERROR("uc send failed: %s", psm_error_get_string(perr));
         return NA_PROTOCOL_ERROR;
@@ -2236,7 +2204,7 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
          */
         pop->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
 
-        na_psm_opid_setbusy(pc, pop, -2);   /* remove this one and the next */
+        na_psm_opid_setbusy(pc, pop, -2); /* remove this one and the next */
 
         NA_LOG_ERROR("2nd send failed: %s", psm_error_get_string(perr));
 
@@ -2251,15 +2219,14 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* queue irecv for 0 byte status reply (dummy not touched) */
-    perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT,
-        0 /*flags*/, &dummy, sizeof(dummy), &pop->putrcvsub,
-        &pop->putrcvsub.psm_handle);
+    perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT, 0 /*flags*/,
+        &dummy, sizeof(dummy), &pop->putrcvsub, &pop->putrcvsub.psm_handle);
 
     if (perr != PSM_OK) {
         /* must wait for both isends to finish */
         pop->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
 
-        na_psm_opid_setbusy(pc, pop, -1);   /* remove this subop */
+        na_psm_opid_setbusy(pc, pop, -1); /* remove this subop */
 
         NA_LOG_ERROR("irecv failed: %s", psm_error_get_string(perr));
 
@@ -2273,8 +2240,8 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* success! */
-    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag,
-        pop, pop->datasub.psm_handle);
+    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag, pop,
+        pop->datasub.psm_handle);
 
     return NA_SUCCESS;
 }
@@ -2301,11 +2268,10 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* extract psm-specific struct pointers from args */
     pc = na_class->plugin_class;
-    naddr = (struct na_psm_addr *) remote_addr;  /* i.e. the target */
-    pop = (struct na_psm_op_id *) op_id;    /* caller did na_psm_op_create() */
+    naddr = (struct na_psm_addr *) remote_addr; /* i.e. the target */
+    pop = (struct na_psm_op_id *) op_id; /* caller did na_psm_op_create() */
     lochand = (struct na_psm_local_mem_handle *) local_mem_handle;
     remhand = (struct na_psm_mem_handle *) remote_mem_handle;
-
 
     /* sanity checks, should never fire */
     if (pop == NULL || pop->busy || pop->completed) {
@@ -2318,9 +2284,9 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
     if (local_offset >= lochand->size ||
         length > lochand->size - local_offset) {
-        NA_LOG_ERROR("local range err.  size=%" PRId64
-                     ", off=%" PRId64 ", len=%" PRId64, lochand->size,
-                      local_offset, length);
+        NA_LOG_ERROR("local range err.  size=%" PRId64 ", off=%" PRId64
+                     ", len=%" PRId64,
+            lochand->size, local_offset, length);
         return NA_OVERFLOW;
     }
     if (lochand->attr == NA_MEM_READ_ONLY) {
@@ -2344,7 +2310,7 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     pop->cancel = 0;
     pop->completion_data.callback_info.arg = arg;
     pop->completion_data.callback_info.type = NA_CB_GET;
-    pop->completion_data.callback_info.ret = NA_SUCCESS;  /* to start */
+    pop->completion_data.callback_info.ret = NA_SUCCESS; /* to start */
     pop->completion_data.callback = callback;
 
     /* we'll need 2 subops for a get, init err and handle to be safe */
@@ -2363,8 +2329,8 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* need to setup control msg args too... */
     psm_enc64(&pop->ucsargs[NA_PSM_UCARG_SENDER], pc->self.epid);
-    memcpy(&pop->ucsargs[NA_PSM_UCARG_HANDLE],
-           &remhand->token, sizeof(remhand->token));  /* opaque to target */
+    memcpy(&pop->ucsargs[NA_PSM_UCARG_HANDLE], &remhand->token,
+        sizeof(remhand->token)); /* opaque to target */
     psm_enc64(&pop->ucsargs[NA_PSM_UCARG_OFFSET], remote_offset);
     psm_enc64(&pop->ucsargs[NA_PSM_UCARG_LENGTH], length);
 
@@ -2375,16 +2341,15 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     pop->datasub_buf = userdata;
 
     /* put it on the busy list, then we can start the subops */
-    na_psm_opid_setbusy(pc, pop, 2);  /* 2 subops for a put */
+    na_psm_opid_setbusy(pc, pop, 2); /* 2 subops for a put */
 
     /* queue irecv for get data recv (or error) */
-    perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT,
-        0 /*flags*/, userdata, length,
-        &pop->datasub, &pop->datasub.psm_handle);
+    perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT, 0 /*flags*/,
+        userdata, length, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
-        na_psm_opid_setbusy(pc, pop, 0);     /* unbusy */
-        hg_atomic_set32(&pop->rma_refs, 0);  /* failed to start any */
+        na_psm_opid_setbusy(pc, pop, 0);    /* unbusy */
+        hg_atomic_set32(&pop->rma_refs, 0); /* failed to start any */
 
         NA_LOG_ERROR("uc send failed: %s", psm_error_get_string(perr));
         return NA_PROTOCOL_ERROR;
@@ -2392,9 +2357,8 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* queue unexpected control message for sending */
     perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/,
-        NA_PSM_TAG_UNEXPECTED | NA_PSM_TAG_OP_GET | rma_tag,
-        pop->ucsargs, sizeof(pop->ucsargs), &pop->ucsendsub,
-        &pop->ucsendsub.psm_handle);
+        NA_PSM_TAG_UNEXPECTED | NA_PSM_TAG_OP_GET | rma_tag, pop->ucsargs,
+        sizeof(pop->ucsargs), &pop->ucsendsub, &pop->ucsendsub.psm_handle);
 
     if (perr != PSM_OK) {
         /*
@@ -2404,7 +2368,7 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
          */
         pop->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
 
-        na_psm_opid_setbusy(pc, pop, -1);   /* remove this subop */
+        na_psm_opid_setbusy(pc, pop, -1); /* remove this subop */
 
         /*
          * we can try and cancel the irecv, ignore failures.  this
@@ -2430,8 +2394,8 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* success! */
-    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag,
-        pop, pop->datasub.psm_handle);
+    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag, pop,
+        pop->datasub.psm_handle);
 
     return NA_SUCCESS;
 }
@@ -2445,8 +2409,8 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
  * progress function that could be used elsewhere.
  */
 static na_return_t
-na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
-    unsigned int timeout)
+na_psm_progress(
+    na_class_t *na_class, na_context_t NA_UNUSED *context, unsigned int timeout)
 {
     struct na_psm_class *pc;
     int completed, lcv, op_idled;
@@ -2463,7 +2427,7 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
     pc = na_class->plugin_class;
     completed = 0;
     if (timeout) {
-        timeoutsecs = timeout / 1000.0;  /* cvt msec to sec (a double) */
+        timeoutsecs = timeout / 1000.0; /* cvt msec to sec (a double) */
         hg_time_get_current_ms(&tstart);
     }
 
@@ -2480,10 +2444,10 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
          * to prevent ops to be canceled while we are collecting them.
          */
         hg_thread_mutex_lock(&pc->ipeek_lock);
-        for (lcv = 0 ; lcv < pc->prog_peeks_per_try ; lcv++) {
+        for (lcv = 0; lcv < pc->prog_peeks_per_try; lcv++) {
 
-            perr = psm_mq_ipeek(pc->psm_mq, &psmreq, NULL);  /* << poll here */
-            if (perr != PSM_OK)     /* no psmreq available? */
+            perr = psm_mq_ipeek(pc->psm_mq, &psmreq, NULL); /* << poll here */
+            if (perr != PSM_OK) /* no psmreq available? */
                 continue;
 
             /* test will NULL out psmreq, save a copy for handle sanity check */
@@ -2492,15 +2456,15 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
             /* collect req's status and retire it */
             perr = psm_mq_test(&psmreq, &psmstatus);
             if (perr != PSM_OK)
-                continue;      /* shouldn't happen: ipeek returns done req */
+                continue; /* shouldn't happen: ipeek returns done req */
 
-            if (psmstatus.context == NULL)    /* untracked operation? */
+            if (psmstatus.context == NULL) /* untracked operation? */
                 break;
 
             /* unexpected control message buffer? */
-            if (psmstatus.context >= (void *)&pc->ucmsgs[0] &&
+            if (psmstatus.context >= (void *) &pc->ucmsgs[0] &&
                 psmstatus.context <=
-                    (void *)&pc->ucmsgs[NA_PSM_UCMSG_COUNT-1]) {
+                    (void *) &pc->ucmsgs[NA_PSM_UCMSG_COUNT - 1]) {
                 ucmsg = psmstatus.context;
                 break;
             }
@@ -2511,12 +2475,11 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 NA_LOG_ERROR("fail handle sanity check!");
                 /* keep going w/this subop, what else can we do? */
             }
-            subop->psm_handle = NULL;  /* want this w/ipeek lock held */
+            subop->psm_handle = NULL; /* want this w/ipeek lock held */
             subop->psm_status = psmstatus;
             pop = subop->owner;
             op_idled = (na_psm_opid_setbusy(pc, pop, -1) == 0);
             break;
-
         }
         hg_thread_mutex_unlock(&pc->ipeek_lock);
 
@@ -2532,8 +2495,8 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
             hg_time_get_current_ms(&tnow);
             delta = hg_time_diff(tnow, tstart);
             if (delta >= timeoutsecs)
-                 break;
-            if (delta < 0.0) {    /* unlikely timewarp */
+                break;
+            if (delta < 0.0) { /* unlikely timewarp */
                 NA_LOG_ERROR("timewarp, reset timeout");
                 tstart = tnow;
                 delta = 0.0;
@@ -2545,7 +2508,7 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 if (left > pc->prog_sleeptime)
                     left = pc->prog_sleeptime;
                 tsleep = hg_time_from_double(left);
-                hg_time_sleep(tsleep);   /* XXX: assume this yields? */
+                hg_time_sleep(tsleep); /* XXX: assume this yields? */
             }
         }
 
@@ -2562,8 +2525,8 @@ na_psm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
  * and may contain garbage).
  */
 static na_return_t
-na_psm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
-    na_op_id_t *op_id)
+na_psm_cancel(
+    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
     struct na_psm_op_id *pop;
@@ -2585,38 +2548,38 @@ na_psm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         goto unlock_finish;
 
     switch (pop->op) {
-    case NA_PSM_OP_SEND:
-        /* PSM will not cancel sends, nothing we can do */
-        break;
+        case NA_PSM_OP_SEND:
+            /* PSM will not cancel sends, nothing we can do */
+            break;
 
-    case NA_PSM_OP_RECV:
-    case NA_PSM_OP_GET:
-        if (pop->datasub.psm_handle) {
-            /* best effort, don't worry if cancel fails */
-            psm_mq_cancel(&pop->datasub.psm_handle);
-            pop->cancel = 1;
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_CANCELED;
-        }
-        break;
+        case NA_PSM_OP_RECV:
+        case NA_PSM_OP_GET:
+            if (pop->datasub.psm_handle) {
+                /* best effort, don't worry if cancel fails */
+                psm_mq_cancel(&pop->datasub.psm_handle);
+                pop->cancel = 1;
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_CANCELED;
+            }
+            break;
 
-    case NA_PSM_OP_PUT:
-        if (pop->putrcvsub.psm_handle) {
-            /* best effort, don't worry if cancel fails */
-            psm_mq_cancel(&pop->putrcvsub.psm_handle);
-            pop->cancel = 1;
-            if (cbi->ret == NA_SUCCESS)
-                cbi->ret = NA_CANCELED;
-        }
-        break;
+        case NA_PSM_OP_PUT:
+            if (pop->putrcvsub.psm_handle) {
+                /* best effort, don't worry if cancel fails */
+                psm_mq_cancel(&pop->putrcvsub.psm_handle);
+                pop->cancel = 1;
+                if (cbi->ret == NA_SUCCESS)
+                    cbi->ret = NA_CANCELED;
+            }
+            break;
 
-    case NA_PSM_OP_PUT_TARGET:
-        NA_LOG_ERROR("impossible on a PUT_TARGET");
-        break;
+        case NA_PSM_OP_PUT_TARGET:
+            NA_LOG_ERROR("impossible on a PUT_TARGET");
+            break;
 
-    default:
-        NA_LOG_ERROR("invalid op value %d", pop->op);
-        break;
+        default:
+            NA_LOG_ERROR("invalid op value %d", pop->op);
+            break;
     }
 
 unlock_finish:
