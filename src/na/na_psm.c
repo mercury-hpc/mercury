@@ -381,8 +381,8 @@ na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id);
 #define psm_enc64(BUF, IN)                                                     \
     do {                                                                       \
         uint32_t _tmp[2];                                                      \
-        _tmp[0] = htonl((uint64_t) (IN) >> 32);                                \
-        _tmp[1] = htonl((uint64_t) (IN) &0xffffffff);                          \
+        _tmp[0] = htonl((uint32_t) ((uint64_t) (IN) >> 32));                   \
+        _tmp[1] = htonl((uint32_t) ((uint64_t) (IN) & (0xffffffff)));          \
         memcpy((BUF), _tmp, sizeof(_tmp));                                     \
     } while (0)
 
@@ -666,7 +666,7 @@ na_psm_msg_send(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* pass the message down to the psm lib */
     perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/, psmtag, buf,
-        buf_size, &pop->datasub, &pop->datasub.psm_handle);
+        (uint32_t) buf_size, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
 
@@ -678,7 +678,7 @@ na_psm_msg_send(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     NA_LOG_DEBUG("sent tag=%" PRIx64 ", op_id=%p, h=%p, buf=%p, len=%d", psmtag,
-        pop, pop->datasub.psm_handle, buf, (int) buf_size);
+        (void *) pop, (void *) pop->datasub.psm_handle, buf, (int) buf_size);
 
     return NA_SUCCESS;
 }
@@ -745,7 +745,7 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context, na_cb_t callback,
      * data that arrives before a recv is posted).
      */
     perr = psm_mq_irecv(pc->psm_mq, psmtag, psmtagsel, 0 /*flags*/, buf,
-        buf_size, &pop->datasub, &pop->datasub.psm_handle);
+        (uint32_t) buf_size, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
 
@@ -758,7 +758,8 @@ na_psm_msg_recv(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     NA_LOG_DEBUG("tag=%" PRIx64 ", sel=%" PRIx64
                  ", op_id=%p, h=%p, buf=%p, len=%d",
-        psmtag, psmtagsel, pop, pop->datasub.psm_handle, buf, (int) buf_size);
+        psmtag, psmtagsel, (void *) pop, (void *) pop->datasub.psm_handle, buf,
+        (int) buf_size);
 
     return NA_SUCCESS;
 }
@@ -848,7 +849,7 @@ na_psm_progress_op(
                     cbi->ret = NA_PROTOCOL_ERROR;
             }
             pop->completed = 1;
-            NA_LOG_DEBUG("done SEND op_id=%p, ret=%d", pop, cbi->ret);
+            NA_LOG_DEBUG("done SEND op_id=%p, ret=%d", (void *) pop, cbi->ret);
             na_cb_completion_add(pop->context, &pop->completion_data);
             completed = 1;
 
@@ -919,7 +920,7 @@ na_psm_progress_op(
             }
 
             pop->completed = 1;
-            NA_LOG_DEBUG("done RECV op_id=%p, ret=%d", pop, cbi->ret);
+            NA_LOG_DEBUG("done RECV op_id=%p, ret=%d", (void *) pop, cbi->ret);
             na_cb_completion_add(pop->context, &pop->completion_data);
             completed = 1;
 
@@ -950,14 +951,14 @@ na_psm_progress_op(
             if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
                 pop->completed = 1;
                 NA_LOG_DEBUG("done PUTSND%s op_id=%p, ret=%d",
-                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA", pop,
-                    cbi->ret);
+                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA",
+                    (void *) pop, cbi->ret);
                 na_cb_completion_add(pop->context, &pop->completion_data);
                 completed = 1;
             } else {
                 NA_LOG_DEBUG("advance PUTSND%s op_id=%p, ret=%d",
-                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA", pop,
-                    cbi->ret);
+                    (subop->subop == NA_PSM_OP_PUTSNDCTL) ? "CTL" : "DATA",
+                    (void *) pop, cbi->ret);
             }
             break;
 
@@ -978,12 +979,13 @@ na_psm_progress_op(
 
             if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
                 pop->completed = 1;
-                NA_LOG_DEBUG("done PUTRCVSTS op_id=%p, ret=%d", pop, cbi->ret);
+                NA_LOG_DEBUG(
+                    "done PUTRCVSTS op_id=%p, ret=%d", (void *) pop, cbi->ret);
                 na_cb_completion_add(pop->context, &pop->completion_data);
                 completed = 1;
             } else {
-                NA_LOG_DEBUG(
-                    "advance PUTRCVSTS op_id=%p, ret=%d", pop, cbi->ret);
+                NA_LOG_DEBUG("advance PUTRCVSTS op_id=%p, ret=%d", (void *) pop,
+                    cbi->ret);
             }
             break;
 
@@ -1031,7 +1033,7 @@ na_psm_progress_op(
             if (!op_idled) { /* shouldn't happen */
                 NA_LOG_ERROR("put rcvdata req wasn't idled");
             } else {
-                NA_LOG_DEBUG("done PUTRCVDATA op_id=%p", pop);
+                NA_LOG_DEBUG("done PUTRCVDATA op_id=%p", (void *) pop);
                 na_psm_op_destroy((na_class_t *) pop->pcls, (na_op_id_t *) pop);
             }
             break;
@@ -1056,12 +1058,13 @@ na_psm_progress_op(
 
             if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
                 pop->completed = 1;
-                NA_LOG_DEBUG("done GETSNDCTL op_id=%p, ret=%d", pop, cbi->ret);
+                NA_LOG_DEBUG(
+                    "done GETSNDCTL op_id=%p, ret=%d", (void *) pop, cbi->ret);
                 na_cb_completion_add(pop->context, &pop->completion_data);
                 completed = 1;
             } else {
-                NA_LOG_DEBUG(
-                    "advance GETSNDCTL op_id=%p, ret=%d", pop, cbi->ret);
+                NA_LOG_DEBUG("advance GETSNDCTL op_id=%p, ret=%d", (void *) pop,
+                    cbi->ret);
             }
             break;
 
@@ -1091,11 +1094,13 @@ na_psm_progress_op(
 
             if (hg_atomic_decr32(&pop->rma_refs) == 0) { /* !busy if true */
                 pop->completed = 1;
-                NA_LOG_DEBUG("done GETRCV op_id=%p, ret=%d", pop, cbi->ret);
+                NA_LOG_DEBUG(
+                    "done GETRCV op_id=%p, ret=%d", (void *) pop, cbi->ret);
                 na_cb_completion_add(pop->context, &pop->completion_data);
                 completed = 1;
             } else {
-                NA_LOG_DEBUG("advance GETRCV op_id=%p, ret=%d", pop, cbi->ret);
+                NA_LOG_DEBUG(
+                    "advance GETRCV op_id=%p, ret=%d", (void *) pop, cbi->ret);
             }
             break;
 
@@ -1200,7 +1205,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
 
         /* this untracked send can complete the op */
         perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/, rma_tag,
-            userdata, length, NULL, &tmp_psmhand);
+            userdata, (uint32_t) length, NULL, &tmp_psmhand);
 
         if (perr != PSM_OK) {
             /* unlikely.. try sending an error */
@@ -1239,7 +1244,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     na_psm_opid_setbusy(pc, pop, 1); /* only  subop for put recv */
 
     perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT, 0 /*flags*/,
-        userdata, length, &pop->datasub, &pop->datasub.psm_handle);
+        userdata, (uint32_t) length, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
         /* unlikely.. dump pop and try sending an error */
@@ -1252,8 +1257,8 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
 
     NA_LOG_DEBUG("put-target:epid=%" PRIx64 " tag=%" PRIx64
                  " h=%p p=%p len=%d op_id=%p start",
-        naddr->epid, rma_tag, pop->datasub.psm_handle, userdata, (int) length,
-        pop);
+        naddr->epid, rma_tag, (void *) pop->datasub.psm_handle, userdata,
+        (int) length, (void *) pop);
     /*
      * done for now.   processing will resume in the NA_PSM_OP_PUTRCVDATA
      * case of na_psm_progress_op().  note that pop is holding the address
@@ -1379,7 +1384,7 @@ na_psm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         goto error;
     }
     NA_LOG_DEBUG("up, my epid=%" PRIx64 ", my epaddr=%p", pc->self.epid,
-        pc->self.epaddr);
+        (void *) pc->self.epaddr);
 
     /* fill out the rest of our self address info and init address list */
     pc->self.pcls = pc;
@@ -1420,7 +1425,7 @@ na_psm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     hg_thread_mutex_init(&pc->lhand_lock); /* XXX: ignoring ret val */
     HG_LIST_INIT(&pc->lhands);
-    pc->lhand_seq = random();
+    pc->lhand_seq = (uint32_t) random();
 
     /* post unexpected control recv buffers */
     for (lcv = 0; lcv < NA_PSM_UCMSG_COUNT; lcv++) {
@@ -1810,7 +1815,7 @@ na_psm_msg_get_unexpected_header_size(const na_class_t NA_UNUSED *na_class)
 static na_tag_t
 na_psm_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 {
-    uint64_t na_max = NA_TAG_MAX;
+    na_tag_t na_max = NA_TAG_MAX;
     return (na_max < NA_PSM_USRTAG_MASK) ? na_max : NA_PSM_USRTAG_MASK;
 }
 
@@ -1935,7 +1940,7 @@ na_psm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
      */
     psmtag = na_psm_epid_ext_tagbits(naddr->epid);
     psmtag |= tag;
-    psmtagsel = ~0; /* use all the tag bits for filtering */
+    psmtagsel = ~((uint64_t) 0); /* use all the tag bits for filtering */
 
     ret = na_psm_msg_recv(na_class, context, callback, arg, buf, buf_size,
         op_id, psmtag, psmtagsel);
@@ -1965,7 +1970,7 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     /* handle.token done below when we have the lhand_lock */
     lp->base = buf;
     lp->size = buf_size;
-    lp->attr = flags;
+    lp->attr = flags & 0xff;
 
     hg_thread_mutex_lock(&pc->lhand_lock);
     seq64 = pc->lhand_seq++;
@@ -1973,8 +1978,8 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     HG_LIST_INSERT_HEAD(&pc->lhands, lp, q);
     hg_thread_mutex_unlock(&pc->lhand_lock);
 
-    NA_LOG_DEBUG("mh=%p (buf=%p,sz=%d,at=%d,tok=%" PRIx64 ")", lp, buf,
-        (int) buf_size, flags, lp->handle.token);
+    NA_LOG_DEBUG("mh=%p (buf=%p,sz=%d,at=%lu,tok=%" PRIx64 ")", (void *) lp,
+        buf, (int) buf_size, flags, lp->handle.token);
     *mem_handle = (na_mem_handle_t) lp;
     return NA_SUCCESS;
 }
@@ -2000,7 +2005,7 @@ na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
         hg_thread_mutex_unlock(&pc->lhand_lock);
     }
 
-    NA_LOG_DEBUG("token=%" PRIx64, ", loc=%d", mh->token, mh->is_local);
+    NA_LOG_DEBUG("token=%" PRIx64 ", loc=%d", mh->token, mh->is_local);
     free(mh);
     return NA_SUCCESS;
 }
@@ -2109,6 +2114,10 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         NA_LOG_ERROR("provided local_mem_handle isn't local");
         return NA_INVALID_ARG;
     }
+    if (length > UINT32_MAX) {
+        NA_LOG_ERROR("length cannot exceed %" PRIu32 " bytes", UINT32_MAX);
+        return NA_MSGSIZE;
+    }
     /* we can always read our local memory, so lochand->attr is ok */
     if (local_offset >= lochand->size ||
         length > lochand->size - local_offset) {
@@ -2193,7 +2202,7 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* queue sending the put data */
     perr = psm_mq_isend(pc->psm_mq, naddr->epaddr, 0 /*flags*/,
-        rma_tag | NA_PSM_TAG_OP_PUT, userdata, length, &pop->datasub,
+        rma_tag | NA_PSM_TAG_OP_PUT, userdata, (uint32_t) length, &pop->datasub,
         &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
@@ -2240,8 +2249,8 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* success! */
-    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag, pop,
-        pop->datasub.psm_handle);
+    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag, (void *) pop,
+        (void *) pop->datasub.psm_handle);
 
     return NA_SUCCESS;
 }
@@ -2281,6 +2290,10 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (!lochand->handle.is_local) {
         NA_LOG_ERROR("provided local_mem_handle isn't local");
         return NA_INVALID_ARG;
+    }
+    if (length > UINT32_MAX) {
+        NA_LOG_ERROR("length cannot exceed %" PRIu32 " bytes", UINT32_MAX);
+        return NA_MSGSIZE;
     }
     if (local_offset >= lochand->size ||
         length > lochand->size - local_offset) {
@@ -2345,7 +2358,7 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* queue irecv for get data recv (or error) */
     perr = psm_mq_irecv(pc->psm_mq, rma_tag, NA_PSM_TAG_ECSELECT, 0 /*flags*/,
-        userdata, length, &pop->datasub, &pop->datasub.psm_handle);
+        userdata, (uint32_t) length, &pop->datasub, &pop->datasub.psm_handle);
 
     if (perr != PSM_OK) {
         na_psm_opid_setbusy(pc, pop, 0);    /* unbusy */
@@ -2394,8 +2407,8 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* success! */
-    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag, pop,
-        pop->datasub.psm_handle);
+    NA_LOG_DEBUG("rma_tag=%" PRIx64 ", op_id=%p, h=%p", rma_tag, (void *) pop,
+        (void *) pop->datasub.psm_handle);
 
     return NA_SUCCESS;
 }
