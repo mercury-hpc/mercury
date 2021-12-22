@@ -5,26 +5,22 @@
  */
 
 #include "na_ip.h"
+
 #include "na_error.h"
 
-#include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netdb.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_ip_parse_subnet(const char *spec, na_uint32_t *netp, na_uint32_t *netmaskp)
+na_ip_parse_subnet(const char *spec, na_uint32_t *net_p, na_uint32_t *netmask_p)
 {
     int addr[4], depth, nb;
     const char *sp;
@@ -54,10 +50,10 @@ na_ip_parse_subnet(const char *spec, na_uint32_t *netp, na_uint32_t *netmaskp)
         nb = (depth + 1) * 8; /* no '/'... use depth to get network bits */
     }
     /* avoid right shifting by 32... it's undefined behavior */
-    *netmaskp = (nb == 32) ? 0xffffffff : ~(0xffffffff >> nb);
-    *netp = (na_uint32_t) ((addr[0] << 24) | (addr[1] << 16) | (addr[2] << 8) |
-                           addr[3]) &
-            *netmaskp;
+    *netmask_p = (nb == 32) ? 0xffffffff : ~(0xffffffff >> nb);
+    *net_p = (na_uint32_t) ((addr[0] << 24) | (addr[1] << 16) | (addr[2] << 8) |
+                            addr[3]) &
+             *netmask_p;
 
 done:
     return ret;
@@ -101,7 +97,7 @@ na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr)
     rc = getnameinfo(cur->ifa_addr, sizeof(struct sockaddr_in), outstr, 16,
         NULL, 0, NI_NUMERICHOST);
     NA_CHECK_ERROR(rc != 0, cleanup, ret, NA_ADDRNOTAVAIL,
-        "getnameinfo() failed (%s)", strerror(errno));
+        "getnameinfo() failed (%s)", gai_strerror(rc));
 
 cleanup:
     freeifaddrs(ifaddr);
@@ -112,99 +108,129 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_ip_check_interface(const char *hostname, unsigned int port, char **ifa_name,
-    struct sockaddr_storage **ss_ptr)
+na_ip_check_interface(const char *name, unsigned int port, int family,
+    char **ifa_name_p, struct sockaddr **sa_p, socklen_t *salen_p)
 {
     struct ifaddrs *ifaddrs = NULL, *ifaddr;
-    struct addrinfo hints, *hostname_res = NULL;
+    struct addrinfo hints, *addr_res = NULL;
     struct sockaddr_storage *ss_addr = NULL;
-    char ip_res[INET6_ADDRSTRLEN] = {'\0'}; /* To handle IPv6 addresses */
+    socklen_t salen = 0;
     na_return_t ret = NA_SUCCESS;
-    na_bool_t found = NA_FALSE;
-    int s;
+    int rc;
 
     /* Allocate new sin addr to store result */
     ss_addr = calloc(1, sizeof(*ss_addr));
     NA_CHECK_SUBSYS_ERROR(cls, ss_addr == NULL, done, ret, NA_NOMEM,
         "Could not allocate sin address");
 
-    /* Try to resolve hostname first so that we can later compare the IP */
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;
-    s = getaddrinfo(hostname, NULL, &hints, &hostname_res);
-    if (s == 0) {
-        struct addrinfo *rp;
-
-        /* Get IP */
-        for (rp = hostname_res; rp != NULL; rp = rp->ai_next) {
-            const char *ptr = inet_ntop(rp->ai_addr->sa_family,
-                rp->ai_addr->sa_data, ip_res, INET6_ADDRSTRLEN);
-            NA_CHECK_SUBSYS_ERROR(cls, ptr == NULL, done, ret, NA_ADDRNOTAVAIL,
-                "IP could not be resolved");
-            break;
-        }
-    }
-
-    /* Check and compare interfaces */
-    s = getifaddrs(&ifaddrs);
-    NA_CHECK_SUBSYS_ERROR(
-        cls, s == -1, done, ret, NA_ADDRNOTAVAIL, "getifaddrs() failed");
+    /* First check and compare interfaces */
+    rc = getifaddrs(&ifaddrs);
+    NA_CHECK_SUBSYS_ERROR(cls, rc == -1, done, ret, NA_ADDRNOTAVAIL,
+        "getifaddrs() failed (%s)", strerror(errno));
 
     for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
-        char ip[INET6_ADDRSTRLEN] = {'\0'}; /* To handle IPv6 addresses */
-        const char *ptr;
+        if ((ifaddr->ifa_flags & IFF_UP) == 0)
+            continue; /* skip interfaces that are down */
+        if (ifaddr->ifa_addr == NULL ||
+            (ifaddr->ifa_addr->sa_family != AF_INET &&
+                ifaddr->ifa_addr->sa_family != AF_INET6))
+            continue; /* skip interfaces w/o IP address */
 
-        if (ifaddr->ifa_addr == NULL)
-            continue;
+        if (family != AF_UNSPEC && family != ifaddr->ifa_addr->sa_family)
+            continue; /* skip interfaces from different address family */
 
-        if (ifaddr->ifa_addr->sa_family != AF_INET &&
-            ifaddr->ifa_addr->sa_family != AF_INET6)
-            continue;
+        if (strcmp(ifaddr->ifa_name, name) == 0)
+            break; /* matches ifa_name */
+    }
 
-        /* Get IP */
-        ptr = inet_ntop(ifaddr->ifa_addr->sa_family, ifaddr->ifa_addr->sa_data,
-            ip, INET6_ADDRSTRLEN);
-        NA_CHECK_SUBSYS_ERROR(cls, ptr == NULL, done, ret, NA_ADDRNOTAVAIL,
-            "IP could not be resolved for: %s", ifaddr->ifa_name);
+    if (ifaddr != NULL) { /* Matched against ifa_name */
+        if (ifaddr->ifa_addr->sa_family == AF_INET) {
+            *(struct sockaddr_in *) ss_addr =
+                *(struct sockaddr_in *) ifaddr->ifa_addr;
+            ((struct sockaddr_in *) ss_addr)->sin_port = htons(port & 0xffff);
+            salen = sizeof(struct sockaddr_in);
+        } else {
+            *(struct sockaddr_in6 *) ss_addr =
+                *(struct sockaddr_in6 *) ifaddr->ifa_addr;
+            ((struct sockaddr_in6 *) ss_addr)->sin6_port = htons(port & 0xffff);
+            salen = sizeof(struct sockaddr_in6);
+        }
+    } else { /* Try to match against passed name */
+        char service[NI_MAXSERV];
 
-        /* Compare hostnames / device names */
-        if (strcmp(ip, ip_res) == 0 ||
-            strcmp(ifaddr->ifa_name, hostname) == 0) {
+        /* Add port */
+        rc = snprintf(service, NI_MAXSERV, "%u", port);
+        NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > NI_MAXSERV, done, ret,
+            NA_PROTOCOL_ERROR, "snprintf() failed or name truncated, rc: %d",
+            rc);
+
+        /* Try to resolve hostname first so that we can later compare the IP */
+        memset(&hints, 0, sizeof(struct addrinfo));
+        hints.ai_family = family;
+        hints.ai_socktype = SOCK_STREAM;
+
+        rc = getaddrinfo(name, service, &hints, &addr_res);
+        NA_CHECK_SUBSYS_ERROR(cls, rc != 0, done, ret, NA_ADDRNOTAVAIL,
+            "getaddrinfo() failed (%s) for %s with port %s", gai_strerror(rc),
+            name, service);
+
+        memcpy(ss_addr, addr_res->ai_addr, addr_res->ai_addrlen);
+        salen = addr_res->ai_addrlen;
+
+        /* Try to find matching ifa_name if we asked for it */
+        for (ifaddr = ifaddrs; ifaddr != NULL && ifa_name_p != NULL;
+             ifaddr = ifaddr->ifa_next) {
+            if ((ifaddr->ifa_flags & IFF_UP) == 0)
+                continue; /* skip interfaces that are down */
+            if (ifaddr->ifa_addr == NULL ||
+                (ifaddr->ifa_addr->sa_family != AF_INET &&
+                    ifaddr->ifa_addr->sa_family != AF_INET6))
+                continue; /* skip interfaces w/o IP address */
+            if (addr_res->ai_family != ifaddr->ifa_addr->sa_family)
+                continue; /* skip if different address family */
+
             if (ifaddr->ifa_addr->sa_family == AF_INET) {
-                *(struct sockaddr_in *) ss_addr =
-                    *(struct sockaddr_in *) ifaddr->ifa_addr;
-                ((struct sockaddr_in *) ss_addr)->sin_port =
-                    htons(port & 0xffff);
+                struct sockaddr_in *sin_ifa_addr =
+                    (struct sockaddr_in *) ifaddr->ifa_addr;
+                struct sockaddr_in *sin_addr_res =
+                    (struct sockaddr_in *) addr_res->ai_addr;
+
+                if (sin_ifa_addr->sin_addr.s_addr ==
+                    sin_addr_res->sin_addr.s_addr)
+                    break;
             } else {
-                *(struct sockaddr_in6 *) ss_addr =
-                    *(struct sockaddr_in6 *) ifaddr->ifa_addr;
-                ((struct sockaddr_in6 *) ss_addr)->sin6_port =
-                    htons(port & 0xffff);
+                struct sockaddr_in6 *sin6_ifa_addr =
+                    (struct sockaddr_in6 *) ifaddr->ifa_addr;
+                struct sockaddr_in6 *sin6_addr_res =
+                    (struct sockaddr_in6 *) addr_res->ai_addr;
+
+                if (memcmp(&sin6_ifa_addr->sin6_addr, &sin6_addr_res->sin6_addr,
+                        sizeof(struct in6_addr)) == 0)
+                    break;
             }
-            found = NA_TRUE;
-            break;
         }
+        NA_CHECK_ERROR(ifaddr == NULL && ifa_name_p != NULL, done, ret,
+            NA_ADDRNOTAVAIL, "No ifa_name match found for IP");
     }
 
-    if (found) {
-        if (ss_ptr)
-            *ss_ptr = ss_addr;
-        if (ifa_name) {
-            *ifa_name = strdup(ifaddr->ifa_name);
-            NA_CHECK_SUBSYS_ERROR(cls, *ifa_name == NULL, done, ret, NA_NOMEM,
-                "Could not dup ifa_name");
-        }
+    if (ifa_name_p) {
+        *ifa_name_p = strdup(ifaddr->ifa_name);
+        NA_CHECK_SUBSYS_ERROR(cls, *ifa_name_p == NULL, done, ret, NA_NOMEM,
+            "Could not dup ifa_name");
     }
+
+    if (salen_p)
+        *salen_p = salen;
 
 done:
-    if (!found || ret != NA_SUCCESS || !ss_ptr)
+    if (sa_p == NULL || ret != NA_SUCCESS)
         free(ss_addr);
+    else
+        *sa_p = (struct sockaddr *) ss_addr;
+
     freeifaddrs(ifaddrs);
-    if (hostname_res)
-        freeaddrinfo(hostname_res);
+    if (addr_res)
+        freeaddrinfo(addr_res);
 
     return ret;
 }
