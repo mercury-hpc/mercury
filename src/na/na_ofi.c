@@ -7,6 +7,8 @@
 
 #include "na_plugin.h"
 
+#include "na_ip.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
 #include "mercury_mem.h"
@@ -82,7 +84,8 @@
         NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG |          \
             NA_OFI_SEP)                                                        \
     X(NA_OFI_PROV_TCP, "tcp;ofi_rxm", "tcp", FI_SOCKADDR_IN, FI_PROGRESS_AUTO, \
-        FI_SOURCE | FI_DIRECTED_RECV, NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)      \
+        FI_SOURCE | FI_DIRECTED_RECV,                                          \
+        NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)           \
     X(NA_OFI_PROV_PSM, "psm", "", FI_ADDR_PSMX, FI_PROGRESS_MANUAL, 0,         \
         NA_OFI_WAIT_SET | NA_OFI_SOURCE_MSG)                                   \
     X(NA_OFI_PROV_PSM2, "psm2", "", FI_ADDR_PSMX2, FI_PROGRESS_MANUAL,         \
@@ -566,13 +569,6 @@ na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
 static na_return_t
 na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
     const char *user_requested_protocol);
-
-/**
- * Check and resolve interfaces from hostname.
- */
-static na_return_t
-na_ofi_check_interface(const char *hostname, unsigned int port, char **ifa_name,
-    struct na_ofi_sin_addr **na_ofi_sin_addr_ptr);
 
 /**
  * Match provider name with domain.
@@ -1915,99 +1911,6 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
-na_ofi_check_interface(const char *hostname, unsigned int port, char **ifa_name,
-    struct na_ofi_sin_addr **na_ofi_sin_addr_ptr)
-{
-    struct ifaddrs *ifaddrs = NULL, *ifaddr;
-    struct addrinfo hints, *hostname_res = NULL;
-    struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
-    char ip_res[INET_ADDRSTRLEN] = {
-        '\0'}; /* This restricts to ipv4 addresses */
-    na_return_t ret = NA_SUCCESS;
-    na_bool_t found = NA_FALSE;
-    int s;
-
-    /* Allocate new sin addr to store result */
-    na_ofi_sin_addr = calloc(1, sizeof(*na_ofi_sin_addr));
-    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_sin_addr == NULL, out, ret, NA_NOMEM,
-        "Could not allocate sin address");
-    na_ofi_sin_addr->sin.sin_family = AF_INET;
-    na_ofi_sin_addr->sin.sin_port = htons(port & 0xffff);
-
-    /* Try to resolve hostname first so that we can later compare the IP */
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = na_ofi_sin_addr->sin.sin_family;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;
-    s = getaddrinfo(hostname, NULL, &hints, &hostname_res);
-    if (s == 0) {
-        struct addrinfo *rp;
-
-        /* Get IP */
-        for (rp = hostname_res; rp != NULL; rp = rp->ai_next) {
-            const char *ptr = inet_ntop(rp->ai_addr->sa_family,
-                &((struct sockaddr_in *) rp->ai_addr)->sin_addr, ip_res,
-                INET_ADDRSTRLEN);
-            NA_CHECK_SUBSYS_ERROR(cls, ptr == NULL, out, ret, NA_ADDRNOTAVAIL,
-                "IP could not be resolved");
-            break;
-        }
-    }
-
-    /* Check and compare interfaces */
-    s = getifaddrs(&ifaddrs);
-    NA_CHECK_SUBSYS_ERROR(
-        cls, s == -1, out, ret, NA_ADDRNOTAVAIL, "getifaddrs() failed");
-
-    for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
-        char ip[INET_ADDRSTRLEN] = {
-            '\0'}; /* This restricts to ipv4 addresses */
-        const char *ptr;
-
-        if (ifaddr->ifa_addr == NULL)
-            continue;
-
-        if (ifaddr->ifa_addr->sa_family != AF_INET)
-            continue;
-
-        /* Get IP */
-        ptr = inet_ntop(ifaddr->ifa_addr->sa_family,
-            &((struct sockaddr_in *) ifaddr->ifa_addr)->sin_addr, ip,
-            INET_ADDRSTRLEN);
-        NA_CHECK_SUBSYS_ERROR(cls, ptr == NULL, out, ret, NA_ADDRNOTAVAIL,
-            "IP could not be resolved for: %s", ifaddr->ifa_name);
-
-        /* Compare hostnames / device names */
-        if (!strcmp(ip, ip_res) || !strcmp(ifaddr->ifa_name, hostname)) {
-            na_ofi_sin_addr->sin.sin_addr =
-                ((struct sockaddr_in *) ifaddr->ifa_addr)->sin_addr;
-            found = NA_TRUE;
-            break;
-        }
-    }
-
-    if (found) {
-        *na_ofi_sin_addr_ptr = na_ofi_sin_addr;
-        if (ifa_name) {
-            *ifa_name = strdup(ifaddr->ifa_name);
-            NA_CHECK_SUBSYS_ERROR(cls, *ifa_name == NULL, out, ret, NA_NOMEM,
-                "Could not dup ifa_name");
-        }
-    }
-
-out:
-    if (!found || ret != NA_SUCCESS)
-        free(na_ofi_sin_addr);
-    freeifaddrs(ifaddrs);
-    if (hostname_res)
-        freeaddrinfo(hostname_res);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
 na_ofi_verify_provider(enum na_ofi_prov_type prov_type, const char *domain_name,
     const struct fi_info *fi_info)
@@ -2088,7 +1991,6 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
     struct fi_info *prov, *providers = NULL;
-    na_bool_t domain_found = NA_FALSE, prov_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -2102,12 +2004,11 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
         if (na_ofi_verify_provider(
                 prov_type, domain_name, na_ofi_domain->fi_prov)) {
             hg_atomic_incr32(&na_ofi_domain->refcount);
-            domain_found = NA_TRUE;
             break;
         }
     }
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
-    if (domain_found) {
+    if (na_ofi_domain != NULL) {
         NA_LOG_SUBSYS_DEBUG(
             cls, "Found existing domain (%s)", na_ofi_domain->prov_name);
         *na_ofi_domain_p = na_ofi_domain;
@@ -2119,8 +2020,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_getinfo() failed");
 
     /* Try to find provider that matches protocol and domain/host name */
-    prov = providers;
-    while (prov != NULL) {
+    for (prov = providers; prov != NULL; prov = prov->next) {
         if (na_ofi_verify_provider(prov_type, domain_name, prov)) {
             NA_LOG_SUBSYS_DEBUG(cls,
                 "mode 0x%" PRIx64 ", fabric_attr -> prov_name: %s, name: %s; "
@@ -2128,12 +2028,10 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
                 prov->mode, prov->fabric_attr->prov_name,
                 prov->fabric_attr->name, prov->domain_attr->name,
                 prov->domain_attr->threading);
-            prov_found = NA_TRUE;
             break;
         }
-        prov = prov->next;
     }
-    NA_CHECK_SUBSYS_ERROR(fatal, !prov_found, error, ret, NA_NOENTRY,
+    NA_CHECK_SUBSYS_ERROR(fatal, prov == NULL, error, ret, NA_NOENTRY,
         "No provider found for \"%s\" provider on domain \"%s\"",
         na_ofi_prov_name[prov_type], domain_name);
 
@@ -3840,18 +3738,18 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     if (resolve_name) {
         if (na_ofi_prov_addr_format[prov_type] == FI_SOCKADDR_IN) {
             char *ifa_name;
-            struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
+            struct sockaddr *sa_addr;
+            socklen_t sa_len;
+            na_return_t na_ret;
 
             /* Try to get matching IP/device */
-            ret = na_ofi_check_interface(
-                resolve_name, port, &ifa_name, &na_ofi_sin_addr);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                cls, out, ret, "Could not check interfaces");
+            na_ret = na_ip_check_interface(
+                resolve_name, port, AF_INET, &ifa_name, &sa_addr, &sa_len);
 
             /* Set SIN addr if found */
-            if (na_ofi_sin_addr && ifa_name) {
-                src_addr = na_ofi_sin_addr;
-                src_addrlen = sizeof(*na_ofi_sin_addr);
+            if (na_ret == NA_SUCCESS) {
+                src_addr = sa_addr;
+                src_addrlen = sa_len;
 
                 /* Attempt to pass domain name as ifa_name if not set for
                  * providers that use ifa_name as domain name */
@@ -3861,26 +3759,32 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                 }
                 free(ifa_name);
             } else if (!domain_name_ptr) {
+                NA_LOG_SUBSYS_WARNING(cls,
+                    "Could not find matching interface for %s, attempting to "
+                    "use it as domain name",
+                    resolve_name);
+
                 /* Pass domain name as hostname if not set */
                 strncpy(domain_name, resolve_name, NA_OFI_MAX_URI_LEN - 1);
                 domain_name_ptr = domain_name;
             }
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
-            struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
-            const char *ptr;
+            struct sockaddr *sa_addr;
+            socklen_t sa_len;
+            int rc;
 
             /* Try to get matching IP/device (do not use port) */
-            ret =
-                na_ofi_check_interface(resolve_name, 0, NULL, &na_ofi_sin_addr);
-            NA_CHECK_SUBSYS_ERROR(cls, ret != NA_SUCCESS || !na_ofi_sin_addr,
-                out, ret, NA_ADDRNOTAVAIL, "Could not check interfaces");
+            ret = na_ip_check_interface(
+                resolve_name, 0, AF_INET, NULL, &sa_addr, &sa_len);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, out, ret, "Could not check interfaces");
 
             /* Node must match IP resolution */
-            ptr = inet_ntop(na_ofi_sin_addr->sin.sin_family,
-                &na_ofi_sin_addr->sin.sin_addr, node, sizeof(node));
-            free(na_ofi_sin_addr);
-            NA_CHECK_SUBSYS_ERROR(cls, ptr == NULL, out, ret, NA_ADDRNOTAVAIL,
-                "Could not convert IP to string");
+            rc = getnameinfo(sa_addr, sa_len, node, sizeof(node), NULL, 0, 0);
+            free(sa_addr);
+            NA_CHECK_SUBSYS_ERROR(cls, rc != 0, out, ret, NA_ADDRNOTAVAIL,
+                "getnameinfo() failed (%s)", gai_strerror(rc));
+
             node_ptr = node;
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_PSMX) {
             /* Nothing to do */

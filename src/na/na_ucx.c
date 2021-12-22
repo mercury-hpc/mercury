@@ -479,7 +479,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class);
  */
 static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
-    char **net_device_p, struct sockaddr_storage **sockaddr_p);
+    char **net_device_p, struct sockaddr **sockaddr_p, socklen_t *addrlen_p);
 
 /**
  * Hash address key.
@@ -1956,7 +1956,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
-    char **net_device_p, struct sockaddr_storage **sockaddr_p)
+    char **net_device_p, struct sockaddr **sockaddr_p, socklen_t *addrlen_p)
 {
     char **ifa_name_p = NULL;
     char *hostname = NULL;
@@ -1995,7 +1995,8 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
 
     if (hostname && strcmp(hostname, "0.0.0.0") != 0) {
         /* Try to get matching IP/device */
-        ret = na_ip_check_interface(hostname, port, ifa_name_p, sockaddr_p);
+        ret = na_ip_check_interface(
+            hostname, port, AF_UNSPEC, ifa_name_p, sockaddr_p, addrlen_p);
         NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "Could not check interfaces");
     } else {
         char pref_anyip[NI_MAXHOST];
@@ -2011,7 +2012,8 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
         NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "na_ip_pref_addr() failed");
 
         /* Generate IP address (ignore net_device) */
-        ret = na_ip_check_interface(pref_anyip, port, NULL, sockaddr_p);
+        ret = na_ip_check_interface(
+            pref_anyip, port, AF_INET, NULL, sockaddr_p, addrlen_p);
         NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "Could not check interfaces");
     }
 
@@ -2781,7 +2783,8 @@ na_ucx_initialize(
     ucp_lib_attr_t ucp_lib_attrs;
 #endif
     char *net_device = NULL;
-    struct sockaddr_storage *listen_ss_addr = NULL;
+    struct sockaddr *listen_sockaddr = NULL;
+    socklen_t listen_addrlen = 0;
     struct sockaddr_storage ucp_listener_ss_addr;
     ucs_sock_addr_t addr_key = {.addr = NULL, .addrlen = 0};
     ucp_config_t *config;
@@ -2843,7 +2846,7 @@ na_ucx_initialize(
         (na_info->na_init_info && na_info->na_init_info->ip_subnet)
             ? na_info->na_init_info->ip_subnet
             : NULL,
-        &net_device, (listen) ? &listen_ss_addr : NULL);
+        &net_device, (listen) ? &listen_sockaddr : NULL, &listen_addrlen);
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "na_ucx_parse_hostname_info() failed");
 
@@ -2890,9 +2893,8 @@ na_ucx_initialize(
 
     /* Create listener if we're listening */
     if (listen) {
-        ret = na_ucp_listener_create(na_ucx_class->ucp_worker,
-            (const struct sockaddr *) listen_ss_addr, sizeof(*listen_ss_addr),
-            (void *) na_ucx_class, &na_ucx_class->ucp_listener,
+        ret = na_ucp_listener_create(na_ucx_class->ucp_worker, listen_sockaddr,
+            listen_addrlen, (void *) na_ucx_class, &na_ucx_class->ucp_listener,
             &ucp_listener_ss_addr);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not create UCX listener");
@@ -2902,8 +2904,8 @@ na_ucx_initialize(
             .addrlen = sizeof(ucp_listener_ss_addr)};
 
         /* No longer needed */
-        free(listen_ss_addr);
-        listen_ss_addr = NULL;
+        free(listen_sockaddr);
+        listen_sockaddr = NULL;
     }
 
 #ifdef NA_UCX_HAS_ADDR_POOL
@@ -2944,7 +2946,7 @@ na_ucx_initialize(
 
 error:
     free(net_device);
-    free(listen_ss_addr);
+    free(listen_sockaddr);
     if (na_ucx_class)
         na_ucx_class_free(na_ucx_class);
 
