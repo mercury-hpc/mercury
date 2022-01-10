@@ -2069,7 +2069,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     na_ofi_domain->prov_type = prov_type;
 
 #if defined(NA_OFI_HAS_EXT_GNI_H)
-    if (prov_type == NA_OFI_PROV_GNI && auth_key) {
+    if (prov_type == NA_OFI_PROV_GNI && auth_key && auth_key[0] != '\0') {
         na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
         na_ofi_domain->fi_gni_auth_key.raw.protection_key =
             (uint32_t) strtoul(auth_key, NULL, 10);
