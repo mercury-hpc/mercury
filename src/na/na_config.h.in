@@ -98,6 +98,7 @@ typedef na_uint64_t na_ptr_t;
 /* OFI */
 #cmakedefine NA_HAS_OFI
 #cmakedefine NA_OFI_HAS_EXT_GNI_H
+#cmakedefine NA_OFI_HAS_EXT_CXI_H
 #cmakedefine NA_OFI_GNI_HAS_UDREG
 
 /* NA SM */
