@@ -28,6 +28,9 @@
 #ifdef NA_OFI_HAS_EXT_GNI_H
 #    include <rdma/fi_ext_gni.h>
 #endif
+#ifdef NA_OFI_HAS_EXT_CXI_H
+#    include <rdma/fi_cxi_ext.h>
+#endif
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -51,6 +54,12 @@
  */
 #define NA_OFI_VERSION FI_VERSION(1, 7)
 
+/* Fallback for undefined CXI values */
+#ifndef NA_OFI_HAS_EXT_CXI_H
+#    define FI_ADDR_CXI  FI_FORMAT_UNSPEC
+#    define FI_PROTO_CXI FI_PROTO_UNSPEC
+#endif
+
 /* Default basic bits */
 #define NA_OFI_MR_BASIC_REQ (FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY)
 
@@ -71,53 +80,104 @@
  * - alternate (alias) names for convenience
  * - address format
  * - progress mode
+ * - endpoint protocol
  * - additional capabilities used (beyond the base set required by NA)
  * - misc flags to control na_ofi behavior and workarounds with this provider
  *
  * The purpose of this is to aggregate settings for all providers into a
  * single location so that it is easier to alter them.
  */
+/* clang-format off */
 #define NA_OFI_PROV_TYPES                                                      \
-    X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)                                    \
-    X(NA_OFI_PROV_SOCKETS, "sockets", "", FI_SOCKADDR_IN, FI_PROGRESS_AUTO,    \
-        FI_SOURCE | FI_DIRECTED_RECV,                                          \
-        NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG |          \
-            NA_OFI_SEP)                                                        \
-    X(NA_OFI_PROV_TCP, "tcp;ofi_rxm", "tcp", FI_SOCKADDR_IN, FI_PROGRESS_AUTO, \
-        FI_SOURCE | FI_DIRECTED_RECV,                                          \
-        NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)           \
-    X(NA_OFI_PROV_PSM, "psm", "", FI_ADDR_PSMX, FI_PROGRESS_MANUAL, 0,         \
-        NA_OFI_WAIT_SET | NA_OFI_SOURCE_MSG)                                   \
-    X(NA_OFI_PROV_PSM2, "psm2", "", FI_ADDR_PSMX2, FI_PROGRESS_MANUAL,         \
-        FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                          \
-        NA_OFI_DOMAIN_LOCK | NA_OFI_SIGNAL | NA_OFI_SEP)                       \
-    X(NA_OFI_PROV_VERBS, "verbs;ofi_rxm", "verbs", FI_SOCKADDR_IN,             \
-        FI_PROGRESS_MANUAL, FI_SOURCE | FI_DIRECTED_RECV,                      \
-        NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)           \
-    X(NA_OFI_PROV_GNI, "gni", "", FI_ADDR_GNI, FI_PROGRESS_AUTO,               \
-        FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                          \
-        NA_OFI_WAIT_SET | NA_OFI_SIGNAL | NA_OFI_SEP)                          \
-    X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0)
+    X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0, 0)                                 \
+    X(NA_OFI_PROV_SOCKETS,                                                     \
+      "sockets",                                                               \
+      "",                                                                      \
+      FI_SOCKADDR_IN,                                                          \
+      FI_PROGRESS_AUTO,                                                        \
+      FI_PROTO_SOCK_TCP,                                                       \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_SEP \
+    )                                                                          \
+    X(NA_OFI_PROV_TCP,                                                         \
+      "tcp;ofi_rxm",                                                           \
+      "tcp",                                                                   \
+      FI_SOCKADDR_IN,                                                          \
+      FI_PROGRESS_AUTO,                                                        \
+      FI_PROTO_UNSPEC,                                                         \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG              \
+    )                                                                          \
+    X(NA_OFI_PROV_PSM,                                                         \
+      "psm",                                                                   \
+      "",                                                                      \
+      FI_ADDR_PSMX,                                                            \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_PSMX,                                                           \
+      0,                                                                       \
+      NA_OFI_WAIT_SET | NA_OFI_SOURCE_MSG                                      \
+    )                                                                          \
+    X(NA_OFI_PROV_PSM2,                                                        \
+      "psm2",                                                                  \
+      "",                                                                      \
+      FI_ADDR_PSMX2,                                                           \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_PSMX2,                                                          \
+      FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                            \
+      NA_OFI_DOMAIN_LOCK | NA_OFI_SIGNAL | NA_OFI_SEP                          \
+    )                                                                          \
+    X(NA_OFI_PROV_VERBS,                                                       \
+      "verbs;ofi_rxm",                                                         \
+      "verbs",                                                                 \
+      FI_SOCKADDR_IN,                                                          \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_UNSPEC,                                                         \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG              \
+    )                                                                          \
+    X(NA_OFI_PROV_GNI,                                                         \
+      "gni",                                                                   \
+      "",                                                                      \
+      FI_ADDR_GNI,                                                             \
+      FI_PROGRESS_AUTO,                                                        \
+      FI_PROTO_GNI,                                                            \
+      FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                            \
+      NA_OFI_WAIT_SET | NA_OFI_SIGNAL | NA_OFI_SEP                             \
+    )                                                                          \
+    X(NA_OFI_PROV_CXI,                                                         \
+      "cxi",                                                                   \
+      "",                                                                      \
+      FI_ADDR_CXI,                                                             \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_CXI,                                                            \
+      FI_SOURCE,                                                               \
+      NA_OFI_VERIFY_PROV_DOM | NA_OFI_SOURCE_MSG                               \
+    )                                                                          \
+    X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0)
+/* clang-format on */
 
-#define X(a, b, c, d, e, f, g) a,
+#define X(a, b, c, d, e, f, g, h) a,
 enum na_ofi_prov_type { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g) b,
+#define X(a, b, c, d, e, f, g, h) b,
 static const char *const na_ofi_prov_name[] = {NA_OFI_PROV_TYPES};
 #undef X
-#define X(a, b, c, d, e, f, g) c,
+#define X(a, b, c, d, e, f, g, h) c,
 static const char *const na_ofi_prov_alt_name[] = {NA_OFI_PROV_TYPES};
 #undef X
-#define X(a, b, c, d, e, f, g) d,
+#define X(a, b, c, d, e, f, g, h) d,
 static na_uint32_t const na_ofi_prov_addr_format[] = {NA_OFI_PROV_TYPES};
 #undef X
-#define X(a, b, c, d, e, f, g) e,
+#define X(a, b, c, d, e, f, g, h) e,
 static enum fi_progress const na_ofi_prov_progress[] = {NA_OFI_PROV_TYPES};
 #undef X
-#define X(a, b, c, d, e, f, g) f,
+#define X(a, b, c, d, e, f, g, h) f,
+static na_uint32_t const na_ofi_prov_ep_proto[] = {NA_OFI_PROV_TYPES};
+#undef X
+#define X(a, b, c, d, e, f, g, h) g,
 static unsigned long const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
 #undef X
-#define X(a, b, c, d, e, f, g) g,
+#define X(a, b, c, d, e, f, g, h) h,
 static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #undef X
 
@@ -298,6 +358,19 @@ struct na_ofi_gni_addr {
         na_uint32_t unused2;
     };
     na_uint64_t reserved[3];
+};
+
+/* CXI address */
+struct na_ofi_cxi_addr {
+    union {
+        struct {
+            uint32_t pid : 9;  /* C_DFA_PID_BITS_MAX */
+            uint32_t nic : 20; /* C_DFA_NIC_BITS */
+            uint32_t valid : 1;
+            uint32_t unused : 2;
+        } detail;
+        na_uint32_t raw;
+    } caddr;
 };
 
 /* Memory descriptor info */
@@ -510,6 +583,8 @@ static na_return_t
 na_ofi_str_to_psm2(const char *str, void **addr, na_size_t *len);
 static na_return_t
 na_ofi_str_to_gni(const char *str, void **addr, na_size_t *len);
+static na_return_t
+na_ofi_str_to_cxi(const char *str, void **addr, na_size_t *len);
 
 /**
  * Convert the address to a 64-bit key to search corresponding FI addr.
@@ -526,6 +601,8 @@ static NA_INLINE na_uint64_t
 na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr);
 static NA_INLINE na_uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
+static NA_INLINE na_uint64_t
+na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr);
 
 /**
  * Key hash for hash table.
@@ -1216,6 +1293,8 @@ na_ofi_prov_addr_size(na_uint32_t addr_format)
             return sizeof(struct na_ofi_psm2_addr);
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
+        case FI_ADDR_CXI:
+            return sizeof(struct na_ofi_cxi_addr);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             return 0;
@@ -1286,6 +1365,8 @@ na_ofi_str_to_addr(
             return na_ofi_str_to_psm2(str, addr, len);
         case FI_ADDR_GNI:
             return na_ofi_str_to_gni(str, addr, len);
+        case FI_ADDR_CXI:
+            return na_ofi_str_to_cxi(str, addr, len);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             return NA_PROTONOSUPPORT;
@@ -1470,6 +1551,32 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_str_to_cxi(const char *str, void **addr, na_size_t *len)
+{
+    struct na_ofi_cxi_addr *cxi_addr;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    *len = sizeof(*cxi_addr);
+    cxi_addr = calloc(1, *len);
+    NA_CHECK_SUBSYS_ERROR(addr, cxi_addr == NULL, error, ret, NA_NOMEM,
+        "Could not allocate cxi address");
+
+    rc = sscanf(str, "%*[^:]://%" SCNx32, &cxi_addr->caddr.raw);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Could not convert addr string to CXI addr format");
+
+    *addr = cxi_addr;
+
+    return ret;
+
+error:
+    free(cxi_addr);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static NA_INLINE na_uint64_t
 na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len)
 {
@@ -1506,6 +1613,12 @@ na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len)
                 "Addr len (%" PRIu64 ") does not match for FI_ADDR_GNI (%zu)",
                 len, sizeof(struct na_ofi_gni_addr));
             return na_ofi_gni_to_key((const struct na_ofi_gni_addr *) addr);
+        case FI_ADDR_CXI:
+            NA_CHECK_SUBSYS_ERROR_NORET(addr,
+                len != sizeof(struct na_ofi_cxi_addr), out,
+                "Addr len (%" PRIu64 ") does not match for FI_ADDR_CXI (%zu)",
+                len, sizeof(struct na_ofi_cxi_addr));
+            return na_ofi_cxi_to_key((const struct na_ofi_cxi_addr *) addr);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             break;
@@ -1551,6 +1664,13 @@ static NA_INLINE na_uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr)
 {
     return (((na_uint64_t) addr->device_addr) << 32 | addr->cdm_id);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_uint64_t
+na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr)
+{
+    return (na_uint64_t) addr->caddr.raw;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1869,15 +1989,16 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
      * Cleared MR mode bits (depending on provider) are later checked at the
      * appropriate time.
      */
-    hints->domain_attr->mr_mode = (NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL);
+    hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
+    if (prov_type == NA_OFI_PROV_CXI)
+        hints->domain_attr->mr_mode |= FI_MR_ENDPOINT;
 
     /* set default progress mode */
     hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
     hints->domain_attr->data_progress = na_ofi_prov_progress[prov_type];
 
-    /* only use sockets provider with tcp for now */
-    if (prov_type == NA_OFI_PROV_SOCKETS)
-        hints->ep_attr->protocol = FI_PROTO_SOCK_TCP;
+    /* set endpoint protocol */
+    hints->ep_attr->protocol = na_ofi_prov_ep_proto[prov_type];
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -4846,6 +4967,19 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     /* Retrieve key */
     na_ofi_mem_handle->desc.info.fi_mr_key =
         fi_mr_key(na_ofi_mem_handle->fi_mr);
+
+    /* Attach MR to endpoint when provider requests it */
+    if (domain->fi_prov->domain_attr->mr_mode & FI_MR_ENDPOINT) {
+        struct na_ofi_endpoint *endpoint = NA_OFI_CLASS(na_class)->endpoint;
+
+        rc = fi_mr_bind(na_ofi_mem_handle->fi_mr, &endpoint->fi_ep->fid, 0);
+        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+            "fi_mr_bind() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+        rc = fi_mr_enable(na_ofi_mem_handle->fi_mr);
+        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+            "fi_mr_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    }
 
 out:
     return ret;
