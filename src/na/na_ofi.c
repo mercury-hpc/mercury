@@ -483,6 +483,9 @@ struct na_ofi_domain {
 #ifdef NA_OFI_HAS_EXT_GNI_H
     struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key             */
 #endif
+#ifdef NA_OFI_HAS_EXT_CXI_H
+    struct cxi_auth_key cxi_auth_key; /* CXI auth key            */
+#endif
     struct fid_fabric *fi_fabric;    /* Fabric handle            */
     struct fid_domain *fi_domain;    /* Domain handle            */
     struct fi_info *fi_prov;         /* Provider info            */
@@ -2199,6 +2202,21 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
             (void *) &na_ofi_domain->fi_gni_auth_key;
         na_ofi_domain->fi_prov->domain_attr->auth_key_size =
             sizeof(na_ofi_domain->fi_gni_auth_key);
+    }
+
+#elif defined(NA_OFI_HAS_EXT_CXI_H)
+    /* Keep CXI auth key using the following format svc_id:vni */
+    if (prov_type == NA_OFI_PROV_CXI && auth_key) {
+        rc = sscanf(auth_key, "%" SCNu32 ":%" SCNu16,
+            &na_ofi_domain->cxi_auth_key.svc_id,
+            &na_ofi_domain->cxi_auth_key.vni);
+        NA_CHECK_SUBSYS_ERROR(cls, rc != 2, error, ret, NA_PROTONOSUPPORT,
+            "Could not retrieve CXI auth key, format is \"svc_id:vni\"");
+
+        na_ofi_domain->fi_prov->domain_attr->auth_key =
+            (void *) &na_ofi_domain->cxi_auth_key;
+        na_ofi_domain->fi_prov->domain_attr->auth_key_size =
+            sizeof(na_ofi_domain->cxi_auth_key);
     }
 #else
     (void) auth_key;
