@@ -196,7 +196,7 @@ struct na_ucx_op_id {
     hg_atomic_int32_t status;           /* Operation status         */
 };
 
-/* Addr ppol */
+/* Addr pool */
 struct na_ucx_addr_pool {
     HG_QUEUE_HEAD(na_ucx_addr) queue;
     hg_thread_spin_t lock;
@@ -1960,7 +1960,7 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
 {
     char **ifa_name_p = NULL;
     char *hostname = NULL;
-    unsigned int port = 0;
+    na_uint16_t port = 0;
     na_return_t ret = NA_SUCCESS;
 
     /* Set hostname (use default interface name if no hostname was passed) */
@@ -1975,7 +1975,7 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
         if (strstr(hostname, ":")) {
             char *port_str = NULL;
             strtok_r(hostname, ":", &port_str);
-            port = (unsigned int) strtoul(port_str, NULL, 10);
+            port = strtoul(port_str, NULL, 10) & 0xffff;
         }
 
         /* Extract net_device if explicitly listed with '/' before IP */
@@ -2165,7 +2165,7 @@ na_ucx_addr_conn_insert(
     struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr)
 {
     hg_hash_table_value_t lookup_value = NULL;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ucx_map->lock);
@@ -2183,14 +2183,9 @@ na_ucx_addr_conn_insert(
         (hg_hash_table_key_t) &na_ucx_addr->conn_id,
         (hg_hash_table_value_t) na_ucx_addr);
     NA_CHECK_SUBSYS_ERROR(
-        addr, rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+        addr, rc == 0, done, ret, NA_NOMEM, "hg_hash_table_insert() failed");
 
 done:
-    hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
-
-    return NA_SUCCESS;
-
-error:
     hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
 
     return ret;

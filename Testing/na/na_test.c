@@ -302,9 +302,13 @@ na_test_gen_config(struct na_test_info *na_test_info)
         /* Nothing */
     } else if (strcmp("dynamic", na_test_info->protocol) == 0) {
         /* Nothing */
-    } else if (na_test_info->hostname) {
-        sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
-            na_test_info->port + na_test_info->mpi_comm_rank);
+    } else {
+        if (na_test_info->hostname)
+            info_string_ptr +=
+                sprintf(info_string_ptr, "%s", na_test_info->hostname);
+        if (na_test_info->port)
+            info_string_ptr += sprintf(info_string_ptr, ":%d",
+                na_test_info->port + na_test_info->mpi_comm_rank);
     }
 
 done:
@@ -496,6 +500,7 @@ NA_Test_finalize(struct na_test_info *na_test_info)
     free(na_test_info->comm);
     free(na_test_info->protocol);
     free(na_test_info->hostname);
+    free(na_test_info->domain);
     free(na_test_info->key);
 
 #ifdef HG_TEST_HAS_PARALLEL
