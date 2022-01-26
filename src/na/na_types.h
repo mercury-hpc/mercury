@@ -25,6 +25,14 @@ typedef struct na_op_id na_op_id_t;     /* Opaque operation id */
 typedef struct na_mem_handle *na_mem_handle_t; /* Abstract memory handle */
 typedef na_uint64_t na_offset_t;               /* Offset */
 
+/* Address format */
+enum na_addr_format {
+    NA_ADDR_UNSPEC, /* Leave it upon plugin to choose */
+    NA_ADDR_IPV4,   /* Use IPv4 when available */
+    NA_ADDR_IPV6,   /* Use IPv6 when available */
+    NA_ADDR_NATIVE  /* Use native addressing when available */
+};
+
 /* Init info */
 struct na_init_info {
     /* Preferred IP subnet to use. */
@@ -50,6 +58,9 @@ struct na_init_info {
     /* Progress mode flag. Setting NA_NO_BLOCK will force busy-spin on progress
      * and remove any wait/notification calls. */
     na_uint32_t progress_mode;
+
+    /* Preferred address format. Default is NA_ADDR_UNSPEC. */
+    enum na_addr_format addr_format;
 
     /* Maximum number of contexts that are expected to be created. */
     na_uint8_t max_contexts;

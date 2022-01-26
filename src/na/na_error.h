@@ -28,6 +28,7 @@ extern NA_PRIVATE HG_LOG_OUTLET_DECL(msg);  /* Messages */
 extern NA_PRIVATE HG_LOG_OUTLET_DECL(mem);  /* Memory */
 extern NA_PRIVATE HG_LOG_OUTLET_DECL(rma);  /* RMA */
 extern NA_PRIVATE HG_LOG_OUTLET_DECL(poll); /* Progress */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(ip);   /* IP res */
 
 /* Base log macros */
 #define NA_LOG_ERROR(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)

@@ -67,7 +67,7 @@ na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PRIVATE na_return_t
-na_ip_check_interface(const char *name, unsigned int port, int family,
+na_ip_check_interface(const char *name, na_uint16_t port, int family,
     char **ifa_name_p, struct sockaddr **sa_p, socklen_t *salen_p);
 
 #ifdef __cplusplus

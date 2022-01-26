@@ -145,6 +145,7 @@ HG_LOG_SUBSYS_DECL_REGISTER(rma, NA_SUBSYS_NAME);
 
 /* Off by default because of potientally excessive logs */
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(poll, NA_SUBSYS_NAME, HG_LOG_OFF);
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(ip, NA_SUBSYS_NAME, HG_LOG_OFF);
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
