@@ -241,10 +241,8 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_OP_ERRORED   (1 << 4)
 
 /* Private data access */
-#define NA_OFI_CLASS(na_class)                                                 \
-    ((struct na_ofi_class *) ((na_class)->plugin_class))
-#define NA_OFI_CONTEXT(na_context)                                             \
-    ((struct na_ofi_context *) ((na_context)->plugin_context))
+#define NA_OFI_CLASS(x)   ((struct na_ofi_class *) ((x)->plugin_class))
+#define NA_OFI_CONTEXT(x) ((struct na_ofi_context *) ((x)->plugin_context))
 
 /* Get IOV */
 #define NA_OFI_IOV(x)                                                          \
@@ -266,49 +264,46 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* Set RMA msg */
 #define NA_OFI_MSG_RMA_SET(fi_msg_rma, local_iov, remote_iov, na_ofi_op_id)    \
     do {                                                                       \
-        fi_msg_rma.msg_iov = local_iov;                                        \
-        fi_msg_rma.desc = &na_ofi_op_id->info.rma.local_desc;                  \
-        fi_msg_rma.iov_count = na_ofi_op_id->info.rma.local_iovcnt;            \
-        fi_msg_rma.addr = na_ofi_op_id->info.rma.fi_addr;                      \
-        fi_msg_rma.rma_iov = remote_iov;                                       \
-        fi_msg_rma.rma_iov_count = na_ofi_op_id->info.rma.remote_iovcnt;       \
-        fi_msg_rma.context = &na_ofi_op_id->fi_ctx;                            \
-        fi_msg_rma.data = 0;                                                   \
+        fi_msg_rma = (struct fi_msg_rma){.msg_iov = local_iov,                 \
+            .desc = &na_ofi_op_id->info.rma.local_desc,                        \
+            .iov_count = na_ofi_op_id->info.rma.local_iovcnt,                  \
+            .addr = na_ofi_op_id->info.rma.fi_addr,                            \
+            .rma_iov = remote_iov,                                             \
+            .rma_iov_count = na_ofi_op_id->info.rma.remote_iovcnt,             \
+            .context = &na_ofi_op_id->fi_ctx,                                  \
+            .data = 0};                                                        \
     } while (0)
 
 /* Reset op ID */
 #define NA_OFI_OP_RESET(                                                       \
-    __op, __context, __fi_op_flags, __cb_type, __cb, __arg, __addr)            \
+    _op, _context, _fi_op_flags, _cb_type, _cb, _arg, _addr)                   \
     do {                                                                       \
-        __op->context = __context;                                             \
-        __op->completion_data.callback_info.type = __cb_type;                  \
-        __op->completion_data.callback = __cb;                                 \
-        __op->completion_data.callback_info.arg = __arg;                       \
-        __op->addr = __addr;                                                   \
-        na_ofi_addr_ref_incr(__addr);                                          \
-        __op->fi_op_flags = __fi_op_flags;                                     \
-        hg_atomic_set32(&__op->status, 0);                                     \
+        _op->context = _context;                                               \
+        _op->completion_data = (struct na_cb_completion_data){                 \
+            .callback_info =                                                   \
+                (struct na_cb_info){.info.recv_unexpected =                    \
+                                        (struct na_cb_info_recv_unexpected){   \
+                                            .actual_buf_size = 0,              \
+                                            .source = NA_ADDR_NULL,            \
+                                            .tag = 0},                         \
+                    .arg = _arg,                                               \
+                    .type = _cb_type,                                          \
+                    .ret = NA_SUCCESS},                                        \
+            .callback = _cb,                                                   \
+            .plugin_callback = na_ofi_release,                                 \
+            .plugin_callback_args = _op};                                      \
+        _op->addr = _addr;                                                     \
+        if (_addr)                                                             \
+            na_ofi_addr_ref_incr(_addr);                                       \
+        _op->fi_op_flags = _fi_op_flags;                                       \
+        hg_atomic_set32(&_op->status, 0);                                      \
     } while (0)
 
-#define NA_OFI_OP_RESET_UNEXPECTED_RECV(__op, __context, __cb, __arg)          \
+#define NA_OFI_OP_RELEASE(_op)                                                 \
     do {                                                                       \
-        __op->context = __context;                                             \
-        __op->completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;      \
-        __op->completion_data.callback = __cb;                                 \
-        __op->completion_data.callback_info.arg = __arg;                       \
-        __op->completion_data.callback_info.info.recv_unexpected =             \
-            (struct na_cb_info_recv_unexpected){                               \
-                .actual_buf_size = 0, .source = NA_ADDR_NULL, .tag = 0};       \
-        __op->addr = NULL;                                                     \
-        __op->fi_op_flags = FI_RECV;                                           \
-        hg_atomic_set32(&__op->status, 0);                                     \
-    } while (0)
-
-#define NA_OFI_OP_RELEASE(__op)                                                \
-    do {                                                                       \
-        if (__op->addr)                                                        \
-            na_ofi_addr_ref_decr(__op->addr);                                  \
-        hg_atomic_set32(&__op->status, NA_OFI_OP_COMPLETED);                   \
+        if (_op->addr)                                                         \
+            na_ofi_addr_ref_decr(_op->addr);                                   \
+        hg_atomic_set32(&_op->status, NA_OFI_OP_COMPLETED);                    \
     } while (0)
 
 /************************************/
@@ -856,10 +851,17 @@ na_ofi_mem_key_gen(struct na_ofi_domain *na_ofi_domain);
  * Msg send.
  */
 static na_return_t
-na_ofi_msg_send(struct na_ofi_class *na_ofi_class, na_context_t *context,
-    na_cb_type_t cb_type, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, void *plugin_data, struct na_ofi_addr *na_ofi_addr,
-    na_uint8_t dest_id, na_tag_t tag, struct na_ofi_op_id *na_ofi_op_id);
+na_ofi_msg_send(na_context_t *context, na_cb_type_t cb_type, na_cb_t callback,
+    void *arg, const struct na_ofi_msg_info *msg_info,
+    struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_id);
+
+/**
+ * Msg recv.
+ */
+static na_return_t
+na_ofi_msg_recv(na_context_t *context, na_cb_type_t cb_type, na_cb_t callback,
+    void *arg, const struct na_ofi_msg_info *msg_info,
+    struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_id);
 
 /**
  * Get IOV index and offset pair from an absolute offset.
@@ -1115,7 +1117,7 @@ na_ofi_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
 static na_return_t
-na_ofi_mem_handle_create_segments(na_class_t NA_UNUSED *na_class,
+na_ofi_mem_handle_create_segments(na_class_t *na_class,
     struct na_segment *segments, na_size_t segment_count, unsigned long flags,
     na_mem_handle_t *mem_handle);
 
@@ -3255,10 +3257,9 @@ na_ofi_mem_key_gen(struct na_ofi_domain *na_ofi_domain)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_send(struct na_ofi_class *na_ofi_class, na_context_t *context,
-    na_cb_type_t cb_type, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, void *plugin_data, struct na_ofi_addr *na_ofi_addr,
-    na_uint8_t dest_id, na_tag_t tag, struct na_ofi_op_id *na_ofi_op_id)
+na_ofi_msg_send(na_context_t *context, na_cb_type_t cb_type, na_cb_t callback,
+    void *arg, const struct na_ofi_msg_info *msg_info,
+    struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_id)
 {
     struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     na_return_t ret;
@@ -3274,28 +3275,67 @@ na_ofi_msg_send(struct na_ofi_class *na_ofi_class, na_context_t *context,
     NA_OFI_OP_RESET(
         na_ofi_op_id, context, FI_SEND, cb_type, callback, arg, na_ofi_addr);
 
-    /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.const_ptr = buf,
-        .buf_size = buf_size,
-        .fi_addr =
-            fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS),
-        .fi_mr = plugin_data,
-        .tag = (cb_type == NA_CB_SEND_UNEXPECTED) ? tag | NA_OFI_UNEXPECTED_TAG
-                                                  : tag,
-        .tag_mask = 0};
+    /* Keep copy of msg_info */
+    na_ofi_op_id->info.msg = *msg_info;
 
-    NA_LOG_SUBSYS_DEBUG(msg, "Posting msg send with tag=%" PRIu32 " (op id=%p)",
-        tag, (void *) na_ofi_op_id);
+    NA_LOG_SUBSYS_DEBUG(msg, "Posting msg send with tag=%" PRIu64 " (op id=%p)",
+        msg_info->tag, (void *) na_ofi_op_id);
 
     /* Post the FI unexpected send request */
-    rc = fi_tsend(na_ofi_context->fi_tx, buf, buf_size,
-        na_ofi_op_id->info.msg.fi_mr, na_ofi_op_id->info.msg.fi_addr,
-        na_ofi_op_id->info.msg.tag, &na_ofi_op_id->fi_ctx);
+    rc = fi_tsend(na_ofi_context->fi_tx, msg_info->buf.const_ptr,
+        msg_info->buf_size, msg_info->fi_mr, msg_info->fi_addr, msg_info->tag,
+        &na_ofi_op_id->fi_ctx);
     if (unlikely(rc == -FI_EAGAIN))
         na_ofi_op_retry(na_ofi_context, na_ofi_op_id);
     else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, release, ret,
             na_ofi_errno_to_na((int) -rc), "fi_tsend() failed, rc: %zd (%s)",
+            rc, fi_strerror((int) -rc));
+
+    return NA_SUCCESS;
+
+release:
+    NA_OFI_OP_RELEASE(na_ofi_op_id);
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_msg_recv(na_context_t *context, na_cb_type_t cb_type, na_cb_t callback,
+    void *arg, const struct na_ofi_msg_info *msg_info,
+    struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_id)
+{
+    struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
+    na_return_t ret;
+    ssize_t rc;
+
+    /* Check op_id */
+    NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_SUBSYS_ERROR(op,
+        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), error,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+
+    NA_OFI_OP_RESET(
+        na_ofi_op_id, context, FI_RECV, cb_type, callback, arg, na_ofi_addr);
+
+    /* Keep copy of msg_info */
+    na_ofi_op_id->info.msg = *msg_info;
+
+    NA_LOG_SUBSYS_DEBUG(msg, "Posting msg recv with tag=%" PRIu64 " (op id=%p)",
+        msg_info->tag, (void *) na_ofi_op_id);
+
+    /* Post the FI expected recv request */
+    rc = fi_trecv(na_ofi_context->fi_rx, msg_info->buf.ptr, msg_info->buf_size,
+        msg_info->fi_mr, msg_info->fi_addr, msg_info->tag, msg_info->tag_mask,
+        &na_ofi_op_id->fi_ctx);
+    if (unlikely(rc == -FI_EAGAIN))
+        na_ofi_op_retry(na_ofi_context, na_ofi_op_id);
+    else
+        NA_CHECK_SUBSYS_ERROR(msg, rc != 0, release, ret,
+            na_ofi_errno_to_na((int) -rc), "fi_trecv() failed, rc: %zd (%s)",
             rc, fi_strerror((int) -rc));
 
     return NA_SUCCESS;
@@ -3468,10 +3508,9 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     if (na_ofi_op_id->info.rma.local_iovcnt > NA_OFI_IOV_STATIC_MAX) {
         na_ofi_op_id->info.rma.local_iov.d = (struct iovec *) malloc(
             na_ofi_op_id->info.rma.local_iovcnt * sizeof(struct iovec));
-        NA_CHECK_SUBSYS_ERROR(rma, na_ofi_op_id->info.rma.local_iov.d == NULL,
-            error, ret, NA_NOMEM, "Could not allocate iovec");
-
         liov = na_ofi_op_id->info.rma.local_iov.d;
+        NA_CHECK_SUBSYS_ERROR(rma, liov == NULL, error, ret, NA_NOMEM,
+            "Could not allocate iovec");
     } else
         liov = na_ofi_op_id->info.rma.local_iov.s;
 
@@ -3498,10 +3537,9 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     if (na_ofi_op_id->info.rma.remote_iovcnt > NA_OFI_IOV_STATIC_MAX) {
         na_ofi_op_id->info.rma.remote_iov.d = (struct fi_rma_iov *) malloc(
             na_ofi_op_id->info.rma.remote_iovcnt * sizeof(struct fi_rma_iov));
-        NA_CHECK_SUBSYS_ERROR(rma, na_ofi_op_id->info.rma.remote_iov.d == NULL,
-            error, ret, NA_NOMEM, "Could not allocate rma iovec");
-
         riov = na_ofi_op_id->info.rma.remote_iov.d;
+        NA_CHECK_SUBSYS_ERROR(rma, riov == NULL, error, ret, NA_NOMEM,
+            "Could not allocate rma iovec");
     } else
         riov = na_ofi_op_id->info.rma.remote_iov.s;
 
@@ -4444,10 +4482,6 @@ na_ofi_op_create(na_class_t *na_class)
     /* Completed by default */
     hg_atomic_init32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
-    /* Set op ID release callbacks */
-    na_ofi_op_id->completion_data.plugin_callback = na_ofi_release;
-    na_ofi_op_id->completion_data.plugin_callback_args = na_ofi_op_id;
-
     return (na_op_id_t *) na_ofi_op_id;
 
 error:
@@ -4848,108 +4882,70 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
-    na_op_id_t *op_id)
+na_ofi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
+    na_context_t *context, na_cb_t callback, void *arg, const void *buf,
+    na_size_t buf_size, void *plugin_data, na_addr_t dest_addr,
+    na_uint8_t dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    return na_ofi_msg_send(NA_OFI_CLASS(na_class), context,
-        NA_CB_SEND_UNEXPECTED, callback, arg, buf, buf_size, plugin_data,
-        (struct na_ofi_addr *) dest_addr, dest_id, tag,
-        (struct na_ofi_op_id *) op_id);
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) dest_addr;
+    struct na_ofi_msg_info msg_info = {.buf.const_ptr = buf,
+        .buf_size = buf_size,
+        .fi_addr =
+            fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS),
+        .fi_mr = plugin_data,
+        .tag = (uint64_t) tag | NA_OFI_UNEXPECTED_TAG,
+        .tag_mask = 0};
+
+    return na_ofi_msg_send(context, NA_CB_SEND_UNEXPECTED, callback, arg,
+        &msg_info, na_ofi_addr, (struct na_ofi_op_id *) op_id);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_op_id_t *op_id)
+na_ofi_msg_recv_unexpected(na_class_t NA_UNUSED *na_class,
+    na_context_t *context, na_cb_t callback, void *arg, void *buf,
+    na_size_t buf_size, void *plugin_data, na_op_id_t *op_id)
 {
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
-    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
-    na_return_t ret;
-    ssize_t rc;
-
-    /* Check op_id */
-    NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret, NA_INVALID_ARG,
-        "Invalid operation ID");
-    NA_CHECK_SUBSYS_ERROR(op,
-        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), error,
-        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-
-    NA_OFI_OP_RESET_UNEXPECTED_RECV(na_ofi_op_id, context, callback, arg);
-
-    /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.ptr = buf,
+    struct na_ofi_msg_info msg_info = {.buf.ptr = buf,
         .buf_size = buf_size,
         .fi_addr = FI_ADDR_UNSPEC,
         .fi_mr = plugin_data,
         .tag = NA_OFI_UNEXPECTED_TAG,
         .tag_mask = NA_OFI_TAG_MASK};
 
-    NA_LOG_SUBSYS_DEBUG(
-        msg, "Posting unexpected msg recv (op id=%p)", (void *) na_ofi_op_id);
-
-    /* Post the FI unexpected recv request */
-    rc = fi_trecv(ctx->fi_rx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
-        na_ofi_op_id->info.msg.fi_addr, na_ofi_op_id->info.msg.tag,
-        na_ofi_op_id->info.msg.tag_mask, &na_ofi_op_id->fi_ctx);
-    if (unlikely(rc == -FI_EAGAIN))
-        na_ofi_op_retry(ctx, na_ofi_op_id);
-    else
-        NA_CHECK_SUBSYS_ERROR(msg, rc != 0, release, ret,
-            na_ofi_errno_to_na((int) -rc),
-            "fi_trecv() unexpected failed, rc: %zd (%s)", rc,
-            fi_strerror((int) -rc));
-
-    return NA_SUCCESS;
-
-release:
-    NA_OFI_OP_RELEASE(na_ofi_op_id);
-
-error:
-    return ret;
+    return na_ofi_msg_recv(context, NA_CB_RECV_UNEXPECTED, callback, arg,
+        &msg_info, NULL, (struct na_ofi_op_id *) op_id);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
+na_ofi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
     void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id)
 {
-    return na_ofi_msg_send(NA_OFI_CLASS(na_class), context, NA_CB_SEND_EXPECTED,
-        callback, arg, buf, buf_size, plugin_data,
-        (struct na_ofi_addr *) dest_addr, dest_id, tag,
-        (struct na_ofi_op_id *) op_id);
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) dest_addr;
+    struct na_ofi_msg_info msg_info = {.buf.const_ptr = buf,
+        .buf_size = buf_size,
+        .fi_addr =
+            fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS),
+        .fi_mr = plugin_data,
+        .tag = tag,
+        .tag_mask = 0};
+
+    return na_ofi_msg_send(context, NA_CB_SEND_EXPECTED, callback, arg,
+        &msg_info, na_ofi_addr, (struct na_ofi_op_id *) op_id);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
+na_ofi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
     na_tag_t tag, na_op_id_t *op_id)
 {
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) source_addr;
-    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
-    na_return_t ret = NA_SUCCESS;
-    ssize_t rc;
-
-    /* Check op_id */
-    NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret, NA_INVALID_ARG,
-        "Invalid operation ID");
-    NA_CHECK_SUBSYS_ERROR(op,
-        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), error,
-        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-
-    NA_OFI_OP_RESET(na_ofi_op_id, context, FI_RECV, NA_CB_RECV_EXPECTED,
-        callback, arg, na_ofi_addr);
-    na_ofi_op_id->completion_data.callback_info.info.recv_expected =
-        (struct na_cb_info_recv_expected){.actual_buf_size = 0};
-
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.ptr = buf,
+    struct na_ofi_msg_info msg_info = {.buf.ptr = buf,
         .buf_size = buf_size,
         .fi_addr =
             fi_rx_addr(na_ofi_addr->fi_addr, source_id, NA_OFI_SEP_RX_CTX_BITS),
@@ -4957,29 +4953,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         .tag = tag,
         .tag_mask = 0};
 
-    NA_LOG_SUBSYS_DEBUG(msg,
-        "Posting expected msg recv with tag=%" PRIu32 " (op id=%p)", tag,
-        (void *) na_ofi_op_id);
-
-    /* Post the FI expected recv request */
-    rc = fi_trecv(ctx->fi_rx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
-        na_ofi_op_id->info.msg.fi_addr, na_ofi_op_id->info.msg.tag,
-        na_ofi_op_id->info.msg.tag_mask, &na_ofi_op_id->fi_ctx);
-    if (unlikely(rc == -FI_EAGAIN))
-        na_ofi_op_retry(ctx, na_ofi_op_id);
-    else
-        NA_CHECK_SUBSYS_ERROR(msg, rc != 0, release, ret,
-            na_ofi_errno_to_na((int) -rc),
-            "fi_trecv() expected failed, rc: %zd (%s)", rc,
-            fi_strerror((int) -rc));
-
-    return ret;
-
-release:
-    NA_OFI_OP_RELEASE(na_ofi_op_id);
-
-error:
-    return ret;
+    return na_ofi_msg_recv(context, NA_CB_RECV_EXPECTED, callback, arg,
+        &msg_info, na_ofi_addr, (struct na_ofi_op_id *) op_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4993,7 +4968,7 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     /* Allocate memory handle */
     na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(
         1, sizeof(struct na_ofi_mem_handle));
-    NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, done, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, out, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
 
     na_ofi_mem_handle->desc.iov.s[0].iov_base = buf;
@@ -5004,7 +4979,7 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
-done:
+out:
     return ret;
 }
 
@@ -5275,18 +5250,12 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    na_return_t ret = NA_SUCCESS;
-
-    ret = na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_PUT, callback, arg,
+    return na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_PUT, callback, arg,
         fi_writemsg, NA_OFI_PUT_COMPLETION,
         (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
         (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
         (struct na_ofi_addr *) remote_addr, remote_id,
         (struct na_ofi_op_id *) op_id);
-    NA_CHECK_SUBSYS_NA_ERROR(rma, out, ret, "Could not post RMA put");
-
-out:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5297,18 +5266,12 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    na_return_t ret = NA_SUCCESS;
-
-    ret = na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_GET, callback, arg,
+    return na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_GET, callback, arg,
         fi_readmsg, NA_OFI_GET_COMPLETION,
         (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
         (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
         (struct na_ofi_addr *) remote_addr, remote_id,
         (struct na_ofi_op_id *) op_id);
-    NA_CHECK_SUBSYS_NA_ERROR(rma, out, ret, "Could not post RMA get");
-
-out:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
