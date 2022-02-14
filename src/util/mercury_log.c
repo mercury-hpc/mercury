@@ -197,9 +197,19 @@ hg_log_free_dlogs(void)
     struct hg_log_outlet *outlet;
 
     /* Free logs if any was attached */
-    HG_QUEUE_FOREACH (outlet, &hg_log_outlets_g, entry)
-        if (outlet->debug_log)
+    HG_QUEUE_FOREACH (outlet, &hg_log_outlets_g, entry) {
+        if (outlet->debug_log &&
+            !(outlet->parent && outlet->parent->debug_log)) {
+            if (outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
+                FILE *stream = hg_log_streams_g[outlet->level]
+                                   ? hg_log_streams_g[outlet->level]
+                                   : *hg_log_std_streams_g[outlet->level];
+                hg_dlog_dump_counters(
+                    outlet->debug_log, hg_log_func_g, stream, 0);
+            }
             hg_dlog_free(outlet->debug_log);
+        }
+    }
 }
 
 /*---------------------------------------------------------------------------*/

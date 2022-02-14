@@ -73,9 +73,6 @@
 /* Define if has colored output */
 #cmakedefine HG_UTIL_HAS_LOG_COLOR
 
-/* Define if has <opa_primitives.h> */
-#cmakedefine HG_UTIL_HAS_OPA_PRIMITIVES_H
-
 /* Define if has 'pthread_condattr_setclock()' */
 #cmakedefine HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK
 
