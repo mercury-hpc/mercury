@@ -208,6 +208,45 @@ hg_dlog_dump(struct hg_dlog *d, int (*log_func)(FILE *, const char *, ...),
 
 /*---------------------------------------------------------------------------*/
 void
+hg_dlog_dump_counters(struct hg_dlog *d,
+    int (*log_func)(FILE *, const char *, ...), FILE *stream, int trylock)
+{
+    struct hg_dlog_dcount32 *dc32;
+    struct hg_dlog_dcount64 *dc64;
+
+    if (trylock) {
+        int try_ret = hg_thread_mutex_try_lock(&d->dlock);
+        if (try_ret != HG_UTIL_SUCCESS) /* warn them, but keep going */ {
+            fprintf(stderr, "hg_dlog_dump: WARN - lock failed\n");
+            return;
+        }
+    } else
+        hg_thread_mutex_lock(&d->dlock);
+
+    if (!HG_LIST_IS_EMPTY(&d->cnts32) || !HG_LIST_IS_EMPTY(&d->cnts64)) {
+        log_func(stream,
+            "### ----------------------\n"
+            "### (%s) counter log summary\n"
+            "### ----------------------\n",
+            (d->dlog_magic + strlen(HG_DLOG_STDMAGIC)));
+
+        log_func(stream, "# Counters\n");
+        HG_LIST_FOREACH (dc32, &d->cnts32, l) {
+            log_func(stream, "# %s: %" PRId32 " [%s]\n", dc32->name,
+                hg_atomic_get32(&dc32->c), dc32->descr);
+        }
+        HG_LIST_FOREACH (dc64, &d->cnts64, l) {
+            log_func(stream, "# %s: %" PRId64 " [%s]\n", dc64->name,
+                hg_atomic_get64(&dc64->c), dc64->descr);
+        }
+        log_func(stream, "# -\n");
+    }
+
+    hg_thread_mutex_unlock(&d->dlock);
+}
+
+/*---------------------------------------------------------------------------*/
+void
 hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
 {
     char buf[BUFSIZ];

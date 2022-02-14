@@ -229,6 +229,20 @@ hg_dlog_dump(struct hg_dlog *d, int (*log_func)(FILE *, const char *, ...),
     FILE *stream, int trylock);
 
 /**
+ * dump dlog counters to a stream. set trylock if you want to dump even
+ * if it is locked (e.g. you are crashing and you don't care about
+ * locking).
+ *
+ * \param d [IN]                dlog to dump
+ * \param log_func [IN]         log function to use (default printf)
+ * \param stream [IN]           stream to use
+ * \param trylock [IN]          just try to lock (warn if it fails)
+ */
+HG_UTIL_PUBLIC void
+hg_dlog_dump_counters(struct hg_dlog *d,
+    int (*log_func)(FILE *, const char *, ...), FILE *stream, int trylock);
+
+/**
  * dump dlog info to a file.   set trylock if you want to dump even
  * if it is locked (e.g. you are crashing and you don't care about
  * locking).  the output file is "base.log" or base-pid.log" depending

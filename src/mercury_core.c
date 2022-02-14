@@ -93,20 +93,6 @@
 #define HG_CORE_DECODE(label, ret, buf_ptr, buf_size_left, data, type)         \
     HG_CORE_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, sizeof(type))
 
-/* Map stat type to either 32-bit atomic or 64-bit */
-#ifdef HG_HAS_COLLECT_STATS
-#    ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
-typedef hg_atomic_int64_t hg_core_stat_t;
-#        define hg_core_stat_incr hg_atomic_incr64
-#        define hg_core_stat_get  hg_atomic_get64
-#    else
-typedef hg_atomic_int32_t hg_core_stat_t;
-#        define hg_core_stat_incr hg_atomic_incr32
-#        define hg_core_stat_get  hg_atomic_get32
-#    endif
-#    define HG_CORE_STAT_INIT HG_ATOMIC_VAR_INIT
-#endif
-
 /* Private accessors */
 #define HG_CORE_CONTEXT_CLASS(context)                                         \
     ((struct hg_core_private_class *) (context->core_context.core_class))
@@ -123,6 +109,17 @@ typedef hg_atomic_int32_t hg_core_stat_t;
 /* Local Type and Struct Definition */
 /************************************/
 
+/* HG counters */
+struct hg_core_counters {
+    hg_atomic_int64_t *rpc_req_sent_count;   /* RPC requests sent */
+    hg_atomic_int64_t *rpc_req_recv_count;   /* RPC requests received */
+    hg_atomic_int64_t *rpc_resp_sent_count;  /* RPC responses sent */
+    hg_atomic_int64_t *rpc_resp_recv_count;  /* RPC responses received */
+    hg_atomic_int64_t *rpc_req_extra_count;  /* RPC that require extra data */
+    hg_atomic_int64_t *rpc_resp_extra_count; /* RPC that require extra data */
+    hg_atomic_int64_t *bulk_count;           /* Bulk count */
+};
+
 /* HG class */
 struct hg_core_private_class {
     struct hg_core_class core_class; /* Must remain as first field */
@@ -134,6 +131,9 @@ struct hg_core_private_class {
         hg_return_t (*done_callback)(hg_core_handle_t)); /* more_data_acquire */
     void (*more_data_release)(hg_core_handle_t);         /* more_data_release */
     na_tag_t request_max_tag;                            /* Max value for tag */
+#ifdef HG_HAS_DEBUG
+    struct hg_core_counters counters; /* Diag counters */
+#endif
     hg_atomic_int32_t n_contexts;   /* Atomic used for number of contexts */
     hg_atomic_int32_t n_addrs;      /* Atomic used for number of addrs */
     hg_atomic_int32_t n_bulks;      /* Atomic used for number of bulk handles */
@@ -144,9 +144,6 @@ struct hg_core_private_class {
     hg_uint32_t request_post_incr;  /* Incr count of posted requests */
     hg_bool_t na_ext_init;          /* NA externally initialized */
     hg_bool_t loopback;             /* Able to self forward */
-#ifdef HG_HAS_COLLECT_STATS
-    hg_bool_t stats; /* (Debug) Print stats at exit */
-#endif
 };
 
 /* Poll type */
@@ -719,41 +716,23 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle);
 static hg_return_t
 hg_core_cancel(struct hg_core_private_handle *hg_core_handle);
 
-#ifdef HG_HAS_COLLECT_STATS
-/**
- * Print stats.
- */
-static void
-hg_core_print_stats(void);
-#endif
-
 /*******************/
 /* Local Variables */
 /*******************/
 
-#ifdef HG_HAS_COLLECT_STATS
-static hg_bool_t hg_core_print_stats_registered_g = HG_FALSE;
-static hg_core_stat_t hg_core_rpc_count_g = HG_CORE_STAT_INIT(0);
-static hg_core_stat_t hg_core_rpc_extra_count_g = HG_CORE_STAT_INIT(0);
-static hg_core_stat_t hg_core_bulk_count_g = HG_CORE_STAT_INIT(0);
-#endif
+/* HG_CORE_LOG_DEBUG_LESIZE: default number of debug log entries. */
+#define HG_CORE_LOG_DEBUG_LESIZE (256)
 
-/*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_COLLECT_STATS
-static void
-hg_core_print_stats(void)
-{
-    printf("\n================================================================="
-           "\n");
-    printf("Mercury stat report\n");
-    printf("-------------------\n");
-    printf("RPC count:            %lu\n",
-        (unsigned long) hg_core_stat_get(&hg_core_rpc_count_g));
-    printf("RPC count (overflow): %lu\n",
-        (unsigned long) hg_core_stat_get(&hg_core_rpc_extra_count_g));
-    printf("Bulk transfer count:  %lu\n",
-        (unsigned long) hg_core_stat_get(&hg_core_bulk_count_g));
-}
+#ifdef HG_HAS_DEBUG
+/* Log outlets */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(diag); /* Diagnosis */
+
+/* Declare debug log for stats */
+static HG_LOG_DEBUG_DECL_LE(diag, HG_CORE_LOG_DEBUG_LESIZE);
+static HG_LOG_DEBUG_DECL_DLOG(diag) = HG_LOG_DLOG_INITIALIZER(
+    diag, HG_CORE_LOG_DEBUG_LESIZE);
+
+HG_LOG_SUBSYS_DLOG_DECL_REGISTER(diag, hg);
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -893,20 +872,30 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             "please turn ON NA_USE_SM in CMake options");
 #endif
         hg_core_class->loopback = !hg_init_info->no_loopback;
-#ifdef HG_HAS_COLLECT_STATS
-        hg_core_class->stats = hg_init_info->stats;
-        if (hg_core_class->stats && !hg_core_print_stats_registered_g) {
-            int rc = atexit(hg_core_print_stats);
-            HG_CHECK_ERROR(rc != 0, error, ret, HG_PROTOCOL_ERROR,
-                "Could not register hg_core_print_stats");
-            hg_core_print_stats_registered_g = HG_TRUE;
-        }
-#endif
     } else {
         hg_core_class->request_post_init = HG_CORE_POST_INIT;
         hg_core_class->request_post_incr = HG_CORE_POST_INCR;
         hg_core_class->loopback = HG_TRUE;
     }
+
+#ifdef HG_HAS_DEBUG
+    /* TODO we could revert the linked list to avoid registration in reverse
+     * order */
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.bulk_count,
+        "bulk_count", "Bulk transfers (inc. extra bulks)");
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.rpc_resp_extra_count,
+        "rpc_resp_extra_count", "RPCs with extra bulk response");
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.rpc_req_extra_count,
+        "rpc_req_extra_count", "RPCs with extra bulk request");
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.rpc_resp_recv_count,
+        "rpc_resp_recv_count", "RPC responses received");
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.rpc_resp_sent_count,
+        "rpc_resp_sent_count", "RPC responses sent");
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.rpc_req_recv_count,
+        "rpc_req_recv_count", "RPC requests received");
+    HG_LOG_ADD_COUNTER64(diag, &hg_core_class->counters.rpc_req_sent_count,
+        "rpc_req_sent_count", "RPC requests sent");
+#endif
 
     /* Initialize NA if not provided externally */
     if (!hg_core_class->na_ext_init) {
@@ -2625,11 +2614,6 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
      * called */
     hg_atomic_incr32(&hg_core_handle->ref_count);
 
-#ifdef HG_HAS_COLLECT_STATS
-    /* Increment counter */
-    hg_core_stat_incr(&hg_core_rpc_count_g);
-#endif
-
     /* Reset op counts */
     hg_core_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_set32(&hg_core_handle->na_op_completed_count, 0);
@@ -2681,6 +2665,12 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
      * through NA and pre-post response */
     ret = hg_core_handle->forward(hg_core_handle);
     HG_CHECK_HG_ERROR(error, ret, "Could not forward buffer");
+
+#ifdef HG_HAS_DEBUG
+    /* Increment counter */
+    hg_atomic_incr64(
+        HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_req_sent_count);
+#endif
 
 done:
     return ret;
@@ -2830,6 +2820,12 @@ hg_core_respond(struct hg_core_private_handle *hg_core_handle,
      * through NA and pre-post response */
     ret = hg_core_handle->respond(hg_core_handle);
     HG_CHECK_HG_ERROR(error, ret, "Could not respond");
+
+#ifdef HG_HAS_DEBUG
+    /* Increment counter */
+    hg_atomic_incr64(
+        HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_resp_sent_count);
+#endif
 
 done:
     return ret;
@@ -3143,9 +3139,10 @@ hg_core_process_input(
 {
     hg_return_t ret = HG_SUCCESS;
 
-#ifdef HG_HAS_COLLECT_STATS
+#ifdef HG_HAS_DEBUG
     /* Increment counter */
-    hg_core_stat_incr(&hg_core_rpc_count_g);
+    hg_atomic_incr64(
+        HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_req_recv_count);
 #endif
 
     /* Get and verify input header */
@@ -3184,10 +3181,13 @@ hg_core_process_input(
             "No callback defined for acquiring more data");
         HG_LOG_DEBUG("Must acquire more input data for handle %p",
             (void *) hg_core_handle);
-#ifdef HG_HAS_COLLECT_STATS
+
+#ifdef HG_HAS_DEBUG
         /* Increment counter */
-        hg_core_stat_incr(&hg_core_rpc_extra_count_g);
+        hg_atomic_incr64(
+            HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_req_extra_count);
 #endif
+
         ret = HG_CORE_HANDLE_CLASS(hg_core_handle)
                   ->more_data_acquire((hg_core_handle_t) hg_core_handle,
                       HG_INPUT, hg_core_more_data_complete);
@@ -3303,6 +3303,12 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
 {
     hg_return_t ret = HG_SUCCESS;
 
+#ifdef HG_HAS_DEBUG
+    /* Increment counter */
+    hg_atomic_incr64(
+        HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_resp_recv_count);
+#endif
+
     /* Get and verify output header */
     ret = hg_core_proc_header_response(
         &hg_core_handle->core_handle, &hg_core_handle->out_header, HG_DECODE);
@@ -3325,6 +3331,12 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
             "No callback defined for acquiring more data");
         HG_LOG_DEBUG("Must acquire more input data for handle %p",
             (void *) hg_core_handle);
+
+#ifdef HG_HAS_DEBUG
+        /* Increment counter */
+        hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
+                             ->counters.rpc_resp_extra_count);
+#endif
 
         ret = HG_CORE_HANDLE_CLASS(hg_core_handle)
                   ->more_data_acquire((hg_core_handle_t) hg_core_handle,
@@ -3582,10 +3594,11 @@ hg_core_completion_add(struct hg_core_context *context,
         (struct hg_core_private_context *) context;
     int rc;
 
-#ifdef HG_HAS_COLLECT_STATS
+#ifdef HG_HAS_DEBUG
     /* Increment counter */
     if (hg_completion_entry->op_type == HG_BULK)
-        hg_core_stat_incr(&hg_core_bulk_count_g);
+        hg_atomic_incr64(
+            HG_CORE_CONTEXT_CLASS(private_context)->counters.bulk_count);
 #endif
 
     rc = hg_atomic_queue_push(
