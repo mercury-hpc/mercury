@@ -231,6 +231,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_OP_QUEUED    (1 << 3)
 #define NA_OFI_OP_ERRORED   (1 << 4)
 
+/* The timeout (second) when give up for FI_EAGAIN's retry */
+#define NA_OFI_OP_RETRY_TIMEOUT ((double)90.0)
+
 /* Private data access */
 #define NA_OFI_CLASS(na_class)                                                 \
     ((struct na_ofi_class *) ((na_class)->plugin_class))
@@ -434,6 +437,7 @@ struct na_ofi_rma_info {
 
 /* Operation ID */
 struct na_ofi_op_id {
+    hg_time_t op_ts; /* timestamp to check when retry for EAGAIN */
     struct na_cb_completion_data completion_data; /* Completion data    */
     union {
         struct na_ofi_msg_info msg;
@@ -904,6 +908,13 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context);
 static NA_INLINE void
 na_ofi_op_retry(
     struct na_ofi_context *na_ofi_context, struct na_ofi_op_id *na_ofi_op_id);
+
+/**
+ * Abort all ops targeted at fi_addr.
+ */
+static NA_INLINE void
+na_ofi_op_queue_abort(
+    struct na_ofi_context *na_ofi_context, fi_addr_t fi_addr, int ret);
 
 /**
  * Complete operation ID.
@@ -3319,6 +3330,31 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
             *actual_count = 1;
             break;
 
+        case FI_ENOTCONN:
+        case FI_ECONNRESET:
+        case FI_ECONNABORTED:
+        case FI_ECONNREFUSED:
+        {
+            struct na_ofi_op_id *na_ofi_op_id = NULL;
+
+            NA_CHECK_SUBSYS_ERROR(op, cq_err.op_context == NULL, out, ret,
+                NA_INVALID_ARG, "Invalid operation context");
+            na_ofi_op_id =
+                container_of(cq_err.op_context, struct na_ofi_op_id, fi_ctx);
+            NA_LOG_ERROR("got cq_err.err %s, event on operation ID %p\n",
+                         fi_strerror(cq_err.err), na_ofi_op_id);
+            NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, out, ret,
+                NA_INVALID_ARG, "Invalid operation ID");
+
+            NA_CHECK_SUBSYS_ERROR(op,
+                hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED,
+                out, ret, NA_FAULT, "Operation ID was completed");
+
+            na_ofi_op_queue_abort(NA_OFI_CONTEXT(context), na_ofi_op_id->addr->fi_addr,
+                                  NA_HOSTUNREACH);
+            na_ofi_complete(na_ofi_op_id, NA_HOSTUNREACH);
+        } break;
+
         default:
             NA_LOG_SUBSYS_WARNING(poll,
                 "fi_cq_readerr() got err: %d (%s), "
@@ -3521,7 +3557,10 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
     na_return_t ret;
 
     do {
+        hg_time_t now, *op_ts;
         na_bool_t canceled = NA_FALSE;
+        na_cb_type_t cb_type;
+        double time_diff;
         ssize_t rc = 0;
 
         hg_thread_spin_lock(&op_queue->lock);
@@ -3551,8 +3590,13 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
         NA_LOG_SUBSYS_DEBUG(
             op, "Attempting to retry %p", (void *) na_ofi_op_id);
 
-        /* Retry operation */
-        switch (na_ofi_op_id->completion_data.callback_info.type) {
+        /* Retry operation, set the timestamp for first time retry */
+
+        cb_type = na_ofi_op_id->completion_data.callback_info.type;
+        op_ts = &na_ofi_op_id->op_ts;
+        if (hg_time_to_ms(*op_ts) == 0)
+            hg_time_get_current(op_ts);
+        switch (cb_type) {
             case NA_CB_SEND_UNEXPECTED:
             case NA_CB_SEND_EXPECTED:
                 rc = fi_tsend(na_ofi_context->fi_tx,
@@ -3599,6 +3643,18 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
             }
             continue;
         } else if (rc == -FI_EAGAIN) {
+            /* if RMA keep getting FI_EAGAIN within NA_OFI_OP_RETRY_TIMEOUT, cancel the OP */
+            hg_time_get_current(&now);
+            time_diff = hg_time_diff(now, *op_ts);
+            if ((cb_type == NA_CB_PUT || cb_type == NA_CB_GET) &&
+                time_diff > NA_OFI_OP_RETRY_TIMEOUT) {
+                NA_LOG_ERROR("Aborting op_id %p (%s) as keep getting FI_EAGAIN in %f seconds.\n",
+                             na_ofi_op_id, na_cb_type_to_string(cb_type), time_diff);
+                hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_ERRORED);
+                na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+                continue;
+            }
+
             hg_thread_spin_lock(&op_queue->lock);
             /* Do not repush OP ID if it was canceled in the meantime */
             if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELING) {
@@ -3658,10 +3714,38 @@ na_ofi_op_retry(
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
+na_ofi_op_queue_abort(
+    struct na_ofi_context *na_ofi_context, fi_addr_t fi_addr, int ret)
+{
+    struct na_ofi_op_id *na_ofi_op_id;
+    struct na_ofi_op_queue *op_queue = na_ofi_context->retry_op_queue;
+
+    NA_LOG_ERROR("Aborting all OPs in queue to fi_addr %d", (int)fi_addr);
+
+    hg_thread_spin_lock(&op_queue->lock);
+    HG_QUEUE_FOREACH(na_ofi_op_id, &op_queue->queue, entry) {
+        if (na_ofi_op_id->addr->fi_addr != fi_addr)
+            continue;
+        HG_QUEUE_REMOVE(&op_queue->queue, na_ofi_op_id, na_ofi_op_id, entry);
+        NA_LOG_ERROR("Aborting op_id %p (%s) in queue to fi_addr %d, ret %d.", na_ofi_op_id,
+                     na_cb_type_to_string(na_ofi_op_id->completion_data.callback_info.type),
+                     (int)fi_addr, ret);
+        hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
+        hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_ERRORED);
+        na_ofi_complete(na_ofi_op_id, ret);
+    }
+    hg_thread_spin_unlock(&op_queue->lock);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
 na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t cb_ret)
 {
     /* Mark op id as completed (independent of cb_ret) */
     hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
+
+    /* zero the timestamp */
+    memset(&na_ofi_op_id->op_ts, 0, sizeof(na_ofi_op_id->op_ts));
 
     /* Set callback ret */
     na_ofi_op_id->completion_data.callback_info.ret = cb_ret;
