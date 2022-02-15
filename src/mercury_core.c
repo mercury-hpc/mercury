@@ -839,6 +839,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     const char *na_class_name;
     hg_bool_t auto_sm = HG_FALSE;
 #endif
+    hg_bool_t diag = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     /* Create new HG class */
@@ -872,11 +873,21 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             "please turn ON NA_USE_SM in CMake options");
 #endif
         hg_core_class->loopback = !hg_init_info->no_loopback;
+#ifdef HG_HAS_DEBUG
+        diag = hg_init_info->stats;
+#else
+        HG_CHECK_WARNING(hg_init_info->stats,
+            "stats option requires MERCURY_ENABLE_DEBUG "
+            "CMake option to be turned ON.");
+#endif
     } else {
         hg_core_class->request_post_init = HG_CORE_POST_INIT;
         hg_core_class->request_post_incr = HG_CORE_POST_INCR;
         hg_core_class->loopback = HG_TRUE;
     }
+
+    if (diag)
+        hg_log_set_subsys_level("diag", HG_LOG_LEVEL_DEBUG);
 
 #ifdef HG_HAS_DEBUG
     /* TODO we could revert the linked list to avoid registration in reverse

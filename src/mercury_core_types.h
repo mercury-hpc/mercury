@@ -67,6 +67,10 @@ struct hg_init_info {
      * that option.
      * Default is: false */
     hg_bool_t no_loopback;
+
+    /* (Debug) Print stats at exit.
+     * Default is: false */
+    hg_bool_t stats;
 };
 
 /* Error return codes:
@@ -149,7 +153,7 @@ typedef enum {
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
         NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, NULL, HG_FALSE,        \
-            HG_FALSE                                                           \
+            HG_FALSE, HG_FALSE                                                 \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
