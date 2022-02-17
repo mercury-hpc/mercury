@@ -286,6 +286,8 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 #endif
 
     HG_CHECK_ERROR_NORET(proc == HG_PROC_NULL, done, "Proc is not initialized");
+    HG_CHECK_ERROR_NORET(
+        hg_proc->op == HG_FREE, done, "Cannot save_ptr on HG_FREE");
 
     /* If not enough space allocate extra space if encoding or
      * just get extra buffer if decoding */
@@ -314,6 +316,8 @@ hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size)
 
     HG_CHECK_ERROR(proc == HG_PROC_NULL, done, ret, HG_INVALID_ARG,
         "Proc is not initialized");
+    HG_CHECK_ERROR_NORET(((struct hg_proc *) proc)->op == HG_FREE, done,
+        "Cannot restore_ptr on HG_FREE");
 
 #ifdef HG_HAS_CHECKSUMS
     hg_proc_checksum_update(proc, data, data_size);
