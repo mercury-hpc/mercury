@@ -124,7 +124,7 @@ main(int argc, char *argv[])
     sleep(1);
 
     /* After that point, we need to silence errors */
-    hg_log_set_level(HG_LOG_LEVEL_NONE);
+    HG_Set_log_level("none");
 
     if (!hg_test_info.na_test_info.self_send) {
         HG_TEST("attempt second interrupted RPC");
