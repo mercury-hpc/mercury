@@ -11,6 +11,7 @@
 #include "na_error.h"
 
 #include "mercury_atomic_queue.h"
+#include "mercury_param.h"
 #include "mercury_queue.h"
 #include "mercury_thread_condition.h"
 #include "mercury_thread_mutex.h"
@@ -59,16 +60,6 @@ struct na_cb_completion_data {
 #if !defined(container_of)
 #    define container_of(ptr, type, member)                                    \
         ((type *) ((char *) ptr - offsetof(type, member)))
-#endif
-
-/**
- * Min/max macros
- */
-#ifndef MAX
-#    define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#endif
-#ifndef MIN
-#    define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 
 /**
