@@ -101,6 +101,9 @@ endif()
 # Detect <sys/event.h>
 check_include_files("sys/event.h" HG_UTIL_HAS_SYSEVENT_H)
 
+# Detect <sys/param.h>
+check_include_files("sys/param.h" HG_UTIL_HAS_SYSPARAM_H)
+
 # Atomics
 if(NOT WIN32)
   # Detect stdatomic
@@ -164,15 +167,18 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_byteswap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_compiler_attributes.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dlog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_inet.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem_pool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_param.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h

@@ -6,6 +6,7 @@
 
 #include "mercury_poll.h"
 #include "mercury_event.h"
+#include "mercury_param.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_util_error.h"
 
@@ -33,10 +34,6 @@
 
 #define HG_POLL_INIT_NEVENTS 32
 #define HG_POLL_MAX_EVENTS   4096
-
-#ifndef MIN
-#    define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
 
 /************************************/
 /* Local Type and Struct Definition */

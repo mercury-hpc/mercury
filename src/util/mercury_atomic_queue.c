@@ -35,6 +35,7 @@
  */
 
 #include "mercury_atomic_queue.h"
+#include "mercury_param.h"
 #include "mercury_util_error.h"
 
 #include <stdlib.h>
@@ -42,9 +43,6 @@
 /****************/
 /* Local Macros */
 /****************/
-
-/* From <sys/param.h> */
-#define powerof2(x) ((((x) -1) & (x)) == 0)
 
 /*---------------------------------------------------------------------------*/
 struct hg_atomic_queue *
