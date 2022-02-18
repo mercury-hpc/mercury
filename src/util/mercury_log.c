@@ -367,7 +367,7 @@ hg_log_name_to_level(const char *log_level)
 {
     enum hg_log_level l = 0;
 
-    if (!log_level)
+    if (!log_level || strcasecmp("none", log_level) == 0)
         return HG_LOG_LEVEL_NONE;
 
     while (strcasecmp(hg_log_level_name_g[l], log_level) != 0 &&
