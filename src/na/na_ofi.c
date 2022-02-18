@@ -10,6 +10,7 @@
 #include "na_ip.h"
 
 #include "mercury_hash_table.h"
+#include "mercury_inet.h"
 #include "mercury_list.h"
 #include "mercury_mem.h"
 #include "mercury_mem_pool.h"
@@ -32,7 +33,6 @@
 #    include <rdma/fi_cxi_ext.h>
 #endif
 
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -191,7 +191,17 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #undef X
 
 /* Address / URI max len */
-#define NA_OFI_MAX_URI_LEN             (128)
+#define NA_OFI_MAX_URI_LEN (128)
+
+/* IB */
+#ifndef AF_IB
+#    define AF_IB 27
+#endif
+/* Values taken from librdmacm/rdma_cma.h */
+#define NA_OFI_IB_IP_PS_MASK   0xFFFFFFFFFFFF0000ULL
+#define NA_OFI_IB_IP_PORT_MASK 0x000000000000FFFFULL
+
+/* GNI */
 #define NA_OFI_GNI_AV_STR_ADDR_VERSION (1)
 #define NA_OFI_GNI_UDREG_REG_LIMIT     (2048)
 
@@ -309,6 +319,17 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* Local Type and Struct Definition */
 /************************************/
 
+/* IB address */
+struct na_ofi_sockaddr_ib {
+    unsigned short int sib_family; /* AF_IB */
+    na_uint16_t sib_pkey;
+    na_uint32_t sib_flowinfo;
+    na_uint8_t sib_addr[16];
+    na_uint64_t sib_sid;
+    na_uint64_t sib_sid_mask;
+    na_uint64_t sib_scope_id;
+};
+
 /* PSM address */
 struct na_ofi_psm_addr {
     na_uint64_t addr0;
@@ -357,6 +378,7 @@ struct na_ofi_cxi_addr {
 union na_ofi_raw_addr {
     struct sockaddr_in sin;
     struct sockaddr_in6 sin6;
+    struct na_ofi_sockaddr_ib sib;
     struct na_ofi_psm_addr psm;
     struct na_ofi_psm2_addr psm2;
     struct na_ofi_gni_addr gni;
@@ -592,6 +614,8 @@ na_ofi_str_to_sin(const char *str, struct sockaddr_in *sin_addr);
 static na_return_t
 na_ofi_str_to_sin6(const char *str, struct sockaddr_in6 *sin6_addr);
 static na_return_t
+na_ofi_str_to_sib(const char *str, struct na_ofi_sockaddr_ib *sib_addr);
+static na_return_t
 na_ofi_str_to_psm(const char *str, struct na_ofi_psm_addr *psm_addr);
 static na_return_t
 na_ofi_str_to_psm2(const char *str, struct na_ofi_psm2_addr *psm2_addr);
@@ -610,6 +634,8 @@ static NA_INLINE na_uint64_t
 na_ofi_sin_to_key(const struct sockaddr_in *addr);
 static NA_INLINE na_uint64_t
 na_ofi_sin6_to_key(const struct sockaddr_in6 *addr);
+static NA_INLINE na_uint64_t
+na_ofi_sib_to_key(const struct na_ofi_sockaddr_ib *addr);
 static NA_INLINE na_uint64_t
 na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr);
 static NA_INLINE na_uint64_t
@@ -670,6 +696,12 @@ na_ofi_addr_key_equal_default(
  */
 static NA_INLINE int
 na_ofi_addr_key_equal_sin6(hg_hash_table_key_t key1, hg_hash_table_key_t key2);
+
+/**
+ * Compare IB address keys.
+ */
+static NA_INLINE int
+na_ofi_addr_key_equal_sib(hg_hash_table_key_t key1, hg_hash_table_key_t key2);
 
 /**
  * Lookup addr key from map.
@@ -1433,6 +1465,8 @@ na_ofi_prov_addr_size(na_uint32_t addr_format)
             return sizeof(struct sockaddr_in);
         case FI_SOCKADDR_IN6:
             return sizeof(struct sockaddr_in6);
+        case FI_SOCKADDR_IB:
+            return sizeof(struct na_ofi_sockaddr_ib);
         case FI_ADDR_PSMX:
             return sizeof(struct na_ofi_psm_addr);
         case FI_ADDR_PSMX2:
@@ -1487,6 +1521,8 @@ na_ofi_str_to_raw_addr(
             return na_ofi_str_to_sin(str, &addr->sin);
         case FI_SOCKADDR_IN6:
             return na_ofi_str_to_sin6(str, &addr->sin6);
+        case FI_SOCKADDR_IB:
+            return na_ofi_str_to_sib(str, &addr->sib);
         case FI_ADDR_PSMX:
             return na_ofi_str_to_psm(str, &addr->psm);
         case FI_ADDR_PSMX2:
@@ -1520,15 +1556,14 @@ na_ofi_str_to_sin(const char *str, struct sockaddr_in *sin_addr)
         ip[sizeof(ip) - 1] = '\0';
         rc = inet_pton(AF_INET, ip, &sin_addr->sin_addr);
         NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
-            "Unable to convert IPv4 address: %s\n", ip);
+            "Unable to convert IPv4 address: %s", ip);
         NA_LOG_SUBSYS_DEBUG(
             addr, "ip=%s, port=%" PRIu16, ip, sin_addr->sin_port);
     } else
         NA_GOTO_SUBSYS_ERROR(addr, error, ret, NA_PROTONOSUPPORT,
-            "Malformed FI_ADDR_STR: %s\n", str);
+            "Malformed FI_ADDR_STR: %s", str);
 
     sin_addr->sin_port = htons(sin_addr->sin_port);
-
     /* Make sure `sin_zero` is set to 0 */
     memset(&sin_addr->sin_zero, 0, sizeof(sin_addr->sin_zero));
 
@@ -1559,14 +1594,88 @@ na_ofi_str_to_sin6(const char *str, struct sockaddr_in6 *sin6_addr)
         ip[sizeof(ip) - 1] = '\0';
         rc = inet_pton(AF_INET6, ip, &sin6_addr->sin6_addr);
         NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
-            "Unable to convert IPv6 address: %s\n", ip);
+            "Unable to convert IPv6 address: %s", ip);
         NA_LOG_SUBSYS_DEBUG(
             addr, "ip=%s, port=%" PRIu16, ip, sin6_addr->sin6_port);
     } else
         NA_GOTO_SUBSYS_ERROR(addr, error, ret, NA_PROTONOSUPPORT,
-            "Malformed FI_ADDR_STR: %s\n", str);
+            "Malformed FI_ADDR_STR: %s", str);
 
     sin6_addr->sin6_port = htons(sin6_addr->sin6_port);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_str_to_sib(const char *str, struct na_ofi_sockaddr_ib *sib_addr)
+{
+    char *tok, *endptr, *saveptr;
+    uint16_t pkey, ps, port;
+    uint64_t scope_id;
+    char gid[64 + 1];
+    char extra_str[64 + 1];
+    na_return_t ret;
+    int rc;
+
+    memset(gid, 0, sizeof(gid));
+
+    rc = sscanf(str,
+        "%*[^:]://[%64[^]]]" /* GID */
+        ":%64s",             /* P_Key : port_space : Scope ID : port */
+        gid, extra_str);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 2, error, ret, NA_PROTONOSUPPORT,
+        "Invalid GID in address: %s", str);
+
+    tok = strtok_r(extra_str, ":", &saveptr);
+    NA_CHECK_SUBSYS_ERROR(addr, tok == NULL, error, ret, NA_PROTONOSUPPORT,
+        "Invalid pkey in address: %s", str);
+
+    pkey = strtoul(tok, &endptr, 0) & 0xffff;
+    NA_CHECK_SUBSYS_ERROR(addr, !pkey, error, ret, NA_PROTONOSUPPORT,
+        "Invalid pkey in address: %s", str);
+
+    tok = strtok_r(NULL, ":", &saveptr);
+    NA_CHECK_SUBSYS_ERROR(addr, tok == NULL, error, ret, NA_PROTONOSUPPORT,
+        "Invalid port space in address: %s", str);
+
+    ps = strtoul(tok, &endptr, 0) & 0xffff;
+    NA_CHECK_SUBSYS_ERROR(addr, *endptr, error, ret, NA_PROTONOSUPPORT,
+        "Invalid port space in address: %s", str);
+
+    tok = strtok_r(NULL, ":", &saveptr);
+    NA_CHECK_SUBSYS_ERROR(addr, tok == NULL, error, ret, NA_PROTONOSUPPORT,
+        "Invalid scope id in address: %s", str);
+
+    scope_id = strtoul(tok, &endptr, 0);
+    NA_CHECK_SUBSYS_ERROR(addr, *endptr, error, ret, NA_PROTONOSUPPORT,
+        "Invalid scope id in address: %s", str);
+
+    /* Port is optional */
+    tok = strtok_r(NULL, ":", &saveptr);
+    if (tok)
+        port = strtoul(tok, &endptr, 0) & 0xffff;
+    else
+        port = 0;
+
+    /* Make sure unused fields are set to 0 */
+    memset(sib_addr, 0, sizeof(*sib_addr));
+
+    rc = inet_pton(AF_INET6, gid, &sib_addr->sib_addr);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Unable to convert GID: %s", gid);
+
+    sib_addr->sib_family = AF_IB;
+    sib_addr->sib_pkey = htons(pkey);
+    if (ps && port) {
+        sib_addr->sib_sid = htonll(((uint64_t) ps << 16) + port);
+        sib_addr->sib_sid_mask =
+            htonll(NA_OFI_IB_IP_PS_MASK | NA_OFI_IB_IP_PORT_MASK);
+    }
+    sib_addr->sib_scope_id = htonll(scope_id);
 
     return NA_SUCCESS;
 
@@ -1676,6 +1785,8 @@ na_ofi_raw_addr_to_key(
             return na_ofi_sin_to_key(&addr->sin);
         case FI_SOCKADDR_IN6:
             return na_ofi_sin6_to_key(&addr->sin6);
+        case FI_SOCKADDR_IB:
+            return na_ofi_sib_to_key(&addr->sib);
         case FI_ADDR_PSMX:
             return na_ofi_psm_to_key(&addr->psm);
         case FI_ADDR_PSMX2:
@@ -1702,6 +1813,13 @@ static NA_INLINE na_uint64_t
 na_ofi_sin6_to_key(const struct sockaddr_in6 *addr)
 {
     return *((const na_uint64_t *) &addr->sin6_addr.s6_addr);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_uint64_t
+na_ofi_sib_to_key(const struct na_ofi_sockaddr_ib *addr)
+{
+    return *((const na_uint64_t *) &addr->sib_addr);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1752,6 +1870,8 @@ na_ofi_raw_addr_serialize_size(na_uint32_t addr_format)
             return sizeof(na_uint64_t);
         case FI_SOCKADDR_IN6:
             return sizeof(struct in6_addr) + sizeof(in_port_t);
+        case FI_SOCKADDR_IB:
+            return sizeof(struct na_ofi_sockaddr_ib);
         case FI_ADDR_PSMX:
             return sizeof(struct na_ofi_psm_addr);
         case FI_ADDR_PSMX2:
@@ -1792,6 +1912,12 @@ na_ofi_raw_addr_serialize(na_uint32_t addr_format, void *buf,
                 in_port_t);
             break;
         }
+        case FI_SOCKADDR_IB:
+            NA_CHECK_SUBSYS_ERROR(addr,
+                buf_size < sizeof(struct na_ofi_sockaddr_ib), error, ret,
+                NA_OVERFLOW, "Buffer size too small to copy addr");
+            memcpy(buf, &addr->sib, sizeof(addr->sib));
+            break;
         case FI_ADDR_PSMX:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_psm_addr), error, ret,
@@ -1855,6 +1981,12 @@ na_ofi_raw_addr_deserialize(na_uint32_t addr_format,
                 in_port_t);
             break;
         }
+        case FI_SOCKADDR_IB:
+            NA_CHECK_SUBSYS_ERROR(addr,
+                buf_size < sizeof(struct na_ofi_sockaddr_ib), error, ret,
+                NA_OVERFLOW, "Buffer size too small to copy addr");
+            memcpy(&addr->sib, buf, sizeof(addr->sib));
+            break;
         case FI_ADDR_PSMX:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_psm_addr), error, ret,
@@ -1953,14 +2085,29 @@ na_ofi_addr_key_equal_sin6(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
 {
     struct na_ofi_addr_key *addr_key1 = (struct na_ofi_addr_key *) key1,
                            *addr_key2 = (struct na_ofi_addr_key *) key2;
-    size_t i;
 
-    for (i = 0; i < sizeof(addr_key1->addr.sin6.sin6_addr.s6_addr); i++)
-        if (addr_key1->addr.sin6.sin6_addr.s6_addr[i] !=
-            addr_key2->addr.sin6.sin6_addr.s6_addr[i])
-            return 0;
+    if (addr_key1->addr.sin6.sin6_port != addr_key2->addr.sin6.sin6_port)
+        return 0;
 
-    return addr_key1->addr.sin6.sin6_port == addr_key2->addr.sin6.sin6_port;
+    return (
+        memcmp(&addr_key1->addr.sin6.sin6_addr, &addr_key2->addr.sin6.sin6_addr,
+            sizeof(addr_key1->addr.sin6.sin6_addr)) == 0);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE int
+na_ofi_addr_key_equal_sib(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
+{
+    struct na_ofi_addr_key *addr_key1 = (struct na_ofi_addr_key *) key1,
+                           *addr_key2 = (struct na_ofi_addr_key *) key2;
+
+    if (addr_key1->addr.sib.sib_pkey != addr_key2->addr.sib.sib_pkey ||
+        addr_key1->addr.sib.sib_scope_id != addr_key2->addr.sib.sib_scope_id ||
+        addr_key1->addr.sib.sib_sid != addr_key2->addr.sib.sib_sid)
+        return 0;
+
+    return (memcmp(&addr_key1->addr.sib.sib_addr, &addr_key2->addr.sib.sib_addr,
+                sizeof(addr_key1->addr.sib.sib_addr)) == 0);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2619,6 +2766,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
     struct fi_info *prov, *providers = NULL;
+    hg_hash_table_equal_func_t map_key_equal_func;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -2804,10 +2952,25 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
         "fi_av_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Create primary addr hash-table */
-    na_ofi_domain->addr_map.key_map = hg_hash_table_new(na_ofi_addr_key_hash,
-        na_ofi_domain->fi_prov->addr_format == FI_SOCKADDR_IN6
-            ? na_ofi_addr_key_equal_sin6
-            : na_ofi_addr_key_equal_default);
+    switch (na_ofi_domain->fi_prov->addr_format) {
+        case FI_SOCKADDR_IN6:
+            map_key_equal_func = na_ofi_addr_key_equal_sin6;
+            break;
+        case FI_SOCKADDR_IB:
+            map_key_equal_func = na_ofi_addr_key_equal_sib;
+            break;
+        case FI_SOCKADDR_IN:
+        case FI_ADDR_PSMX:
+        case FI_ADDR_PSMX2:
+        case FI_ADDR_GNI:
+        case FI_ADDR_CXI:
+        default:
+            map_key_equal_func = na_ofi_addr_key_equal_default;
+            break;
+    }
+
+    na_ofi_domain->addr_map.key_map =
+        hg_hash_table_new(na_ofi_addr_key_hash, map_key_equal_func);
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.key_map == NULL, error,
         ret, NA_NOMEM, "Could not allocate key map");
 
