@@ -157,6 +157,20 @@ if(NA_USE_OFI)
     ${NA_EXT_LIB_DEPENDENCIES}
     ${OFI_LIBRARIES}
   )
+  option(NA_OFI_USE_HWLOC "Use hwloc to retrieve NIC information and select domain to use." OFF)
+  if(NA_OFI_USE_HWLOC)
+    find_package(HWLOC REQUIRED)
+    set(NA_HAS_HWLOC 1)
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${HWLOC_INCLUDE_DIR}
+    )
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${HWLOC_LIBRARIES}
+    )
+  endif()
+  mark_as_advanced(NA_OFI_USE_HWLOC)
 endif()
 
 # UCX
@@ -270,6 +284,7 @@ configure_file(
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
   ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_loc.c
 )
 
 if(NA_HAS_BMI)
@@ -343,6 +358,7 @@ endif()
 set(NA_PRIVATE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_loc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
 )
 

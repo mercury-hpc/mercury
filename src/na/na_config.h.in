@@ -85,6 +85,9 @@ typedef na_uint64_t na_ptr_t;
 #cmakedefine NA_HAS_MULTI_PROGRESS
 #cmakedefine NA_HAS_DEBUG
 
+/* HWLOC */
+#cmakedefine NA_HAS_HWLOC
+
 /* BMI */
 #cmakedefine NA_HAS_BMI
 

@@ -8,6 +8,7 @@
 #include "na_plugin.h"
 
 #include "na_ip.h"
+#include "na_loc.h"
 
 #include "mercury_hash_table.h"
 #include "mercury_inet.h"
@@ -71,6 +72,7 @@
 #define NA_OFI_SIGNAL          (1 << 3) /* supports fi_signal() */
 #define NA_OFI_SEP             (1 << 4) /* supports SEPs */
 #define NA_OFI_SOURCE_MSG      (1 << 5) /* requires source info in the MSG */
+#define NA_OFI_LOC_INFO        (1 << 6) /* supports locality info */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -127,7 +129,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_PSMX2,                                                          \
       FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                            \
-      NA_OFI_SIGNAL | NA_OFI_SEP                                               \
+      NA_OFI_SIGNAL | NA_OFI_SEP | NA_OFI_LOC_INFO                             \
     )                                                                          \
     X(NA_OFI_PROV_VERBS,                                                       \
       "verbs;ofi_rxm",                                                         \
@@ -138,6 +140,7 @@
       FI_PROTO_RXM,                                                            \
       FI_SOURCE | FI_DIRECTED_RECV,                                            \
       NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG              \
+                             | NA_OFI_LOC_INFO                                 \
     )                                                                          \
     X(NA_OFI_PROV_GNI,                                                         \
       "gni",                                                                   \
@@ -157,7 +160,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
       FI_SOURCE,                                                               \
-      NA_OFI_VERIFY_PROV_DOM | NA_OFI_SOURCE_MSG                               \
+      NA_OFI_VERIFY_PROV_DOM | NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO             \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
 /* clang-format on */
@@ -509,6 +512,14 @@ struct na_ofi_map {
     hg_hash_table_t *fi_map;  /* Secondary */
 };
 
+/* Verify info */
+struct na_ofi_domain_info {
+    struct na_loc_info *loc_info;    /* Loc info */
+    const char *domain_name;         /* Domain name */
+    uint32_t addr_format;            /* Addr format */
+    enum na_ofi_prov_type prov_type; /* Provider type */
+};
+
 /* Domain */
 struct na_ofi_domain {
     hg_thread_mutex_t mutex;            /* Mutex for AV etc */
@@ -748,14 +759,14 @@ na_ofi_fi_addr_map_lookup(struct na_ofi_map *na_ofi_map, fi_addr_t *fi_addr);
  */
 static na_return_t
 na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
-    const char *user_requested_protocol);
+    const char *user_requested_protocol, uint32_t addr_format);
 
 /**
  * Match provider name with domain.
  */
-static NA_INLINE na_bool_t
-na_ofi_verify_provider(enum na_ofi_prov_type prov_type, uint32_t addr_format,
-    const char *domain_name, const struct fi_info *fi_info);
+static na_bool_t
+na_ofi_verify_provider(
+    struct na_ofi_domain_info *info, const struct fi_info *fi_info);
 
 /**
  * Parse hostname info.
@@ -810,8 +821,8 @@ na_ofi_gni_get_domain_op_value(
  */
 static na_return_t
 na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
-    const char *domain_name, const char *auth_key, na_bool_t no_wait,
-    struct na_ofi_domain **na_ofi_domain_p);
+    const char *domain_name, struct na_loc_info *loc_info, const char *auth_key,
+    na_bool_t no_wait, struct na_ofi_domain **na_ofi_domain_p);
 
 /**
  * Close domain.
@@ -2353,7 +2364,7 @@ na_ofi_provider_check(
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
-    const char *user_requested_protocol)
+    const char *user_requested_protocol, uint32_t addr_format)
 {
     struct fi_info *hints = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -2370,6 +2381,9 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
     hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
     NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL, cleanup,
         ret, NA_NOMEM, "Could not duplicate name");
+
+    /* Use addr format if not FI_FORMAT_UNSPEC */
+    hints->addr_format = addr_format;
 
     /* mode: operational mode, NA_OFI passes in context for communication calls.
      */
@@ -2454,27 +2468,38 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
-na_ofi_verify_provider(enum na_ofi_prov_type prov_type, uint32_t addr_format,
-    const char *domain_name, const struct fi_info *fi_info)
+static na_bool_t
+na_ofi_verify_provider(
+    struct na_ofi_domain_info *info, const struct fi_info *fi_info)
 {
-    /* Does not match provider name */
-    if (strcmp(na_ofi_prov_name[prov_type], fi_info->fabric_attr->prov_name))
+    /* Domain must match expected address format (keep this check as OFI does
+     * not seem to filter providers on addr_format) */
+    if (fi_info->addr_format != info->addr_format)
         return NA_FALSE;
 
-    /* Domain must match expected address format */
-    if (fi_info->addr_format != addr_format)
+    /* Does not match provider name */
+    if (strcmp(
+            na_ofi_prov_name[info->prov_type], fi_info->fabric_attr->prov_name))
         return NA_FALSE;
 
     /* for some providers the provider name is ambiguous and we must check
      * the domain name as well
      */
-    if (na_ofi_prov_flags[prov_type] & NA_OFI_VERIFY_PROV_DOM) {
+    if (na_ofi_prov_flags[info->prov_type] & NA_OFI_VERIFY_PROV_DOM) {
         /* Does not match domain name */
-        if (domain_name && strcmp("\0", domain_name) &&
-            strcmp(domain_name, fi_info->domain_attr->name))
+        if (info->domain_name && info->domain_name[0] != '\0' &&
+            strcmp(info->domain_name, fi_info->domain_attr->name))
             return NA_FALSE;
     }
+
+#ifdef NA_HAS_HWLOC
+    if (info->loc_info && fi_info->nic && fi_info->nic->bus_attr &&
+        fi_info->nic->bus_attr->bus_type == FI_BUS_PCI) {
+        const struct fi_pci_attr *pci = &fi_info->nic->bus_attr->attr.pci;
+        return na_loc_check_pcidev(info->loc_info, pci->domain_id, pci->bus_id,
+            pci->device_id, pci->function_id);
+    }
+#endif
 
     return NA_TRUE;
 }
@@ -2760,13 +2785,18 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
-    const char *domain_name, const char *auth_key, na_bool_t no_wait,
-    struct na_ofi_domain **na_ofi_domain_p)
+    const char *domain_name, struct na_loc_info *loc_info, const char *auth_key,
+    na_bool_t no_wait, struct na_ofi_domain **na_ofi_domain_p)
 {
-    struct na_ofi_domain *na_ofi_domain;
+    struct na_ofi_domain *na_ofi_domain = NULL;
     struct fi_av_attr av_attr = {0};
     struct fi_info *prov, *providers = NULL;
     hg_hash_table_equal_func_t map_key_equal_func;
+    struct na_ofi_domain_info verify_info =
+        (struct na_ofi_domain_info){.prov_type = prov_type,
+            .addr_format = addr_format,
+            .domain_name = domain_name,
+            .loc_info = loc_info};
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -2776,8 +2806,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
      */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
     HG_LIST_FOREACH (na_ofi_domain, &na_ofi_domain_list_g, entry) {
-        if (na_ofi_verify_provider(
-                prov_type, addr_format, domain_name, na_ofi_domain->fi_prov)) {
+        if (na_ofi_verify_provider(&verify_info, na_ofi_domain->fi_prov)) {
             hg_atomic_incr32(&na_ofi_domain->refcount);
             break;
         }
@@ -2791,12 +2820,12 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
     }
 
     /* If no pre-existing domain, get OFI providers info */
-    ret = na_ofi_getinfo(prov_type, &providers, NULL);
+    ret = na_ofi_getinfo(prov_type, &providers, NULL, addr_format);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_getinfo() failed");
 
     /* Try to find provider that matches protocol and domain/host name */
     for (prov = providers; prov != NULL; prov = prov->next) {
-        if (na_ofi_verify_provider(prov_type, addr_format, domain_name, prov)) {
+        if (na_ofi_verify_provider(&verify_info, prov)) {
             NA_LOG_SUBSYS_DEBUG(cls,
                 "Selected provider: %s, fabric: %s, domain: %s, addr format: "
                 "%" PRIu32,
@@ -4485,7 +4514,7 @@ na_ofi_check_protocol(const char *protocol_name)
 #endif
 
     /* Get info from provider */
-    ret = na_ofi_getinfo(type, &providers, protocol_name);
+    ret = na_ofi_getinfo(type, &providers, protocol_name, FI_FORMAT_UNSPEC);
     NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "na_ofi_getinfo() failed");
 
     prov = providers;
@@ -4519,6 +4548,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     char *domain_name = NULL;
     void *src_addr = NULL;
     size_t src_addrlen = 0;
+    struct na_loc_info *loc_info = NULL;
     na_return_t ret;
 #ifdef NA_OFI_HAS_ADDR_POOL
     unsigned int i;
@@ -4569,10 +4599,23 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_class == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI class");
 
+#ifdef NA_HAS_HWLOC
+    /* Use autodetect if we can't guess which domain to use */
+    if ((na_ofi_prov_flags[prov_type] & NA_OFI_LOC_INFO) && !domain_name &&
+        !src_addr) {
+        ret = na_loc_info_init(&loc_info);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could init loc info");
+    }
+#endif
+
     /* Create/Open domain */
     no_wait = na_init_info.progress_mode & NA_NO_BLOCK;
-    ret = na_ofi_domain_open(prov_type, addr_format, domain_name,
+    ret = na_ofi_domain_open(prov_type, addr_format, domain_name, loc_info,
         na_init_info.auth_key, no_wait, &na_ofi_class->domain);
+#ifdef NA_HAS_HWLOC
+    if (loc_info)
+        na_loc_info_destroy(loc_info);
+#endif
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
         "Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
         domain_name);
