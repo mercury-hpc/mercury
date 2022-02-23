@@ -291,10 +291,12 @@ endfunction()
 function(add_mercury_test_comm_all_serial test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
-    # Forward to remote server
-    add_mercury_test_comm(${test_name} ${comm}
-      "${NA_${upper_comm}_TESTING_PROTOCOL}"
-      "${NA_TESTING_NO_BLOCK}" false false false)
+    if(NOT ((${comm} STREQUAL "bmi")))
+      # Forward to remote server
+      add_mercury_test_comm(${test_name} ${comm}
+        "${NA_${upper_comm}_TESTING_PROTOCOL}"
+        "${NA_TESTING_NO_BLOCK}" false false false)
+    endif()
     # Forward to self
     if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
       add_mercury_test_comm(${test_name} ${comm}
