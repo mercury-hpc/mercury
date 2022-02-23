@@ -141,7 +141,7 @@ if(NA_USE_OFI)
   # Detect <rdma/fi_ext_gni.h>
   set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
   check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
-  check_include_files("rdma/fabric.h;rdma/fi_cxi_ext.h" NA_OFI_HAS_EXT_CXI_H)
+  check_include_files("stdbool.h;rdma/fabric.h;rdma/fi_cxi_ext.h" NA_OFI_HAS_EXT_CXI_H)
   if(NA_OFI_HAS_EXT_GNI_H)
     option(NA_OFI_GNI_USE_UDREG "Force gni provider to use udreg instead of internal MR cache." OFF)
     if(NA_OFI_GNI_USE_UDREG)

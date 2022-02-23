@@ -4585,6 +4585,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Get addr format */
     addr_format = na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
+    NA_CHECK_SUBSYS_ERROR(cls, addr_format == FI_FORMAT_UNSPEC, error, ret,
+        NA_PROTONOSUPPORT, "Unsupported address format");
 
     /* Parse hostname info and get domain name etc */
     if (na_info->host_name != NULL) {
