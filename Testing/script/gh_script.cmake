@@ -215,7 +215,7 @@ else()
   if(NOT DEFINED USE_UCX)
     set(USE_UCX ON)
   endif()
-  set(USE_PSM ON)
+  set(USE_PSM OFF) # Disable for now until mpirun/psm issues are fixed
   set(CMAKE_FIND_ROOT_PATH $ENV{DEPS_PREFIX} ${CMAKE_FIND_ROOT_PATH})
 endif()
 
