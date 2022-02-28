@@ -66,13 +66,13 @@
 /* flags that control na_ofi behavior (in the X macro below for each
  * provider)
  */
-#define NA_OFI_VERIFY_PROV_DOM (1 << 0) /* requires domain verification */
-#define NA_OFI_WAIT_SET        (1 << 1) /* supports FI_WAIT_SET */
-#define NA_OFI_WAIT_FD         (1 << 2) /* supports FI_WAIT_FD */
-#define NA_OFI_SIGNAL          (1 << 3) /* supports fi_signal() */
-#define NA_OFI_SEP             (1 << 4) /* supports SEPs */
-#define NA_OFI_SOURCE_MSG      (1 << 5) /* requires source info in the MSG */
-#define NA_OFI_LOC_INFO        (1 << 6) /* supports locality info */
+#define NA_OFI_DOM_IFACE  (1 << 0) /* domain name is interface name */
+#define NA_OFI_WAIT_SET   (1 << 1) /* supports FI_WAIT_SET */
+#define NA_OFI_WAIT_FD    (1 << 2) /* supports FI_WAIT_FD */
+#define NA_OFI_SIGNAL     (1 << 3) /* supports fi_signal() */
+#define NA_OFI_SEP        (1 << 4) /* supports SEPs */
+#define NA_OFI_SOURCE_MSG (1 << 5) /* requires source info in the MSG */
+#define NA_OFI_LOC_INFO   (1 << 6) /* supports locality info */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -99,7 +99,7 @@
       FI_PROGRESS_AUTO,                                                        \
       FI_PROTO_SOCK_TCP,                                                       \
       FI_SOURCE | FI_DIRECTED_RECV,                                            \
-      NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_SEP \
+      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_SEP       \
     )                                                                          \
     X(NA_OFI_PROV_TCP,                                                         \
       "tcp;ofi_rxm",                                                           \
@@ -109,7 +109,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
       FI_SOURCE | FI_DIRECTED_RECV,                                            \
-      NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG              \
+      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG                    \
     )                                                                          \
     X(NA_OFI_PROV_PSM,                                                         \
       "psm",                                                                   \
@@ -139,8 +139,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
       FI_SOURCE | FI_DIRECTED_RECV,                                            \
-      NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG              \
-                             | NA_OFI_LOC_INFO                                 \
+      NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO                     \
     )                                                                          \
     X(NA_OFI_PROV_GNI,                                                         \
       "gni",                                                                   \
@@ -160,7 +159,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
       FI_SOURCE,                                                               \
-      NA_OFI_VERIFY_PROV_DOM | NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO             \
+      NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO                                      \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
 /* clang-format on */
@@ -776,8 +775,9 @@ na_ofi_verify_provider(
  * Parse hostname info.
  */
 static na_return_t
-na_ofi_parse_hostname_info(const char *hostname_info, uint32_t addr_format,
-    char **domain_name_p, void **src_addr_p, size_t *src_addrlen_p);
+na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
+    const char *hostname_info, uint32_t addr_format, char **domain_name_p,
+    void **src_addr_p, size_t *src_addrlen_p);
 
 /**
  * Free hostname info.
@@ -2495,15 +2495,10 @@ na_ofi_verify_provider(
             na_ofi_prov_name[info->prov_type], fi_info->fabric_attr->prov_name))
         return NA_FALSE;
 
-    /* for some providers the provider name is ambiguous and we must check
-     * the domain name as well
-     */
-    if (na_ofi_prov_flags[info->prov_type] & NA_OFI_VERIFY_PROV_DOM) {
-        /* Does not match domain name */
-        if (info->domain_name && info->domain_name[0] != '\0' &&
-            strcmp(info->domain_name, fi_info->domain_attr->name))
-            return NA_FALSE;
-    }
+    /* Does not match domain name (if provided) */
+    if (info->domain_name && info->domain_name[0] != '\0' &&
+        strcmp(info->domain_name, fi_info->domain_attr->name))
+        return NA_FALSE;
 
 #ifdef NA_HAS_HWLOC
     if (info->loc_info && fi_info->nic && fi_info->nic->bus_attr &&
@@ -2519,8 +2514,9 @@ na_ofi_verify_provider(
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_parse_hostname_info(const char *hostname_info, uint32_t addr_format,
-    char **domain_name_p, void **src_addr_p, size_t *src_addrlen_p)
+na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
+    const char *hostname_info, uint32_t addr_format, char **domain_name_p,
+    void **src_addr_p, size_t *src_addrlen_p)
 {
     char *hostname = NULL;
     char *domain_name = NULL;
@@ -2532,6 +2528,7 @@ na_ofi_parse_hostname_info(const char *hostname_info, uint32_t addr_format,
         case FI_SOCKADDR_IN6: {
             na_uint16_t port = 0;
             struct sockaddr *sa = NULL;
+            char **ifa_name_p = NULL;
             socklen_t salen = 0;
             na_return_t na_ret;
 
@@ -2557,13 +2554,18 @@ na_ofi_parse_hostname_info(const char *hostname_info, uint32_t addr_format,
                     "strdup() of host failed");
             }
 
+            /* Attempt to resolve hostname / iface */
             NA_LOG_SUBSYS_DEBUG(
                 cls, "Resolving name %s with port %" PRIu16, hostname, port);
 
-            /* Attempt to resolve hostname / iface */
+            /* Only query interface name if domain name was not provided */
+            if (domain_name == NULL &&
+                (na_ofi_prov_flags[prov_type] & NA_OFI_DOM_IFACE))
+                ifa_name_p = &domain_name;
+
             na_ret = na_ip_check_interface(hostname, port,
                 (addr_format == FI_SOCKADDR_IN6) ? AF_INET6 : AF_INET,
-                (domain_name == NULL) ? &domain_name : NULL, &sa, &salen);
+                ifa_name_p, &sa, &salen);
             if (na_ret != NA_SUCCESS && domain_name == NULL) {
                 NA_LOG_SUBSYS_WARNING(cls,
                     "Could not find matching interface for %s, "
@@ -4658,8 +4660,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Parse hostname info and get domain name etc */
     if (na_info->host_name != NULL) {
-        ret = na_ofi_parse_hostname_info(na_info->host_name, addr_format,
-            &domain_name, &src_addr, &src_addrlen);
+        ret = na_ofi_parse_hostname_info(prov_type, na_info->host_name,
+            addr_format, &domain_name, &src_addr, &src_addrlen);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "na_ofi_parse_hostname_info() failed");
     }
