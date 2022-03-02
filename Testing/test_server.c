@@ -123,7 +123,7 @@ main(int argc, char *argv[])
     int rc = EXIT_SUCCESS;
 
     /* Force to listen */
-    hg_test_info.na_test_info.listen = NA_TRUE;
+    hg_test_info.na_test_info.listen = true;
     ret = HG_Test_init(argc, argv, &hg_test_info);
     HG_TEST_CHECK_ERROR(
         ret != HG_SUCCESS, done, rc, EXIT_FAILURE, "HG_Test_init() failed");

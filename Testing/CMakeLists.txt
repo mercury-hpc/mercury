@@ -187,7 +187,7 @@ macro(add_mercury_test test_name comm protocol busy parallel self scalable
     set(test_args ${test_args} --self_send)
   endif()
   if(${scalable})
-    set(test_args ${test_args} -C 2)
+    set(test_args ${test_args} -X 2)
   endif()
   if(${ignore_server_err})
     set(driver_args ${driver_args} --allow-server-errors)
