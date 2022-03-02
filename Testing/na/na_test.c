@@ -13,7 +13,6 @@
 
 #include "mercury_util.h"
 
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,7 +49,7 @@ na_test_parse_options(
     int argc, char *argv[], struct na_test_info *na_test_info);
 
 #ifdef HG_TEST_HAS_PARALLEL
-static void
+static na_return_t
 na_test_mpi_init(struct na_test_info *na_test_info);
 
 static void
@@ -58,7 +57,10 @@ na_test_mpi_finalize(struct na_test_info *na_test_info);
 #endif
 
 static char *
-na_test_gen_config(struct na_test_info *na_test_info);
+na_test_gen_config(struct na_test_info *na_test_info, int i);
+
+static na_return_t
+na_test_self_addr_publish(na_class_t *na_class, bool append);
 
 /*******************/
 /* Local Variables */
@@ -133,13 +135,13 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 na_test_info->port = atoi(na_test_opt_arg_g);
                 break;
             case 'L': /* listen */
-                na_test_info->listen = NA_TRUE;
+                na_test_info->listen = true;
                 break;
             case 's': /* static */
-                na_test_info->mpi_static = NA_TRUE;
+                na_test_info->mpi_static = true;
                 break;
             case 'S': /* self */
-                na_test_info->self_send = NA_TRUE;
+                na_test_info->self_send = true;
                 break;
             case 'k': /* key */
                 na_test_info->key = strdup(na_test_opt_arg_g);
@@ -148,17 +150,19 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 na_test_info->loop = atoi(na_test_opt_arg_g);
                 break;
             case 'b': /* busy */
-                na_test_info->busy_wait = NA_TRUE;
+                na_test_info->busy_wait = true;
                 break;
-            case 'C': /* number of contexts */
-                na_test_info->max_contexts =
-                    (na_uint8_t) atoi(na_test_opt_arg_g);
+            case 'C': /* number of classes */
+                na_test_info->max_classes = (uint8_t) atoi(na_test_opt_arg_g);
+                break;
+            case 'X': /* number of contexts */
+                na_test_info->max_contexts = (uint8_t) atoi(na_test_opt_arg_g);
                 break;
             case 'Z': /* msg size */
                 na_test_info->max_msg_size = atoi(na_test_opt_arg_g);
                 break;
             case 'V': /* verbose */
-                na_test_info->verbose = NA_TRUE;
+                na_test_info->verbose = true;
                 break;
             default:
                 break;
@@ -176,69 +180,81 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
 
 /*---------------------------------------------------------------------------*/
 #ifdef HG_TEST_HAS_PARALLEL
-static void
+static na_return_t
 na_test_mpi_init(struct na_test_info *na_test_info)
 {
     int mpi_initialized = 0;
-    int mpi_finalized = 0;
+    na_return_t ret;
+    int rc;
 
-    na_test_info->mpi_comm = MPI_COMM_WORLD; /* default */
-
-    MPI_Initialized(&mpi_initialized);
-    if (mpi_initialized) {
-        NA_TEST_LOG_WARNING("MPI was already initialized");
-        goto done;
-    }
-    MPI_Finalized(&mpi_finalized);
-    if (mpi_finalized) {
-        NA_TEST_LOG_ERROR("MPI was already finalized");
-        goto done;
-    }
+    rc = MPI_Initialized(&mpi_initialized);
+    NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
+        "MPI_Initialized() failed");
+    NA_TEST_CHECK_ERROR(mpi_initialized, error, ret, NA_PROTOCOL_ERROR,
+        "MPI was already initialized");
 
 #    ifdef NA_MPI_HAS_GNI_SETUP
     /* Setup GNI job before initializing MPI */
-    if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
-        NA_TEST_LOG_ERROR("Could not setup GNI job");
-        return;
-    }
+    ret = NA_MPI_Gni_job_setup();
+    NA_TEST_CHECK_NA_ERROR(error, ret, "Could not setup GNI job");
 #    endif
+
     if (na_test_info->listen || na_test_info->mpi_static) {
         int provided;
 
-        MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
-        if (provided != MPI_THREAD_MULTIPLE) {
-            NA_TEST_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
-        }
+        rc = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+        NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
+            "MPI_Init_thread() failed");
+
+        NA_TEST_CHECK_ERROR(provided != MPI_THREAD_MULTIPLE, error, ret,
+            NA_PROTOCOL_ERROR, "MPI_THREAD_MULTIPLE cannot be set");
 
         /* Only if we do static MPMD MPI */
         if (na_test_info->mpi_static) {
-            int mpi_ret, color, global_rank;
+            int color, global_rank;
 
-            MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
+            rc = MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
+            NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret,
+                NA_PROTOCOL_ERROR, "MPI_Comm_rank() failed");
+
             /* Color is 1 for server, 2 for client */
             color = (na_test_info->listen) ? 1 : 2;
 
             /* Assume that the application did not split MPI_COMM_WORLD already
              */
-            mpi_ret = MPI_Comm_split(
+            rc = MPI_Comm_split(
                 MPI_COMM_WORLD, color, global_rank, &na_test_info->mpi_comm);
-            if (mpi_ret != MPI_SUCCESS) {
-                NA_TEST_LOG_ERROR("Could not split communicator");
-            }
+            NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret,
+                NA_PROTOCOL_ERROR, "MPI_Comm_split() failed");
+
 #    ifdef NA_HAS_MPI
             /* Set init comm that will be used to setup NA MPI */
             NA_MPI_Set_init_intra_comm(na_test_info->mpi_comm);
 #    endif
-        }
+        } else
+            na_test_info->mpi_comm = MPI_COMM_WORLD; /* default */
     } else {
-        MPI_Init(NULL, NULL);
+        rc = MPI_Init(NULL, NULL);
+        NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
+            "MPI_Init() failed");
+
+        na_test_info->mpi_comm = MPI_COMM_WORLD; /* default */
     }
 
-done:
-    MPI_Comm_rank(na_test_info->mpi_comm, &na_test_info->mpi_comm_rank);
-    MPI_Comm_size(na_test_info->mpi_comm, &na_test_info->mpi_comm_size);
+    rc = MPI_Comm_rank(na_test_info->mpi_comm, &na_test_info->mpi_comm_rank);
+    NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
+        "MPI_Comm_rank() failed");
 
-    return;
+    rc = MPI_Comm_size(na_test_info->mpi_comm, &na_test_info->mpi_comm_size);
+    NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
+        "MPI_Comm_size() failed");
+
+    return NA_SUCCESS;
+
+error:
+    na_test_mpi_finalize(na_test_info);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -247,28 +263,30 @@ na_test_mpi_finalize(struct na_test_info *na_test_info)
 {
     int mpi_finalized = 0;
 
-    MPI_Finalized(&mpi_finalized);
-    if (!mpi_finalized && !na_test_info->mpi_no_finalize) {
-        if (na_test_info->mpi_static)
-            MPI_Comm_free(&na_test_info->mpi_comm);
-        MPI_Finalize();
-    }
+    if (na_test_info->mpi_no_finalize)
+        return;
+
+    (void) MPI_Finalized(&mpi_finalized);
+    if (mpi_finalized)
+        return;
+
+    if (na_test_info->mpi_static && na_test_info->mpi_comm != MPI_COMM_NULL)
+        (void) MPI_Comm_free(&na_test_info->mpi_comm);
+
+    (void) MPI_Finalize();
 }
 #endif
 
 /*---------------------------------------------------------------------------*/
 static char *
-na_test_gen_config(struct na_test_info *na_test_info)
+na_test_gen_config(struct na_test_info *na_test_info, int i)
 {
     char *info_string = NULL, *info_string_ptr = NULL;
-    na_return_t ret = NA_SUCCESS;
 
     info_string = (char *) malloc(sizeof(char) * NA_TEST_MAX_ADDR_NAME);
-    if (!info_string) {
-        NA_TEST_LOG_ERROR("Could not allocate info string");
-        ret = NA_NOMEM;
-        goto done;
-    }
+    NA_TEST_CHECK_ERROR_NORET(
+        info_string == NULL, error, "Could not allocate info string");
+
     memset(info_string, '\0', NA_TEST_MAX_ADDR_NAME);
     info_string_ptr = info_string;
     if (na_test_info->comm)
@@ -292,10 +310,9 @@ na_test_gen_config(struct na_test_info *na_test_info)
         }
 
         /* Enable CMA on systems with YAMA */
-        if ((yama_val != '0') &&
-            prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
-            NA_TEST_LOG_ERROR("Could not set ptracer\n");
-            exit(1);
+        if (yama_val != '0') {
+            int rc = prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+            NA_TEST_CHECK_ERROR_NORET(rc < 0, error, "Could not set ptracer");
         }
 #endif
     } else if (strcmp("static", na_test_info->protocol) == 0) {
@@ -307,54 +324,107 @@ na_test_gen_config(struct na_test_info *na_test_info)
             info_string_ptr +=
                 sprintf(info_string_ptr, "%s", na_test_info->hostname);
         if (na_test_info->port)
-            info_string_ptr += sprintf(info_string_ptr, ":%d",
-                na_test_info->port + na_test_info->mpi_comm_rank);
+            info_string_ptr +=
+                sprintf(info_string_ptr, ":%d", na_test_info->port + i);
     }
 
-done:
-    if (ret != NA_SUCCESS) {
-        free(info_string);
-        info_string = NULL;
-    }
     return info_string;
+
+error:
+    free(info_string);
+
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
-void
-na_test_set_config(const char *addr_name)
+na_return_t
+na_test_set_config(const char *addr_name, bool append)
 {
     FILE *config = NULL;
+    na_return_t ret;
 
-    config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "w+");
-    if (!config) {
-        NA_TEST_LOG_ERROR("Could not open config file from: %s",
-            HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
-        exit(1);
-    }
+    config = fopen(
+        HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, append ? "a" : "w");
+    NA_TEST_CHECK_ERROR(config == NULL, error, ret, NA_NOENTRY,
+        "Could not open config file from: %s",
+        HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
+
     fprintf(config, "%s\n", addr_name);
     fclose(config);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-void
-na_test_get_config(char *addr_name, na_size_t len)
+na_return_t
+na_test_get_config(char *addr_name, size_t len)
 {
     FILE *config = NULL;
+    char *s;
+    na_return_t ret;
+    int rc;
 
     config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "r");
-    if (!config) {
-        NA_TEST_LOG_ERROR("Could not open config file from: %s",
-            HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
-        exit(1);
-    }
-    if (fgets(addr_name, (int) len, config) == NULL) {
-        NA_TEST_LOG_ERROR("Could not retrieve config name");
-        fclose(config);
-        exit(1);
-    }
+    NA_TEST_CHECK_ERROR(config == NULL, error, ret, NA_NOENTRY,
+        "Could not open config file from: %s",
+        HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
+
+    s = fgets(addr_name, (int) len, config);
+    NA_TEST_CHECK_ERROR(
+        s == NULL, error, ret, NA_NOENTRY, "Could not retrieve config name");
+
     /* This prevents retaining the newline, if any */
     addr_name[strlen(addr_name) - 1] = '\0';
-    fclose(config);
+
+    rc = fclose(config);
+    config = NULL;
+    NA_TEST_CHECK_ERROR(
+        rc != 0, error, ret, NA_PROTOCOL_ERROR, "fclose() failed");
+
+    return NA_SUCCESS;
+
+error:
+    if (config != NULL)
+        fclose(config);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_test_self_addr_publish(na_class_t *na_class, bool append)
+{
+    char addr_string[NA_TEST_MAX_ADDR_NAME];
+    size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+    na_addr_t self_addr = NA_ADDR_NULL;
+    na_return_t ret;
+
+    ret = NA_Addr_self(na_class, &self_addr);
+    NA_TEST_CHECK_NA_ERROR(
+        error, ret, "NA_Addr_self() failed (%s)", NA_Error_to_string(ret));
+
+    ret = NA_Addr_to_string(na_class, addr_string, &addr_string_len, self_addr);
+    NA_TEST_CHECK_NA_ERROR(
+        error, ret, "NA_Addr_to_string() failed (%s)", NA_Error_to_string(ret));
+
+    ret = NA_Addr_free(na_class, self_addr);
+    NA_TEST_CHECK_NA_ERROR(
+        error, ret, "NA_Addr_free() failed (%s)", NA_Error_to_string(ret));
+
+    ret = na_test_set_config(addr_string, append);
+    NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_set_config() failed (%s)",
+        NA_Error_to_string(ret));
+
+    return NA_SUCCESS;
+
+error:
+    if (self_addr != NA_ADDR_NULL)
+        (void) NA_Addr_free(na_class, self_addr);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -365,6 +435,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
+    int i;
 
     if (!log_subsys) {
         const char *log_level = getenv("HG_LOG_LEVEL");
@@ -390,14 +461,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     na_test_info->mpi_comm_size = 1;
     na_test_info->max_number_of_peers = 1;
 #endif
-
-    /* Generate NA init string and get config options */
-    info_string = na_test_gen_config(na_test_info);
-    if (!info_string) {
-        NA_TEST_LOG_ERROR("Could not generate config string");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    if (na_test_info->max_classes == 0)
+        na_test_info->max_classes = 1;
 
     /* Call cleanup before doing anything */
     if (na_test_info->listen && na_test_info->mpi_comm_rank == 0)
@@ -408,80 +473,91 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         printf("# Initializing NA in busy wait mode\n");
     }
     na_init_info.auth_key = na_test_info->key;
-    na_init_info.max_contexts = na_test_info->max_contexts;
-    na_init_info.max_unexpected_size = (na_size_t) na_test_info->max_msg_size;
-    na_init_info.max_expected_size = (na_size_t) na_test_info->max_msg_size;
+    if (na_test_info->max_contexts != 0)
+        na_init_info.max_contexts = na_test_info->max_contexts;
+    na_init_info.max_unexpected_size = (size_t) na_test_info->max_msg_size;
+    na_init_info.max_expected_size = (size_t) na_test_info->max_msg_size;
     na_init_info.thread_mode =
         na_test_info->use_threads ? 0 : NA_THREAD_MODE_SINGLE;
 
-    printf("# Using info string: %s\n", info_string);
-    na_test_info->na_class =
-        NA_Initialize_opt(info_string, na_test_info->listen, &na_init_info);
-    if (!na_test_info->na_class) {
-        NA_TEST_LOG_ERROR("Could not initialize NA");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
+    na_test_info->na_classes = (na_class_t **) malloc(
+        sizeof(na_class_t *) * na_test_info->max_classes);
+    NA_TEST_CHECK_ERROR(na_test_info->na_classes == NULL, error, ret, NA_NOMEM,
+        "Could not allocate NA classes");
+
+    for (i = 0; i < na_test_info->max_classes; i++) {
+        /* Generate NA init string and get config options */
+        info_string = na_test_gen_config(na_test_info,
+            i + na_test_info->mpi_comm_rank * na_test_info->max_classes);
+        NA_TEST_CHECK_ERROR(info_string == NULL, error, ret, NA_PROTOCOL_ERROR,
+            "Could not generate config string");
+
+        printf("# Using info string: %s\n", info_string);
+
+        na_test_info->na_classes[i] =
+            NA_Initialize_opt(info_string, na_test_info->listen, &na_init_info);
+        NA_TEST_CHECK_ERROR(na_test_info->na_classes[i] == NULL, error, ret,
+            NA_PROTOCOL_ERROR, "NA_Initialize_opt(%s) failed", info_string);
+
+        free(info_string);
+        info_string = NULL;
+    }
+    if (na_test_info->na_classes && na_test_info->na_classes[0])
+        na_test_info->na_class = na_test_info->na_classes[0]; /* default */
+
+    if (na_test_info->extern_init)
+        return NA_SUCCESS; /* Upper layer will do the rest */
+
+    if (na_test_info->listen) {
+        for (i = 0; i < na_test_info->max_classes; i++) {
+            ret = na_test_self_addr_publish(na_test_info->na_classes[i], i > 0);
+            NA_TEST_CHECK_NA_ERROR(
+                error, ret, "na_test_self_addr_publish() failed");
+        }
+
+#ifdef HG_TEST_HAS_PARALLEL
+        /* If static client must wait for server to write config file */
+        if (na_test_info->mpi_static)
+            MPI_Barrier(MPI_COMM_WORLD);
+#endif
+
+        /* Used by CTest Test Driver to know when to launch clients */
+        HG_TEST_READY_MSG();
+    }
+    /* Get config from file if self option is not passed */
+    else if (!na_test_info->self_send) {
+        char test_addr_name[NA_TEST_MAX_ADDR_NAME] = {'\0'};
+
+#ifdef HG_TEST_HAS_PARALLEL
+        /* If static client must wait for server to write config file */
+        if (na_test_info->mpi_static)
+            MPI_Barrier(MPI_COMM_WORLD);
+#endif
+        if (na_test_info->mpi_comm_rank == 0) {
+            ret = na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
+            NA_TEST_CHECK_NA_ERROR(error, ret,
+                "na_test_get_config() failed (%s)", NA_Error_to_string(ret));
+        }
+
+#ifdef HG_TEST_HAS_PARALLEL
+        /* Broadcast addr name */
+        MPI_Bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
+            na_test_info->mpi_comm);
+#endif
+
+        na_test_info->target_name = strdup(test_addr_name);
+        NA_TEST_CHECK_ERROR(na_test_info->target_name == NULL, error, ret,
+            NA_NOMEM, "strdup() of target_name failed");
+
+        printf("# Target name read: %s\n", na_test_info->target_name);
     }
 
-    if (!na_test_info->extern_init) {
-        if (na_test_info->listen) {
-            char addr_string[NA_TEST_MAX_ADDR_NAME];
-            na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
-            na_addr_t self_addr;
-            na_return_t nret;
+    return NA_SUCCESS;
 
-            /* TODO only rank 0 */
-            nret = NA_Addr_self(na_test_info->na_class, &self_addr);
-            if (nret != NA_SUCCESS) {
-                NA_TEST_LOG_ERROR("Could not get self addr");
-            }
-
-            nret = NA_Addr_to_string(na_test_info->na_class, addr_string,
-                &addr_string_len, self_addr);
-            if (nret != NA_SUCCESS) {
-                NA_TEST_LOG_ERROR("Could not convert addr to string");
-            }
-            NA_Addr_free(na_test_info->na_class, self_addr);
-
-            na_test_set_config(addr_string);
-
-#ifdef HG_TEST_HAS_PARALLEL
-            /* If static client must wait for server to write config file */
-            if (na_test_info->mpi_static)
-                MPI_Barrier(MPI_COMM_WORLD);
-#endif
-
-            /* Used by CTest Test Driver to know when to launch clients */
-            HG_TEST_READY_MSG();
-        }
-        /* Get config from file if self option is not passed */
-        else if (!na_test_info->self_send) {
-            char test_addr_name[NA_TEST_MAX_ADDR_NAME] = {'\0'};
-
-#ifdef HG_TEST_HAS_PARALLEL
-            /* If static client must wait for server to write config file */
-            if (na_test_info->mpi_static)
-                MPI_Barrier(MPI_COMM_WORLD);
-#endif
-            if (na_test_info->mpi_comm_rank == 0) {
-                na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
-            }
-
-#ifdef HG_TEST_HAS_PARALLEL
-            /* Broadcast addr name */
-            MPI_Bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
-                na_test_info->mpi_comm);
-#endif
-
-            na_test_info->target_name = strdup(test_addr_name);
-            printf("# Target name read: %s\n", na_test_info->target_name);
-        }
-    }
-
-done:
-    if (ret != NA_SUCCESS)
-        NA_Test_finalize(na_test_info);
+error:
     free(info_string);
+    NA_Test_finalize(na_test_info);
+
     return ret;
 }
 
@@ -489,19 +565,43 @@ done:
 na_return_t
 NA_Test_finalize(struct na_test_info *na_test_info)
 {
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
+    int i;
 
-    ret = NA_Finalize(na_test_info->na_class);
-    if (ret != NA_SUCCESS) {
-        NA_TEST_LOG_ERROR("Could not finalize NA interface");
-        goto done;
+    if (na_test_info->na_classes != NULL) {
+        for (i = 0; i < na_test_info->max_classes; i++) {
+            ret = NA_Finalize(na_test_info->na_classes[i]);
+            NA_TEST_CHECK_NA_ERROR(done, ret, "NA_Finalize() failed (%s)",
+                NA_Error_to_string(ret));
+        }
+        free(na_test_info->na_classes);
+        na_test_info->na_classes = NULL;
+        na_test_info->na_class = NULL;
     }
-    free(na_test_info->target_name);
-    free(na_test_info->comm);
-    free(na_test_info->protocol);
-    free(na_test_info->hostname);
-    free(na_test_info->domain);
-    free(na_test_info->key);
+    if (na_test_info->target_name != NULL) {
+        free(na_test_info->target_name);
+        na_test_info->target_name = NULL;
+    }
+    if (na_test_info->comm != NULL) {
+        free(na_test_info->comm);
+        na_test_info->comm = NULL;
+    }
+    if (na_test_info->protocol != NULL) {
+        free(na_test_info->protocol);
+        na_test_info->protocol = NULL;
+    }
+    if (na_test_info->hostname != NULL) {
+        free(na_test_info->hostname);
+        na_test_info->hostname = NULL;
+    }
+    if (na_test_info->domain != NULL) {
+        free(na_test_info->domain);
+        na_test_info->domain = NULL;
+    }
+    if (na_test_info->key != NULL) {
+        free(na_test_info->key);
+        na_test_info->key = NULL;
+    }
 
 #ifdef HG_TEST_HAS_PARALLEL
     na_test_mpi_finalize(na_test_info);
@@ -513,7 +613,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 void
-NA_Test_barrier(struct na_test_info *na_test_info)
+NA_Test_barrier(const struct na_test_info *na_test_info)
 {
 #ifdef HG_TEST_HAS_PARALLEL
     MPI_Barrier(na_test_info->mpi_comm);
@@ -524,7 +624,8 @@ NA_Test_barrier(struct na_test_info *na_test_info)
 
 /*---------------------------------------------------------------------------*/
 void
-NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info)
+NA_Test_bcast(
+    char *buf, int count, int root, const struct na_test_info *na_test_info)
 {
 #ifdef HG_TEST_HAS_PARALLEL
     MPI_Bcast(buf, count, MPI_BYTE, root, na_test_info->mpi_comm);

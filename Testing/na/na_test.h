@@ -19,31 +19,33 @@
 /*************************************/
 
 struct na_test_info {
-    na_class_t *na_class;    /* NA class */
+    na_class_t *na_class;    /* Default NA class */
+    na_class_t **na_classes; /* Array of NA classes */
     char *target_name;       /* Target name */
     char *comm;              /* Comm/Plugin name */
     char *domain;            /* Domain name */
     char *protocol;          /* Protocol name */
     char *hostname;          /* Hostname */
     int port;                /* Port */
-    na_bool_t listen;        /* Listen */
-    na_bool_t mpi_static;    /* MPI static comm */
-    na_bool_t self_send;     /* Self send */
+    bool listen;             /* Listen */
+    bool mpi_static;         /* MPI static comm */
+    bool self_send;          /* Self send */
     char *key;               /* Auth key */
     int loop;                /* Number of loops */
-    na_bool_t busy_wait;     /* Busy wait */
-    na_uint8_t max_contexts; /* Max contexts */
+    bool busy_wait;          /* Busy wait */
+    uint8_t max_classes;     /* Max classes */
+    uint8_t max_contexts;    /* Max contexts */
     int max_msg_size;        /* Max msg size */
-    na_bool_t verbose;       /* Verbose mode */
+    bool verbose;            /* Verbose mode */
     int max_number_of_peers; /* Max number of peers */
 #ifdef HG_TEST_HAS_PARALLEL
-    MPI_Comm mpi_comm;         /* MPI comm */
-    na_bool_t mpi_no_finalize; /* Prevent from finalizing MPI */
+    MPI_Comm mpi_comm;    /* MPI comm */
+    bool mpi_no_finalize; /* Prevent from finalizing MPI */
 #endif
-    int mpi_comm_rank;     /* MPI comm rank */
-    int mpi_comm_size;     /* MPI comm size */
-    na_bool_t extern_init; /* Extern init */
-    na_bool_t use_threads; /* Use threads */
+    int mpi_comm_rank; /* MPI comm rank */
+    int mpi_comm_size; /* MPI comm size */
+    bool extern_init;  /* Extern init */
+    bool use_threads;  /* Use threads */
 };
 
 /*****************/
@@ -92,10 +94,10 @@ extern NA_PRIVATE HG_LOG_OUTLET_DECL(na_test);
         goto label;                                                            \
     } while (0)
 
-/* Check for hg_ret value and goto label */
-#define NA_TEST_CHECK_HG_ERROR(label, hg_ret, ...)                             \
+/* Check for na_ret value and goto label */
+#define NA_TEST_CHECK_NA_ERROR(label, na_ret, ...)                             \
     do {                                                                       \
-        if (unlikely(hg_ret != HG_SUCCESS)) {                                  \
+        if (unlikely(na_ret != NA_SUCCESS)) {                                  \
             NA_TEST_LOG_ERROR(__VA_ARGS__);                                    \
             goto label;                                                        \
         }                                                                      \
@@ -152,6 +154,7 @@ extern NA_PRIVATE HG_LOG_OUTLET_DECL(na_test);
         fflush(stdout);                                                        \
     } while (0)
 
+/* Max addr name */
 #define NA_TEST_MAX_ADDR_NAME 2048
 
 /*********************/
@@ -171,14 +174,14 @@ na_test_usage(const char *execname);
 /**
  * Set config file
  */
-void
-na_test_set_config(const char *addr_name);
+na_return_t
+na_test_set_config(const char *addr_name, bool append);
 
 /**
  * Get config file
  */
-void
-na_test_get_config(char *addr_name, na_size_t len);
+na_return_t
+na_test_get_config(char *addr_name, size_t len);
 
 /**
  * Initialize
@@ -196,14 +199,14 @@ NA_Test_finalize(struct na_test_info *na_test_info);
  * Call MPI_Barrier if available
  */
 void
-NA_Test_barrier(struct na_test_info *na_test_info);
+NA_Test_barrier(const struct na_test_info *na_test_info);
 
 /**
  * Call MPI_Bcast if available
  */
 void
 NA_Test_bcast(
-    char *buf, int count, int root, struct na_test_info *na_test_info);
+    char *buf, int count, int root, const struct na_test_info *na_test_info);
 
 #ifdef __cplusplus
 }

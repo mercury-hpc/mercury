@@ -475,11 +475,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     }
 
 #ifdef HG_TEST_HAS_THREAD_POOL
-    hg_test_info->na_test_info.use_threads = NA_TRUE;
+    hg_test_info->na_test_info.use_threads = true;
 #endif
 
     /* Initialize NA test layer */
-    hg_test_info->na_test_info.extern_init = NA_TRUE;
+    hg_test_info->na_test_info.extern_init = true;
     na_ret = NA_Test_init(argc, argv, &hg_test_info->na_test_info);
     HG_TEST_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
         "NA_Test_init() failed (%s)", NA_Error_to_string(na_ret));
@@ -613,7 +613,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.listen) {
         char addr_string[NA_TEST_MAX_ADDR_NAME];
-        na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+        hg_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
         hg_addr_t self_addr;
 
         /* TODO only rank 0 */
@@ -638,7 +638,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         HG_TEST_CHECK_HG_ERROR(
             done, ret, "HG_Addr_free() failed (%s)", HG_Error_to_string(ret));
 
-        na_test_set_config(addr_string);
+        na_test_set_config(addr_string, false);
 
 #ifdef HG_TEST_HAS_PARALLEL
         /* If static client, must wait for server to write config file */
