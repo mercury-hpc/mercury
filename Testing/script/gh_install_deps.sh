@@ -20,7 +20,7 @@ fi
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   UCX_EXTRA_FLAGS="--enable-debug"
 fi
-UCX_VERSION=1.11.2
+UCX_VERSION=1.12.0
 
 PREFIX=${RUNNER_TEMP}/${INSTALL_DIR}
 
