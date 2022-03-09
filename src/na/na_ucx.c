@@ -44,7 +44,7 @@
 #define NA_UCX_CONN_RETRY_MAX (1024)
 
 /* Memory pool (enabled by default, comment out to disable) */
-// #define NA_UCX_HAS_MEM_POOL
+#define NA_UCX_HAS_MEM_POOL
 #define NA_UCX_MEM_CHUNK_COUNT (256)
 #define NA_UCX_MEM_BLOCK_COUNT (2)
 
@@ -352,6 +352,7 @@ na_ucp_ep_create(ucp_worker_h worker, ucp_ep_params_t *ep_params,
 static void
 na_ucp_ep_error_cb(void *arg, ucp_ep_h ep, ucs_status_t status);
 
+#ifndef NA_UCX_HAS_MEM_POOL
 /**
  * Allocate and register memory.
  */
@@ -364,7 +365,7 @@ na_ucp_mem_alloc(ucp_context_h context, size_t len, ucp_mem_h *mem_p);
 static na_return_t
 na_ucp_mem_free(ucp_context_h context, ucp_mem_h mem);
 
-#ifdef NA_UCX_HAS_MEM_POOL
+#else
 /**
  * Register memory buffer.
  */
@@ -1249,6 +1250,7 @@ na_ucp_connect_worker(ucp_worker_h worker, ucp_address_t *address,
 }
 
 /*---------------------------------------------------------------------------*/
+#ifndef NA_UCX_HAS_MEM_POOL
 static void *
 na_ucp_mem_alloc(ucp_context_h context, size_t len, ucp_mem_h *mem_p)
 {
@@ -1302,7 +1304,7 @@ error:
     return ret;
 }
 
-#ifdef NA_UCX_HAS_MEM_POOL
+#else
 /*---------------------------------------------------------------------------*/
 static int
 na_ucp_mem_buf_register(const void *buf, size_t len, void **handle, void *arg)
@@ -1874,6 +1876,10 @@ error:
 static void
 na_ucx_class_free(struct na_ucx_class *na_ucx_class)
 {
+#ifdef NA_UCX_HAS_MEM_POOL
+    hg_mem_pool_destroy(na_ucx_class->mem_pool);
+#endif
+
     if (na_ucx_class->self_addr)
         na_ucx_addr_destroy(na_ucx_class->self_addr);
     if (na_ucx_class->ucp_listener)
@@ -1892,10 +1898,6 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_op_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_msg_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->addr_pool.lock);
-
-#ifdef NA_UCX_HAS_MEM_POOL
-    hg_mem_pool_destroy(na_ucx_class->mem_pool);
-#endif
 
     free(na_ucx_class->protocol_name);
     free(na_ucx_class);
