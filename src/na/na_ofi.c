@@ -3421,7 +3421,7 @@ na_ofi_get_uri(struct na_ofi_domain *na_ofi_domain, char *buf,
     } else
         fi_addr_str_ptr = fi_addr_str;
 
-    addr_strlen = strlen(fi_addr_str) +
+    addr_strlen = strlen(fi_addr_str_ptr) +
                   strlen(na_ofi_domain->fi_prov->fabric_attr->prov_name) + 3;
     if (buf) {
         NA_CHECK_SUBSYS_ERROR(addr, addr_strlen >= *buf_size_p, out, ret,
@@ -3431,7 +3431,9 @@ na_ofi_get_uri(struct na_ofi_domain *na_ofi_domain, char *buf,
         rc = snprintf(buf, *buf_size_p, "%s://%s",
             na_ofi_domain->fi_prov->fabric_attr->prov_name, fi_addr_str_ptr);
         NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > (int) *buf_size_p, out, ret,
-            NA_OVERFLOW, "snprintf() failed or name truncated, rc: %d", rc);
+            NA_OVERFLOW,
+            "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
+            (size_t) *buf_size_p);
     }
     *buf_size_p = addr_strlen + 1;
 
