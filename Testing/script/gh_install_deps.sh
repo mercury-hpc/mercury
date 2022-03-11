@@ -10,7 +10,7 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
 fi
 #OFI_PR=
-OFI_VERSION=1.14.0
+OFI_VERSION=1.15.0rc2
 
 # UCX
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
@@ -66,7 +66,7 @@ else
   git checkout ofi_pr;
   ./autogen.sh;
 fi
-./configure --prefix=$PREFIX --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-verbs --disable-shm --disable-static --disable-silent-rules ${OFI_EXTRA_FLAGS} CC="${CC}" CFLAGS="${OFI_CFLAGS}" && make -j2 -s && make install;
+./configure --prefix=$PREFIX --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-opx --disable-dmabuf_peer_mem --disable-hook_hmem --disable-hook_debug --disable-rxd --disable-udp --disable-verbs --disable-shm --disable-static --disable-silent-rules ${OFI_EXTRA_FLAGS} CC="${CC}" CFLAGS="${OFI_CFLAGS}" && make -j2 -s && make install;
 
 if [[ ${RUNNER_OS} == 'Linux' ]]; then
   # UCX
