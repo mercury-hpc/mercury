@@ -622,6 +622,14 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             done, ret, "HG_Addr_self() failed (%s)", HG_Error_to_string(ret));
 
         ret = HG_Addr_to_string(
+            hg_test_info->hg_class, NULL, &addr_string_len, self_addr);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_to_string() failed (%s)",
+            HG_Error_to_string(ret));
+        HG_TEST_CHECK_ERROR(addr_string_len > sizeof(addr_string), done, ret,
+            HG_OVERFLOW, "String length too large (%zu)",
+            (size_t) addr_string_len);
+
+        ret = HG_Addr_to_string(
             hg_test_info->hg_class, addr_string, &addr_string_len, self_addr);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_to_string() failed (%s)",
             HG_Error_to_string(ret));
