@@ -36,7 +36,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE: {
             hg_uint8_t flags = 0;
-            hg_bool_t use_eager = HG_FALSE;
+            hg_bool_t try_eager = HG_FALSE; /* Flag will not be set if bulk
+                                               handle does not support it */
 
             HG_LOG_DEBUG("HG_ENCODE");
 
@@ -63,9 +64,9 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
 
                 if (hg_proc_get_size_left(proc) >=
                     (buf_size + sizeof(hg_uint64_t)))
-                    use_eager = HG_TRUE;
+                    try_eager = HG_TRUE;
             }
-            if (use_eager) {
+            if (try_eager) {
                 HG_LOG_DEBUG("HG_BULK_EAGER flag set");
                 flags |= HG_BULK_EAGER;
             } else /* We must recompute the serialize size without eager flag */

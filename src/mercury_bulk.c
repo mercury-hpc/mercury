@@ -169,6 +169,7 @@ struct hg_bulk {
 #ifdef NA_HAS_SM
     na_class_t *na_sm_class; /* NA SM class */
 #endif
+    struct hg_bulk_attr attrs;   /* Memory attributes */
     hg_core_addr_t addr;         /* Addr (valid if bound to handle) */
     void *serialize_ptr;         /* Cached serialization buffer */
     hg_size_t serialize_size;    /* Cached serialization size */
@@ -238,7 +239,8 @@ typedef na_return_t (*na_bulk_op_t)(na_class_t *na_class, na_context_t *context,
  */
 static hg_return_t
 hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
-    const hg_size_t *lens, hg_uint8_t flags, struct hg_bulk **hg_bulk_ptr);
+    const hg_size_t *lens, hg_uint8_t flags, const struct hg_bulk_attr *attrs,
+    struct hg_bulk **hg_bulk_ptr);
 
 /**
  * Free handle.
@@ -252,7 +254,7 @@ hg_bulk_free(struct hg_bulk *hg_bulk);
 static hg_return_t
 hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
     na_class_t *na_class, struct hg_bulk_segment *segments, hg_uint32_t count,
-    hg_uint8_t flags);
+    hg_uint8_t flags, enum na_mem_type mem_type, na_uint64_t device);
 
 /**
  * Free NA memory descriptors.
@@ -266,15 +268,16 @@ hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
  */
 static hg_return_t
 hg_bulk_register(na_class_t *na_class, void *base, na_size_t len,
-    unsigned long flags, na_mem_handle_t *mem_handle_ptr,
-    na_size_t *serialize_size_ptr);
+    unsigned long flags, enum na_mem_type mem_type, na_uint64_t device,
+    na_mem_handle_t *mem_handle_ptr, na_size_t *serialize_size_ptr);
 
 /**
  * Register multiple segments.
  */
 static hg_return_t
 hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
-    na_size_t count, unsigned long flags, na_mem_handle_t *mem_handle_ptr,
+    na_size_t count, unsigned long flags, enum na_mem_type mem_type,
+    na_uint64_t device, na_mem_handle_t *mem_handle_ptr,
     na_size_t *serialize_size_ptr);
 
 /**
@@ -509,7 +512,8 @@ hg_bulk_cancel(struct hg_bulk_op_id *hg_bulk_op_id);
 
 static hg_return_t
 hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
-    const hg_size_t *lens, hg_uint8_t flags, struct hg_bulk **hg_bulk_ptr)
+    const hg_size_t *lens, hg_uint8_t flags, const struct hg_bulk_attr *attrs,
+    struct hg_bulk **hg_bulk_ptr)
 {
     struct hg_bulk *hg_bulk = NULL;
     struct hg_bulk_segment *segments;
@@ -531,6 +535,7 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
 #endif
     hg_bulk->desc.info.segment_count = count;
     hg_bulk->desc.info.flags = flags;
+    hg_bulk->attrs = *attrs;
     hg_atomic_init32(&hg_bulk->ref_count, 1);
 
     if (count > HG_BULK_STATIC_MAX) {
@@ -605,7 +610,8 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
         /* Register segments */
         ret =
             hg_bulk_register_segments(na_class, (struct na_segment *) segments,
-                count, flags, &hg_bulk->na_mem_descs.handles.s[0],
+                count, flags, (enum na_mem_type) attrs->mem_type, attrs->device,
+                &hg_bulk->na_mem_descs.handles.s[0],
                 &hg_bulk->na_mem_descs.serialize_sizes.s[0]);
         HG_CHECK_HG_ERROR(error, ret, "Could not register segments");
 
@@ -614,6 +620,7 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
             /* Register segments */
             ret = hg_bulk_register_segments(na_sm_class,
                 (struct na_segment *) segments, count, flags,
+                (enum na_mem_type) attrs->mem_type, attrs->device,
                 &hg_bulk->na_sm_mem_descs.handles.s[0],
                 &hg_bulk->na_sm_mem_descs.serialize_sizes.s[0]);
             HG_CHECK_HG_ERROR(
@@ -622,14 +629,16 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
 #endif
     } else {
         /* Register segments individually */
-        ret = hg_bulk_create_na_mem_descs(
-            &hg_bulk->na_mem_descs, na_class, segments, count, flags);
+        ret = hg_bulk_create_na_mem_descs(&hg_bulk->na_mem_descs, na_class,
+            segments, count, flags, (enum na_mem_type) attrs->mem_type,
+            attrs->device);
         HG_CHECK_HG_ERROR(error, ret, "Could not create NA mem descriptors");
 
 #ifdef NA_HAS_SM
         if (na_sm_class) {
-            ret = hg_bulk_create_na_mem_descs(
-                &hg_bulk->na_sm_mem_descs, na_sm_class, segments, count, flags);
+            ret = hg_bulk_create_na_mem_descs(&hg_bulk->na_sm_mem_descs,
+                na_sm_class, segments, count, flags,
+                (enum na_mem_type) attrs->mem_type, attrs->device);
             HG_CHECK_HG_ERROR(
                 error, ret, "Could not create NA SM mem descriptors");
         }
@@ -729,7 +738,7 @@ done:
 static hg_return_t
 hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
     na_class_t *na_class, struct hg_bulk_segment *segments, hg_uint32_t count,
-    hg_uint8_t flags)
+    hg_uint8_t flags, enum na_mem_type mem_type, na_uint64_t device)
 {
     na_mem_handle_t *na_mem_handles;
     na_size_t *na_mem_serialize_sizes;
@@ -763,7 +772,7 @@ hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
 
         /* Register segment */
         ret = hg_bulk_register(na_class, (void *) segments[i].base,
-            segments[i].len, flags, &na_mem_handles[i],
+            segments[i].len, flags, mem_type, device, &na_mem_handles[i],
             &na_mem_serialize_sizes[i]);
         HG_CHECK_HG_ERROR(error, ret, "Could not register segment");
     }
@@ -832,8 +841,8 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_register(na_class_t *na_class, void *base, na_size_t len,
-    unsigned long flags, na_mem_handle_t *mem_handle_ptr,
-    na_size_t *serialize_size_ptr)
+    unsigned long flags, enum na_mem_type mem_type, na_uint64_t device,
+    na_mem_handle_t *mem_handle_ptr, na_size_t *serialize_size_ptr)
 {
     na_mem_handle_t mem_handle = NA_MEM_HANDLE_NULL;
     na_size_t serialize_size = 0;
@@ -847,7 +856,7 @@ hg_bulk_register(na_class_t *na_class, void *base, na_size_t len,
         "NA_Mem_handle_create() failed (%s)", NA_Error_to_string(na_ret));
 
     /* Register NA memory handle */
-    na_ret = NA_Mem_register(na_class, mem_handle);
+    na_ret = NA_Mem_register(na_class, mem_handle, mem_type, device);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
         "NA_Mem_register() failed (%s)", NA_Error_to_string(na_ret));
     registered = HG_TRUE;
@@ -879,7 +888,8 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
-    na_size_t count, unsigned long flags, na_mem_handle_t *mem_handle_ptr,
+    na_size_t count, unsigned long flags, enum na_mem_type mem_type,
+    na_uint64_t device, na_mem_handle_t *mem_handle_ptr,
     na_size_t *serialize_size_ptr)
 {
     na_mem_handle_t mem_handle = NA_MEM_HANDLE_NULL;
@@ -896,7 +906,7 @@ hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
         NA_Error_to_string(na_ret));
 
     /* Register NA memory handle */
-    na_ret = NA_Mem_register(na_class, mem_handle);
+    na_ret = NA_Mem_register(na_class, mem_handle, mem_type, device);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
         "NA_Mem_register() failed (%s)", NA_Error_to_string(na_ret));
     registered = HG_TRUE;
@@ -951,15 +961,15 @@ done:
 static hg_size_t
 hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
 {
+    struct hg_bulk_desc_info *desc_info = &hg_bulk->desc.info;
     hg_size_t ret = 0;
 
     /* Descriptor info + segments */
-    ret = sizeof(hg_bulk->desc.info) +
-          hg_bulk->desc.info.segment_count * sizeof(struct hg_bulk_segment);
+    ret = sizeof(*desc_info) +
+          desc_info->segment_count * sizeof(struct hg_bulk_segment);
 
     /* Memory handles */
-    if ((hg_bulk->desc.info.flags & HG_BULK_REGV) ||
-        (hg_bulk->desc.info.segment_count == 1)) {
+    if ((desc_info->flags & HG_BULK_REGV) || (desc_info->segment_count == 1)) {
         /* Only one single memory handle in that case */
         if (hg_bulk->na_mem_descs.handles.s[0] != NA_MEM_HANDLE_NULL)
             ret +=
@@ -975,19 +985,19 @@ hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
 #endif
     } else {
         ret += hg_bulk_get_serialize_size_mem_descs(
-            &hg_bulk->na_mem_descs, hg_bulk->desc.info.segment_count);
+            &hg_bulk->na_mem_descs, desc_info->segment_count);
 
 #ifdef NA_HAS_SM
         /* Only add SM serialized handles if we're sending over SM, otherwise
          * skip it. */
         if ((flags & HG_BULK_SM) && hg_bulk->na_sm_class)
             ret += hg_bulk_get_serialize_size_mem_descs(
-                &hg_bulk->na_sm_mem_descs, hg_bulk->desc.info.segment_count);
+                &hg_bulk->na_sm_mem_descs, desc_info->segment_count);
 #endif
     }
 
     /* Address information (context ID + serialize size + address) */
-    if (hg_bulk->desc.info.flags & HG_BULK_BIND) {
+    if (desc_info->flags & HG_BULK_BIND) {
         unsigned long addr_flags = 0;
 
 #ifdef NA_HAS_SM
@@ -999,10 +1009,10 @@ hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
     }
 
     /* Eager mode (in eager mode, the actual data will be copied) */
-    if ((flags & HG_BULK_EAGER) &&
-        (hg_bulk->desc.info.flags & HG_BULK_READ_ONLY) &&
-        !(hg_bulk->desc.info.flags & HG_BULK_VIRT))
-        ret += hg_bulk->desc.info.len;
+    if ((flags & HG_BULK_EAGER) && (desc_info->flags & HG_BULK_READ_ONLY) &&
+        !(desc_info->flags & HG_BULK_VIRT) &&
+        (desc_info->attrs.mem_type == HG_MEM_TYPE_HOST))
+        ret += desc_info->len;
 
     return ret;
 }
@@ -1043,15 +1053,18 @@ hg_bulk_serialize(
     struct hg_bulk_segment *segments = HG_BULK_SEGMENTS(hg_bulk);
     char *buf_ptr = (char *) buf;
     hg_size_t buf_size_left = buf_size;
-    struct hg_bulk_desc_info desc_info = hg_bulk->desc.info;
+    struct hg_bulk_desc_info desc_info = hg_bulk->desc.info; /* Copy info */
     hg_return_t ret = HG_SUCCESS;
 
     /* Always reset bulk alloc flag (only local) */
     desc_info.flags &= (~HG_BULK_ALLOC & 0xff);
 
-    /* Add eager flag to descriptor */
+    /* Add eager flag to descriptor if requested and bulk handle is read-only,
+     * is not virtual (i.e., points to local data), and memory is not on device.
+     */
     if ((flags & HG_BULK_EAGER) && (desc_info.flags & HG_BULK_READ_ONLY) &&
-        !(hg_bulk->desc.info.flags & HG_BULK_VIRT)) {
+        !(desc_info.flags & HG_BULK_VIRT) &&
+        (desc_info.attrs.mem_type == HG_MEM_TYPE_HOST)) {
         HG_LOG_DEBUG("HG_BULK_EAGER flag set");
         desc_info.flags |= HG_BULK_EAGER;
     } else
@@ -1068,7 +1081,7 @@ hg_bulk_serialize(
 
     HG_LOG_DEBUG("Serializing bulk handle with %u segment(s), len is %" PRIu64
                  " bytes",
-        hg_bulk->desc.info.segment_count, hg_bulk->desc.info.len);
+        desc_info.segment_count, desc_info.len);
 
     /* Descriptor info */
     HG_BULK_ENCODE(done, ret, buf_ptr, buf_size_left, &desc_info,
@@ -1121,8 +1134,8 @@ hg_bulk_serialize(
         }
 #endif
     } else {
-        HG_LOG_DEBUG("Serializing %u NA memory handle(s)",
-            hg_bulk->desc.info.segment_count);
+        HG_LOG_DEBUG(
+            "Serializing %u NA memory handle(s)", desc_info.segment_count);
 
         ret = hg_bulk_serialize_mem_descs(hg_bulk->na_class, &buf_ptr,
             &buf_size_left, &hg_bulk->na_mem_descs, segments,
@@ -1176,7 +1189,7 @@ hg_bulk_serialize(
         hg_uint32_t i;
 
         HG_LOG_DEBUG("Serializing eager bulk data, %u segment(s)",
-            hg_bulk->desc.info.segment_count);
+            desc_info.segment_count);
         for (i = 0; i < desc_info.segment_count; i++) {
             if (!segments[i].len)
                 continue;
@@ -2485,6 +2498,7 @@ hg_return_t
 HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
     const hg_size_t *buf_sizes, hg_uint8_t flags, hg_bulk_t *handle)
 {
+    struct hg_bulk_attr attrs = {.mem_type = HG_MEM_TYPE_HOST, .device = 0};
     hg_return_t ret = HG_SUCCESS;
 
     HG_CHECK_ERROR(
@@ -2508,7 +2522,46 @@ HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
     HG_LOG_DEBUG("Creating new bulk handle with %u segment(s)", count);
 
     ret = hg_bulk_create(hg_class->core_class, count, buf_ptrs, buf_sizes,
-        flags, (struct hg_bulk **) handle);
+        flags, &attrs, (struct hg_bulk **) handle);
+    HG_CHECK_HG_ERROR(done, ret, "Could not create bulk handle");
+
+    HG_LOG_DEBUG("Created new bulk handle (%p)", (void *) *handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Bulk_create_attr(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, hg_uint8_t flags,
+    const struct hg_bulk_attr *attrs, hg_bulk_t *handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(
+        hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
+    HG_CHECK_ERROR(
+        count == 0, done, ret, HG_INVALID_ARG, "Invalid number of segments");
+    HG_CHECK_ERROR(buf_sizes == NULL, done, ret, HG_INVALID_ARG,
+        "NULL segment size pointer");
+    /* We allow for 0-sized segments though. */
+    HG_CHECK_ERROR(attrs == NULL, done, ret, HG_INVALID_ARG, "NULL attrs");
+
+    switch (flags) {
+        case HG_BULK_READWRITE:
+        case HG_BULK_READ_ONLY:
+        case HG_BULK_WRITE_ONLY:
+            break;
+        default:
+            HG_GOTO_ERROR(
+                done, ret, HG_INVALID_ARG, "Unrecognized handle flag");
+    }
+
+    HG_LOG_DEBUG("Creating new bulk handle with %u segment(s)", count);
+
+    ret = hg_bulk_create(hg_class->core_class, count, buf_ptrs, buf_sizes,
+        flags, attrs, (struct hg_bulk **) handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not create bulk handle");
 
     HG_LOG_DEBUG("Created new bulk handle (%p)", (void *) *handle);

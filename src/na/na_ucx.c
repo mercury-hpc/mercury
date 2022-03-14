@@ -738,7 +738,8 @@ static NA_INLINE na_size_t
 na_ucx_mem_handle_get_max_segments(const na_class_t *na_class);
 
 static na_return_t
-na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
+na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+    enum na_mem_type mem_type, na_uint64_t device);
 
 static na_return_t
 na_ucx_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
@@ -3270,14 +3271,15 @@ na_ucx_mem_handle_get_max_segments(const na_class_t NA_UNUSED *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+    enum na_mem_type mem_type, na_uint64_t NA_UNUSED device)
 {
     struct na_ucx_mem_handle *na_ucx_mem_handle =
         (struct na_ucx_mem_handle *) mem_handle;
     ucp_mem_map_params_t mem_map_params = {
-        .field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS |
-                      UCP_MEM_MAP_PARAM_FIELD_LENGTH |
-                      UCP_MEM_MAP_PARAM_FIELD_PROT,
+        .field_mask =
+            UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH |
+            UCP_MEM_MAP_PARAM_FIELD_PROT | UCP_MEM_MAP_PARAM_FIELD_MEMORY_TYPE,
         .address = na_ucx_mem_handle->desc.base,
         .length = na_ucx_mem_handle->desc.len};
     ucs_status_t status;
@@ -3306,6 +3308,27 @@ na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         default:
             NA_GOTO_SUBSYS_ERROR(
                 mem, error, ret, NA_INVALID_ARG, "Invalid memory access flag");
+            break;
+    }
+
+    /* Set memory type */
+    switch (mem_type) {
+        case NA_MEM_TYPE_CUDA:
+            mem_map_params.memory_type = UCS_MEMORY_TYPE_CUDA;
+            break;
+        case NA_MEM_TYPE_ROCM:
+            mem_map_params.memory_type = UCS_MEMORY_TYPE_ROCM;
+            break;
+        case NA_MEM_TYPE_ZE:
+            NA_GOTO_SUBSYS_ERROR(
+                mem, error, ret, NA_OPNOTSUPPORTED, "Unsupported memory type");
+            break;
+        case NA_MEM_TYPE_HOST:
+            mem_map_params.memory_type = UCS_MEMORY_TYPE_HOST;
+            break;
+        case NA_MEM_TYPE_UNKNOWN:
+        default:
+            mem_map_params.memory_type = UCS_MEMORY_TYPE_UNKNOWN;
             break;
     }
 

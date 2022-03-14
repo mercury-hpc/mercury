@@ -644,11 +644,14 @@ NA_Mem_handle_get_max_segments(
  *
  * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       pointer to abstract memory handle
+ * \param mem_type [IN]         memory type (default: NA_MEM_TYPE_HOST)
+ * \param device [IN]           (optional) device ID if memory type is used
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
+NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+    enum na_mem_type mem_type, na_uint64_t device);
 
 /**
  * Unregister memory.
@@ -945,8 +948,9 @@ struct na_class_ops {
     na_return_t (*mem_handle_free)(
         na_class_t *na_class, na_mem_handle_t mem_handle);
     na_size_t (*mem_handle_get_max_segments)(const na_class_t *na_class);
-    na_return_t (*mem_register)(
-        na_class_t *na_class, na_mem_handle_t mem_handle);
+    na_return_t (*mem_register)(na_class_t *na_class,
+        na_mem_handle_t mem_handle, enum na_mem_type mem_type,
+        na_uint64_t device);
     na_return_t (*mem_deregister)(
         na_class_t *na_class, na_mem_handle_t mem_handle);
     na_size_t (*mem_handle_get_serialize_size)(

@@ -52,7 +52,7 @@
  * Specify the version of OFI is coded to, the provider will select struct
  * layouts that are compatible with this version.
  */
-#define NA_OFI_VERSION FI_VERSION(1, 7)
+#define NA_OFI_VERSION FI_VERSION(1, 9)
 
 /* Fallback for undefined CXI values */
 #ifndef NA_OFI_HAS_EXT_CXI_H
@@ -138,7 +138,7 @@
       FI_SOCKADDR_IB,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
-      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      FI_SOURCE | FI_DIRECTED_RECV | FI_HMEM,                                  \
       NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO                     \
     )                                                                          \
     X(NA_OFI_PROV_GNI,                                                         \
@@ -158,7 +158,7 @@
       FI_ADDR_CXI,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
-      FI_SOURCE,                                                               \
+      FI_SOURCE | FI_DIRECTED_RECV | FI_HMEM,                                  \
       NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO                                      \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
@@ -1303,7 +1303,8 @@ static NA_INLINE na_size_t
 na_ofi_mem_handle_get_max_segments(const na_class_t *na_class);
 
 static na_return_t
-na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
+na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+    enum na_mem_type mem_type, na_uint64_t device);
 
 static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
@@ -2487,7 +2488,7 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
      * appropriate time.
      */
     hints->domain_attr->mr_mode =
-        NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT;
+        NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT | FI_MR_HMEM;
 
     /* set default progress mode */
     hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
@@ -5699,27 +5700,35 @@ na_ofi_mem_handle_get_max_segments(const na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+    enum na_mem_type mem_type, na_uint64_t device)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
+    struct na_ofi_fabric *fabric = NA_OFI_CLASS(na_class)->fabric;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     const struct fi_info *fi_info = NA_OFI_CLASS(na_class)->fi_info;
-    uint64_t requested_key;
-    na_uint64_t access;
+    struct fi_mr_attr fi_mr_attr = {.mr_iov = NA_OFI_IOV(na_ofi_mem_handle),
+        .iov_count = na_ofi_mem_handle->desc.info.iovcnt,
+        .context = NULL,
+        .auth_key_size = 0,
+        .auth_key = NULL,
+        .iface = FI_HMEM_SYSTEM,
+        .device.reserved = 0};
     na_return_t ret;
     int rc;
 
     /* Set access mode */
     switch (na_ofi_mem_handle->desc.info.flags) {
         case NA_MEM_READ_ONLY:
-            access = FI_REMOTE_READ | FI_WRITE;
+            fi_mr_attr.access = FI_REMOTE_READ | FI_WRITE;
             break;
         case NA_MEM_WRITE_ONLY:
-            access = FI_REMOTE_WRITE | FI_READ;
+            fi_mr_attr.access = FI_REMOTE_WRITE | FI_READ;
             break;
         case NA_MEM_READWRITE:
-            access = FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE;
+            fi_mr_attr.access =
+                FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE;
             break;
         default:
             NA_GOTO_SUBSYS_ERROR(
@@ -5727,18 +5736,40 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
             break;
     }
 
+    /* Set memory type */
+    switch (mem_type) {
+        case NA_MEM_TYPE_CUDA:
+            fi_mr_attr.iface = FI_HMEM_CUDA;
+            fi_mr_attr.device.cuda = (int) device;
+            break;
+        case NA_MEM_TYPE_ROCM:
+            fi_mr_attr.iface = FI_HMEM_ROCR;
+            break;
+        case NA_MEM_TYPE_ZE:
+            fi_mr_attr.iface = FI_HMEM_ZE;
+            fi_mr_attr.device.ze = (int) device;
+            break;
+        case NA_MEM_TYPE_HOST:
+        case NA_MEM_TYPE_UNKNOWN:
+        default:
+            break;
+    }
+    NA_CHECK_SUBSYS_ERROR(mem,
+        !(na_ofi_prov_extra_caps[fabric->prov_type] & FI_HMEM) &&
+            (fi_mr_attr.iface != FI_HMEM_SYSTEM),
+        error, ret, NA_OPNOTSUPPORTED,
+        "selected provider does not support device registration");
+
     /* Let the provider provide its own key otherwise generate our own */
-    requested_key = (fi_info->domain_attr->mr_mode & FI_MR_PROV_KEY)
-                        ? 0
-                        : na_ofi_mem_key_gen(domain);
+    fi_mr_attr.requested_key = (fi_info->domain_attr->mr_mode & FI_MR_PROV_KEY)
+                                   ? 0
+                                   : na_ofi_mem_key_gen(domain);
 
     /* Register region */
-    rc = fi_mr_regv(domain->fi_domain, NA_OFI_IOV(na_ofi_mem_handle),
-        na_ofi_mem_handle->desc.info.iovcnt, access, 0 /* offset */,
-        requested_key, 0 /* flags */, &na_ofi_mem_handle->fi_mr,
-        NULL /* context */);
+    rc = fi_mr_regattr(domain->fi_domain, &fi_mr_attr, 0 /* flags */,
+        &na_ofi_mem_handle->fi_mr);
     NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "fi_mr_regv() failed, rc: %d (%s), mr_reg_count: %d", rc,
+        "fi_mr_regattr() failed, rc: %d (%s), mr_reg_count: %d", rc,
         fi_strerror(-rc), hg_atomic_get32(domain->mr_reg_count));
     hg_atomic_incr32(domain->mr_reg_count);
 

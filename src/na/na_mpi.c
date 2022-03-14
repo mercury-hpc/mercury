@@ -313,12 +313,6 @@ na_mpi_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
 static na_return_t
 na_mpi_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
-static na_return_t
-na_mpi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
-
-static na_return_t
-na_mpi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
-
 /* mem_handle serialization */
 static na_size_t
 na_mpi_mem_handle_get_serialize_size(
@@ -427,8 +421,8 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     NULL,                                 /* mem_handle_create_segment */
     na_mpi_mem_handle_free,               /* mem_handle_free */
     NULL,                                 /* mem_handle_get_max_segments */
-    na_mpi_mem_register,                  /* mem_register */
-    na_mpi_mem_deregister,                /* mem_deregister */
+    NULL,                                 /* mem_register */
+    NULL,                                 /* mem_deregister */
     na_mpi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
     na_mpi_mem_handle_serialize,          /* mem_handle_serialize */
     na_mpi_mem_handle_deserialize,        /* mem_handle_deserialize */
@@ -609,7 +603,7 @@ na_mpi_accept(na_class_t *na_class)
     na_mpi_addr->rank = MPI_ANY_SOURCE;
     na_mpi_addr->unexpected = NA_FALSE;
     na_mpi_addr->dynamic =
-        (na_bool_t)(!NA_MPI_CLASS(na_class)->use_static_inter_comm);
+        (na_bool_t) (!NA_MPI_CLASS(na_class)->use_static_inter_comm);
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
 
     /* Add comms to list of connected remotes */
@@ -885,10 +879,10 @@ na_mpi_initialize(
         goto done;
     }
 
-    listening = (na_bool_t)(flags & MPI_INIT_SERVER);
+    listening = (na_bool_t) (flags & MPI_INIT_SERVER);
     NA_MPI_CLASS(na_class)->listening = listening;
 
-    use_static_inter_comm = (na_bool_t)(flags & MPI_INIT_STATIC);
+    use_static_inter_comm = (na_bool_t) (flags & MPI_INIT_STATIC);
     NA_MPI_CLASS(na_class)->use_static_inter_comm = use_static_inter_comm;
 
     /* Set msg size limits */
@@ -1578,22 +1572,6 @@ na_mpi_mem_handle_free(
     free(mpi_mem_handle);
 
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_mpi_mem_register(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
-{
-    return NA_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_mpi_mem_deregister(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
-{
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
