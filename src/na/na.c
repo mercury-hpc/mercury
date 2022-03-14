@@ -1058,7 +1058,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
+NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+    enum na_mem_type mem_type, na_uint64_t device)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1071,7 +1072,8 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         "NULL NA class ops");
     if (na_class->ops->mem_register) {
         /* Optional */
-        ret = na_class->ops->mem_register(na_class, mem_handle);
+        ret =
+            na_class->ops->mem_register(na_class, mem_handle, mem_type, device);
 
         NA_LOG_SUBSYS_DEBUG(
             mem, "Registered mem handle (%p)", (void *) mem_handle);

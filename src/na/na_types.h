@@ -33,6 +33,16 @@ enum na_addr_format {
     NA_ADDR_NATIVE  /* Use native addressing when available */
 };
 
+/* Memory type */
+enum na_mem_type {
+    NA_MEM_TYPE_HOST, /*!< Default system memory */
+    NA_MEM_TYPE_CUDA, /*!< NVIDIA CUDA memory */
+    NA_MEM_TYPE_ROCM, /*!< AMD ROCM memory */
+    NA_MEM_TYPE_ZE,   /*!< Intel Level Zero memory */
+    NA_MEM_TYPE_MAX,
+    NA_MEM_TYPE_UNKNOWN = NA_MEM_TYPE_MAX
+};
+
 /* Init info */
 struct na_init_info {
     /* Preferred IP subnet to use. */

@@ -55,6 +55,31 @@ HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
     const hg_size_t *buf_sizes, hg_uint8_t flags, hg_bulk_t *handle);
 
 /**
+ * Create an abstract bulk handle from specified memory segments.
+ * Memory allocated is then freed when HG_Bulk_free() is called.
+ * \remark If NULL is passed to buf_ptrs, i.e.,
+ * \verbatim HG_Bulk_create(count, NULL, buf_sizes, flags, &handle) \endverbatim
+ * memory for the missing buf_ptrs array will be internally allocated.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param count [IN]            number of segments
+ * \param buf_ptrs [IN]         array of pointers
+ * \param buf_sizes [IN]        array of sizes
+ * \param flags [IN]            permission flag:
+ *                                - HG_BULK_READWRITE
+ *                                - HG_BULK_READ_ONLY
+ *                                - HG_BULK_WRITE_ONLY
+ * \param attrs [IN]            bulk attributes
+ * \param handle [OUT]          pointer to returned abstract bulk handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Bulk_create_attr(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, hg_uint8_t flags,
+    const struct hg_bulk_attr *attrs, hg_bulk_t *handle);
+
+/**
  * Free bulk handle.
  *
  * \param handle [IN/OUT]       abstract bulk handle
@@ -316,6 +341,7 @@ HG_Bulk_cancel(hg_op_id_t op_id);
 
 /* HG bulk descriptor info */
 struct hg_bulk_desc_info {
+    struct hg_bulk_attr attrs; /* Memory attributes */
     hg_size_t len;             /* Size of region */
     hg_uint32_t segment_count; /* Segment count */
     hg_uint8_t flags;          /* Flags of operation access */
