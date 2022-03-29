@@ -17,6 +17,15 @@
 typedef hg_uint64_t hg_size_t; /* Size */
 typedef hg_uint64_t hg_id_t;   /* RPC ID */
 
+/* Checksum levels */
+typedef enum hg_checksum_level {
+    HG_CHECKSUM_DEFAULT,     /*!< let mercury decide on checksum level */
+    HG_CHECKSUM_NONE,        /*!< no checksum */
+    HG_CHECKSUM_RPC_HEADERS, /*!< only RPC headers are checksummed */
+    HG_CHECKSUM_RPC_PAYLOAD  /*!< entire RPC payload is checksummed (inc.
+                                headers) */
+} hg_checksum_level_t;
+
 /**
  * HG init info struct
  * NB. should be initialized using HG_INIT_INFO_INITIALIZER
@@ -55,6 +64,11 @@ struct hg_init_info {
      * shared-memory objects and directories using "foo-bar" as a suffix).
      * Default is: null */
     const char *sm_info_string;
+
+    /* Control checksum level on RPC (Note this does not include bulk data,
+     * which is never checksummed).
+     * Default is: HG_CHECKSUM_DEFAULT */
+    hg_checksum_level_t checksum_level;
 
     /* Controls whether mercury should _NOT_ attempt to transfer small bulk data
      * along with the RPC request.
@@ -152,8 +166,8 @@ typedef enum {
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, NULL, HG_FALSE,        \
-            HG_FALSE, HG_FALSE                                                 \
+        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, NULL,                  \
+            HG_CHECKSUM_DEFAULT, HG_FALSE, HG_FALSE, HG_FALSE                  \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */

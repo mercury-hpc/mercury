@@ -43,6 +43,7 @@ struct hg_private_class {
     hg_return_t (*handle_create)(hg_handle_t, void *); /* handle_create */
     void *handle_create_arg;                           /* handle_create arg */
     hg_thread_spin_t register_lock;                    /* Register lock */
+    hg_checksum_level_t checksum_level;                /* Checksum level */
     hg_bool_t bulk_eager;                              /* Eager bulk proc */
 };
 
@@ -74,6 +75,7 @@ struct hg_private_handle {
     hg_bulk_t out_extra_bulk;     /* Extra output bulk handle */
     hg_size_t in_extra_buf_size;  /* Extra input buffer size */
     hg_size_t out_extra_buf_size; /* Extra output buffer size */
+    hg_bool_t use_checksums;      /* Handle uses checksums */
 };
 
 /* HG op id */
@@ -225,6 +227,7 @@ static struct hg_private_handle *
 hg_handle_create(struct hg_private_class *hg_class)
 {
     struct hg_private_handle *hg_handle = NULL;
+    hg_proc_hash_t hash;
     hg_return_t ret;
 
     /* Create private data to wrap callbacks etc */
@@ -236,14 +239,17 @@ hg_handle_create(struct hg_private_class *hg_class)
     memset(hg_handle, 0, sizeof(struct hg_private_handle));
     hg_handle->handle.info.hg_class = (hg_class_t *) hg_class;
     hg_header_init(&hg_handle->hg_header, HG_UNDEF);
+    if (hg_class->checksum_level > HG_CHECKSUM_RPC_HEADERS) {
+        hg_handle->use_checksums = HG_TRUE;
+        hash = HG_CRC32;
+    } else
+        hash = HG_NOHASH;
 
     /* CRC32 is enough for small size buffers */
-    ret =
-        hg_proc_create((hg_class_t *) hg_class, HG_CRC32, &hg_handle->in_proc);
+    ret = hg_proc_create((hg_class_t *) hg_class, hash, &hg_handle->in_proc);
     HG_CHECK_HG_ERROR(error, ret, "Cannot create HG proc");
 
-    ret =
-        hg_proc_create((hg_class_t *) hg_class, HG_CRC32, &hg_handle->out_proc);
+    ret = hg_proc_create((hg_class_t *) hg_class, hash, &hg_handle->out_proc);
     HG_CHECK_HG_ERROR(error, ret, "Cannot create HG proc");
 
     return hg_handle;
@@ -427,9 +433,7 @@ hg_get_struct(struct hg_private_handle *hg_handle,
     void *buf, *extra_buf;
     hg_size_t buf_size, extra_buf_size;
     struct hg_header *hg_header = &hg_handle->hg_header;
-#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
-#endif
     hg_size_t header_offset = hg_header_get_size(op);
     hg_return_t ret = HG_SUCCESS;
 
@@ -440,9 +444,8 @@ hg_get_struct(struct hg_private_handle *hg_handle,
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
-#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
-#endif
+
             /* Get core input buffer */
             ret = HG_Core_get_input(
                 hg_handle->handle.core_handle, &buf, &buf_size);
@@ -462,9 +465,8 @@ hg_get_struct(struct hg_private_handle *hg_handle,
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
-#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
-#endif
+
             /* Get core output buffer */
             ret = HG_Core_get_output(
                 hg_handle->handle.core_handle, &buf, &buf_size);
@@ -509,12 +511,12 @@ hg_get_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_flush(proc);
     HG_CHECK_HG_ERROR(done, ret, "Error in proc flush");
 
-#ifdef HG_HAS_CHECKSUMS
     /* Compare checksum with header hash */
-    ret = hg_proc_checksum_verify(
-        proc, &hg_header_hash->payload, sizeof(hg_header_hash->payload));
-    HG_CHECK_HG_ERROR(done, ret, "Error in proc checksum verify");
-#endif
+    if (hg_handle->use_checksums) {
+        ret = hg_proc_checksum_verify(
+            proc, &hg_header_hash->payload, sizeof(hg_header_hash->payload));
+        HG_CHECK_HG_ERROR(done, ret, "Error in proc checksum verify");
+    }
 
     /* Increment ref count on handle so that it remains valid until free_struct
      * is called */
@@ -537,9 +539,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     hg_size_t buf_size, *extra_buf_size;
     hg_bulk_t *extra_bulk;
     struct hg_header *hg_header = &hg_handle->hg_header;
-#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
-#endif
     hg_size_t header_offset = hg_header_get_size(op);
     hg_return_t ret = HG_SUCCESS;
 
@@ -550,9 +550,8 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
-#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
-#endif
+
             /* Get core input buffer */
             ret = HG_Core_get_input(
                 hg_handle->handle.core_handle, &buf, &buf_size);
@@ -573,9 +572,8 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
-#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
-#endif
+
             /* Get core output buffer */
             ret = HG_Core_get_output(
                 hg_handle->handle.core_handle, &buf, &buf_size);
@@ -627,12 +625,12 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_flush(proc);
     HG_CHECK_HG_ERROR(done, ret, "Error in proc flush");
 
-#ifdef HG_HAS_CHECKSUMS
     /* Set checksum in header */
-    ret = hg_proc_checksum_get(
-        proc, &hg_header_hash->payload, sizeof(hg_header_hash->payload));
-    HG_CHECK_HG_ERROR(done, ret, "Error in getting proc checksum");
-#endif
+    if (hg_handle->use_checksums) {
+        ret = hg_proc_checksum_get(
+            proc, &hg_header_hash->payload, sizeof(hg_header_hash->payload));
+        HG_CHECK_HG_ERROR(done, ret, "Error in getting proc checksum");
+    }
 
     /* The proc object may have allocated an extra buffer at this point.
      * If the payload did not fit into the original buffer, we need to send a
@@ -991,6 +989,16 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     /* Save bulk eager information */
     hg_class->bulk_eager =
         (hg_init_info) ? !hg_init_info->no_bulk_eager : HG_TRUE;
+
+    /* Save checksum level information */
+    if (hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_DEFAULT)
+        hg_class->checksum_level = hg_init_info->checksum_level;
+    else
+#ifdef HG_HAS_DEBUG
+        hg_class->checksum_level = HG_CHECKSUM_RPC_PAYLOAD;
+#else
+        hg_class->checksum_level = HG_CHECKSUM_RPC_HEADERS;
+#endif
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt(na_info_string, na_listen, hg_init_info);

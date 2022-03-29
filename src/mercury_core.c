@@ -131,6 +131,7 @@ struct hg_core_private_class {
         hg_return_t (*done_callback)(hg_core_handle_t)); /* more_data_acquire */
     void (*more_data_release)(hg_core_handle_t);         /* more_data_release */
     na_tag_t request_max_tag;                            /* Max value for tag */
+    hg_checksum_level_t checksum_level;                  /* Checksum level */
 #ifdef HG_HAS_DEBUG
     struct hg_core_counters counters; /* Diag counters */
 #endif
@@ -840,6 +841,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_bool_t auto_sm = HG_FALSE;
 #endif
     hg_bool_t diag = HG_FALSE;
+    hg_checksum_level_t checksum_level = HG_CHECKSUM_DEFAULT;
     hg_return_t ret = HG_SUCCESS;
 
     /* Create new HG class */
@@ -880,11 +882,21 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             "stats option requires MERCURY_ENABLE_DEBUG "
             "CMake option to be turned ON.");
 #endif
+        checksum_level = hg_init_info->checksum_level;
     } else {
         hg_core_class->request_post_init = HG_CORE_POST_INIT;
         hg_core_class->request_post_incr = HG_CORE_POST_INCR;
         hg_core_class->loopback = HG_TRUE;
     }
+
+    if (checksum_level == HG_CHECKSUM_DEFAULT) {
+#ifdef HG_HAS_DEBUG
+        hg_core_class->checksum_level = HG_CHECKSUM_RPC_PAYLOAD;
+#else
+        hg_core_class->checksum_level = HG_CHECKSUM_RPC_HEADERS;
+#endif
+    } else
+        hg_core_class->checksum_level = checksum_level;
 
     if (diag)
         hg_log_set_subsys_level("diag", HG_LOG_LEVEL_DEBUG);
@@ -2220,6 +2232,10 @@ static struct hg_core_private_handle *
 hg_core_alloc(struct hg_core_private_context *context)
 {
     struct hg_core_private_handle *hg_core_handle = NULL;
+    hg_bool_t use_checksum =
+        (HG_CORE_CONTEXT_CLASS(context)->checksum_level > HG_CHECKSUM_NONE)
+            ? HG_TRUE
+            : HG_FALSE;
 
     hg_core_handle = (struct hg_core_private_handle *) malloc(
         sizeof(struct hg_core_private_handle));
@@ -2253,8 +2269,8 @@ hg_core_alloc(struct hg_core_private_context *context)
         &hg_core_handle->ret_status, (int32_t) hg_core_handle->ret);
 
     /* Init in/out header */
-    hg_core_header_request_init(&hg_core_handle->in_header);
-    hg_core_header_response_init(&hg_core_handle->out_header);
+    hg_core_header_request_init(&hg_core_handle->in_header, use_checksum);
+    hg_core_header_response_init(&hg_core_handle->out_header, use_checksum);
 
     /* Set refcount to 1 */
     hg_atomic_init32(&hg_core_handle->ref_count, 1);

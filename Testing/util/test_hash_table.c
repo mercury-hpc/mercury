@@ -49,10 +49,34 @@ main(int argc, char *argv[])
         hash_table, int_hash_key_free, int_hash_value_free);
 
     key1 = (int *) malloc(sizeof(int));
+    if (key1 == NULL) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
     key2 = (int *) malloc(sizeof(int));
+    if (key2 == NULL) {
+        free(key1);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
 
     value1 = (int *) malloc(sizeof(int));
+    if (value1 == NULL) {
+        free(key1);
+        free(key2);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
     value2 = (int *) malloc(sizeof(int));
+    if (value2 == NULL) {
+        free(key1);
+        free(key2);
+        free(value1);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
 
     *key1 = 1;
     *key2 = 2;

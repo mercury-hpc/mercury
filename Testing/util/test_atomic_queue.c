@@ -32,6 +32,11 @@ main(void)
     hg_atomic_queue_push(hg_atomic_queue, &my_entry2);
 
     my_entry_ptr = hg_atomic_queue_pop_sc(hg_atomic_queue);
+    if (my_entry_ptr == NULL) {
+        fprintf(stderr, "NULL entry");
+        ret = EXIT_FAILURE;
+        goto done;
+    }
     if (value1 != my_entry_ptr->value) {
         fprintf(stderr, "Error: values do not match, expected %d, got %d\n",
             value1, my_entry_ptr->value);
@@ -40,6 +45,11 @@ main(void)
     }
 
     my_entry_ptr = hg_atomic_queue_pop_mc(hg_atomic_queue);
+    if (my_entry_ptr == NULL) {
+        fprintf(stderr, "NULL entry");
+        ret = EXIT_FAILURE;
+        goto done;
+    }
     if (value2 != my_entry_ptr->value) {
         fprintf(stderr, "Error: values do not match, expected %d, got %d\n",
             value2, my_entry_ptr->value);

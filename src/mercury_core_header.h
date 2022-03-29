@@ -19,12 +19,11 @@
 #    warning                                                                   \
         "Proc header struct padding may not be consistent across platforms."
 #endif
-#ifdef HG_HAS_CHECKSUMS
+
 union hg_core_header_hash {
     hg_uint16_t header; /* Header checksum (16-bits checksum) */
     hg_uint32_t pad;
 };
-#endif
 
 struct hg_core_header_request {
     hg_uint8_t hg;       /* Mercury identifier */
@@ -33,10 +32,8 @@ struct hg_core_header_request {
     hg_uint8_t flags;    /* Flags */
     hg_uint8_t cookie;   /* Cookie */
     /* 96 bits here */
-#ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
     /* 128 bits here */
-#endif
 };
 
 struct hg_core_header_response {
@@ -45,10 +42,8 @@ struct hg_core_header_response {
     hg_uint16_t cookie; /* Cookie */
     hg_uint64_t pad;    /* Pad */
     /* 96 bits here */
-#ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
     /* 128 bits here */
-#endif
 };
 #if defined(__GNUC__) || defined(_WIN32)
 #    pragma pack(pop)
@@ -60,9 +55,7 @@ struct hg_core_header {
         struct hg_core_header_request request;
         struct hg_core_header_response response;
     } msg;
-#ifdef HG_HAS_CHECKSUMS
-    void *checksum; /* Checksum of header */
-#endif
+    struct mchecksum_object *checksum; /* Checksum of header */
 };
 
 /*
@@ -128,19 +121,23 @@ hg_core_header_response_get_size(void)
  * Initialize RPC request header.
  *
  * \param hg_core_header [IN/OUT]   pointer to request header structure
+ * \param use_checksum [IN]         will checksum header data
  *
  */
 HG_PRIVATE void
-hg_core_header_request_init(struct hg_core_header *hg_core_header);
+hg_core_header_request_init(
+    struct hg_core_header *hg_core_header, hg_bool_t use_checksum);
 
 /**
  * Initialize RPC response header.
  *
  * \param hg_core_header [IN/OUT]   pointer to response header structure
+ * \param use_checksum [IN]         will checksum header data
  *
  */
 HG_PRIVATE void
-hg_core_header_response_init(struct hg_core_header *hg_core_header);
+hg_core_header_response_init(
+    struct hg_core_header *hg_core_header, hg_bool_t use_checksum);
 
 /**
  * Finalize RPC request header.

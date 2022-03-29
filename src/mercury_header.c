@@ -86,38 +86,26 @@ hg_header_proc(
     hg_proc_op_t op, void *buf, size_t buf_size, struct hg_header *hg_header)
 {
     void *buf_ptr = buf;
-#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *header_hash = NULL;
-#endif
     hg_return_t ret = HG_SUCCESS;
 
     switch (hg_header->op) {
         case HG_INPUT:
             HG_CHECK_ERROR(buf_size < sizeof(struct hg_header_input), done, ret,
                 HG_INVALID_ARG, "Invalid buffer size");
-#ifdef HG_HAS_CHECKSUMS
             header_hash = &hg_header->msg.input.hash;
-#endif
             break;
         case HG_OUTPUT:
             HG_CHECK_ERROR(buf_size < sizeof(struct hg_header_output), done,
                 ret, HG_INVALID_ARG, "Invalid buffer size");
-#ifdef HG_HAS_CHECKSUMS
             header_hash = &hg_header->msg.output.hash;
-#endif
             break;
         default:
             HG_GOTO_ERROR(done, ret, HG_INVALID_ARG, "Invalid header op");
     }
 
-#ifdef HG_HAS_CHECKSUMS
     /* Checksum of user payload */
     HG_HEADER_PROC_TYPE(buf_ptr, header_hash->payload, hg_uint32_t, op);
-#else
-    (void) hg_header;
-    (void) buf_ptr;
-    (void) op;
-#endif
 
 done:
     return ret;
