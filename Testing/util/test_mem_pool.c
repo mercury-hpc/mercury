@@ -59,6 +59,9 @@ hg_test_mem_pool_register(const void *buf, size_t len, void **handle, void *arg)
     (void) len;
 
     mr_id = (int *) malloc(sizeof(int));
+    if (mr_id == NULL)
+        return HG_UTIL_FAIL;
+
     *mr_id = (int) hg_atomic_incr32(n_mr);
     *handle = (void *) mr_id;
 
@@ -155,6 +158,10 @@ main(void)
     thread_args.mem_pool = hg_mem_pool_create(CHUNK_SIZE1, CHUNK_COUNT1,
         BLOCK_COUNT1, hg_test_mem_pool_register, hg_test_mem_pool_deregister,
         &thread_args.n_mr);
+    if (thread_args.mem_pool == NULL) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
     thread_args.mr = 1;
 
     for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
@@ -169,6 +176,7 @@ main(void)
             (int) hg_atomic_get32(&thread_args.n_mr));
     }
 
+done:
     hg_thread_mutex_destroy(&thread_args.mutex);
     hg_thread_cond_destroy(&thread_args.cond);
 

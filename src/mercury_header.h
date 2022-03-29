@@ -19,27 +19,20 @@
 #    warning                                                                   \
         "Proc header struct padding may not be consistent across platforms."
 #endif
-#ifdef HG_HAS_CHECKSUMS
+
 struct hg_header_hash {
     hg_uint32_t payload; /* Payload checksum (32-bits checksum) */
 };
-#endif
 
 struct hg_header_input {
-#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash hash; /* Hash */
-#else
-    hg_uint32_t pad;
-#endif
     /* 160 bits here */
 };
 
 struct hg_header_output {
-#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash hash; /* Hash */
-#endif
     hg_uint32_t pad;
-    /* 128/64 bits here */
+    /* 128 bits here */
 };
 #if defined(__GNUC__) || defined(_WIN32)
 #    pragma pack(pop)
