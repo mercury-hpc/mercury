@@ -487,25 +487,26 @@ struct na_ofi_op_queue {
     hg_thread_spin_t lock;
 };
 
+/* Event queue */
+struct na_ofi_eq {
+    struct fid_cq *fi_cq;                   /* CQ handle                */
+    struct na_ofi_op_queue *retry_op_queue; /* Retry op queue           */
+    struct fid_wait *fi_wait;               /* Optional wait set handle */
+};
+
 /* Context */
 struct na_ofi_context {
-    struct fid_ep *fi_tx;                   /* Transmit context handle  */
-    struct fid_ep *fi_rx;                   /* Receive context handle   */
-    struct fid_cq *fi_cq;                   /* CQ handle                */
-    struct fid_wait *fi_wait;               /* Wait set handle          */
-    struct na_ofi_op_queue *retry_op_queue; /* Retry op queue           */
-    na_uint8_t idx;                         /* Context index            */
+    struct fid_ep *fi_tx; /* Transmit context handle */
+    struct fid_ep *fi_rx; /* Receive context handle  */
+    struct na_ofi_eq *eq; /* Event queues            */
+    na_uint8_t idx;       /* Context index           */
 };
 
 /* Endpoint */
 struct na_ofi_endpoint {
-    struct na_ofi_addr *src_addr;           /* Endpoint address         */
-    struct fi_info *fi_prov;                /* Provider info            */
-    struct fid_ep *fi_ep;                   /* Endpoint handle          */
-    struct fid_wait *fi_wait;               /* Wait set handle          */
-    struct fid_cq *fi_cq;                   /* CQ handle                */
-    struct na_ofi_op_queue *retry_op_queue; /* Retry op queue           */
-    na_bool_t sep;                          /* Scalable endpoint        */
+    struct fid_ep *fi_ep;         /* Endpoint handle  */
+    struct na_ofi_eq *eq;         /* Event queues     */
+    struct na_ofi_addr *src_addr; /* Endpoint address */
 };
 
 /* Map (used to cache addresses) */
@@ -515,37 +516,21 @@ struct na_ofi_map {
     hg_hash_table_t *fi_map;  /* Secondary */
 };
 
-/* Verify info */
-struct na_ofi_domain_info {
-    struct na_loc_info *loc_info;    /* Loc info */
-    const char *domain_name;         /* Domain name */
-    uint32_t addr_format;            /* Addr format */
-    enum na_ofi_prov_type prov_type; /* Provider type */
-};
-
 /* Domain */
 struct na_ofi_domain {
-    hg_thread_mutex_t mutex;            /* Mutex for AV etc */
-    struct na_ofi_map addr_map;         /* Address map */
-    HG_LIST_ENTRY(na_ofi_domain) entry; /* Entry in domain list */
-#ifdef NA_OFI_HAS_EXT_GNI_H
+    struct na_ofi_map addr_map; /* Address map */
+#if defined(NA_OFI_HAS_EXT_GNI_H)
     struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key */
-#endif
-#ifdef NA_OFI_HAS_EXT_CXI_H
+#elif defined(NA_OFI_HAS_EXT_CXI_H)
     struct cxi_auth_key cxi_auth_key; /* CXI auth key */
 #endif
-    struct fid_fabric *fi_fabric;    /* Fabric handle */
     struct fid_domain *fi_domain;    /* Domain handle */
-    struct fi_info *fi_prov;         /* Provider info */
     struct fid_av *fi_av;            /* Address vector handle */
-    char *prov_name;                 /* Provider name */
     na_size_t context_max;           /* Max contexts available */
     na_size_t eager_msg_size_max;    /* Max eager msg size */
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
-    enum na_ofi_prov_type prov_type; /* Provider type */
     na_bool_t no_wait;               /* Wait disabled on domain */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered */
-    hg_atomic_int32_t refcount;      /* Refcount of this domain */
 } HG_LOCK_CAPABILITY("domain");
 
 /* Addr pool */
@@ -554,17 +539,45 @@ struct na_ofi_addr_pool {
     hg_thread_spin_t lock;
 };
 
+/* Fabric */
+struct na_ofi_fabric {
+    HG_LIST_ENTRY(na_ofi_fabric) entry; /* Entry in fabric list */
+    struct fid_fabric *fi_fabric;       /* Fabric handle */
+    char *name;                         /* Fabric name */
+    char *prov_name;                    /* Provider name */
+    enum na_ofi_prov_type prov_type;    /* Provider type */
+    hg_atomic_int32_t refcount;         /* Refcount of this fabric */
+} HG_LOCK_CAPABILITY("fabric");
+
+/* Get info */
+struct na_ofi_info {
+    char *node;
+    char *service;
+    uint32_t addr_format;
+    void *src_addr;
+    size_t src_addrlen;
+};
+
+/* Verify info */
+struct na_ofi_verify_info {
+    const struct na_loc_info *loc_info; /* Loc info */
+    const char *domain_name;            /* Domain name */
+    uint32_t addr_format;               /* Addr format */
+    enum na_ofi_prov_type prov_type;    /* Provider type */
+};
+
 /* OFI class */
 struct na_ofi_class {
     hg_thread_mutex_t mutex;           /* Mutex (for verbs prov)   */
     struct na_ofi_addr_pool addr_pool; /* Addr pool                */
+    struct fi_info *fi_info;           /* OFI info                 */
+    struct na_ofi_fabric *fabric;      /* Fabric pointer           */
     struct na_ofi_domain *domain;      /* Domain pointer           */
     struct na_ofi_endpoint *endpoint;  /* Endpoint pointer         */
     struct hg_mem_pool *mem_pool;      /* Msg buf pool             */
     na_size_t unexpected_size_max;     /* Max unexpected size      */
     na_size_t expected_size_max;       /* Max expected size        */
-    na_size_t iov_max;                 /* Max number of IOVs       */
-    na_uint8_t contexts;               /* Number of context        */
+    hg_atomic_int32_t n_contexts;      /* Number of context        */
     na_uint8_t context_max;            /* Max number of contexts   */
     na_bool_t no_wait;                 /* Ignore wait object       */
     na_bool_t finalizing;              /* Class being destroyed    */
@@ -609,7 +622,7 @@ na_ofi_with_sep(const struct na_ofi_class *na_ofi_class);
  * Requires message header with address info.
  */
 static NA_INLINE na_bool_t
-na_ofi_with_msg_hdr(const struct na_ofi_domain *na_ofi_domain);
+na_ofi_with_msg_hdr(const struct na_ofi_class *na_ofi_class);
 
 /**
  * Get provider type encoded in string.
@@ -761,15 +774,15 @@ na_ofi_fi_addr_map_lookup(struct na_ofi_map *na_ofi_map, fi_addr_t *fi_addr);
  * Get info caps from providers and return matching providers.
  */
 static na_return_t
-na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
-    const char *user_requested_protocol, uint32_t addr_format);
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
+    struct fi_info **fi_info_p);
 
 /**
  * Match provider name with domain.
  */
 static na_bool_t
-na_ofi_verify_provider(
-    struct na_ofi_domain_info *info, const struct fi_info *fi_info);
+na_ofi_match_provider(const struct na_ofi_verify_info *verify_info,
+    const struct fi_info *fi_info);
 
 /**
  * Parse hostname info.
@@ -777,13 +790,14 @@ na_ofi_verify_provider(
 static na_return_t
 na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
     const char *hostname_info, uint32_t addr_format, char **domain_name_p,
-    void **src_addr_p, size_t *src_addrlen_p);
+    char **node_p, char **service_p, void **src_addr_p, size_t *src_addrlen_p);
 
 /**
  * Free hostname info.
  */
 static void
-na_ofi_free_hostname_info(char *domain_name, void *src_addr);
+na_ofi_free_hostname_info(
+    char *domain_name, char *node, char *service, void *src_addr);
 
 /**
  * Parse IPv4 info.
@@ -803,6 +817,19 @@ na_ofi_class_alloc(void);
  */
 static na_return_t
 na_ofi_class_free(struct na_ofi_class *na_ofi_class);
+
+/**
+ * Open fabric.
+ */
+na_return_t
+na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
+    struct na_ofi_fabric **na_ofi_fabric_p);
+
+/**
+ * Close fabric.
+ */
+na_return_t
+na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric);
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
 /**
@@ -824,9 +851,9 @@ na_ofi_gni_get_domain_op_value(
  * Open domain.
  */
 static na_return_t
-na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
-    const char *domain_name, struct na_loc_info *loc_info, const char *auth_key,
-    na_bool_t no_wait, struct na_ofi_domain **na_ofi_domain_p);
+na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const char *auth_key, na_bool_t no_wait, struct fi_info *fi_info,
+    struct na_ofi_domain **na_ofi_domain_p);
 
 /**
  * Close domain.
@@ -838,16 +865,17 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
  * Open endpoint.
  */
 static na_return_t
-na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
-    const char *node, const char *service, void *src_addr, size_t src_addrlen,
-    na_bool_t no_wait, na_uint8_t max_contexts,
+na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
+    na_uint8_t max_contexts, struct fi_info *fi_info,
     struct na_ofi_endpoint **na_ofi_endpoint_p);
 
 /**
  * Open basic endpoint.
  */
 static na_return_t
-na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
+na_ofi_basic_ep_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, struct fi_info *fi_info,
     na_bool_t no_wait, struct na_ofi_endpoint *na_ofi_endpoint);
 
 /**
@@ -855,6 +883,7 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
  */
 static na_return_t
 na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
+    struct fi_info *fi_info, na_uint8_t max_contexts,
     struct na_ofi_endpoint *na_ofi_endpoint);
 
 /**
@@ -862,6 +891,20 @@ na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
  */
 static na_return_t
 na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
+
+/**
+ * Open event queues.
+ */
+static na_return_t
+na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
+    struct na_ofi_eq **na_ofi_eq_p);
+
+/**
+ * Close event queues.
+ */
+static na_return_t
+na_ofi_eq_close(struct na_ofi_eq *na_ofi_eq);
 
 /**
  * Get EP src address.
@@ -873,8 +916,9 @@ na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class);
  * Get EP URI.
  */
 static na_return_t
-na_ofi_get_uri(struct na_ofi_domain *na_ofi_domain, char *buf,
-    na_size_t *buf_size_p, const struct na_ofi_addr_key *addr_key);
+na_ofi_get_uri(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, char *buf, na_size_t *buf_size_p,
+    const struct na_ofi_addr_key *addr_key);
 
 /**
  * Allocate empty address.
@@ -934,15 +978,15 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr);
  * Allocate memory for transfers.
  */
 static NA_INLINE void *
-na_ofi_mem_alloc(struct na_ofi_domain *na_ofi_domain, na_size_t size,
-    struct fid_mr **mr_hdl);
+na_ofi_mem_alloc(
+    struct na_ofi_class *na_ofi_class, na_size_t size, struct fid_mr **mr_hdl);
 
 /**
  * Free memory.
  */
 static NA_INLINE void
 na_ofi_mem_free(
-    struct na_ofi_domain *na_ofi_domain, void *mem_ptr, struct fid_mr *mr_hdl);
+    struct na_ofi_class *na_ofi_class, void *mem_ptr, struct fid_mr *mr_hdl);
 
 #endif /* NA_OFI_HAS_MEM_POOL */
 
@@ -1007,10 +1051,10 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
  * Create new RMA IOV for transferring length data.
  */
 static NA_INLINE void
-na_ofi_rma_iov_translate(struct na_ofi_domain *na_ofi_domain,
-    const struct iovec *iov, unsigned long iovcnt, na_uint64_t key,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
-    struct fi_rma_iov *new_iov, unsigned long new_iovcnt);
+na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
+    unsigned long iovcnt, na_uint64_t key, unsigned long iov_start_index,
+    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
+    unsigned long new_iovcnt);
 
 /**
  * Do RMA operation (put/get).
@@ -1119,7 +1163,7 @@ na_ofi_finalize(na_class_t *na_class);
 
 /* context_create */
 static na_return_t
-na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id);
+na_ofi_context_create(na_class_t *na_class, void **context_p, na_uint8_t id);
 
 /* context_destroy */
 static na_return_t
@@ -1358,12 +1402,12 @@ const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
     na_ofi_cancel                          /* cancel */
 };
 
-/* OFI access domain list */
-static HG_LIST_HEAD(na_ofi_domain)
-    na_ofi_domain_list_g = HG_LIST_HEAD_INITIALIZER(na_ofi_domain);
+/* Fabric list */
+static HG_LIST_HEAD(na_ofi_fabric)
+    na_ofi_fabric_list_g = HG_LIST_HEAD_INITIALIZER(na_ofi_fabric);
 
-/* Protects domain list */
-static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
+/* Fabric list lock */
+static hg_thread_mutex_t na_ofi_fabric_list_mutex_g =
     HG_THREAD_MUTEX_INITIALIZER;
 
 /*---------------------------------------------------------------------------*/
@@ -1509,14 +1553,16 @@ na_ofi_prov_addr_size(na_uint32_t addr_format)
 static NA_INLINE na_bool_t
 na_ofi_with_sep(const struct na_ofi_class *na_ofi_class)
 {
-    return na_ofi_class->endpoint->sep;
+    return (na_ofi_prov_flags[na_ofi_class->fabric->prov_type] & NA_OFI_SEP) &&
+           (na_ofi_class->context_max > 1);
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
-na_ofi_with_msg_hdr(const struct na_ofi_domain *na_ofi_domain)
+na_ofi_with_msg_hdr(const struct na_ofi_class *na_ofi_class)
 {
-    return na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_SOURCE_MSG;
+    return na_ofi_prov_flags[na_ofi_class->fabric->prov_type] &
+           NA_OFI_SOURCE_MSG;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2305,15 +2351,8 @@ na_ofi_provider_check(
     char *avail;
     struct fi_info *providers = NULL;
 
-    /* query libfabric with no restrictions to determine what providers
-     * are present
-     */
-    rc = fi_getinfo(NA_OFI_VERSION, /* OFI version requested */
-        NULL,                       /* Optional name or fabric to resolve */
-        NULL,                       /* Optional service name to request */
-        0ULL,                       /* Optional flag */
-        NULL,                       /* Optional hints to filter providers */
-        &providers);                /* Out: List of matching providers */
+    /* Query OFI without hints to determine which providers are present. */
+    rc = fi_getinfo(NA_OFI_VERSION, NULL, NULL, 0, NULL, &providers);
     if (rc != 0)
         return;
 
@@ -2376,16 +2415,16 @@ na_ofi_provider_check(
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
-    const char *user_requested_protocol, uint32_t addr_format)
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
+    struct fi_info **fi_info_p)
 {
     struct fi_info *hints = NULL;
+    const char *node = NULL, *service = NULL;
+    uint64_t flags = 0;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    /**
-     * Hints to query && filter providers.
-     */
+    /* Hints to query and filter providers */
     hints = fi_allocinfo();
     NA_CHECK_SUBSYS_ERROR(
         cls, hints == NULL, out, ret, NA_NOMEM, "fi_allocinfo() failed");
@@ -2395,24 +2434,21 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
     NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL, cleanup,
         ret, NA_NOMEM, "Could not duplicate name");
 
-    /* Use addr format if not FI_FORMAT_UNSPEC */
-    hints->addr_format = addr_format;
-
-    /* mode: operational mode, NA_OFI passes in context for communication calls.
+    /**
+     * FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
+     * buffering needed for the IO vectors. When set, an application must not
+     * modify an IO vector  of  length  >  1, including  any  related  memory
+     * descriptor array, until the associated operation has completed.
      */
-    /* FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
-       buffering needed for the IO vectors. When set, an application must not
-       modify an IO vector  of  length  >  1, including  any  related  memory
-       descriptor array, until the associated operation has completed. */
     hints->mode = FI_CONTEXT | FI_ASYNC_IOV;
 
-    /* ep_type: reliable datagram (connection-less). */
+    /* ep_type: reliable datagram (connection-less) */
     hints->ep_attr->type = FI_EP_RDM;
 
     /* set endpoint protocol */
     hints->ep_attr->protocol = na_ofi_prov_ep_proto[prov_type];
 
-    /* caps: capabilities required. */
+    /* caps: capabilities required for all providers */
     hints->caps = FI_TAGGED | FI_RMA;
 
     /* add any additional caps that are particular to this provider */
@@ -2434,42 +2470,43 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
     /* all providers should support this */
     hints->domain_attr->threading = FI_THREAD_SAFE;
     hints->domain_attr->av_type = FI_AV_MAP;
+
+    /* Resource management will be enabled for this provider domain. */
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
 
     /**
-     * this is the requested MR mode (i.e., what we currently support).
-     * Cleared MR mode bits (depending on provider) are later checked at the
+     * this is the requested MR mode (i.e., what we currently support),
+     * cleared MR mode bits (depending on provider) are later checked at the
      * appropriate time.
      */
-    hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
-    if (prov_type == NA_OFI_PROV_CXI)
-        hints->domain_attr->mr_mode |= FI_MR_ENDPOINT;
+    hints->domain_attr->mr_mode =
+        NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT;
 
     /* set default progress mode */
     hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
     hints->domain_attr->data_progress = na_ofi_prov_progress[prov_type];
 
-    /**
-     * fi_getinfo:  returns information about fabric services.
-     * Pass NULL for name/service to list all providers supported with above
-     * requirement hints.
-     */
-    rc = fi_getinfo(NA_OFI_VERSION, /* OFI version requested */
-        NULL,                       /* Optional name or fabric to resolve */
-        NULL,                       /* Optional service name to request */
-        0ULL,                       /* Optional flag */
-        hints,                      /* In: Hints to filter providers */
-        providers);                 /* Out: List of matching providers */
-    if (rc != 0) {
-        /* getinfo failed.  This could be because Mercury was
-         * linked against a libfabric library that was not compiled with
-         * support for the desired provider.  Attempt to detect this case
-         * and display a user-friendly error message.
-         */
-        na_ofi_provider_check(prov_type, user_requested_protocol);
+    if (info) {
+        /* Use addr format if not FI_FORMAT_UNSPEC */
+        hints->addr_format = info->addr_format;
+
+        /* Set src addr hints (FI_SOURCE must not be set in that case) */
+        if (info->src_addr) {
+            hints->src_addr = info->src_addr;
+            hints->src_addrlen = info->src_addrlen;
+        } else if (info->node || info->service) {
+            /* For provider node resolution (always pass a numeric address) */
+            flags = FI_SOURCE | FI_NUMERICHOST;
+            node = info->node;
+            service = info->service;
+        }
     }
+
+    /* Retrieve list of all providers supported with above requirement hints */
+    rc = fi_getinfo(NA_OFI_VERSION, node, service, flags, hints, fi_info_p);
     NA_CHECK_SUBSYS_ERROR(cls, rc != 0, cleanup, ret, na_ofi_errno_to_na(-rc),
-        "fi_getinfo() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        "fi_getinfo(%s) failed, rc: %d (%s)", hints->fabric_attr->prov_name, rc,
+        fi_strerror(-rc));
 
 cleanup:
     free(hints->fabric_attr->prov_name);
@@ -2481,42 +2518,124 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+na_ofi_freeinfo(struct fi_info *fi_info)
+{
+    /* Prevent fi_freeinfo from attempting to free the key */
+    if (fi_info->domain_attr->auth_key)
+        fi_info->domain_attr->auth_key = NULL;
+    if (fi_info->domain_attr->auth_key_size)
+        fi_info->domain_attr->auth_key_size = 0;
+
+    fi_freeinfo(fi_info);
+}
+
+/*---------------------------------------------------------------------------*/
 static na_bool_t
-na_ofi_verify_provider(
-    struct na_ofi_domain_info *info, const struct fi_info *fi_info)
+na_ofi_match_provider(
+    const struct na_ofi_verify_info *verify_info, const struct fi_info *fi_info)
 {
     /* Domain must match expected address format (keep this check as OFI does
      * not seem to filter providers on addr_format) */
-    if (fi_info->addr_format != info->addr_format)
+    if (verify_info->addr_format != fi_info->addr_format)
         return NA_FALSE;
 
     /* Does not match provider name */
-    if (strcmp(
-            na_ofi_prov_name[info->prov_type], fi_info->fabric_attr->prov_name))
+    if (strcmp(na_ofi_prov_name[verify_info->prov_type],
+            fi_info->fabric_attr->prov_name) != 0)
         return NA_FALSE;
 
     /* Does not match domain name (if provided) */
-    if (info->domain_name && info->domain_name[0] != '\0' &&
-        strcmp(info->domain_name, fi_info->domain_attr->name))
+    if (verify_info->domain_name && verify_info->domain_name[0] != '\0' &&
+        strcmp(verify_info->domain_name, fi_info->domain_attr->name) != 0)
         return NA_FALSE;
 
+        /* Match loc info as a last resort if nothing else was provided */
 #ifdef NA_HAS_HWLOC
-    if (info->loc_info && fi_info->nic && fi_info->nic->bus_attr &&
+    if (verify_info->loc_info && fi_info->nic && fi_info->nic->bus_attr &&
         fi_info->nic->bus_attr->bus_type == FI_BUS_PCI) {
         const struct fi_pci_attr *pci = &fi_info->nic->bus_attr->attr.pci;
-        return na_loc_check_pcidev(info->loc_info, pci->domain_id, pci->bus_id,
-            pci->device_id, pci->function_id);
+        return na_loc_check_pcidev(verify_info->loc_info, pci->domain_id,
+            pci->bus_id, pci->device_id, pci->function_id);
     }
 #endif
 
+    /* Nothing prevents us from not picking that provider */
     return NA_TRUE;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
+    const char *domain_name, const struct na_loc_info *loc_info,
+    struct fi_info **fi_info_p)
+{
+    struct fi_info *prov, *providers = NULL;
+    struct na_ofi_verify_info verify_info =
+        (struct na_ofi_verify_info){.prov_type = prov_type,
+            .addr_format = info->addr_format,
+            .domain_name = domain_name,
+            .loc_info = loc_info};
+#ifdef NA_HAS_DEBUG
+    unsigned int count = 0;
+#endif
+    na_return_t ret;
+
+    ret = na_ofi_getinfo(prov_type, info, &providers);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_getinfo() failed");
+
+#ifdef NA_HAS_DEBUG
+    for (prov = providers; prov != NULL; prov = prov->next) {
+        if (na_ofi_match_provider(&verify_info, prov)) {
+            // NA_LOG_SUBSYS_DEBUG_FUNC(cls,
+            //     fprintf(hg_log_get_stream_debug(), "---\n%s---\n",
+            //         fi_tostr(prov, FI_TYPE_INFO)),
+            //     "Verbose FI info for provider %u", count);
+            count++;
+        }
+    }
+    NA_LOG_SUBSYS_DEBUG(
+        cls, "na_ofi_getinfo() returned %u candidate(s)", count);
+#endif
+
+    /* Try to find provider that matches protocol and domain/host name */
+    for (prov = providers; prov != NULL; prov = prov->next) {
+        if (na_ofi_match_provider(&verify_info, prov)) {
+            NA_LOG_SUBSYS_DEBUG_FUNC(cls,
+                fprintf(hg_log_get_stream_debug(), "---\n%s---\n",
+                    fi_tostr(prov, FI_TYPE_INFO)),
+                "FI info for selected provider");
+            break;
+        }
+    }
+    NA_CHECK_SUBSYS_ERROR(fatal, prov == NULL, error, ret, NA_NOENTRY,
+        "No provider found for \"%s\" provider on domain \"%s\"",
+        na_ofi_prov_name[prov_type], domain_name);
+
+    /* Keep fi_info */
+    *fi_info_p = fi_dupinfo(prov);
+    NA_CHECK_SUBSYS_ERROR(cls, *fi_info_p == NULL, error, ret, NA_NOMEM,
+        "Could not duplicate fi_info");
+
+    /* Give ownshership of src_addr to FI info */
+    info->src_addr = NULL;
+
+    fi_freeinfo(providers);
+
+    return NA_SUCCESS;
+
+error:
+    if (providers)
+        fi_freeinfo(providers);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
     const char *hostname_info, uint32_t addr_format, char **domain_name_p,
-    void **src_addr_p, size_t *src_addrlen_p)
+    char **node_p, char **service_p, void **src_addr_p, size_t *src_addrlen_p)
 {
     char *hostname = NULL;
     char *domain_name = NULL;
@@ -2604,6 +2723,10 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
 
     *domain_name_p = domain_name;
 
+    /* TODO currently unused */
+    *node_p = NULL;
+    *service_p = NULL;
+
 out:
     free(hostname);
     return ret;
@@ -2611,9 +2734,12 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_free_hostname_info(char *domain_name, void *src_addr)
+na_ofi_free_hostname_info(
+    char *domain_name, char *node, char *service, void *src_addr)
 {
     free(domain_name);
+    free(node);
+    free(service);
     free(src_addr);
 }
 
@@ -2683,6 +2809,7 @@ na_ofi_class_alloc(void)
     NA_CHECK_SUBSYS_ERROR_NORET(cls, na_ofi_class == NULL, error,
         "Could not allocate NA private data class");
     memset(na_ofi_class, 0, sizeof(*na_ofi_class));
+    hg_atomic_init32(&na_ofi_class->n_contexts, 0);
 
     /* Initialize queue / mutex */
     rc = hg_thread_mutex_init(&na_ofi_class->mutex);
@@ -2742,12 +2869,140 @@ na_ofi_class_free(struct na_ofi_class *na_ofi_class)
         na_ofi_class->domain = NULL;
     }
 
+    /* Close fabric */
+    if (na_ofi_class->fabric) {
+        ret = na_ofi_fabric_close(na_ofi_class->fabric);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not close fabric");
+        na_ofi_class->fabric = NULL;
+    }
+
+    /* Free info */
+    if (na_ofi_class->fi_info)
+        na_ofi_freeinfo(na_ofi_class->fi_info);
+
     (void) hg_thread_mutex_destroy(&na_ofi_class->mutex);
     (void) hg_thread_spin_destroy(&na_ofi_class->addr_pool.lock);
 
     free(na_ofi_class);
 
 out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
+    struct na_ofi_fabric **na_ofi_fabric_p)
+{
+    struct na_ofi_fabric *na_ofi_fabric = NULL;
+    na_return_t ret;
+    int rc;
+
+    /**
+     * Look for existing fabrics. A fabric domain represents a collection of
+     * hardware and software resources that access a single physical or virtual
+     * network.
+     */
+    hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
+    HG_LIST_FOREACH (na_ofi_fabric, &na_ofi_fabric_list_g, entry) {
+        if ((strcmp(fi_info->fabric_attr->name, na_ofi_fabric->name) == 0) &&
+            (strcmp(fi_info->fabric_attr->prov_name,
+                 na_ofi_fabric->prov_name) == 0)) {
+            hg_atomic_incr32(&na_ofi_fabric->refcount);
+            break;
+        }
+    }
+    hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+
+    if (na_ofi_fabric != NULL) {
+        NA_LOG_SUBSYS_DEBUG_FUNC(cls,
+            fprintf(hg_log_get_stream_debug(), "%s",
+                fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR)),
+            "using existing fi_fabric");
+        *na_ofi_fabric_p = na_ofi_fabric;
+        return NA_SUCCESS;
+    }
+
+    na_ofi_fabric = (struct na_ofi_fabric *) malloc(sizeof(*na_ofi_fabric));
+    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_fabric == NULL, error, ret, NA_NOMEM,
+        "Could not allocate na_ofi_fabric");
+    memset(na_ofi_fabric, 0, sizeof(*na_ofi_fabric));
+    na_ofi_fabric->prov_type = prov_type;
+    hg_atomic_init32(&na_ofi_fabric->refcount, 1);
+
+    /* Dup name */
+    na_ofi_fabric->name = strdup(fi_info->fabric_attr->name);
+    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_fabric->name == NULL, error, ret,
+        NA_NOMEM, "Could not duplicate fabric name");
+
+    /* Dup provider name */
+    na_ofi_fabric->prov_name = strdup(fi_info->fabric_attr->prov_name);
+    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_fabric->prov_name == NULL, error, ret,
+        NA_NOMEM, "Could not duplicate prov_name");
+
+    /* Open fi fabric */
+    rc = fi_fabric(fi_info->fabric_attr, &na_ofi_fabric->fi_fabric, NULL);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
+        "fi_fabric() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
+        fprintf(hg_log_get_stream_debug(), "%s",
+            fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR)),
+        "fi_fabric opened");
+
+    /* Insert to global fabric list */
+    hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
+    HG_LIST_INSERT_HEAD(&na_ofi_fabric_list_g, na_ofi_fabric, entry);
+    hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+
+    *na_ofi_fabric_p = na_ofi_fabric;
+
+    return NA_SUCCESS;
+
+error:
+    if (na_ofi_fabric) {
+        free(na_ofi_fabric->name);
+        free(na_ofi_fabric->prov_name);
+        free(na_ofi_fabric);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
+{
+    na_return_t ret;
+    int rc;
+
+    if (!na_ofi_fabric)
+        return NA_SUCCESS;
+
+    if (hg_atomic_decr32(&na_ofi_fabric->refcount))
+        return NA_SUCCESS;
+
+    /* Close fabric */
+    if (na_ofi_fabric->fi_fabric) {
+        rc = fi_close(&na_ofi_fabric->fi_fabric->fid);
+        NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
+            "fi_close() fabric failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        na_ofi_fabric->fi_fabric = NULL;
+    }
+
+    /* Remove from fabric list */
+    hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
+    HG_LIST_REMOVE(na_ofi_fabric, entry);
+    hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+
+    free(na_ofi_fabric->name);
+    free(na_ofi_fabric->prov_name);
+    free(na_ofi_fabric);
+
+    return NA_SUCCESS;
+
+error:
+    hg_atomic_incr32(&na_ofi_fabric->refcount);
+
     return ret;
 }
 
@@ -2799,161 +3054,86 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
-    const char *domain_name, struct na_loc_info *loc_info, const char *auth_key,
-    na_bool_t no_wait, struct na_ofi_domain **na_ofi_domain_p)
+na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const char *auth_key, na_bool_t no_wait, struct fi_info *fi_info,
+    struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
     struct fi_av_attr av_attr = {0};
-    struct fi_info *prov, *providers = NULL;
     hg_hash_table_equal_func_t map_key_equal_func;
-    struct na_ofi_domain_info verify_info =
-        (struct na_ofi_domain_info){.prov_type = prov_type,
-            .addr_format = addr_format,
-            .domain_name = domain_name,
-            .loc_info = loc_info};
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     int rc;
 
-    /**
-     * Look for existing domain. It allows to create endpoints with different
-     * providers. Multiple endpoints can re-use an existing domain.
-     */
-    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
-    HG_LIST_FOREACH (na_ofi_domain, &na_ofi_domain_list_g, entry) {
-        if (na_ofi_verify_provider(&verify_info, na_ofi_domain->fi_prov)) {
-            hg_atomic_incr32(&na_ofi_domain->refcount);
-            break;
-        }
-    }
-    hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
-    if (na_ofi_domain != NULL) {
-        NA_LOG_SUBSYS_DEBUG(
-            cls, "Found existing domain (%s)", na_ofi_domain->prov_name);
-        *na_ofi_domain_p = na_ofi_domain;
-        return ret;
-    }
-
-    /* If no pre-existing domain, get OFI providers info */
-    ret = na_ofi_getinfo(prov_type, &providers, NULL, addr_format);
-    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_getinfo() failed");
-
-    /* Try to find provider that matches protocol and domain/host name */
-    for (prov = providers; prov != NULL; prov = prov->next) {
-        if (na_ofi_verify_provider(&verify_info, prov)) {
-            NA_LOG_SUBSYS_DEBUG(cls,
-                "Selected provider: %s, fabric: %s, domain: %s, addr format: "
-                "%" PRIu32,
-                prov->fabric_attr->prov_name, prov->fabric_attr->name,
-                prov->domain_attr->name, prov->addr_format);
-            break;
-        }
-    }
-    NA_CHECK_SUBSYS_ERROR(fatal, prov == NULL, error, ret, NA_NOENTRY,
-        "No provider found for \"%s\" provider on domain \"%s\"",
-        na_ofi_prov_name[prov_type], domain_name);
-
-    na_ofi_domain =
-        (struct na_ofi_domain *) malloc(sizeof(struct na_ofi_domain));
+    na_ofi_domain = (struct na_ofi_domain *) malloc(sizeof(*na_ofi_domain));
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain == NULL, error, ret, NA_NOMEM,
         "Could not allocate na_ofi_domain");
-    memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
+    memset(na_ofi_domain, 0, sizeof(*na_ofi_domain));
     hg_atomic_init64(&na_ofi_domain->requested_key, 0);
-    hg_atomic_init32(&na_ofi_domain->refcount, 1);
 
     HG_LOG_ADD_COUNTER32(
         na, &na_ofi_domain->mr_reg_count, "mr_reg_count", "MR reg count");
-
-    /* Init mutex */
-    rc = hg_thread_mutex_init(&na_ofi_domain->mutex);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM,
-        "hg_thread_mutex_init() failed");
 
     /* Init rw lock */
     rc = hg_thread_rwlock_init(&na_ofi_domain->addr_map.lock);
     NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM,
         "hg_thread_rwlock_init() failed");
 
-    /* Keep fi_info */
-    na_ofi_domain->fi_prov = fi_dupinfo(prov);
-    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain->fi_prov == NULL, error, ret,
-        NA_NOMEM, "Could not duplicate fi_info");
-
-    /* Dup provider name */
-    na_ofi_domain->prov_name = strdup(prov->fabric_attr->prov_name);
-    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain->prov_name == NULL, error, ret,
-        NA_NOMEM, "Could not duplicate name");
-
-    na_ofi_domain->prov_type = prov_type;
-
 #if defined(NA_OFI_HAS_EXT_GNI_H)
-    if (prov_type == NA_OFI_PROV_GNI && auth_key && auth_key[0] != '\0') {
+    if (na_ofi_fabric->prov_type == NA_OFI_PROV_GNI && auth_key &&
+        auth_key[0] != '\0') {
         na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
         na_ofi_domain->fi_gni_auth_key.raw.protection_key =
             (uint32_t) strtoul(auth_key, NULL, 10);
 
-        na_ofi_domain->fi_prov->domain_attr->auth_key =
+        fi_info->domain_attr->auth_key =
             (void *) &na_ofi_domain->fi_gni_auth_key;
-        na_ofi_domain->fi_prov->domain_attr->auth_key_size =
+        fi_info->domain_attr->auth_key_size =
             sizeof(na_ofi_domain->fi_gni_auth_key);
     }
-
 #elif defined(NA_OFI_HAS_EXT_CXI_H)
     /* Keep CXI auth key using the following format svc_id:vni */
-    if (prov_type == NA_OFI_PROV_CXI && auth_key) {
+    if (na_ofi_fabric->prov_type == NA_OFI_PROV_CXI && auth_key) {
         rc = sscanf(auth_key, "%" SCNu32 ":%" SCNu16,
             &na_ofi_domain->cxi_auth_key.svc_id,
             &na_ofi_domain->cxi_auth_key.vni);
         NA_CHECK_SUBSYS_ERROR(cls, rc != 2, error, ret, NA_PROTONOSUPPORT,
             "Could not retrieve CXI auth key, format is \"svc_id:vni\"");
 
-        na_ofi_domain->fi_prov->domain_attr->auth_key =
-            (void *) &na_ofi_domain->cxi_auth_key;
-        na_ofi_domain->fi_prov->domain_attr->auth_key_size =
+        fi_info->domain_attr->auth_key = (void *) &na_ofi_domain->cxi_auth_key;
+        fi_info->domain_attr->auth_key_size =
             sizeof(na_ofi_domain->cxi_auth_key);
     }
 #else
     (void) auth_key;
 #endif
 
-    /* Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
-    if (no_wait ||
-        !(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD))) {
+    /* Force manual progress if no wait set or do not support
+     * FI_WAIT_FD/FI_WAIT_SET. */
+    if (no_wait || !(na_ofi_prov_flags[na_ofi_fabric->prov_type] &
+                       (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD))) {
         na_ofi_domain->no_wait = NA_TRUE;
 
-        /* Force manual progress if no wait is set */
-        na_ofi_domain->fi_prov->domain_attr->control_progress =
-            FI_PROGRESS_MANUAL;
-        na_ofi_domain->fi_prov->domain_attr->data_progress = FI_PROGRESS_MANUAL;
+        fi_info->domain_attr->control_progress = FI_PROGRESS_MANUAL;
+        fi_info->domain_attr->data_progress = FI_PROGRESS_MANUAL;
     }
 
-    /* Open fi fabric */
-    rc = fi_fabric(
-        na_ofi_domain->fi_prov->fabric_attr, /* In:  Fabric attributes */
-        &na_ofi_domain->fi_fabric,           /* Out: Fabric handle */
-        NULL); /* Optional context for fabric events */
-    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "fi_fabric() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-
     /* Create the fi access domain */
-    rc = fi_domain(na_ofi_domain->fi_fabric, /* In:  Fabric object */
-        na_ofi_domain->fi_prov,              /* In:  Provider */
-        &na_ofi_domain->fi_domain,           /* Out: Domain object */
-        NULL); /* Optional context for domain events */
+    rc = fi_domain(
+        na_ofi_fabric->fi_fabric, fi_info, &na_ofi_domain->fi_domain, NULL);
     NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_domain() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Cache max number of contexts */
     na_ofi_domain->context_max =
-        MIN(na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
-            na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
-    NA_LOG_SUBSYS_DEBUG(cls,
-        "fi_domain created, tx_ctx_cnt %zu, rx_ctx_cnt %zu",
-        na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
-        na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
+        MIN(fi_info->domain_attr->tx_ctx_cnt, fi_info->domain_attr->rx_ctx_cnt);
+
+    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
+        fprintf(hg_log_get_stream_debug(), "%s",
+            fi_tostr(fi_info->domain_attr, FI_TYPE_DOMAIN_ATTR)),
+        "fi_domain opened");
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
-    if (na_ofi_domain->prov_type == NA_OFI_PROV_GNI) {
+    if (na_ofi_fabric->prov_type == NA_OFI_PROV_GNI) {
         int32_t enable = 1;
 #    ifdef NA_OFI_GNI_HAS_UDREG
         char *other_reg_type = "udreg";
@@ -2996,7 +3176,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
         "fi_av_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Create primary addr hash-table */
-    switch (na_ofi_domain->fi_prov->addr_format) {
+    switch (fi_info->addr_format) {
         case FI_SOCKADDR_IN6:
             map_key_equal_func = na_ofi_addr_key_equal_sin6;
             break;
@@ -3024,21 +3204,24 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, uint32_t addr_format,
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL, error,
         ret, NA_NOMEM, "Could not allocate FI addr map");
 
-    /* Insert to global domain list */
-    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
-    HG_LIST_INSERT_HEAD(&na_ofi_domain_list_g, na_ofi_domain, entry);
-    hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
-
     *na_ofi_domain_p = na_ofi_domain;
 
-    fi_freeinfo(providers);
-
-    return ret;
+    return NA_SUCCESS;
 
 error:
-    na_ofi_domain_close(na_ofi_domain);
-    if (providers)
-        fi_freeinfo(providers);
+    if (na_ofi_domain) {
+        if (na_ofi_domain->fi_av)
+            (void) fi_close(&na_ofi_domain->fi_av->fid);
+        if (na_ofi_domain->fi_domain)
+            (void) fi_close(&na_ofi_domain->fi_domain->fid);
+        if (na_ofi_domain->addr_map.key_map)
+            hg_hash_table_free(na_ofi_domain->addr_map.key_map);
+        if (na_ofi_domain->addr_map.fi_map)
+            hg_hash_table_free(na_ofi_domain->addr_map.fi_map);
+
+        hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
+        free(na_ofi_domain);
+    }
 
     return ret;
 }
@@ -3052,17 +3235,6 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
 
     if (!na_ofi_domain)
         goto out;
-
-    /* Remove from global domain list if not used anymore */
-    if (hg_atomic_decr32(&na_ofi_domain->refcount))
-        /* Cannot free yet */
-        goto out;
-
-    /* Remove from domain list */
-    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
-    if (na_ofi_domain->entry.next || na_ofi_domain->entry.prev)
-        HG_LIST_REMOVE(na_ofi_domain, entry);
-    hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
 
     /* Close AV */
     if (na_ofi_domain->fi_av) {
@@ -3080,34 +3252,13 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         na_ofi_domain->fi_domain = NULL;
     }
 
-    /* Close fabric */
-    if (na_ofi_domain->fi_fabric) {
-        rc = fi_close(&na_ofi_domain->fi_fabric->fid);
-        NA_CHECK_SUBSYS_ERROR(cls, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-            "fi_close() fabric failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        na_ofi_domain->fi_fabric = NULL;
-    }
-
-    /* Free OFI info */
-    if (na_ofi_domain->fi_prov) {
-        /* Prevent fi_freeinfo from attempting to free the key */
-        if (na_ofi_domain->fi_prov->domain_attr->auth_key)
-            na_ofi_domain->fi_prov->domain_attr->auth_key = NULL;
-        if (na_ofi_domain->fi_prov->domain_attr->auth_key_size)
-            na_ofi_domain->fi_prov->domain_attr->auth_key_size = 0;
-        fi_freeinfo(na_ofi_domain->fi_prov);
-        na_ofi_domain->fi_prov = NULL;
-    }
-
     if (na_ofi_domain->addr_map.key_map)
         hg_hash_table_free(na_ofi_domain->addr_map.key_map);
     if (na_ofi_domain->addr_map.fi_map)
         hg_hash_table_free(na_ofi_domain->addr_map.fi_map);
 
-    hg_thread_mutex_destroy(&na_ofi_domain->mutex);
     hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
 
-    free(na_ofi_domain->prov_name);
     free(na_ofi_domain);
 
 out:
@@ -3116,175 +3267,138 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
-    const char *node, const char *service, void *src_addr, size_t src_addrlen,
-    na_bool_t no_wait, na_uint8_t max_contexts,
+na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
+    na_uint8_t max_contexts, struct fi_info *fi_info,
     struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
-    struct na_ofi_endpoint *na_ofi_endpoint;
-    struct fi_info *hints = NULL;
-    na_return_t ret = NA_SUCCESS;
-    /* For provider node resolution (always pass a numeric address) */
-    na_uint64_t flags = (node || service) ? FI_SOURCE | FI_NUMERICHOST : 0;
-    int rc;
+    struct na_ofi_endpoint *na_ofi_endpoint = NULL;
+    na_return_t ret;
 
     na_ofi_endpoint =
-        (struct na_ofi_endpoint *) malloc(sizeof(struct na_ofi_endpoint));
-    NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_endpoint == NULL, out, ret, NA_NOMEM,
+        (struct na_ofi_endpoint *) malloc(sizeof(*na_ofi_endpoint));
+    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_endpoint == NULL, error, ret, NA_NOMEM,
         "Could not allocate na_ofi_endpoint");
-    memset(na_ofi_endpoint, 0, sizeof(struct na_ofi_endpoint));
+    memset(na_ofi_endpoint, 0, sizeof(*na_ofi_endpoint));
 
-    /* Dup fi_info */
-    hints = fi_dupinfo(na_ofi_domain->fi_prov);
-    NA_CHECK_SUBSYS_ERROR(
-        ctx, hints == NULL, out, ret, NA_NOMEM, "Could not duplicate fi_info");
-
-    if (src_addr && !flags) {
-        /* Set src addr hints (FI_SOURCE must not be set in that case) */
-        free(hints->src_addr);
-        hints->src_addr = src_addr;
-        hints->src_addrlen = src_addrlen;
-    }
-
-    /* Set max contexts to EP attrs */
-    hints->ep_attr->tx_ctx_cnt = max_contexts;
-    hints->ep_attr->rx_ctx_cnt = max_contexts;
-
-    rc = fi_getinfo(
-        NA_OFI_VERSION, node, service, flags, hints, &na_ofi_endpoint->fi_prov);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-        "fi_getinfo() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-
-    if ((na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_SEP) &&
+    if ((na_ofi_prov_flags[na_ofi_fabric->prov_type] & NA_OFI_SEP) &&
         max_contexts > 1) {
-        ret = na_ofi_sep_open(na_ofi_domain, na_ofi_endpoint);
-        NA_CHECK_SUBSYS_NA_ERROR(ctx, out, ret, "na_ofi_sep_open() failed");
+        ret = na_ofi_sep_open(
+            na_ofi_domain, fi_info, max_contexts, na_ofi_endpoint);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_sep_open() failed");
     } else {
-        ret = na_ofi_basic_ep_open(na_ofi_domain, no_wait, na_ofi_endpoint);
+        ret = na_ofi_basic_ep_open(
+            na_ofi_fabric, na_ofi_domain, fi_info, no_wait, na_ofi_endpoint);
         NA_CHECK_SUBSYS_NA_ERROR(
-            ctx, out, ret, "na_ofi_basic_ep_open() failed");
+            cls, error, ret, "na_ofi_basic_ep_open() failed");
     }
 
     *na_ofi_endpoint_p = na_ofi_endpoint;
 
-out:
-    if (hints) {
-        /* Prevent fi_freeinfo() from freeing src_addr */
-        if (src_addr)
-            hints->src_addr = NULL;
-        fi_freeinfo(hints);
-    }
-    if (ret != NA_SUCCESS) {
-        na_ofi_endpoint_close(na_ofi_endpoint);
-        *na_ofi_endpoint_p = NULL;
-    }
+    return NA_SUCCESS;
+
+error:
+    free(na_ofi_endpoint);
+
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
+na_ofi_basic_ep_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, struct fi_info *fi_info,
     na_bool_t no_wait, struct na_ofi_endpoint *na_ofi_endpoint)
 {
-    struct fi_cq_attr cq_attr = {0};
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     int rc;
 
-    NA_LOG_SUBSYS_DEBUG(ctx, "Opening standard endpoint");
+    NA_LOG_SUBSYS_DEBUG(cls, "Opening standard endpoint");
 
     /* Create a transport level communication endpoint */
-    rc = fi_endpoint(na_ofi_domain->fi_domain, /* In:  Domain object */
-        na_ofi_endpoint->fi_prov,              /* In:  Provider */
-        &na_ofi_endpoint->fi_ep,               /* Out: Endpoint object */
-        NULL);                                 /* Optional context */
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    rc = fi_endpoint(
+        na_ofi_domain->fi_domain, fi_info, &na_ofi_endpoint->fi_ep, NULL);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_endpoint() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    /* Initialize queue / mutex */
-    na_ofi_endpoint->retry_op_queue =
-        malloc(sizeof(*na_ofi_endpoint->retry_op_queue));
-    NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_endpoint->retry_op_queue == NULL, out,
-        ret, NA_NOMEM, "Could not allocate retry_op_queue");
-    HG_QUEUE_INIT(&na_ofi_endpoint->retry_op_queue->queue);
-    hg_thread_spin_init(&na_ofi_endpoint->retry_op_queue->lock);
-
-    if (!no_wait) {
-        if (na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_WAIT_FD)
-            cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
-        else {
-            struct fi_wait_attr wait_attr = {0};
-
-            /* Open wait set for other providers. */
-            wait_attr.wait_obj = FI_WAIT_UNSPEC;
-            rc = fi_wait_open(na_ofi_domain->fi_fabric, &wait_attr,
-                &na_ofi_endpoint->fi_wait);
-            NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret,
-                na_ofi_errno_to_na(-rc), "fi_wait_open() failed, rc: %d (%s)",
-                rc, fi_strerror(-rc));
-            cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
-            cq_attr.wait_set = na_ofi_endpoint->fi_wait;
-        }
-    }
-    cq_attr.wait_cond = FI_CQ_COND_NONE;
-    cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    cq_attr.size = NA_OFI_CQ_DEPTH;
-    rc = fi_cq_open(
-        na_ofi_domain->fi_domain, &cq_attr, &na_ofi_endpoint->fi_cq, NULL);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-        "fi_cq_open failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    /* Create event queues (CQ, wait sets) */
+    ret = na_ofi_eq_open(
+        na_ofi_fabric, na_ofi_domain, no_wait, &na_ofi_endpoint->eq);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open event queues");
 
     /* Bind the CQ and AV to the endpoint */
-    rc = fi_ep_bind(na_ofi_endpoint->fi_ep, &na_ofi_endpoint->fi_cq->fid,
+    rc = fi_ep_bind(na_ofi_endpoint->fi_ep, &na_ofi_endpoint->eq->fi_cq->fid,
         FI_TRANSMIT | FI_RECV);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_ep_bind() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     rc = fi_ep_bind(na_ofi_endpoint->fi_ep, &na_ofi_domain->fi_av->fid, 0);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_ep_bind() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Enable the endpoint for communication, and commits the bind operations */
     rc = fi_enable(na_ofi_endpoint->fi_ep);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    na_ofi_endpoint->sep = NA_FALSE;
+    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
+        fprintf(hg_log_get_stream_debug(), "%s",
+            fi_tostr(fi_info->ep_attr, FI_TYPE_EP_ATTR)),
+        "fi_endpoint opened");
 
-out:
+    return NA_SUCCESS;
+
+error:
+    if (na_ofi_endpoint->fi_ep != NULL) {
+        (void) fi_close(&na_ofi_endpoint->fi_ep->fid);
+        na_ofi_endpoint->fi_ep = NULL;
+    }
+    if (na_ofi_endpoint->eq != NULL) {
+        (void) na_ofi_eq_close(na_ofi_endpoint->eq);
+        na_ofi_endpoint->eq = NULL;
+    }
+
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
+    struct fi_info *fi_info, na_uint8_t max_contexts,
     struct na_ofi_endpoint *na_ofi_endpoint)
 {
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     int rc;
 
-    NA_LOG_SUBSYS_DEBUG(ctx, "Opening SEP endpoint");
+    NA_LOG_SUBSYS_DEBUG(cls, "Opening SEP endpoint");
+
+    /* Set max contexts */
+    fi_info->ep_attr->tx_ctx_cnt = max_contexts;
+    fi_info->ep_attr->rx_ctx_cnt = max_contexts;
 
     /* Create a transport level communication endpoint (sep) */
-    rc = fi_scalable_ep(na_ofi_domain->fi_domain, /* In:  Domain object */
-        na_ofi_endpoint->fi_prov,                 /* In:  Provider */
-        &na_ofi_endpoint->fi_ep,                  /* Out: Endpoint object */
-        NULL);                                    /* Optional context */
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    rc = fi_scalable_ep(
+        na_ofi_domain->fi_domain, fi_info, &na_ofi_endpoint->fi_ep, NULL);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_scalable_ep() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     rc = fi_scalable_ep_bind(
         na_ofi_endpoint->fi_ep, &na_ofi_domain->fi_av->fid, 0);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_ep_bind() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Enable the endpoint for communication, and commits the bind operations */
     rc = fi_enable(na_ofi_endpoint->fi_ep);
-    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    na_ofi_endpoint->sep = NA_TRUE;
+    return NA_SUCCESS;
 
-out:
+error:
+    if (na_ofi_endpoint->fi_ep != NULL) {
+        (void) fi_close(&na_ofi_endpoint->fi_ep->fid);
+        na_ofi_endpoint->fi_ep = NULL;
+    }
+
     return ret;
 }
 
@@ -3298,11 +3412,11 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     if (!na_ofi_endpoint)
         goto out;
 
-    /* When not using SEP */
-    if (na_ofi_endpoint->retry_op_queue) {
+    /* Valid only when not using SEP */
+    if (na_ofi_endpoint->eq && na_ofi_endpoint->eq->retry_op_queue) {
         /* Check that unexpected op queue is empty */
         na_bool_t empty =
-            HG_QUEUE_IS_EMPTY(&na_ofi_endpoint->retry_op_queue->queue);
+            HG_QUEUE_IS_EMPTY(&na_ofi_endpoint->eq->retry_op_queue->queue);
         NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, out, ret, NA_BUSY,
             "Retry op queue should be empty");
     }
@@ -3315,35 +3429,124 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
         na_ofi_endpoint->fi_ep = NULL;
     }
 
-    /* Close completion queue */
-    if (na_ofi_endpoint->fi_cq) {
-        rc = fi_close(&na_ofi_endpoint->fi_cq->fid);
-        NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-            "fi_close() CQ failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        na_ofi_endpoint->fi_cq = NULL;
+    /* Close event queues */
+    if (na_ofi_endpoint->eq) {
+        ret = na_ofi_eq_close(na_ofi_endpoint->eq);
+        NA_CHECK_SUBSYS_NA_ERROR(ctx, out, ret, "Could not close event queues");
     }
 
-    /* Close wait set */
-    if (na_ofi_endpoint->fi_wait) {
-        rc = fi_close(&na_ofi_endpoint->fi_wait->fid);
-        NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-            "fi_close() wait failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        na_ofi_endpoint->fi_wait = NULL;
-    }
-
-    /* Free OFI info */
-    if (na_ofi_endpoint->fi_prov)
-        fi_freeinfo(na_ofi_endpoint->fi_prov);
-
+    /* Destroy source address */
     if (na_ofi_endpoint->src_addr)
         na_ofi_addr_destroy(na_ofi_endpoint->src_addr);
 
-    if (na_ofi_endpoint->retry_op_queue) {
-        hg_thread_spin_destroy(&na_ofi_endpoint->retry_op_queue->lock);
-        free(na_ofi_endpoint->retry_op_queue);
+    free(na_ofi_endpoint);
+
+out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
+    struct na_ofi_eq **na_ofi_eq_p)
+{
+    struct na_ofi_eq *na_ofi_eq = NULL;
+    struct fi_cq_attr cq_attr = {0};
+    na_return_t ret;
+    int rc;
+
+    na_ofi_eq = (struct na_ofi_eq *) malloc(sizeof(*na_ofi_eq));
+    NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_eq == NULL, error, ret, NA_NOMEM,
+        "Could not allocate na_ofi_eq");
+    memset(na_ofi_eq, 0, sizeof(*na_ofi_eq));
+
+    /* Initialize queue / mutex */
+    na_ofi_eq->retry_op_queue = malloc(sizeof(*na_ofi_eq->retry_op_queue));
+    NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_eq->retry_op_queue == NULL, error, ret,
+        NA_NOMEM, "Could not allocate retry_op_queue");
+    HG_QUEUE_INIT(&na_ofi_eq->retry_op_queue->queue);
+    hg_thread_spin_init(&na_ofi_eq->retry_op_queue->lock);
+
+    if (!no_wait) {
+        if (na_ofi_prov_flags[na_ofi_fabric->prov_type] & NA_OFI_WAIT_FD)
+            cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
+        else {
+            struct fi_wait_attr wait_attr = {0};
+
+            /* Open wait set for other providers. */
+            wait_attr.wait_obj = FI_WAIT_UNSPEC;
+            rc = fi_wait_open(
+                na_ofi_fabric->fi_fabric, &wait_attr, &na_ofi_eq->fi_wait);
+            NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, error, ret,
+                na_ofi_errno_to_na(-rc), "fi_wait_open() failed, rc: %d (%s)",
+                rc, fi_strerror(-rc));
+            cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
+            cq_attr.wait_set = na_ofi_eq->fi_wait;
+        }
+    }
+    cq_attr.wait_cond = FI_CQ_COND_NONE;
+    cq_attr.format = FI_CQ_FORMAT_TAGGED;
+    cq_attr.size = NA_OFI_CQ_DEPTH;
+    rc =
+        fi_cq_open(na_ofi_domain->fi_domain, &cq_attr, &na_ofi_eq->fi_cq, NULL);
+    NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
+        "fi_cq_open failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+    *na_ofi_eq_p = na_ofi_eq;
+
+    return NA_SUCCESS;
+
+error:
+    if (na_ofi_eq != NULL) {
+        if (na_ofi_eq->fi_cq != NULL) {
+            (void) fi_close(&na_ofi_eq->fi_cq->fid);
+            na_ofi_eq->fi_cq = NULL;
+        }
+        if (na_ofi_eq->fi_wait != NULL) {
+            (void) fi_close(&na_ofi_eq->fi_wait->fid);
+            na_ofi_eq->fi_wait = NULL;
+        }
+        if (na_ofi_eq->retry_op_queue) {
+            hg_thread_spin_destroy(&na_ofi_eq->retry_op_queue->lock);
+            free(na_ofi_eq->retry_op_queue);
+            na_ofi_eq->retry_op_queue = NULL;
+        }
+        free(na_ofi_eq);
     }
 
-    free(na_ofi_endpoint);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_eq_close(struct na_ofi_eq *na_ofi_eq)
+{
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* Close completion queue */
+    if (na_ofi_eq->fi_cq) {
+        rc = fi_close(&na_ofi_eq->fi_cq->fid);
+        NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+            "fi_close() CQ failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        na_ofi_eq->fi_cq = NULL;
+    }
+
+    /* Close wait set */
+    if (na_ofi_eq->fi_wait) {
+        rc = fi_close(&na_ofi_eq->fi_wait->fid);
+        NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+            "fi_close() wait failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        na_ofi_eq->fi_wait = NULL;
+    }
+
+    if (na_ofi_eq->retry_op_queue) {
+        hg_thread_spin_destroy(&na_ofi_eq->retry_op_queue->lock);
+        free(na_ofi_eq->retry_op_queue);
+    }
+
+    free(na_ofi_eq);
 
 out:
     return ret;
@@ -3354,17 +3557,16 @@ static na_return_t
 na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class)
 {
     struct na_ofi_addr_key addr_key;
-    uint32_t addr_format = na_ofi_class->domain->fi_prov->addr_format;
+    uint32_t addr_format = na_ofi_class->fi_info->addr_format;
     size_t addrlen = na_ofi_prov_addr_size(addr_format);
     na_return_t ret;
     int rc;
 
     /* Make sure expected addr format len is same as OFI addr len */
-    NA_CHECK_SUBSYS_ERROR(addr,
-        addrlen != na_ofi_class->domain->fi_prov->src_addrlen, error, ret,
-        NA_PROTONOSUPPORT,
+    NA_CHECK_SUBSYS_ERROR(addr, addrlen != na_ofi_class->fi_info->src_addrlen,
+        error, ret, NA_PROTONOSUPPORT,
         "Address lengths do not match (expected %zu, got %zu)", addrlen,
-        na_ofi_class->domain->fi_prov->src_addrlen);
+        na_ofi_class->fi_info->src_addrlen);
 
     /* Retrieve endpoint addr */
     rc = fi_getname(
@@ -3393,8 +3595,9 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_get_uri(struct na_ofi_domain *na_ofi_domain, char *buf,
-    na_size_t *buf_size_p, const struct na_ofi_addr_key *addr_key)
+na_ofi_get_uri(const struct na_ofi_fabric *na_ofi_fabric,
+    const struct na_ofi_domain *na_ofi_domain, char *buf, na_size_t *buf_size_p,
+    const struct na_ofi_addr_key *addr_key)
 {
     char fi_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'}, *fi_addr_str_ptr;
     size_t fi_addr_strlen = NA_OFI_MAX_URI_LEN;
@@ -3421,15 +3624,15 @@ na_ofi_get_uri(struct na_ofi_domain *na_ofi_domain, char *buf,
     } else
         fi_addr_str_ptr = fi_addr_str;
 
-    addr_strlen = strlen(fi_addr_str_ptr) +
-                  strlen(na_ofi_domain->fi_prov->fabric_attr->prov_name) + 3;
+    addr_strlen =
+        strlen(fi_addr_str_ptr) + strlen(na_ofi_fabric->prov_name) + 3;
     if (buf) {
         NA_CHECK_SUBSYS_ERROR(addr, addr_strlen >= *buf_size_p, out, ret,
             NA_OVERFLOW, "Buffer size too small to copy addr");
 
         /* Generate URI */
-        rc = snprintf(buf, *buf_size_p, "%s://%s",
-            na_ofi_domain->fi_prov->fabric_attr->prov_name, fi_addr_str_ptr);
+        rc = snprintf(buf, *buf_size_p, "%s://%s", na_ofi_fabric->prov_name,
+            fi_addr_str_ptr);
         NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > (int) *buf_size_p, out, ret,
             NA_OVERFLOW,
             "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
@@ -3492,8 +3695,7 @@ na_ofi_addr_release(struct na_ofi_addr *na_ofi_addr)
 {
     if (na_ofi_addr->addr_key.val) {
         /* Removal is not needed when finalizing */
-        if (!na_ofi_addr->class->finalizing ||
-            hg_atomic_get32(&na_ofi_addr->class->domain->refcount) > 1)
+        if (!na_ofi_addr->class->finalizing)
             na_ofi_addr_map_remove(
                 &na_ofi_addr->class->domain->addr_map, &na_ofi_addr->addr_key);
         na_ofi_addr->addr_key.val = 0;
@@ -3572,7 +3774,7 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr)
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void *
 na_ofi_mem_alloc(
-    struct na_ofi_domain *na_ofi_domain, na_size_t size, struct fid_mr **mr_hdl)
+    struct na_ofi_class *na_ofi_class, na_size_t size, struct fid_mr **mr_hdl)
 {
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
@@ -3586,7 +3788,7 @@ na_ofi_mem_alloc(
 
     /* Register buffer */
     rc = na_ofi_mem_buf_register(
-        mem_ptr, (size_t) size, (void **) mr_hdl, (void *) na_ofi_domain);
+        mem_ptr, (size_t) size, (void **) mr_hdl, (void *) na_ofi_class);
     NA_CHECK_SUBSYS_ERROR_NORET(
         mem, rc != 0, error, "Could not register buffer");
 
@@ -3601,12 +3803,12 @@ error:
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_mem_free(
-    struct na_ofi_domain *na_ofi_domain, void *mem_ptr, struct fid_mr *mr_hdl)
+    struct na_ofi_class *na_ofi_class, void *mem_ptr, struct fid_mr *mr_hdl)
 {
     int rc;
 
     /* Release MR handle is there was any */
-    rc = na_ofi_mem_buf_deregister((void *) mr_hdl, (void *) na_ofi_domain);
+    rc = na_ofi_mem_buf_deregister((void *) mr_hdl, (void *) na_ofi_class);
     NA_CHECK_SUBSYS_ERROR_NORET(
         mem, rc != 0, out, "Could not deregister buffer");
 
@@ -3620,21 +3822,22 @@ out:
 static int
 na_ofi_mem_buf_register(const void *buf, size_t len, void **handle, void *arg)
 {
-    struct na_ofi_domain *na_ofi_domain = (struct na_ofi_domain *) arg;
+    struct na_ofi_class *na_ofi_class = (struct na_ofi_class *) arg;
     int ret = HG_UTIL_SUCCESS;
 
     /* Register memory if FI_MR_LOCAL is set and provider uses it */
-    if (na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_LOCAL) {
+    if (na_ofi_class->fi_info->domain_attr->mr_mode & FI_MR_LOCAL) {
         struct fid_mr *mr_hdl = NULL;
         int rc;
 
-        rc = fi_mr_reg(na_ofi_domain->fi_domain, buf, len, FI_SEND | FI_RECV,
-            0 /* offset */, 0 /* requested key */, 0 /* flags */, &mr_hdl,
-            NULL /* context */);
+        rc = fi_mr_reg(na_ofi_class->domain->fi_domain, buf, len,
+            FI_SEND | FI_RECV, 0 /* offset */, 0 /* requested key */,
+            0 /* flags */, &mr_hdl, NULL /* context */);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, HG_UTIL_FAIL,
             "fi_mr_reg() failed, rc: %d (%s), mr_reg_count: %d", rc,
-            fi_strerror(-rc), hg_atomic_get32(na_ofi_domain->mr_reg_count));
-        hg_atomic_incr32(na_ofi_domain->mr_reg_count);
+            fi_strerror(-rc),
+            hg_atomic_get32(na_ofi_class->domain->mr_reg_count));
+        hg_atomic_incr32(na_ofi_class->domain->mr_reg_count);
         *handle = (void *) mr_hdl;
     }
 
@@ -3651,11 +3854,11 @@ na_ofi_mem_buf_deregister(void *handle, void *arg)
     /* Release MR handle is there was any */
     if (handle) {
         struct fid_mr *mr_hdl = (struct fid_mr *) handle;
-        struct na_ofi_domain *na_ofi_domain = (struct na_ofi_domain *) arg;
+        struct na_ofi_class *na_ofi_class = (struct na_ofi_class *) arg;
         int rc = fi_close(&mr_hdl->fid);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, HG_UTIL_FAIL,
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        hg_atomic_decr32(na_ofi_domain->mr_reg_count);
+        hg_atomic_decr32(na_ofi_class->domain->mr_reg_count);
     }
 
 out:
@@ -3834,17 +4037,17 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_rma_iov_translate(struct na_ofi_domain *na_ofi_domain,
-    const struct iovec *iov, unsigned long iovcnt, na_uint64_t key,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
-    struct fi_rma_iov *new_iov, unsigned long new_iovcnt)
+na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
+    unsigned long iovcnt, na_uint64_t key, unsigned long iov_start_index,
+    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
+    unsigned long new_iovcnt)
 {
     uint64_t addr;
     na_size_t remaining_len = len;
     unsigned long i, iov_index;
 
     /* Reference by virtual address, rather than a 0-based offset */
-    addr = (na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
+    addr = (fi_info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
                ? (uint64_t) iov[iov_start_index].iov_base
                : (uint64_t) iov[iov_start_index].iov_base -
                      (uint64_t) iov[0].iov_base;
@@ -3859,7 +4062,7 @@ na_ofi_rma_iov_translate(struct na_ofi_domain *na_ofi_domain,
     for (i = 1, iov_index = iov_start_index + 1;
          remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
          i++, iov_index++) {
-        addr = (na_ofi_domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
+        addr = (fi_info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
                    ? (uint64_t) iov[iov_index].iov_base
                    : (uint64_t) iov[iov_index].iov_base -
                          (uint64_t) iov[0].iov_base;
@@ -3883,7 +4086,7 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     struct na_ofi_addr *na_ofi_addr, na_uint8_t remote_id,
     struct na_ofi_op_id *na_ofi_op_id)
 {
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
+    struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     struct iovec *local_iov = NA_OFI_IOV(na_ofi_mem_handle_local),
                  *remote_iov = NA_OFI_IOV(na_ofi_mem_handle_remote);
     unsigned long local_iovcnt = na_ofi_mem_handle_local->desc.info.iovcnt,
@@ -3959,7 +4162,7 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     } else
         riov = na_ofi_op_id->info.rma.remote_iov.s;
 
-    na_ofi_rma_iov_translate(na_ofi_class->domain, remote_iov, remote_iovcnt,
+    na_ofi_rma_iov_translate(na_ofi_class->fi_info, remote_iov, remote_iovcnt,
         remote_key, remote_iov_start_index, remote_iov_start_offset, length,
         riov, na_ofi_op_id->info.rma.remote_iovcnt);
 
@@ -3973,9 +4176,9 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
         rma, "Posting RMA op (op id=%p)", (void *) na_ofi_op_id);
 
     /* Post the OFI RMA operation */
-    rc = fi_rma_op(ctx->fi_tx, &fi_msg_rma, fi_rma_flags);
+    rc = fi_rma_op(na_ofi_context->fi_tx, &fi_msg_rma, fi_rma_flags);
     if (unlikely(rc == -FI_EAGAIN))
-        na_ofi_op_retry(ctx, na_ofi_op_id);
+        na_ofi_op_retry(na_ofi_context, na_ofi_op_id);
     else
         NA_CHECK_SUBSYS_ERROR(rma, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc), "fi_rma_op() failed, rc: %zd (%s)",
@@ -4001,7 +4204,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
     struct fi_cq_tagged_entry cq_events[], fi_addr_t src_addrs[],
     void **src_err_addr, size_t *src_err_addrlen, size_t *actual_count)
 {
-    struct fid_cq *cq_hdl = NA_OFI_CONTEXT(context)->fi_cq;
+    struct fid_cq *cq_hdl = NA_OFI_CONTEXT(context)->eq->fi_cq;
     struct fi_cq_err_entry cq_err;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
@@ -4188,7 +4391,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
         error, ret, NA_OVERFLOW, "Invalid tag value %" PRIu64, tag);
 
     /* Use src_addr when available */
-    if ((na_ofi_prov_extra_caps[na_ofi_class->domain->prov_type] & FI_SOURCE) &&
+    if ((na_ofi_prov_extra_caps[na_ofi_class->fabric->prov_type] & FI_SOURCE) &&
         src_addr != FI_ADDR_UNSPEC) {
         NA_LOG_SUBSYS_DEBUG(
             addr, "Retrieving address for FI addr %" PRIu64, src_addr);
@@ -4201,7 +4404,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
         na_ofi_addr_ref_incr(na_ofi_addr);
     } else {
         struct na_ofi_addr_key addr_key;
-        uint32_t addr_format = na_ofi_class->domain->fi_prov->addr_format;
+        uint32_t addr_format = na_ofi_class->fi_info->addr_format;
 
         if (src_err_addr && src_err_addrlen) {
             NA_CHECK_SUBSYS_ERROR(addr, src_err_addrlen > sizeof(addr_key.addr),
@@ -4209,8 +4412,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
                 "src addr len (%zu) greater than max supported (%zu)",
                 src_err_addrlen, sizeof(addr_key.addr));
             memcpy(&addr_key.addr, src_err_addr, src_err_addrlen);
-        } else if (na_ofi_with_msg_hdr(
-                       na_ofi_class->domain)) { /* addr from msg header */
+        } else if (na_ofi_with_msg_hdr(na_ofi_class)) {
             ret = na_ofi_raw_addr_deserialize(addr_format, &addr_key.addr,
                 na_ofi_op_id->info.msg.buf.ptr, len);
             NA_CHECK_SUBSYS_NA_ERROR(
@@ -4282,7 +4484,7 @@ na_ofi_cq_process_rma_event(struct na_ofi_op_id *na_ofi_op_id)
 static na_return_t
 na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
 {
-    struct na_ofi_op_queue *op_queue = na_ofi_context->retry_op_queue;
+    struct na_ofi_op_queue *op_queue = na_ofi_context->eq->retry_op_queue;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
     na_return_t ret;
 
@@ -4424,7 +4626,7 @@ static void
 na_ofi_op_retry(
     struct na_ofi_context *na_ofi_context, struct na_ofi_op_id *na_ofi_op_id)
 {
-    struct na_ofi_op_queue *retry_op_queue = na_ofi_context->retry_op_queue;
+    struct na_ofi_op_queue *retry_op_queue = na_ofi_context->eq->retry_op_queue;
 
     NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry (%s)", (void *) na_ofi_op_id,
         na_cb_type_to_string(na_ofi_op_id->completion_data.callback_info.type));
@@ -4446,7 +4648,7 @@ static void
 na_ofi_op_retry_abort_addr(
     struct na_ofi_context *na_ofi_context, fi_addr_t fi_addr, na_return_t ret)
 {
-    struct na_ofi_op_queue *op_queue = na_ofi_context->retry_op_queue;
+    struct na_ofi_op_queue *op_queue = na_ofi_context->eq->retry_op_queue;
     struct na_ofi_op_id *na_ofi_op_id;
 
     NA_LOG_SUBSYS_ERROR(op,
@@ -4543,11 +4745,11 @@ na_ofi_op_cancel(struct na_ofi_op_id *na_ofi_op_id)
     (void) rc;
 
     /* Work around segfault on fi_cq_signal() in some providers */
-    if (na_ofi_prov_flags[na_ofi_op_id->na_ofi_class->domain->prov_type] &
+    if (na_ofi_prov_flags[na_ofi_op_id->na_ofi_class->fabric->prov_type] &
         NA_OFI_SIGNAL) {
         /* Signal CQ to wake up and no longer wait on FD */
         int rc_signal =
-            fi_cq_signal(NA_OFI_CONTEXT(na_ofi_op_id->context)->fi_cq);
+            fi_cq_signal(NA_OFI_CONTEXT(na_ofi_op_id->context)->eq->fi_cq);
         NA_CHECK_SUBSYS_ERROR(op, rc_signal != 0 && rc_signal != -ENOSYS, error,
             ret, na_ofi_errno_to_na(-rc_signal),
             "fi_cq_signal (op type %d) failed, rc: %d (%s)",
@@ -4568,37 +4770,43 @@ error:
 static na_bool_t
 na_ofi_check_protocol(const char *protocol_name)
 {
-    struct fi_info *providers = NULL, *prov;
-    na_bool_t accept = NA_FALSE;
-    na_return_t ret = NA_SUCCESS;
+    struct fi_info *prov, *providers = NULL;
     enum na_ofi_prov_type type;
+    na_bool_t accept;
+    na_return_t na_ret;
 
     type = na_ofi_prov_name_to_type(protocol_name);
-    NA_CHECK_SUBSYS_ERROR(cls, type == NA_OFI_PROV_NULL, out, ret,
-        NA_PROTONOSUPPORT, "Protocol %s not supported", protocol_name);
+    NA_CHECK_SUBSYS_ERROR(cls, type == NA_OFI_PROV_NULL, out, accept, NA_FALSE,
+        "Protocol %s not supported", protocol_name);
 
 /* Only the sockets provider is currently supported on macOS */
 #ifdef __APPLE__
-    NA_CHECK_SUBSYS_ERROR(fatal, type == NA_OFI_PROV_TCP, out, ret,
-        NA_PROTONOSUPPORT,
+    NA_CHECK_SUBSYS_ERROR(fatal, type == NA_OFI_PROV_TCP, out, accept, NA_FALSE,
         "Protocol \"tcp\" not supported on macOS, please use \"sockets\" "
         "instead");
 #endif
 
-    /* Get info from provider */
-    ret = na_ofi_getinfo(type, &providers, protocol_name, FI_FORMAT_UNSPEC);
-    NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "na_ofi_getinfo() failed");
+    /* Get info from provider (no node info) */
+    na_ret = na_ofi_getinfo(type, NULL, &providers);
+    if (na_ret != NA_SUCCESS) {
+        /* getinfo failed.  This could be because Mercury was
+         * linked against a libfabric library that was not compiled with
+         * support for the desired provider.  Attempt to detect this case
+         * and display a user-friendly error message.
+         */
+        na_ofi_provider_check(type, protocol_name);
+        NA_GOTO_SUBSYS_ERROR(
+            cls, out, accept, NA_FALSE, "na_ofi_getinfo() failed");
+    }
 
-    prov = providers;
-    while (prov != NULL) {
-        if (!strcmp(na_ofi_prov_name[type], prov->fabric_attr->prov_name)) {
+    for (prov = providers; prov != NULL; prov = prov->next) {
+        if (strcmp(na_ofi_prov_name[type], prov->fabric_attr->prov_name) == 0) {
             NA_LOG_SUBSYS_DEBUG(
                 cls, "Matched provider: %s", prov->fabric_attr->prov_name);
-            accept = NA_TRUE;
             break;
         }
-        prov = prov->next;
     }
+    accept = (na_bool_t) (prov != NULL);
 
     fi_freeinfo(providers);
 
@@ -4614,12 +4822,14 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     struct na_ofi_class *na_ofi_class = NULL;
     enum na_ofi_prov_type prov_type;
-    uint32_t addr_format = FI_FORMAT_UNSPEC;
     na_bool_t no_wait;
     na_size_t msg_size_max;
     char *domain_name = NULL;
-    void *src_addr = NULL;
-    size_t src_addrlen = 0;
+    struct na_ofi_info info = {.addr_format = FI_FORMAT_UNSPEC,
+        .node = NULL,
+        .service = NULL,
+        .src_addr = NULL,
+        .src_addrlen = 0};
     struct na_loc_info *loc_info = NULL;
     na_return_t ret;
 #ifdef NA_OFI_HAS_ADDR_POOL
@@ -4656,14 +4866,16 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 #endif
 
     /* Get addr format */
-    addr_format = na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
-    NA_CHECK_SUBSYS_ERROR(cls, addr_format == FI_FORMAT_UNSPEC, error, ret,
+    info.addr_format =
+        na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
+    NA_CHECK_SUBSYS_ERROR(cls, info.addr_format == FI_FORMAT_UNSPEC, error, ret,
         NA_PROTONOSUPPORT, "Unsupported address format");
 
     /* Parse hostname info and get domain name etc */
     if (na_info->host_name != NULL) {
         ret = na_ofi_parse_hostname_info(prov_type, na_info->host_name,
-            addr_format, &domain_name, &src_addr, &src_addrlen);
+            info.addr_format, &domain_name, &info.node, &info.service,
+            &info.src_addr, &info.src_addrlen);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "na_ofi_parse_hostname_info() failed");
     }
@@ -4676,23 +4888,35 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 #ifdef NA_HAS_HWLOC
     /* Use autodetect if we can't guess which domain to use */
     if ((na_ofi_prov_flags[prov_type] & NA_OFI_LOC_INFO) && !domain_name &&
-        !src_addr) {
+        !info.src_addr) {
         ret = na_loc_info_init(&loc_info);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could init loc info");
     }
 #endif
 
-    /* Create/Open domain */
-    no_wait = na_init_info.progress_mode & NA_NO_BLOCK;
-    ret = na_ofi_domain_open(prov_type, addr_format, domain_name, loc_info,
-        na_init_info.auth_key, no_wait, &na_ofi_class->domain);
+    /* Verify info */
+    ret = na_ofi_verify_info(
+        prov_type, &info, domain_name, loc_info, &na_ofi_class->fi_info);
 #ifdef NA_HAS_HWLOC
     if (loc_info)
         na_loc_info_destroy(loc_info);
 #endif
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not verify info for %s",
+        na_ofi_prov_name[prov_type]);
+
+    /* Open fabric */
+    ret = na_ofi_fabric_open(
+        prov_type, na_ofi_class->fi_info, &na_ofi_class->fabric);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open fabric for %s",
+        na_ofi_prov_name[prov_type]);
+
+    /* Open domain */
+    no_wait = na_init_info.progress_mode & NA_NO_BLOCK;
+    ret = na_ofi_domain_open(na_ofi_class->fabric, na_init_info.auth_key,
+        no_wait, na_ofi_class->fi_info, &na_ofi_class->domain);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
         "Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
-        domain_name);
+        na_ofi_class->fi_info->domain_attr->name);
 
     /* Make sure that domain is configured as no_wait */
     NA_CHECK_SUBSYS_WARNING(cls, no_wait != na_ofi_class->domain->no_wait,
@@ -4725,7 +4949,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_ofi_class->mem_pool = hg_mem_pool_create(
         MAX(na_ofi_class->unexpected_size_max, na_ofi_class->expected_size_max),
         NA_OFI_MEM_CHUNK_COUNT, NA_OFI_MEM_BLOCK_COUNT, na_ofi_mem_buf_register,
-        na_ofi_mem_buf_deregister, (void *) na_ofi_class->domain);
+        na_ofi_mem_buf_deregister, (void *) na_ofi_class);
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_class->mem_pool == NULL, error, ret,
         NA_NOMEM,
         "Could not create memory pool with %d blocks of size %d x %" PRIu64
@@ -4735,13 +4959,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             na_ofi_class->expected_size_max));
 #endif
 
-    /* Cache IOV max */
-    na_ofi_class->iov_max =
-        na_ofi_class->domain->fi_prov->domain_attr->mr_iov_limit;
-
-    /* Create endpoint (avoid using node / service, only src_addr) */
-    ret = na_ofi_endpoint_open(na_ofi_class->domain, NULL, NULL, src_addr,
-        src_addrlen, na_ofi_class->no_wait, na_ofi_class->context_max,
+    /* Create endpoint */
+    ret = na_ofi_endpoint_open(na_ofi_class->fabric, na_ofi_class->domain,
+        na_ofi_class->no_wait, na_ofi_class->context_max, na_ofi_class->fi_info,
         &na_ofi_class->endpoint);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create endpoint");
 
@@ -4762,12 +4982,14 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     na_class->plugin_class = (void *) na_ofi_class;
 
-    na_ofi_free_hostname_info(domain_name, src_addr);
+    na_ofi_free_hostname_info(
+        domain_name, info.node, info.service, info.src_addr);
 
     return NA_SUCCESS;
 
 error:
-    na_ofi_free_hostname_info(domain_name, src_addr);
+    na_ofi_free_hostname_info(
+        domain_name, info.node, info.service, info.src_addr);
 
     if (na_ofi_class)
         na_ofi_class_free(na_ofi_class);
@@ -4810,108 +5032,88 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
+na_ofi_context_create(na_class_t *na_class, void **context_p, na_uint8_t id)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_domain *domain = priv->domain;
-    struct na_ofi_endpoint *ep = priv->endpoint;
-    struct na_ofi_context *ctx = NULL;
-    struct fi_cq_attr cq_attr = {0};
-    na_return_t ret = NA_SUCCESS;
-    int rc = 0;
+    struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
+    struct na_ofi_context *na_ofi_context = NULL;
+    na_return_t ret;
+    int rc;
 
-    ctx = (struct na_ofi_context *) calloc(1, sizeof(struct na_ofi_context));
-    NA_CHECK_SUBSYS_ERROR(ctx, ctx == NULL, out, ret, NA_NOMEM,
+    na_ofi_context = (struct na_ofi_context *) malloc(sizeof(*na_ofi_context));
+    NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_context == NULL, error, ret, NA_NOMEM,
         "Could not allocate na_ofi_context");
-    ctx->idx = id;
+    memset(na_ofi_context, 0, sizeof(*na_ofi_context));
+    na_ofi_context->idx = id;
 
-    /* If not using SEP, just point to endpoint objects */
-    hg_thread_mutex_lock(&priv->mutex);
-
-    if (!na_ofi_with_sep(priv)) {
-        ctx->fi_tx = ep->fi_ep;
-        ctx->fi_rx = ep->fi_ep;
-        ctx->fi_cq = ep->fi_cq;
-        ctx->fi_wait = ep->fi_wait;
-        ctx->retry_op_queue = ep->retry_op_queue;
+    /* If not using SEP, just point to class' endpoint */
+    if (!na_ofi_with_sep(na_ofi_class)) {
+        na_ofi_context->fi_tx = na_ofi_class->endpoint->fi_ep;
+        na_ofi_context->fi_rx = na_ofi_class->endpoint->fi_ep;
+        na_ofi_context->eq = na_ofi_class->endpoint->eq;
     } else {
-        ctx->retry_op_queue = malloc(sizeof(*ctx->retry_op_queue));
-        NA_CHECK_SUBSYS_ERROR(ctx, ctx->retry_op_queue == NULL, error, ret,
-            NA_NOMEM, "Could not allocate retry_op_queue/_lock");
-
-        /* Initialize queue / mutex */
-        HG_QUEUE_INIT(&ctx->retry_op_queue->queue);
-        hg_thread_spin_init(&ctx->retry_op_queue->lock);
-
+        int32_t n_contexts = hg_atomic_get32(&na_ofi_class->n_contexts);
         NA_CHECK_SUBSYS_ERROR(fatal,
-            priv->contexts >= priv->context_max || id >= priv->context_max,
+            n_contexts >= (int32_t) na_ofi_class->context_max ||
+                id >= na_ofi_class->context_max,
             error, ret, NA_OPNOTSUPPORTED,
-            "contexts %d, context id %d, max_contexts %d", priv->contexts, id,
-            priv->context_max);
+            "n_contexts %" PRId32 ", context id %" PRIu8
+            ", max_contexts %" PRIu8,
+            n_contexts, id, na_ofi_class->context_max);
 
-        if (!priv->no_wait) {
-            if (na_ofi_prov_flags[domain->prov_type] & NA_OFI_WAIT_FD)
-                cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
-            else {
-                struct fi_wait_attr wait_attr = {0};
-
-                /* Open wait set for other providers. */
-                wait_attr.wait_obj = FI_WAIT_UNSPEC;
-                rc = fi_wait_open(domain->fi_fabric, &wait_attr, &ctx->fi_wait);
-                NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, error, ret,
-                    na_ofi_errno_to_na(-rc),
-                    "fi_wait_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-                cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
-                cq_attr.wait_set = ctx->fi_wait;
-            }
-        }
-        cq_attr.wait_cond = FI_CQ_COND_NONE;
-        cq_attr.format = FI_CQ_FORMAT_TAGGED;
-        cq_attr.size = NA_OFI_CQ_DEPTH;
-        rc = fi_cq_open(domain->fi_domain, &cq_attr, &ctx->fi_cq, NULL);
-        NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
-            "fi_cq_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-
-        rc = fi_tx_context(ep->fi_ep, id, NULL, &ctx->fi_tx, NULL);
+        /* Create Tx / Rx contexts */
+        rc = fi_tx_context(na_ofi_class->endpoint->fi_ep, id, NULL,
+            &na_ofi_context->fi_tx, NULL);
         NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_tx_context() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-        rc = fi_rx_context(ep->fi_ep, id, NULL, &ctx->fi_rx, NULL);
+        rc = fi_rx_context(na_ofi_class->endpoint->fi_ep, id, NULL,
+            &na_ofi_context->fi_rx, NULL);
         NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_rx_context() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-        rc = fi_ep_bind(ctx->fi_tx, &ctx->fi_cq->fid, FI_TRANSMIT);
+        /* Create event queues (CQ, wait sets) */
+        ret = na_ofi_eq_open(na_ofi_class->fabric, na_ofi_class->domain,
+            na_ofi_class->no_wait, &na_ofi_context->eq);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            ctx, error, ret, "Could not open event queues");
+
+        rc = fi_ep_bind(na_ofi_context->fi_tx, &na_ofi_context->eq->fi_cq->fid,
+            FI_TRANSMIT);
         NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_ep_bind() noc_tx failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-        rc = fi_ep_bind(ctx->fi_rx, &ctx->fi_cq->fid, FI_RECV);
+        rc = fi_ep_bind(
+            na_ofi_context->fi_rx, &na_ofi_context->eq->fi_cq->fid, FI_RECV);
         NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_ep_bind() noc_rx failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-        rc = fi_enable(ctx->fi_tx);
+        rc = fi_enable(na_ofi_context->fi_tx);
         NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_enable() noc_tx failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-        rc = fi_enable(ctx->fi_rx);
+        rc = fi_enable(na_ofi_context->fi_rx);
         NA_CHECK_SUBSYS_ERROR(ctx, rc < 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_enable() noc_rx failed, rc: %d (%s)", rc, fi_strerror(-rc));
     }
 
-    priv->contexts++;
-    hg_thread_mutex_unlock(&priv->mutex);
+    hg_atomic_incr32(&na_ofi_class->n_contexts);
 
-    *context = ctx;
+    *context_p = (void *) na_ofi_context;
 
-out:
-    return ret;
+    return NA_SUCCESS;
 
 error:
-    hg_thread_mutex_unlock(&priv->mutex);
-    if (na_ofi_with_sep(priv) && ctx->retry_op_queue) {
-        hg_thread_spin_destroy(&ctx->retry_op_queue->lock);
-        free(ctx->retry_op_queue);
+    if (na_ofi_context) {
+        if (na_ofi_with_sep(na_ofi_class)) {
+            if (na_ofi_context->fi_tx)
+                (void) fi_close(&na_ofi_context->fi_tx->fid);
+            if (na_ofi_context->fi_rx)
+                (void) fi_close(&na_ofi_context->fi_rx->fid);
+            if (na_ofi_context->eq)
+                (void) na_ofi_eq_close(na_ofi_context->eq);
+        }
+        free(na_ofi_context);
     }
-    free(ctx);
     return ret;
 }
 
@@ -4919,62 +5121,46 @@ error:
 static na_return_t
 na_ofi_context_destroy(na_class_t *na_class, void *context)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_context *ctx = (struct na_ofi_context *) context;
+    struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
+    struct na_ofi_context *na_ofi_context = (struct na_ofi_context *) context;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    if (na_ofi_with_sep(priv)) {
+    if (na_ofi_with_sep(na_ofi_class)) {
         na_bool_t empty;
 
         /* Check that retry op queue is empty */
-        empty = HG_QUEUE_IS_EMPTY(&ctx->retry_op_queue->queue);
+        empty = HG_QUEUE_IS_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
         NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, out, ret, NA_BUSY,
             "Retry op queue should be empty");
 
-        if (ctx->fi_tx) {
-            rc = fi_close(&ctx->fi_tx->fid);
+        if (na_ofi_context->fi_tx) {
+            rc = fi_close(&na_ofi_context->fi_tx->fid);
             NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret,
                 na_ofi_errno_to_na(-rc),
                 "fi_close() noc_tx failed, rc: %d (%s)", rc, fi_strerror(-rc));
-            ctx->fi_tx = NULL;
+            na_ofi_context->fi_tx = NULL;
         }
 
-        if (ctx->fi_rx) {
-            rc = fi_close(&ctx->fi_rx->fid);
+        if (na_ofi_context->fi_rx) {
+            rc = fi_close(&na_ofi_context->fi_rx->fid);
             NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret,
                 na_ofi_errno_to_na(-rc),
                 "fi_close() noc_rx failed, rc: %d (%s)", rc, fi_strerror(-rc));
-            ctx->fi_rx = NULL;
+            na_ofi_context->fi_rx = NULL;
         }
 
         /* Close wait set */
-        if (ctx->fi_wait) {
-            rc = fi_close(&ctx->fi_wait->fid);
-            NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret,
-                na_ofi_errno_to_na(-rc), "fi_close() wait failed, rc: %d (%s)",
-                rc, fi_strerror(-rc));
-            ctx->fi_wait = NULL;
+        if (na_ofi_context->eq) {
+            ret = na_ofi_eq_close(na_ofi_context->eq);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                ctx, out, ret, "Could not close event queues");
+            na_ofi_context->eq = NULL;
         }
-
-        /* Close completion queue */
-        if (ctx->fi_cq) {
-            rc = fi_close(&ctx->fi_cq->fid);
-            NA_CHECK_SUBSYS_ERROR(ctx, rc != 0, out, ret,
-                na_ofi_errno_to_na(-rc), "fi_close() CQ failed, rc: %d (%s)",
-                rc, fi_strerror(-rc));
-            ctx->fi_cq = NULL;
-        }
-
-        hg_thread_spin_destroy(&ctx->retry_op_queue->lock);
-        free(ctx->retry_op_queue);
     }
 
-    hg_thread_mutex_lock(&priv->mutex);
-    priv->contexts--;
-    hg_thread_mutex_unlock(&priv->mutex);
-
-    free(ctx);
+    free(na_ofi_context);
+    hg_atomic_decr32(&na_ofi_class->n_contexts);
 
 out:
     return ret;
@@ -5024,13 +5210,13 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
-    uint32_t addr_format = na_ofi_class->domain->fi_prov->addr_format;
+    uint32_t addr_format = na_ofi_class->fi_info->addr_format;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Check provider from name */
     NA_CHECK_SUBSYS_ERROR(fatal,
-        na_ofi_addr_prov(name) != NA_OFI_CLASS(na_class)->domain->prov_type,
+        na_ofi_addr_prov(name) != NA_OFI_CLASS(na_class)->fabric->prov_type,
         error, ret, NA_INVALID_ARG, "Unrecognized provider type found from: %s",
         name);
 
@@ -5121,7 +5307,8 @@ static na_return_t
 na_ofi_addr_to_string(
     na_class_t *na_class, char *buf, na_size_t *buf_size_p, na_addr_t addr)
 {
-    return na_ofi_get_uri(NA_OFI_CLASS(na_class)->domain, buf, buf_size_p,
+    return na_ofi_get_uri(NA_OFI_CLASS(na_class)->fabric,
+        NA_OFI_CLASS(na_class)->domain, buf, buf_size_p,
         &((struct na_ofi_addr *) addr)->addr_key);
 }
 
@@ -5130,7 +5317,7 @@ static NA_INLINE na_size_t
 na_ofi_addr_get_serialize_size(na_class_t *na_class, na_addr_t NA_UNUSED addr)
 {
     return na_ofi_raw_addr_serialize_size(
-        NA_OFI_CLASS(na_class)->domain->fi_prov->addr_format);
+        NA_OFI_CLASS(na_class)->fi_info->addr_format);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5142,7 +5329,7 @@ na_ofi_addr_serialize(
         &((struct na_ofi_addr *) addr)->addr_key;
 
     return na_ofi_raw_addr_serialize(
-        NA_OFI_CLASS(na_class)->domain->fi_prov->addr_format, buf, buf_size,
+        NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
         &addr_key->addr);
 }
 
@@ -5153,7 +5340,7 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr_p,
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
-    uint32_t addr_format = na_ofi_class->domain->fi_prov->addr_format;
+    uint32_t addr_format = na_ofi_class->fi_info->addr_format;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
 
@@ -5198,9 +5385,9 @@ na_ofi_msg_get_max_expected_size(const na_class_t *na_class)
 static NA_INLINE na_size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
-    if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)->domain))
+    if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)))
         return na_ofi_raw_addr_serialize_size(
-            NA_OFI_CLASS(na_class)->domain->fi_prov->addr_format);
+            NA_OFI_CLASS(na_class)->fi_info->addr_format);
 
     return 0;
 }
@@ -5225,7 +5412,7 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     NA_CHECK_SUBSYS_ERROR_NORET(
         mem, mem_ptr == NULL, out, "Could not allocate buffer from pool");
 #else
-    mem_ptr = na_ofi_mem_alloc(NA_OFI_CLASS(na_class)->domain, size, &mr_hdl);
+    mem_ptr = na_ofi_mem_alloc(NA_OFI_CLASS(na_class), size, &mr_hdl);
     NA_CHECK_SUBSYS_ERROR_NORET(
         mem, mem_ptr == NULL, out, "Could not allocate %d bytes", (int) size);
 #endif
@@ -5244,7 +5431,7 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 #ifdef NA_OFI_HAS_MEM_POOL
     hg_mem_pool_free(NA_OFI_CLASS(na_class)->mem_pool, buf, (void *) mr_hdl);
 #else
-    na_ofi_mem_free(NA_OFI_CLASS(na_class)->domain, buf, mr_hdl);
+    na_ofi_mem_free(NA_OFI_CLASS(na_class), buf, mr_hdl);
 #endif
 
     return NA_SUCCESS;
@@ -5258,9 +5445,9 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
      * For those providers that don't support FI_SOURCE/FI_SOURCE_ERR, insert
      * the msg header to piggyback the source address for unexpected message.
      */
-    if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)->domain))
+    if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)))
         return na_ofi_raw_addr_serialize(
-            NA_OFI_CLASS(na_class)->domain->fi_prov->addr_format, buf, buf_size,
+            NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
             &NA_OFI_CLASS(na_class)->endpoint->src_addr->addr_key.addr);
 
     return NA_SUCCESS;
@@ -5384,9 +5571,11 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
 
     /* Check that we do not exceed IOV limit */
     NA_CHECK_SUBSYS_ERROR(fatal,
-        segment_count > NA_OFI_CLASS(na_class)->iov_max, error, ret,
-        NA_INVALID_ARG, "Segment count exceeds provider limit (%" PRIu64 ")",
-        NA_OFI_CLASS(na_class)->iov_max);
+        segment_count >
+            NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit,
+        error, ret, NA_INVALID_ARG,
+        "Segment count exceeds provider limit (%" PRIu64 ")",
+        NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit);
 
     /* Allocate memory handle */
     na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(
@@ -5447,7 +5636,7 @@ static NA_INLINE na_size_t
 na_ofi_mem_handle_get_max_segments(const na_class_t *na_class)
 {
 #ifdef NA_OFI_USE_REGV
-    return NA_OFI_CLASS(na_class)->iov_max;
+    return NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit;
 #else
     (void) na_class;
     return 1;
@@ -5461,10 +5650,11 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
+    const struct fi_info *fi_info = NA_OFI_CLASS(na_class)->fi_info;
     uint64_t requested_key;
     na_uint64_t access;
-    int rc = 0;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
+    int rc;
 
     /* Set access mode */
     switch (na_ofi_mem_handle->desc.info.flags) {
@@ -5479,12 +5669,12 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
             break;
         default:
             NA_GOTO_SUBSYS_ERROR(
-                mem, out, ret, NA_INVALID_ARG, "Invalid memory access flag");
+                mem, error, ret, NA_INVALID_ARG, "Invalid memory access flag");
             break;
     }
 
     /* Let the provider provide its own key otherwise generate our own */
-    requested_key = (domain->fi_prov->domain_attr->mr_mode & FI_MR_PROV_KEY)
+    requested_key = (fi_info->domain_attr->mr_mode & FI_MR_PROV_KEY)
                         ? 0
                         : na_ofi_mem_key_gen(domain);
 
@@ -5493,7 +5683,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         na_ofi_mem_handle->desc.info.iovcnt, access, 0 /* offset */,
         requested_key, 0 /* flags */, &na_ofi_mem_handle->fi_mr,
         NULL /* context */);
-    NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+    NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_mr_regv() failed, rc: %d (%s), mr_reg_count: %d", rc,
         fi_strerror(-rc), hg_atomic_get32(domain->mr_reg_count));
     hg_atomic_incr32(domain->mr_reg_count);
@@ -5503,19 +5693,25 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         fi_mr_key(na_ofi_mem_handle->fi_mr);
 
     /* Attach MR to endpoint when provider requests it */
-    if (domain->fi_prov->domain_attr->mr_mode & FI_MR_ENDPOINT) {
+    if (fi_info->domain_attr->mr_mode & FI_MR_ENDPOINT) {
         struct na_ofi_endpoint *endpoint = NA_OFI_CLASS(na_class)->endpoint;
 
         rc = fi_mr_bind(na_ofi_mem_handle->fi_mr, &endpoint->fi_ep->fid, 0);
-        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_mr_bind() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
         rc = fi_mr_enable(na_ofi_mem_handle->fi_mr);
-        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_mr_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
     }
 
-out:
+    return NA_SUCCESS;
+
+error:
+    if (na_ofi_mem_handle->fi_mr) {
+        (void) fi_close(&na_ofi_mem_handle->fi_mr->fid);
+        hg_atomic_decr32(domain->mr_reg_count);
+    }
     return ret;
 }
 
@@ -5664,15 +5860,15 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 static NA_INLINE int
 na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
+    struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
+    struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     int fd = -1, rc;
 
-    if (priv->no_wait ||
-        (na_ofi_prov_flags[priv->domain->prov_type] & NA_OFI_WAIT_SET))
+    if (na_ofi_class->no_wait ||
+        (na_ofi_prov_flags[na_ofi_class->fabric->prov_type] & NA_OFI_WAIT_SET))
         goto out;
 
-    rc = fi_control(&ctx->fi_cq->fid, FI_GETWAIT, &fd);
+    rc = fi_control(&na_ofi_context->eq->fi_cq->fid, FI_GETWAIT, &fd);
     NA_CHECK_SUBSYS_ERROR_NORET(poll, rc != 0 && rc != -FI_ENOSYS, out,
         "fi_control() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
     NA_CHECK_SUBSYS_ERROR_NORET(
@@ -5686,31 +5882,32 @@ out:
 static NA_INLINE na_bool_t
 na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
+    struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
+    struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     struct fid *fids[1];
     na_bool_t retry_queue_empty;
     int rc;
 
-    if (priv->no_wait)
+    if (na_ofi_class->no_wait)
         return NA_FALSE;
 
     /* Keep making progress if retry queue is not empty */
-    hg_thread_spin_lock(&ctx->retry_op_queue->lock);
-    retry_queue_empty = HG_QUEUE_IS_EMPTY(&ctx->retry_op_queue->queue);
-    hg_thread_spin_unlock(&ctx->retry_op_queue->lock);
+    hg_thread_spin_lock(&na_ofi_context->eq->retry_op_queue->lock);
+    retry_queue_empty =
+        HG_QUEUE_IS_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
+    hg_thread_spin_unlock(&na_ofi_context->eq->retry_op_queue->lock);
     if (!retry_queue_empty)
         return NA_FALSE;
 
     /* Assume it is safe to block if provider is using wait set */
-    if ((na_ofi_prov_flags[priv->domain->prov_type] & NA_OFI_WAIT_SET)
+    if ((na_ofi_prov_flags[na_ofi_class->fabric->prov_type] & NA_OFI_WAIT_SET)
         /* PSM2 shows very slow performance with fi_trywait() */
-        || priv->domain->prov_type == NA_OFI_PROV_PSM2)
+        || na_ofi_class->fabric->prov_type == NA_OFI_PROV_PSM2)
         return NA_TRUE;
 
-    fids[0] = &ctx->fi_cq->fid;
+    fids[0] = &na_ofi_context->eq->fi_cq->fid;
     /* Check whether it is safe to block on that fd */
-    rc = fi_trywait(priv->domain->fi_fabric, fids, 1);
+    rc = fi_trywait(na_ofi_class->fabric->fi_fabric, fids, 1);
     if (rc == FI_SUCCESS)
         return NA_TRUE;
     else if (rc == -FI_EAGAIN)
@@ -5743,7 +5940,7 @@ na_ofi_progress(
         size_t i, actual_count = 0;
 
         if (timeout_ms != 0) {
-            struct fid_wait *wait_hdl = NA_OFI_CONTEXT(context)->fi_wait;
+            struct fid_wait *wait_hdl = NA_OFI_CONTEXT(context)->eq->fi_wait;
 
             if (wait_hdl) {
                 /* Wait in wait set if provider does not support wait on FDs */
@@ -5790,7 +5987,7 @@ na_ofi_progress(
 
     /* PSM2 is a user-level interface, to prevent busy-spin and allow
      * other threads to be scheduled, we need to yield here. */
-    if (NA_OFI_CLASS(na_class)->domain->prov_type == NA_OFI_PROV_PSM2)
+    if (NA_OFI_CLASS(na_class)->fabric->prov_type == NA_OFI_PROV_PSM2)
         hg_thread_yield();
 
     return NA_TIMEOUT;
@@ -5824,7 +6021,7 @@ na_ofi_cancel(
     /* Check if op_id is in retry queue */
     if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_QUEUED) {
         struct na_ofi_op_queue *op_queue =
-            NA_OFI_CONTEXT(context)->retry_op_queue;
+            NA_OFI_CONTEXT(context)->eq->retry_op_queue;
         na_bool_t canceled = NA_FALSE;
 
         /* If dequeued by process_retries() in the meantime, we'll just let it

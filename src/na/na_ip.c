@@ -115,6 +115,7 @@ na_ip_check_interface(const char *name, na_uint16_t port, int family,
     struct addrinfo hints, *addr_res = NULL;
     struct sockaddr_storage *ss_addr = NULL;
     socklen_t salen = 0;
+    const char *node = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -156,7 +157,6 @@ na_ip_check_interface(const char *name, na_uint16_t port, int family,
             salen = sizeof(struct sockaddr_in6);
         }
     } else { /* Try to match against passed name */
-        const char *node = NULL;
         char service[NI_MAXSERV];
 
         /* Add port */
@@ -219,7 +219,7 @@ na_ip_check_interface(const char *name, na_uint16_t port, int family,
             ret, NA_ADDRNOTAVAIL, "No ifa_name match found for IP");
     }
 
-    if (ifaddr && ifa_name_p) {
+    if (ifaddr && ifa_name_p && node) {
         *ifa_name_p = strdup(ifaddr->ifa_name);
         NA_CHECK_SUBSYS_ERROR(ip, *ifa_name_p == NULL, done, ret, NA_NOMEM,
             "Could not dup ifa_name");
