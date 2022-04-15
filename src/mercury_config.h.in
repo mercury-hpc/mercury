@@ -83,6 +83,7 @@ typedef hg_uint8_t hg_bool_t;
 
 /* Build Options */
 #cmakedefine HG_HAS_BOOST
+#cmakedefine HG_HAS_CHECKSUMS
 #cmakedefine HG_HAS_XDR
 
 #cmakedefine HG_HAS_DEBUG

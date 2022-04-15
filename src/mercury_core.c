@@ -841,7 +841,6 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_bool_t auto_sm = HG_FALSE;
 #endif
     hg_bool_t diag = HG_FALSE;
-    hg_checksum_level_t checksum_level = HG_CHECKSUM_DEFAULT;
     hg_return_t ret = HG_SUCCESS;
 
     /* Create new HG class */
@@ -882,21 +881,19 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             "stats option requires MERCURY_ENABLE_DEBUG "
             "CMake option to be turned ON.");
 #endif
-        checksum_level = hg_init_info->checksum_level;
+#ifdef HG_HAS_CHECKSUMS
+        hg_core_class->checksum_level = hg_init_info->checksum_level;
+#else
+        HG_CHECK_WARNING(
+            hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_NONE,
+            "Option checksum_level requires CMake option MERCURY_USE_CHECKSUMS "
+            "to be turned ON.");
+#endif
     } else {
         hg_core_class->request_post_init = HG_CORE_POST_INIT;
         hg_core_class->request_post_incr = HG_CORE_POST_INCR;
         hg_core_class->loopback = HG_TRUE;
     }
-
-    if (checksum_level == HG_CHECKSUM_DEFAULT) {
-#ifdef HG_HAS_DEBUG
-        hg_core_class->checksum_level = HG_CHECKSUM_RPC_PAYLOAD;
-#else
-        hg_core_class->checksum_level = HG_CHECKSUM_RPC_HEADERS;
-#endif
-    } else
-        hg_core_class->checksum_level = checksum_level;
 
     if (diag)
         hg_log_set_subsys_level("diag", HG_LOG_LEVEL_DEBUG);

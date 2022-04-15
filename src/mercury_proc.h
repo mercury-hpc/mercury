@@ -113,8 +113,12 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
     } while (0)
 
 /* Update checksum */
-#define HG_PROC_CHECKSUM_UPDATE(proc, data, size)                              \
-    hg_proc_checksum_update(proc, data, size)
+#ifdef HG_HAS_CHECKSUMS
+#    define HG_PROC_CHECKSUM_UPDATE(proc, data, size)                          \
+        hg_proc_checksum_update(proc, data, size)
+#else
+#    define HG_PROC_CHECKSUM_UPDATE(proc, data, size)
+#endif
 
 /* Base proc function */
 #ifdef HG_HAS_XDR
@@ -220,11 +224,11 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc);
  * \param buf [IN]              pointer to buffer that will be used for
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
- * \param op [IN]               operation type: HG_ENCODE / HG_DECODE /
- * HG_FREE \param hash [IN]             hash method used for computing
- * checksum (if NULL, checksum is not computed) hash method: HG_CRC16,
- * HG_CRC64, HG_NOHASH \param proc [OUT]            pointer to abstract
- * processor object
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
+ * \param hash [IN]             hash method used for computing checksum
+ *                              (if NULL, checksum is not computed)
+ *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
+ * \param proc [OUT]            pointer to abstract processor object
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -249,8 +253,7 @@ hg_proc_free(hg_proc_t proc);
  * \param buf [IN]              pointer to buffer that will be used for
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
- * \param op [IN]               operation type: HG_ENCODE / HG_DECODE /
- * HG_FREE
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -418,6 +421,7 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
 HG_PUBLIC hg_return_t
 hg_proc_flush(hg_proc_t proc);
 
+#ifdef HG_HAS_CHECKSUMS
 /**
  * Retrieve internal proc checksum hash.
  * \remark Must be used after hg_proc_flush() has been called so that the
@@ -445,6 +449,7 @@ hg_proc_checksum_get(hg_proc_t proc, void *hash, hg_size_t hash_size);
  */
 HG_PUBLIC hg_return_t
 hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size);
+#endif
 
 /**
  * Generic processing routine.
@@ -572,8 +577,10 @@ hg_proc_bytes(hg_proc_t proc, void *data, hg_size_t data_size);
 #define hg_proc_raw    hg_proc_bytes
 
 /* Update checksum */
+#ifdef HG_HAS_CHECKSUMS
 HG_PUBLIC void
 hg_proc_checksum_update(hg_proc_t proc, void *data, hg_size_t data_size);
+#endif
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -597,9 +604,11 @@ struct hg_proc {
     struct hg_proc_buf extra_buf;
     hg_class_t *hg_class; /* HG class */
     struct hg_proc_buf *current_buf;
+#ifdef HG_HAS_CHECKSUMS
     struct mchecksum_object *checksum; /* Checksum */
     void *checksum_hash;               /* Base checksum buf */
     size_t checksum_size;              /* Checksum size */
+#endif
     hg_proc_op_t op;
     hg_uint8_t flags;
 };

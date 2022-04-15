@@ -82,7 +82,9 @@ hg_test_proc_generic(
     void *in_buf = NULL, *out_buf = NULL;
     size_t buf_size = (size_t) hg_mem_get_page_size();
     hg_return_t ret;
+#ifdef HG_HAS_CHECKSUMS
     hg_uint32_t checksum = 0;
+#endif
 
     /* CRC32 is enough for small size buffers */
     ret = hg_proc_create((hg_class_t *) 1, HG_CRC32, &proc);
@@ -107,9 +109,11 @@ hg_test_proc_generic(
     ret = hg_proc_flush(proc);
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in proc flush");
 
+#ifdef HG_HAS_CHECKSUMS
     /* Set checksum in header */
     ret = hg_proc_checksum_get(proc, &checksum, sizeof(checksum));
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in getting proc checksum");
+#endif
 
     /* Simulate RPC copy */
     memcpy(out_buf, in_buf, buf_size);
@@ -125,9 +129,11 @@ hg_test_proc_generic(
     ret = hg_proc_flush(proc);
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in proc flush");
 
+#ifdef HG_HAS_CHECKSUMS
     /* Compare checksum with header hash */
     ret = hg_proc_checksum_verify(proc, &checksum, sizeof(checksum));
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in proc checksum verify");
+#endif
 
 done:
     if (proc != HG_PROC_NULL)

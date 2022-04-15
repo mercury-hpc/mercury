@@ -19,7 +19,6 @@ typedef hg_uint64_t hg_id_t;   /* RPC ID */
 
 /* Checksum levels */
 typedef enum hg_checksum_level {
-    HG_CHECKSUM_DEFAULT,     /*!< let mercury decide on checksum level */
     HG_CHECKSUM_NONE,        /*!< no checksum */
     HG_CHECKSUM_RPC_HEADERS, /*!< only RPC headers are checksummed */
     HG_CHECKSUM_RPC_PAYLOAD  /*!< entire RPC payload is checksummed (inc.
@@ -167,7 +166,7 @@ typedef enum {
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
         NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, NULL,                  \
-            HG_CHECKSUM_DEFAULT, HG_FALSE, HG_FALSE, HG_FALSE                  \
+            HG_CHECKSUM_NONE, HG_FALSE, HG_FALSE, HG_FALSE                     \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
