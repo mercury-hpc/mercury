@@ -7,7 +7,9 @@
 #include "mercury_core_header.h"
 #include "mercury_error.h"
 
-#include <mchecksum.h>
+#ifdef HG_HAS_CHECKSUMS
+#    include <mchecksum.h>
+#endif
 
 #ifdef _WIN32
 #    include <winsock2.h>
@@ -45,11 +47,15 @@
     (hg_int8_t) hg_core_header_proc_hg_uint8_t_dec((hg_uint8_t) x)
 
 /* Update checksum */
-#define HG_CORE_HEADER_CHECKSUM_UPDATE(hg_header, data, type)                  \
-    do {                                                                       \
-        if (hg_header->checksum != MCHECKSUM_OBJECT_NULL)                      \
-            mchecksum_update(hg_header->checksum, &data, sizeof(type));        \
-    } while (0)
+#ifdef HG_HAS_CHECKSUMS
+#    define HG_CORE_HEADER_CHECKSUM_UPDATE(hg_header, data, type)              \
+        do {                                                                   \
+            if (hg_header->checksum != MCHECKSUM_OBJECT_NULL)                  \
+                mchecksum_update(hg_header->checksum, &data, sizeof(type));    \
+        } while (0)
+#else
+#    define HG_CORE_HEADER_CHECKSUM_UPDATE(hg_header, data, type)
+#endif
 
 /* Proc type */
 #define HG_CORE_HEADER_PROC_TYPE(buf_ptr, data, type, op)                      \
@@ -91,9 +97,13 @@ void
 hg_core_header_request_init(
     struct hg_core_header *hg_core_header, hg_bool_t use_checksum)
 {
+#ifdef HG_HAS_CHECKSUMS
     /* Create a new checksum (CRC16) */
     if (use_checksum)
         mchecksum_init(HG_CORE_HEADER_CHECKSUM, &hg_core_header->checksum);
+#else
+    (void) use_checksum;
+#endif
 
     hg_core_header_request_reset(hg_core_header);
 }
@@ -103,9 +113,13 @@ void
 hg_core_header_response_init(
     struct hg_core_header *hg_core_header, hg_bool_t use_checksum)
 {
+#ifdef HG_HAS_CHECKSUMS
     /* Create a new checksum (CRC16) */
     if (use_checksum)
         mchecksum_init(HG_CORE_HEADER_CHECKSUM, &hg_core_header->checksum);
+#else
+    (void) use_checksum;
+#endif
 
     hg_core_header_response_reset(hg_core_header);
 }
@@ -114,16 +128,24 @@ hg_core_header_response_init(
 void
 hg_core_header_request_finalize(struct hg_core_header *hg_core_header)
 {
+#ifdef HG_HAS_CHECKSUMS
     mchecksum_destroy(hg_core_header->checksum);
     hg_core_header->checksum = MCHECKSUM_OBJECT_NULL;
+#else
+    (void) hg_core_header;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 void
 hg_core_header_response_finalize(struct hg_core_header *hg_core_header)
 {
+#ifdef HG_HAS_CHECKSUMS
     mchecksum_destroy(hg_core_header->checksum);
     hg_core_header->checksum = MCHECKSUM_OBJECT_NULL;
+#else
+    (void) hg_core_header;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -135,8 +157,10 @@ hg_core_header_request_reset(struct hg_core_header *hg_core_header)
     hg_core_header->msg.request.hg = HG_CORE_IDENTIFIER;
     hg_core_header->msg.request.protocol = HG_CORE_PROTOCOL_VERSION;
 
+#ifdef HG_HAS_CHECKSUMS
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL)
         mchecksum_reset(hg_core_header->checksum);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -146,8 +170,10 @@ hg_core_header_response_reset(struct hg_core_header *hg_core_header)
     memset(&hg_core_header->msg.response, 0,
         sizeof(struct hg_core_header_response));
 
+#ifdef HG_HAS_CHECKSUMS
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL)
         mchecksum_reset(hg_core_header->checksum);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -162,9 +188,11 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     HG_CHECK_ERROR(buf_size < sizeof(struct hg_core_header_request), done, ret,
         HG_INVALID_ARG, "Invalid buffer size");
 
+#ifdef HG_HAS_CHECKSUMS
     /* Reset header checksum first */
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL)
         mchecksum_reset(hg_core_header->checksum);
+#endif
 
     /* HG byte */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->hg, hg_uint8_t, op);
@@ -183,6 +211,7 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     HG_CORE_HEADER_PROC(
         hg_core_header, buf_ptr, header->cookie, hg_uint8_t, op);
 
+#ifdef HG_HAS_CHECKSUMS
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL) {
         /* Checksum of header */
         mchecksum_get(hg_core_header->checksum, &header->hash.header,
@@ -202,6 +231,7 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
                 header->hash.header, h_hash_header);
         }
     }
+#endif
 
 done:
     return ret;
@@ -219,9 +249,11 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     HG_CHECK_ERROR(buf_size < sizeof(struct hg_core_header_response), done, ret,
         HG_OVERFLOW, "Invalid buffer size");
 
+#ifdef HG_HAS_CHECKSUMS
     /* Reset header checksum first */
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL)
         mchecksum_reset(hg_core_header->checksum);
+#endif
 
     /* Return code */
     HG_CORE_HEADER_PROC(
@@ -234,6 +266,7 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     HG_CORE_HEADER_PROC(
         hg_core_header, buf_ptr, header->cookie, hg_uint16_t, op);
 
+#ifdef HG_HAS_CHECKSUMS
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL) {
         /* Checksum of header */
         mchecksum_get(hg_core_header->checksum, &header->hash.header,
@@ -253,6 +286,7 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
                 header->hash.header, h_hash_header);
         }
     }
+#endif
 
 done:
     return ret;

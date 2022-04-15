@@ -55,7 +55,9 @@ struct hg_core_header {
         struct hg_core_header_request request;
         struct hg_core_header_response response;
     } msg;
+#ifdef HG_HAS_CHECKSUMS
     struct mchecksum_object *checksum; /* Checksum of header */
+#endif
 };
 
 /*

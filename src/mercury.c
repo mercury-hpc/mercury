@@ -433,7 +433,9 @@ hg_get_struct(struct hg_private_handle *hg_handle,
     void *buf, *extra_buf;
     hg_size_t buf_size, extra_buf_size;
     struct hg_header *hg_header = &hg_handle->hg_header;
+#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
+#endif
     hg_size_t header_offset = hg_header_get_size(op);
     hg_return_t ret = HG_SUCCESS;
 
@@ -444,7 +446,9 @@ hg_get_struct(struct hg_private_handle *hg_handle,
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
+#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
+#endif
 
             /* Get core input buffer */
             ret = HG_Core_get_input(
@@ -465,7 +469,9 @@ hg_get_struct(struct hg_private_handle *hg_handle,
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
+#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
+#endif
 
             /* Get core output buffer */
             ret = HG_Core_get_output(
@@ -511,12 +517,14 @@ hg_get_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_flush(proc);
     HG_CHECK_HG_ERROR(done, ret, "Error in proc flush");
 
+#ifdef HG_HAS_CHECKSUMS
     /* Compare checksum with header hash */
     if (hg_handle->use_checksums) {
         ret = hg_proc_checksum_verify(
             proc, &hg_header_hash->payload, sizeof(hg_header_hash->payload));
         HG_CHECK_HG_ERROR(done, ret, "Error in proc checksum verify");
     }
+#endif
 
     /* Increment ref count on handle so that it remains valid until free_struct
      * is called */
@@ -539,7 +547,9 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     hg_size_t buf_size, *extra_buf_size;
     hg_bulk_t *extra_bulk;
     struct hg_header *hg_header = &hg_handle->hg_header;
+#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
+#endif
     hg_size_t header_offset = hg_header_get_size(op);
     hg_return_t ret = HG_SUCCESS;
 
@@ -550,7 +560,9 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
+#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
+#endif
 
             /* Get core input buffer */
             ret = HG_Core_get_input(
@@ -572,7 +584,9 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
+#ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
+#endif
 
             /* Get core output buffer */
             ret = HG_Core_get_output(
@@ -625,12 +639,14 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_flush(proc);
     HG_CHECK_HG_ERROR(done, ret, "Error in proc flush");
 
+#ifdef HG_HAS_CHECKSUMS
     /* Set checksum in header */
     if (hg_handle->use_checksums) {
         ret = hg_proc_checksum_get(
             proc, &hg_header_hash->payload, sizeof(hg_header_hash->payload));
         HG_CHECK_HG_ERROR(done, ret, "Error in getting proc checksum");
     }
+#endif
 
     /* The proc object may have allocated an extra buffer at this point.
      * If the payload did not fit into the original buffer, we need to send a
@@ -991,13 +1007,14 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
         (hg_init_info) ? !hg_init_info->no_bulk_eager : HG_TRUE;
 
     /* Save checksum level information */
-    if (hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_DEFAULT)
+#ifdef HG_HAS_CHECKSUMS
+    if (hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_NONE)
         hg_class->checksum_level = hg_init_info->checksum_level;
-    else
-#ifdef HG_HAS_DEBUG
-        hg_class->checksum_level = HG_CHECKSUM_RPC_PAYLOAD;
 #else
-        hg_class->checksum_level = HG_CHECKSUM_RPC_HEADERS;
+    HG_CHECK_WARNING(
+        hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_NONE,
+        "Option checksum_level requires CMake option MERCURY_USE_CHECKSUMS to "
+        "be turned ON.");
 #endif
 
     hg_class->hg_class.core_class =

@@ -8,7 +8,9 @@
 #include "mercury_error.h"
 #include "mercury_mem.h"
 
-#include <mchecksum.h>
+#ifdef HG_HAS_CHECKSUMS
+#    include <mchecksum.h>
+#endif
 #include <stdlib.h>
 
 /****************/
@@ -32,7 +34,9 @@ hg_return_t
 hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
 {
     struct hg_proc *hg_proc = NULL;
+#ifdef HG_HAS_CHECKSUMS
     const char *hash_method;
+#endif
     hg_return_t ret = HG_SUCCESS;
 
     HG_CHECK_ERROR(
@@ -45,6 +49,7 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
     memset(hg_proc, 0, sizeof(struct hg_proc));
     hg_proc->hg_class = hg_class;
 
+#ifdef HG_HAS_CHECKSUMS
     /* Map enum to string */
     switch (hash) {
         case HG_CRC16:
@@ -71,6 +76,9 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
         HG_CHECK_ERROR(hg_proc->checksum_hash == NULL, error, ret, HG_NOMEM,
             "Could not allocate space for checksum hash");
     }
+#else
+    (void) hash;
+#endif
 
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
@@ -81,8 +89,10 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
 
 error:
     if (hg_proc) {
+#ifdef HG_HAS_CHECKSUMS
         mchecksum_destroy(hg_proc->checksum);
         free(hg_proc->checksum_hash);
+#endif
         free(hg_proc);
     }
     return ret;
@@ -123,8 +133,10 @@ hg_proc_free(hg_proc_t proc)
     if (!hg_proc)
         goto done;
 
+#ifdef HG_HAS_CHECKSUMS
     mchecksum_destroy(hg_proc->checksum);
     free(hg_proc->checksum_hash);
+#endif
 
     /* Free extra proc buffer if needed */
     if (hg_proc->extra_buf.buf && hg_proc->extra_buf.is_mine)
@@ -190,6 +202,7 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
 
+#ifdef HG_HAS_CHECKSUMS
     /* Reset checksum */
     if (hg_proc->checksum != MCHECKSUM_OBJECT_NULL) {
         int rc = mchecksum_reset(hg_proc->checksum);
@@ -197,6 +210,7 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
             rc != 0, done, ret, HG_CHECKSUM_ERROR, "Could not reset checksum");
         memset(hg_proc->checksum_hash, 0, hg_proc->checksum_size);
     }
+#endif
 
 done:
     return ret;
@@ -303,7 +317,13 @@ hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size)
     HG_CHECK_ERROR_NORET(((struct hg_proc *) proc)->op == HG_FREE, done,
         "Cannot restore_ptr on HG_FREE");
 
+#ifdef HG_HAS_CHECKSUMS
     hg_proc_checksum_update(proc, data, data_size);
+#else
+    /* Silent warning */
+    (void) data;
+    (void) data_size;
+#endif
 
 done:
     return ret;
@@ -331,13 +351,16 @@ done:
 hg_return_t
 hg_proc_flush(hg_proc_t proc)
 {
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
     hg_return_t ret;
+#ifdef HG_HAS_CHECKSUMS
+    struct hg_proc *hg_proc = (struct hg_proc *) proc;
     int rc;
+#endif
 
     HG_CHECK_ERROR(proc == HG_PROC_NULL, error, ret, HG_INVALID_ARG,
         "Proc is not initialized");
 
+#ifdef HG_HAS_CHECKSUMS
     if (hg_proc->checksum == MCHECKSUM_OBJECT_NULL)
         return HG_SUCCESS;
 
@@ -345,6 +368,7 @@ hg_proc_flush(hg_proc_t proc)
         hg_proc->checksum_size, MCHECKSUM_FINALIZE);
     HG_CHECK_ERROR(
         rc != 0, error, ret, HG_CHECKSUM_ERROR, "Could not get checksum");
+#endif
 
     return HG_SUCCESS;
 
@@ -353,6 +377,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_CHECKSUMS
 void
 hg_proc_checksum_update(hg_proc_t proc, void *data, hg_size_t data_size)
 {
@@ -432,3 +457,4 @@ hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size)
 done:
     return ret;
 }
+#endif
