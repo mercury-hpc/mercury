@@ -807,6 +807,13 @@ na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
     na_uint16_t *port_p, char **domain_name_p);
 
 /**
+ * Parse CXI info.
+ */
+static na_return_t
+na_ofi_parse_cxi_info(
+    const char *hostname_info, char **node_p, char **service_p);
+
+/**
  * Allocate new OFI class.
  */
 static struct na_ofi_class *
@@ -2651,8 +2658,10 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             socklen_t salen = 0;
             na_return_t na_ret;
 
-            na_ofi_parse_sin_info(
+            ret = na_ofi_parse_sin_info(
                 hostname_info, &hostname, &port, &domain_name);
+            NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse sin info");
+
             NA_LOG_SUBSYS_DEBUG(cls,
                 "Found hostname: %s, port %" PRIu16 ", domain %s", hostname,
                 port, domain_name);
@@ -2708,13 +2717,18 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             /* Nothing to do */
             break;
         case FI_SOCKADDR_IB:
-        case FI_ADDR_CXI:
             /* TODO we could potentially add support for native addresses */
             /* Simply dup info */
             domain_name = strdup(hostname_info);
             NA_CHECK_SUBSYS_ERROR(cls, domain_name == NULL, out, ret, NA_NOMEM,
                 "strdup() of hostname_info failed");
             break;
+
+        case FI_ADDR_CXI:
+            ret = na_ofi_parse_cxi_info(hostname_info, node_p, service_p);
+            NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse cxi info");
+            break;
+
         default:
             NA_LOG_SUBSYS_ERROR(
                 fatal, "Unsupported address format: %" PRIu32, addr_format);
@@ -2722,10 +2736,6 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
     }
 
     *domain_name_p = domain_name;
-
-    /* TODO currently unused */
-    *node_p = NULL;
-    *service_p = NULL;
 
 out:
     free(hostname);
@@ -2798,6 +2808,51 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_parse_cxi_info(
+    const char *hostname_info, char **node_p, char **service_p)
+{
+    char nic_name[5] = {"cxiX"}; /* cxi[0-9] */
+    char pid_name[4];
+    na_uint16_t pid = 0; /* [0-510] */
+    na_uint16_t pid_mask = 0x1ff;
+    char *node = NULL;
+    na_return_t ret;
+
+    /* Only port, e.g. ":510" */
+    if ((sscanf(hostname_info, ":%" SCNu16, &pid) == 1) && (pid < pid_mask)) {
+        NA_LOG_SUBSYS_DEBUG(cls, "PID: %" PRIu16, pid);
+    }
+    /* cxi[0-9]:port or cxi[0-9] */
+    else if (((sscanf(hostname_info, "cxi%1[0-9]:%" SCNu16, &nic_name[3],
+                   &pid) == 2) &&
+                 (pid < pid_mask)) ||
+             (sscanf(hostname_info, "cxi%1[0-9]", &nic_name[3]) == 1)) {
+        NA_LOG_SUBSYS_DEBUG(cls, "NIC name: %s, PID: %" PRIu16, nic_name, pid);
+
+        node = strdup(nic_name);
+        NA_CHECK_SUBSYS_ERROR(cls, node == NULL, error, ret, NA_NOMEM,
+            "strdup() of nic_name failed");
+    } else
+        NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
+            "Malformed CXI info, format is: cxi[0-9]:[0-510]");
+
+    snprintf(pid_name, sizeof(pid_name), "%" PRIu16, pid & pid_mask);
+
+    *service_p = strdup(pid_name);
+    NA_CHECK_SUBSYS_ERROR(cls, *service_p == NULL, error, ret, NA_NOMEM,
+        "strdup() of pid_name failed");
+
+    *node_p = node;
+
+    return NA_SUCCESS;
+
+error:
+    free(node);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static struct na_ofi_class *
 na_ofi_class_alloc(void)
 {
@@ -2805,7 +2860,7 @@ na_ofi_class_alloc(void)
     int rc;
 
     /* Create private data */
-    na_ofi_class = (struct na_ofi_class *) malloc(sizeof(struct na_ofi_class));
+    na_ofi_class = (struct na_ofi_class *) malloc(sizeof(*na_ofi_class));
     NA_CHECK_SUBSYS_ERROR_NORET(cls, na_ofi_class == NULL, error,
         "Could not allocate NA private data class");
     memset(na_ofi_class, 0, sizeof(*na_ofi_class));
@@ -4837,8 +4892,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 #endif
 
     NA_LOG_SUBSYS_DEBUG(cls,
-        "Entering na_ofi_initialize() class_name %s, protocol_name %s,"
-        " host_name %s",
+        "Entering na_ofi_initialize() class_name \"%s\", protocol_name \"%s\","
+        " host_name \"%s\"",
         na_info->class_name, na_info->protocol_name, na_info->host_name);
 
     /* Get init info and overwrite defaults */
@@ -4888,7 +4943,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 #ifdef NA_HAS_HWLOC
     /* Use autodetect if we can't guess which domain to use */
     if ((na_ofi_prov_flags[prov_type] & NA_OFI_LOC_INFO) && !domain_name &&
-        !info.src_addr) {
+        !info.src_addr && !info.node) {
         ret = na_loc_info_init(&loc_info);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could init loc info");
     }
@@ -5172,8 +5227,7 @@ na_ofi_op_create(na_class_t *na_class)
 {
     struct na_ofi_op_id *na_ofi_op_id = NULL;
 
-    na_ofi_op_id =
-        (struct na_ofi_op_id *) calloc(1, sizeof(struct na_ofi_op_id));
+    na_ofi_op_id = (struct na_ofi_op_id *) calloc(1, sizeof(*na_ofi_op_id));
     NA_CHECK_SUBSYS_ERROR_NORET(op, na_ofi_op_id == NULL, error,
         "Could not allocate NA OFI operation ID");
     na_ofi_op_id->na_ofi_class = NA_OFI_CLASS(na_class);
@@ -5539,8 +5593,8 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate memory handle */
-    na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(
-        1, sizeof(struct na_ofi_mem_handle));
+    na_ofi_mem_handle =
+        (struct na_ofi_mem_handle *) calloc(1, sizeof(*na_ofi_mem_handle));
     NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, out, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
 
@@ -5578,8 +5632,8 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
         NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit);
 
     /* Allocate memory handle */
-    na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(
-        1, sizeof(struct na_ofi_mem_handle));
+    na_ofi_mem_handle =
+        (struct na_ofi_mem_handle *) calloc(1, sizeof(*na_ofi_mem_handle));
     NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
 
@@ -5785,7 +5839,7 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     na_return_t ret = NA_SUCCESS;
 
     na_ofi_mem_handle =
-        (struct na_ofi_mem_handle *) malloc(sizeof(struct na_ofi_mem_handle));
+        (struct na_ofi_mem_handle *) malloc(sizeof(*na_ofi_mem_handle));
     NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
     na_ofi_mem_handle->desc.iov.d = NULL;
