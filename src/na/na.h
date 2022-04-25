@@ -30,6 +30,16 @@ extern "C" {
 #endif
 
 /**
+ * Get NA version number.
+ *
+ * \param major [OUT]           pointer to unsigned integer
+ * \param minor [OUT]           pointer to unsigned integer
+ * \param patch [OUT]           pointer to unsigned integer
+ */
+NA_PUBLIC void
+NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
+
+/**
  * Initialize the network abstraction layer.
  * Must be finalized with NA_Finalize().
  *

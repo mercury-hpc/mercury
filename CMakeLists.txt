@@ -64,7 +64,7 @@ set(MERCURY_CMAKE_MODULE_PATH "${MERCURY_SOURCE_DIR}/CMake")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_CMAKE_MODULE_PATH})
 
 #------------------------------------------------------------------------------
-# Version information 
+# Version information
 #------------------------------------------------------------------------------
 include(${MERCURY_CMAKE_MODULE_PATH}/Git/Git.cmake)
 include(MercuryDetermineVersion)
@@ -182,7 +182,7 @@ else()
 endif()
 
 #-------------------------------------------------------------------------------
-function(mercury_set_lib_options libtarget libname libtype)
+function(mercury_set_lib_options libtarget libname libtype var_prefix)
   if(${libtype} MATCHES "SHARED")
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "${libname}")
@@ -191,8 +191,8 @@ function(mercury_set_lib_options libtarget libname libtype)
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_debug")
     endif()
-    set(LIB_VERSION ${MERCURY_VERSION}.${MERCURY_VERSION_PATCH})
-    set(API_VERSION ${MERCURY_VERSION_MAJOR})
+    set(LIB_VERSION ${${var_prefix}_VERSION}.${${var_prefix}_VERSION_PATCH})
+    set(API_VERSION ${${var_prefix}_VERSION_MAJOR})
   else()
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "lib${libname}")

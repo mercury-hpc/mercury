@@ -29,6 +29,19 @@ HG_LOG_SUBSYS_DECL_REGISTER(HG_UTIL_SUBSYS_NAME, hg);
 
 /*---------------------------------------------------------------------------*/
 void
+HG_Util_version_get(
+    unsigned int *major, unsigned int *minor, unsigned int *patch)
+{
+    if (major)
+        *major = HG_UTIL_VERSION_MAJOR;
+    if (minor)
+        *minor = HG_UTIL_VERSION_MINOR;
+    if (patch)
+        *patch = HG_UTIL_VERSION_PATCH;
+}
+
+/*---------------------------------------------------------------------------*/
+void
 HG_Util_set_log_level(const char *level)
 {
     hg_log_set_subsys_level(

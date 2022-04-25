@@ -26,6 +26,17 @@ extern "C" {
 #endif
 
 /**
+ * Get HG util version number.
+ *
+ * \param major [OUT]           pointer to unsigned integer
+ * \param minor [OUT]           pointer to unsigned integer
+ * \param patch [OUT]           pointer to unsigned integer
+ */
+HG_UTIL_PUBLIC void
+HG_Util_version_get(
+    unsigned int *major, unsigned int *minor, unsigned int *patch);
+
+/**
  * Set the log level for HG util. That setting is valid for all HG classes.
  *
  * \param level [IN]            level string, valid values are:

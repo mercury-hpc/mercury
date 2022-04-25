@@ -248,6 +248,18 @@ na_info_free(struct na_info *na_info)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
+{
+    if (major)
+        *major = NA_VERSION_MAJOR;
+    if (minor)
+        *minor = NA_VERSION_MINOR;
+    if (patch)
+        *patch = NA_VERSION_PATCH;
+}
+
+/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Initialize(const char *info_string, na_bool_t listen)
 {

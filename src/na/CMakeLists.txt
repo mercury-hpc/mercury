@@ -27,12 +27,22 @@ endif()
 set(NA_CMAKE_DIR "${NA_SOURCE_DIR}/CMake")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${NA_CMAKE_DIR})
 
+#------------------------------------------------------------------------------
+# Version information
+#------------------------------------------------------------------------------
+# Hard-coded version variables are read-in from a separate file. This makes it
+# easier to have a script to update version numbers automatically.
+file(STRINGS version.txt version_txt)
+extract_version_components("${version_txt}" "${PROJECT_NAME}")
+set(NA_PACKAGE "na")
+message(STATUS "${NA_PACKAGE} v${NA_VERSION_FULL}")
+
 #-----------------------------------------------------------------------------
 # Targets built within this project are exported at Install time for use
 # by other projects.
 #-----------------------------------------------------------------------------
 if(NOT NA_EXPORTED_TARGETS)
-  set(NA_EXPORTED_TARGETS "mercury-targets")
+  set(NA_EXPORTED_TARGETS "${NA_PACKAGE}-targets")
 endif()
 
 #------------------------------------------------------------------------------
@@ -46,9 +56,6 @@ set(NA_BUILD_INCLUDE_DEPENDENCIES
 #------------------------------------------------------------------------------
 # Internal dependencies
 #------------------------------------------------------------------------------
-# UTIL
-#include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
-
 # Multi progress
 option(NA_ALLOW_MULTI_PROGRESS "Allow concurrent progress on single context." ON)
 if(NA_ALLOW_MULTI_PROGRESS)
@@ -234,7 +241,7 @@ if(NA_USE_SM)
         OUTPUT_VARIABLE NA_SM_YAMA_LEVEL ERROR_VARIABLE NA_SM_YAMA_SYSCTL_ERROR)
       if(NOT NA_SM_YAMA_SYSCTL_ERROR) # Yama is present
         if(NA_SM_YAMA_LEVEL EQUAL 1)
-          message(WARNING "Kernel Yama configuration only allows NA SM restricted cross-memory attach, please refer to the mercury documentation for more details.")
+          message(WARNING "Kernel Yama configuration only allows NA SM restricted cross-memory attach, please refer to the NA documentation for more details.")
         elseif(NA_SM_YAMA_LEVEL GREATER 1)
           message(FATAL_ERROR "Kernel Yama configuration does not allow NA SM cross-memory attach, for more details please refer to: https://www.kernel.org/doc/Documentation/security/Yama.txt.")
         endif()
@@ -439,7 +446,7 @@ target_include_directories(na
          PRIVATE ${NA_INT_INCLUDE_DEPENDENCIES}
 )
 target_link_libraries(na mercury_util ${NA_EXT_LIB_DEPENDENCIES})
-mercury_set_lib_options(na "na" ${NA_LIBTYPE})
+mercury_set_lib_options(na "na" ${NA_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)
 endif()
