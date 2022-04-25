@@ -1,8 +1,49 @@
+cmake_minimum_required(VERSION 2.8.12.2 FATAL_ERROR)
+project(MERCURY_UTIL C)
+
+#------------------------------------------------------------------------------
+# Setup install directories and cmake module
+#------------------------------------------------------------------------------
+if(NOT MERCURY_UTIL_INSTALL_BIN_DIR)
+  set(MERCURY_UTIL_INSTALL_BIN_DIR ${CMAKE_INSTALL_PREFIX}/bin)
+endif()
+if(NOT MERCURY_UTIL_INSTALL_LIB_DIR)
+  set(MERCURY_UTIL_INSTALL_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
+endif()
+if(NOT MERCURY_UTIL_INSTALL_INCLUDE_DIR)
+  # Interface include will default to prefix/include
+  set(MERCURY_UTIL_INSTALL_INCLUDE_INTERFACE include)
+  set(MERCURY_UTIL_INSTALL_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
+else()
+  set(MERCURY_UTIL_INSTALL_INCLUDE_INTERFACE ${MERCURY_UTIL_INSTALL_INCLUDE_DIR})
+endif()
+if(NOT MERCURY_UTIL_INSTALL_DATA_DIR)
+  set(MERCURY_UTIL_INSTALL_DATA_DIR ${CMAKE_INSTALL_PREFIX}/share)
+endif()
+
 #------------------------------------------------------------------------------
 # Setup cmake module
 #------------------------------------------------------------------------------
 #set(MERCURY_UTIL_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 #set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
+
+#------------------------------------------------------------------------------
+# Version information
+#------------------------------------------------------------------------------
+# Hard-coded version variables are read-in from a separate file. This makes it
+# easier to have a script to update version numbers automatically.
+file(STRINGS version.txt version_txt)
+extract_version_components("${version_txt}" "${PROJECT_NAME}")
+set(MERCURY_UTIL_PACKAGE "mercury-util")
+message(STATUS "${MERCURY_UTIL_PACKAGE} v${MERCURY_UTIL_VERSION_FULL}")
+
+#-----------------------------------------------------------------------------
+# Targets built within this project are exported at Install time for use
+# by other projects.
+#-----------------------------------------------------------------------------
+if(NOT MERCURY_UTIL_EXPORTED_TARGETS)
+  set(MERCURY_UTIL_EXPORTED_TARGETS "${MERCURY_UTIL_PACKAGE}-targets")
+endif()
 
 #------------------------------------------------------------------------------
 # Include source and build directories
@@ -226,7 +267,7 @@ target_include_directories(mercury_util
   SYSTEM PUBLIC ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
 )
 target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
-mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
+mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_util)
 endif()
@@ -241,11 +282,11 @@ install(
   TARGETS
     mercury_util
   EXPORT
-    ${MERCURY_EXPORTED_TARGETS}
-  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  PUBLIC_HEADER DESTINATION ${MERCURY_INSTALL_INCLUDE_DIR}
-  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
+    ${MERCURY_UTIL_EXPORTED_TARGETS}
+  LIBRARY DESTINATION ${MERCURY_UTIL_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${MERCURY_UTIL_INSTALL_LIB_DIR}
+  PUBLIC_HEADER DESTINATION ${MERCURY_UTIL_INSTALL_INCLUDE_DIR}
+  RUNTIME DESTINATION ${MERCURY_UTIL_INSTALL_BIN_DIR}
 )
 
 #------------------------------------------------------------------------------

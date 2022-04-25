@@ -11,6 +11,11 @@ set(MERCURY_BUILD_INCLUDE_DEPENDENCIES
 # Internal dependencies (exported libs)
 #------------------------------------------------------------------------------
 # UTIL
+set(MERCURY_UTIL_INSTALL_BIN_DIR ${MERCURY_INSTALL_BIN_DIR})
+set(MERCURY_UTIL_INSTALL_LIB_DIR ${MERCURY_INSTALL_LIB_DIR})
+set(MERCURY_UTIL_INSTALL_INCLUDE_DIR ${MERCURY_INSTALL_INCLUDE_DIR})
+set(MERCURY_UTIL_INSTALL_DATA_DIR ${MERCURY_INSTALL_DATA_DIR})
+set(MERCURY_UTIL_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 set(MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES
   ${MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES}
@@ -27,6 +32,7 @@ set(NA_INSTALL_BIN_DIR ${MERCURY_INSTALL_BIN_DIR})
 set(NA_INSTALL_LIB_DIR ${MERCURY_INSTALL_LIB_DIR})
 set(NA_INSTALL_INCLUDE_DIR ${MERCURY_INSTALL_INCLUDE_DIR})
 set(NA_INSTALL_DATA_DIR ${MERCURY_INSTALL_DATA_DIR})
+set(NA_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
 set(MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES
   ${MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES}
@@ -208,7 +214,7 @@ target_link_libraries(mercury
   ${MERCURY_EXT_LIB_DEPENDENCIES}
   ${MERCURY_EXT_PKG_DEPENDENCIES}
   )
-mercury_set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE})
+mercury_set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury)
 endif()
@@ -221,7 +227,7 @@ set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 # MERCURY HL
 add_library(mercury_hl ${MERCURY_HL_SRCS} ${MERCURY_HL_PUBLIC_HEADERS})
 target_link_libraries(mercury_hl mercury)
-mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE})
+mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_hl)
 endif()

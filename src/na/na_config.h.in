@@ -46,6 +46,13 @@ typedef na_uint64_t na_ptr_t;
 /* Public Macros */
 /*****************/
 
+/* Reflects any major or incompatible public API changes */
+#define NA_VERSION_MAJOR @NA_VERSION_MAJOR@
+/* Reflects any minor backwards compatible API or functionality addition */
+#define NA_VERSION_MINOR @NA_VERSION_MINOR@
+/* Reflects any backwards compatible bug fixes */
+#define NA_VERSION_PATCH @NA_VERSION_PATCH@
+
 #include <mercury_compiler_attributes.h>
 
 /* Unused return values */
