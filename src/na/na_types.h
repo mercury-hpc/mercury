@@ -18,12 +18,11 @@
 typedef struct na_class na_class_t;     /* Opaque NA class */
 typedef struct na_context na_context_t; /* Opaque NA execution context */
 typedef struct na_addr *na_addr_t;      /* Abstract NA address */
-typedef na_uint64_t na_size_t;          /* Size */
-typedef na_uint32_t na_tag_t;           /* Tag */
+typedef uint32_t na_tag_t;              /* Tag */
 typedef struct na_op_id na_op_id_t;     /* Opaque operation id */
 
 typedef struct na_mem_handle *na_mem_handle_t; /* Abstract memory handle */
-typedef na_uint64_t na_offset_t;               /* Offset */
+typedef uint64_t na_offset_t;                  /* Offset */
 
 /* Address format */
 enum na_addr_format {
@@ -57,34 +56,34 @@ struct na_init_info {
      * unexpected messages. Note that the underlying plugin library may switch
      * to different transfer protocols depending on the message size that is
      * used. */
-    na_size_t max_unexpected_size;
+    size_t max_unexpected_size;
 
     /* Max expected size hint that can be passed to control the size of
      * expected messages. Note that the underlying plugin library may switch
      * to different transfer protocols depending on the message size that is
      * used. */
-    na_size_t max_expected_size;
+    size_t max_expected_size;
 
     /* Progress mode flag. Setting NA_NO_BLOCK will force busy-spin on progress
      * and remove any wait/notification calls. */
-    na_uint32_t progress_mode;
+    uint8_t progress_mode;
 
     /* Preferred address format. Default is NA_ADDR_UNSPEC. */
     enum na_addr_format addr_format;
 
     /* Maximum number of contexts that are expected to be created. */
-    na_uint8_t max_contexts;
+    uint8_t max_contexts;
 
     /* Thread mode flags can be used to relax thread-safety when it is not
      * needed. When setting NA_THREAD_MODE_SINGLE, only a single thread should
      * access both NA classes and contexts at a time. */
-    na_uint8_t thread_mode;
+    uint8_t thread_mode;
 };
 
 /* Segment */
 struct na_segment {
-    na_ptr_t base; /* Address of the segment */
-    na_size_t len; /* Size of the segment in bytes */
+    void *base; /* Address of the segment */
+    size_t len; /* Size of the segment in bytes */
 };
 
 /* Return codes:
@@ -134,13 +133,13 @@ typedef enum na_cb_type { NA_CB_TYPES } na_cb_type_t;
 
 /* Callback info structs */
 struct na_cb_info_recv_unexpected {
-    na_size_t actual_buf_size;
+    size_t actual_buf_size;
     na_addr_t source;
     na_tag_t tag;
 };
 
 struct na_cb_info_recv_expected {
-    na_size_t actual_buf_size;
+    size_t actual_buf_size;
 };
 
 /* Callback info struct */

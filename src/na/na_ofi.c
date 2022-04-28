@@ -174,16 +174,16 @@ static const char *const na_ofi_prov_name[] = {NA_OFI_PROV_TYPES};
 static const char *const na_ofi_prov_alt_name[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) d,
-static na_uint32_t const na_ofi_prov_addr_format_pref[] = {NA_OFI_PROV_TYPES};
+static uint32_t const na_ofi_prov_addr_format_pref[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) e,
-static na_uint32_t const na_ofi_prov_addr_format_native[] = {NA_OFI_PROV_TYPES};
+static uint32_t const na_ofi_prov_addr_format_native[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) f,
 static enum fi_progress const na_ofi_prov_progress[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) g,
-static na_uint32_t const na_ofi_prov_ep_proto[] = {NA_OFI_PROV_TYPES};
+static uint32_t const na_ofi_prov_ep_proto[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) h,
 static unsigned long const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
@@ -327,43 +327,43 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* IB address */
 struct na_ofi_sockaddr_ib {
     unsigned short int sib_family; /* AF_IB */
-    na_uint16_t sib_pkey;
-    na_uint32_t sib_flowinfo;
-    na_uint8_t sib_addr[16];
-    na_uint64_t sib_sid;
-    na_uint64_t sib_sid_mask;
-    na_uint64_t sib_scope_id;
+    uint16_t sib_pkey;
+    uint32_t sib_flowinfo;
+    uint8_t sib_addr[16];
+    uint64_t sib_sid;
+    uint64_t sib_sid_mask;
+    uint64_t sib_scope_id;
 };
 
 /* PSM address */
 struct na_ofi_psm_addr {
-    na_uint64_t addr0;
+    uint64_t addr0;
 };
 
 /* PSM2 address */
 struct na_ofi_psm2_addr {
-    na_uint64_t addr0;
-    na_uint64_t addr1;
+    uint64_t addr0;
+    uint64_t addr1;
 };
 
 /* GNI address */
 struct na_ofi_gni_addr {
     struct {
-        na_uint32_t device_addr; /* physical NIC address     */
-        na_uint32_t cdm_id;      /* user supplied id         */
+        uint32_t device_addr; /* physical NIC address     */
+        uint32_t cdm_id;      /* user supplied id         */
     };
     struct {
-        na_uint32_t name_type : 8;      /* bound, unbound           */
-        na_uint32_t cm_nic_cdm_id : 24; /* CM nic ID                */
-        na_uint32_t cookie;             /* CDM identifier           */
+        uint32_t name_type : 8;      /* bound, unbound           */
+        uint32_t cm_nic_cdm_id : 24; /* CM nic ID                */
+        uint32_t cookie;             /* CDM identifier           */
     };
     struct {
-        na_uint32_t rx_ctx_cnt : 8;  /* number of contexts       */
-        na_uint32_t key_offset : 12; /* auth key offset          */
-        na_uint32_t unused1 : 12;
-        na_uint32_t unused2;
+        uint32_t rx_ctx_cnt : 8;  /* number of contexts       */
+        uint32_t key_offset : 12; /* auth key offset          */
+        uint32_t unused1 : 12;
+        uint32_t unused2;
     };
-    na_uint64_t reserved[3];
+    uint64_t reserved[3];
 };
 
 /* CXI address */
@@ -375,7 +375,7 @@ struct na_ofi_cxi_addr {
             uint32_t valid : 1;
             uint32_t unused : 2;
         } detail;
-        na_uint32_t raw;
+        uint32_t raw;
     } caddr;
 };
 
@@ -393,7 +393,7 @@ union na_ofi_raw_addr {
 /* Address key */
 struct na_ofi_addr_key {
     union na_ofi_raw_addr addr;
-    na_uint64_t val; /* Keep a 64-bit value for now to simplify hashing */
+    uint64_t val; /* Keep a 64-bit value for now to simplify hashing */
 };
 
 /* Address */
@@ -407,10 +407,10 @@ struct na_ofi_addr {
 
 /* Memory descriptor info */
 struct na_ofi_mem_desc_info {
-    na_uint64_t fi_mr_key; /* FI MR key                   */
-    size_t len;            /* Size of region              */
-    unsigned long iovcnt;  /* Segment count               */
-    na_uint8_t flags;      /* Flag of operation access    */
+    uint64_t fi_mr_key;   /* FI MR key                   */
+    size_t len;           /* Size of region              */
+    unsigned long iovcnt; /* Segment count               */
+    uint8_t flags;        /* Flag of operation access    */
 };
 
 /* Memory descriptor */
@@ -499,7 +499,7 @@ struct na_ofi_context {
     struct fid_ep *fi_tx; /* Transmit context handle */
     struct fid_ep *fi_rx; /* Receive context handle  */
     struct na_ofi_eq *eq; /* Event queues            */
-    na_uint8_t idx;       /* Context index           */
+    uint8_t idx;          /* Context index           */
 };
 
 /* Endpoint */
@@ -526,10 +526,10 @@ struct na_ofi_domain {
 #endif
     struct fid_domain *fi_domain;    /* Domain handle */
     struct fid_av *fi_av;            /* Address vector handle */
-    na_size_t context_max;           /* Max contexts available */
-    na_size_t eager_msg_size_max;    /* Max eager msg size */
+    size_t context_max;              /* Max contexts available */
+    size_t eager_msg_size_max;       /* Max eager msg size */
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
-    na_bool_t no_wait;               /* Wait disabled on domain */
+    bool no_wait;                    /* Wait disabled on domain */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered */
 } HG_LOCK_CAPABILITY("domain");
 
@@ -575,12 +575,12 @@ struct na_ofi_class {
     struct na_ofi_domain *domain;      /* Domain pointer           */
     struct na_ofi_endpoint *endpoint;  /* Endpoint pointer         */
     struct hg_mem_pool *mem_pool;      /* Msg buf pool             */
-    na_size_t unexpected_size_max;     /* Max unexpected size      */
-    na_size_t expected_size_max;       /* Max expected size        */
+    size_t unexpected_size_max;        /* Max unexpected size      */
+    size_t expected_size_max;          /* Max expected size        */
     hg_atomic_int32_t n_contexts;      /* Number of context        */
-    na_uint8_t context_max;            /* Max number of contexts   */
-    na_bool_t no_wait;                 /* Ignore wait object       */
-    na_bool_t finalizing;              /* Class being destroyed    */
+    uint8_t context_max;               /* Max number of contexts   */
+    bool no_wait;                      /* Ignore wait object       */
+    bool finalizing;                   /* Class being destroyed    */
 };
 
 /********************/
@@ -610,18 +610,18 @@ na_ofi_prov_addr_format(
  * Get provider encoded address size.
  */
 static NA_INLINE size_t
-na_ofi_prov_addr_size(na_uint32_t addr_format);
+na_ofi_prov_addr_size(uint32_t addr_format);
 
 /**
  * Uses Scalable endpoints (SEP).
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_with_sep(const struct na_ofi_class *na_ofi_class);
 
 /**
  * Requires message header with address info.
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_with_msg_hdr(const struct na_ofi_class *na_ofi_class);
 
 /**
@@ -635,7 +635,7 @@ na_ofi_addr_prov(const char *str);
  */
 static NA_INLINE na_return_t
 na_ofi_str_to_raw_addr(
-    const char *str, na_uint32_t addr_format, union na_ofi_raw_addr *addr);
+    const char *str, uint32_t addr_format, union na_ofi_raw_addr *addr);
 static na_return_t
 na_ofi_str_to_sin(const char *str, struct sockaddr_in *sin_addr);
 static na_return_t
@@ -654,49 +654,48 @@ na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr);
 /**
  * Convert the address to a 64-bit key to search corresponding FI addr.
  */
-static NA_INLINE na_uint64_t
-na_ofi_raw_addr_to_key(
-    na_uint32_t addr_format, const union na_ofi_raw_addr *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
+na_ofi_raw_addr_to_key(uint32_t addr_format, const union na_ofi_raw_addr *addr);
+static NA_INLINE uint64_t
 na_ofi_sin_to_key(const struct sockaddr_in *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_sin6_to_key(const struct sockaddr_in6 *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_sib_to_key(const struct na_ofi_sockaddr_ib *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr);
 
 /**
  * Convert a key back to an address. (only for sin serialization)
  */
 static NA_INLINE void
-na_ofi_key_to_sin(struct sockaddr_in *addr, na_uint64_t key);
+na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key);
 
 /**
  * Size required to serialize raw addr.
  */
 static NA_INLINE size_t
-na_ofi_raw_addr_serialize_size(na_uint32_t addr_format);
+na_ofi_raw_addr_serialize_size(uint32_t addr_format);
 
 /**
  * Serialize addr key.
  */
 static na_return_t
-na_ofi_raw_addr_serialize(na_uint32_t addr_format, void *buf,
-    na_size_t buf_size, const union na_ofi_raw_addr *addr);
+na_ofi_raw_addr_serialize(uint32_t addr_format, void *buf, size_t buf_size,
+    const union na_ofi_raw_addr *addr);
 
 /**
  * Deserialize addr key.
  */
 static na_return_t
-na_ofi_raw_addr_deserialize(na_uint32_t addr_format,
-    union na_ofi_raw_addr *addr, const void *buf, na_size_t buf_size);
+na_ofi_raw_addr_deserialize(uint32_t addr_format, union na_ofi_raw_addr *addr,
+    const void *buf, size_t buf_size);
 
 /**
  * Lookup addr and insert key if not present.
@@ -780,7 +779,7 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 /**
  * Match provider name with domain.
  */
-static na_bool_t
+static bool
 na_ofi_match_provider(const struct na_ofi_verify_info *verify_info,
     const struct fi_info *fi_info);
 
@@ -804,7 +803,7 @@ na_ofi_free_hostname_info(
  */
 static na_return_t
 na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
-    na_uint16_t *port_p, char **domain_name_p);
+    uint16_t *port_p, char **domain_name_p);
 
 /**
  * Parse CXI info.
@@ -859,7 +858,7 @@ na_ofi_gni_get_domain_op_value(
  */
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, na_bool_t no_wait, struct fi_info *fi_info,
+    const char *auth_key, bool no_wait, struct fi_info *fi_info,
     struct na_ofi_domain **na_ofi_domain_p);
 
 /**
@@ -873,8 +872,8 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
  */
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
-    na_uint8_t max_contexts, struct fi_info *fi_info,
+    const struct na_ofi_domain *na_ofi_domain, bool no_wait,
+    uint8_t max_contexts, struct fi_info *fi_info,
     struct na_ofi_endpoint **na_ofi_endpoint_p);
 
 /**
@@ -883,14 +882,14 @@ na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
 static na_return_t
 na_ofi_basic_ep_open(const struct na_ofi_fabric *na_ofi_fabric,
     const struct na_ofi_domain *na_ofi_domain, struct fi_info *fi_info,
-    na_bool_t no_wait, struct na_ofi_endpoint *na_ofi_endpoint);
+    bool no_wait, struct na_ofi_endpoint *na_ofi_endpoint);
 
 /**
  * Open scalable endpoint.
  */
 static na_return_t
 na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
-    struct fi_info *fi_info, na_uint8_t max_contexts,
+    struct fi_info *fi_info, uint8_t max_contexts,
     struct na_ofi_endpoint *na_ofi_endpoint);
 
 /**
@@ -904,7 +903,7 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
  */
 static na_return_t
 na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
+    const struct na_ofi_domain *na_ofi_domain, bool no_wait,
     struct na_ofi_eq **na_ofi_eq_p);
 
 /**
@@ -924,7 +923,7 @@ na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class);
  */
 static na_return_t
 na_ofi_get_uri(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, char *buf, na_size_t *buf_size_p,
+    const struct na_ofi_domain *na_ofi_domain, char *buf, size_t *buf_size_p,
     const struct na_ofi_addr_key *addr_key);
 
 /**
@@ -986,7 +985,7 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr);
  */
 static NA_INLINE void *
 na_ofi_mem_alloc(
-    struct na_ofi_class *na_ofi_class, na_size_t size, struct fid_mr **mr_hdl);
+    struct na_ofi_class *na_ofi_class, size_t size, struct fid_mr **mr_hdl);
 
 /**
  * Free memory.
@@ -1044,14 +1043,14 @@ na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
  */
 static NA_INLINE unsigned long
 na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len);
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len);
 
 /**
  * Create new IOV for transferring length data.
  */
 static NA_INLINE void
 na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len,
     struct iovec *new_iov, unsigned long new_iovcnt);
 
 /**
@@ -1059,8 +1058,8 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
  */
 static NA_INLINE void
 na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
-    unsigned long iovcnt, na_uint64_t key, unsigned long iov_start_index,
-    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
+    unsigned long iovcnt, uint64_t key, unsigned long iov_start_index,
+    na_offset_t iov_start_offset, size_t len, struct fi_rma_iov *new_iov,
     unsigned long new_iovcnt);
 
 /**
@@ -1069,12 +1068,11 @@ na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
 static na_return_t
 na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     na_cb_type_t op, na_cb_t callback, void *arg, na_ofi_rma_op_t fi_rma_op,
-    na_uint64_t fi_rma_flags, struct na_ofi_mem_handle *na_ofi_mem_handle_local,
+    uint64_t fi_rma_flags, struct na_ofi_mem_handle *na_ofi_mem_handle_local,
     na_offset_t local_offset,
     struct na_ofi_mem_handle *na_ofi_mem_handle_remote,
-    na_offset_t remote_offset, na_size_t length,
-    struct na_ofi_addr *na_ofi_addr, na_uint8_t remote_id,
-    struct na_ofi_op_id *na_ofi_op_id);
+    na_offset_t remote_offset, size_t length, struct na_ofi_addr *na_ofi_addr,
+    uint8_t remote_id, struct na_ofi_op_id *na_ofi_op_id);
 
 /**
  * Read from CQ.
@@ -1156,13 +1154,13 @@ na_ofi_op_cancel(struct na_ofi_op_id *na_ofi_op_id);
 /********************/
 
 /* check_protocol */
-static na_bool_t
+static bool
 na_ofi_check_protocol(const char *protocol_name);
 
 /* initialize */
 static na_return_t
 na_ofi_initialize(
-    na_class_t *na_class, const struct na_info *na_info, na_bool_t listen);
+    na_class_t *na_class, const struct na_info *na_info, bool listen);
 
 /* finalize */
 static na_return_t
@@ -1170,7 +1168,7 @@ na_ofi_finalize(na_class_t *na_class);
 
 /* context_create */
 static na_return_t
-na_ofi_context_create(na_class_t *na_class, void **context_p, na_uint8_t id);
+na_ofi_context_create(na_class_t *na_class, void **context_p, uint8_t id);
 
 /* context_destroy */
 static na_return_t
@@ -1205,42 +1203,42 @@ static NA_INLINE na_return_t
 na_ofi_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr_p);
 
 /* addr_dup */
-static na_bool_t
+static bool
 na_ofi_addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
 
 /* addr_is_self */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_addr_is_self(na_class_t *na_class, na_addr_t addr);
 
 /* addr_to_string */
 static na_return_t
 na_ofi_addr_to_string(
-    na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr);
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr);
 
 /* addr_get_serialize_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_addr_get_serialize_size(na_class_t *na_class, na_addr_t addr);
 
 /* addr_serialize */
 static na_return_t
 na_ofi_addr_serialize(
-    na_class_t *na_class, void *buf, na_size_t buf_size, na_addr_t addr);
+    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr);
 
 /* addr_deserialize */
 static na_return_t
-na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr_p,
-    const void *buf, na_size_t buf_size);
+na_ofi_addr_deserialize(
+    na_class_t *na_class, na_addr_t *addr_p, const void *buf, size_t buf_size);
 
 /* msg_get_max_unexpected_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_msg_get_max_unexpected_size(const na_class_t *na_class);
 
 /* msg_get_max_expected_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_msg_get_max_expected_size(const na_class_t *na_class);
 
 /* msg_get_unexpected_header_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class);
 
 /* msg_get_max_tag */
@@ -1249,7 +1247,7 @@ na_ofi_msg_get_max_tag(const na_class_t *na_class);
 
 /* msg_buf_alloc */
 static void *
-na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data);
+na_ofi_msg_buf_alloc(na_class_t *na_class, size_t size, void **plugin_data);
 
 /* msg_buf_free */
 static na_return_t
@@ -1257,93 +1255,90 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data);
 
 /* msg_init_unexpected */
 static na_return_t
-na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size);
+na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size);
 
 /* msg_send_unexpected */
 static na_return_t
 na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_unexpected */
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_op_id_t *op_id);
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_op_id_t *op_id);
 
 /* msg_send_expected */
 static na_return_t
 na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
-    na_tag_t tag, na_op_id_t *op_id);
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
 
 /* mem_handle */
 static na_return_t
-na_ofi_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
+na_ofi_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
 static na_return_t
 na_ofi_mem_handle_create_segments(na_class_t *na_class,
-    struct na_segment *segments, na_size_t segment_count, unsigned long flags,
+    struct na_segment *segments, size_t segment_count, unsigned long flags,
     na_mem_handle_t *mem_handle);
 
 static na_return_t
 na_ofi_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_mem_handle_get_max_segments(const na_class_t *na_class);
 
 static na_return_t
 na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
-    enum na_mem_type mem_type, na_uint64_t device);
+    enum na_mem_type mem_type, uint64_t device);
 
 static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
 
 /* mem_handle serialization */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_mem_handle_get_serialize_size(
     na_class_t *na_class, na_mem_handle_t mem_handle);
 
 static na_return_t
-na_ofi_mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
+na_ofi_mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
     na_mem_handle_t mem_handle);
 
 static na_return_t
 na_ofi_mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-    const void *buf, na_size_t buf_size);
+    const void *buf, size_t buf_size);
 
 /* put */
 static na_return_t
 na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
-    na_op_id_t *op_id);
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
 
 /* get */
 static na_return_t
 na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
-    na_op_id_t *op_id);
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
 
 /* poll_get_fd */
 static NA_INLINE int
 na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context);
 
 /* poll_try_wait */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context);
 
 /* progress */
@@ -1534,7 +1529,7 @@ na_ofi_prov_addr_format(
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE size_t
-na_ofi_prov_addr_size(na_uint32_t addr_format)
+na_ofi_prov_addr_size(uint32_t addr_format)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -1558,7 +1553,7 @@ na_ofi_prov_addr_size(na_uint32_t addr_format)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_with_sep(const struct na_ofi_class *na_ofi_class)
 {
     return (na_ofi_prov_flags[na_ofi_class->fabric->prov_type] & NA_OFI_SEP) &&
@@ -1566,7 +1561,7 @@ na_ofi_with_sep(const struct na_ofi_class *na_ofi_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_with_msg_hdr(const struct na_ofi_class *na_ofi_class)
 {
     return na_ofi_prov_flags[na_ofi_class->fabric->prov_type] &
@@ -1592,7 +1587,7 @@ na_ofi_addr_prov(const char *str)
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 na_ofi_str_to_raw_addr(
-    const char *str, na_uint32_t addr_format, union na_ofi_raw_addr *addr)
+    const char *str, uint32_t addr_format, union na_ofi_raw_addr *addr)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -1801,7 +1796,7 @@ static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr)
 {
     unsigned int version, name_type, rx_ctx_cnt;
-    na_uint32_t device_addr, cdm_id, cm_nic_cdm_id, cookie;
+    uint32_t device_addr, cdm_id, cm_nic_cdm_id, cookie;
     na_return_t ret;
     int rc;
 
@@ -1854,9 +1849,8 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
-na_ofi_raw_addr_to_key(
-    na_uint32_t addr_format, const union na_ofi_raw_addr *addr)
+static NA_INLINE uint64_t
+na_ofi_raw_addr_to_key(uint32_t addr_format, const union na_ofi_raw_addr *addr)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -1880,35 +1874,35 @@ na_ofi_raw_addr_to_key(
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_sin_to_key(const struct sockaddr_in *addr)
 {
-    return ((na_uint64_t) addr->sin_addr.s_addr) << 32 | addr->sin_port;
+    return ((uint64_t) addr->sin_addr.s_addr) << 32 | addr->sin_port;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_sin6_to_key(const struct sockaddr_in6 *addr)
 {
-    return *((const na_uint64_t *) &addr->sin6_addr.s6_addr);
+    return *((const uint64_t *) &addr->sin6_addr.s6_addr);
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_sib_to_key(const struct na_ofi_sockaddr_ib *addr)
 {
-    return *((const na_uint64_t *) &addr->sib_addr);
+    return *((const uint64_t *) &addr->sib_addr);
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr)
 {
     return addr->addr0;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr)
 {
     /* Only need the psm2_epid, i.e. the first 64 bits */
@@ -1916,22 +1910,22 @@ na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr)
 {
-    return ((na_uint64_t) addr->device_addr) << 32 | addr->cdm_id;
+    return ((uint64_t) addr->device_addr) << 32 | addr->cdm_id;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint64_t
+static NA_INLINE uint64_t
 na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr)
 {
-    return (na_uint64_t) addr->caddr.raw;
+    return (uint64_t) addr->caddr.raw;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_key_to_sin(struct sockaddr_in *addr, na_uint64_t key)
+na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key)
 {
     addr->sin_family = AF_INET;
     addr->sin_addr.s_addr = (in_addr_t) (key >> 32);
@@ -1941,11 +1935,11 @@ na_ofi_key_to_sin(struct sockaddr_in *addr, na_uint64_t key)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE size_t
-na_ofi_raw_addr_serialize_size(na_uint32_t addr_format)
+na_ofi_raw_addr_serialize_size(uint32_t addr_format)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
-            return sizeof(na_uint64_t);
+            return sizeof(uint64_t);
         case FI_SOCKADDR_IN6:
             return sizeof(struct in6_addr) + sizeof(in_port_t);
         case FI_SOCKADDR_IB:
@@ -1966,23 +1960,24 @@ na_ofi_raw_addr_serialize_size(na_uint32_t addr_format)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_raw_addr_serialize(na_uint32_t addr_format, void *buf,
-    na_size_t buf_size, const union na_ofi_raw_addr *addr)
+na_ofi_raw_addr_serialize(uint32_t addr_format, void *buf, size_t buf_size,
+    const union na_ofi_raw_addr *addr)
 {
     na_return_t ret;
 
     switch (addr_format) {
         case FI_SOCKADDR_IN: {
-            na_uint64_t val = na_ofi_sin_to_key(&addr->sin);
+            uint64_t val = na_ofi_sin_to_key(&addr->sin);
 
             NA_CHECK_SUBSYS_ERROR(addr, buf_size < sizeof(val), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(buf, &val, sizeof(val));
             break;
         }
         case FI_SOCKADDR_IN6: {
             char *buf_ptr = (char *) buf;
-            na_size_t buf_size_left = (na_size_t) buf_size;
+            size_t buf_size_left = (size_t) buf_size;
 
             NA_ENCODE(error, ret, buf_ptr, buf_size_left, &addr->sin6.sin6_addr,
                 struct in6_addr);
@@ -1993,31 +1988,36 @@ na_ofi_raw_addr_serialize(na_uint32_t addr_format, void *buf,
         case FI_SOCKADDR_IB:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_sockaddr_ib), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(buf, &addr->sib, sizeof(addr->sib));
             break;
         case FI_ADDR_PSMX:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_psm_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(buf, &addr->psm, sizeof(addr->psm));
             break;
         case FI_ADDR_PSMX2:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_psm2_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(buf, &addr->psm2, sizeof(addr->psm2));
             break;
         case FI_ADDR_GNI:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_gni_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(buf, &addr->gni, sizeof(addr->gni));
             break;
         case FI_ADDR_CXI:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_cxi_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(buf, &addr->cxi, sizeof(addr->cxi));
             break;
         default:
@@ -2033,24 +2033,25 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_raw_addr_deserialize(na_uint32_t addr_format,
-    union na_ofi_raw_addr *addr, const void *buf, na_size_t buf_size)
+na_ofi_raw_addr_deserialize(uint32_t addr_format, union na_ofi_raw_addr *addr,
+    const void *buf, size_t buf_size)
 {
     na_return_t ret;
 
     switch (addr_format) {
         case FI_SOCKADDR_IN: {
-            na_uint64_t val;
+            uint64_t val;
 
             NA_CHECK_SUBSYS_ERROR(addr, buf_size < sizeof(val), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(&val, buf, sizeof(val));
             na_ofi_key_to_sin(&addr->sin, val);
             break;
         }
         case FI_SOCKADDR_IN6: {
             const char *buf_ptr = (const char *) buf;
-            na_size_t buf_size_left = (na_size_t) buf_size;
+            size_t buf_size_left = (size_t) buf_size;
 
             memset(&addr->sin6, 0, sizeof(addr->sin6));
             NA_DECODE(error, ret, buf_ptr, buf_size_left, &addr->sin6.sin6_addr,
@@ -2062,31 +2063,36 @@ na_ofi_raw_addr_deserialize(na_uint32_t addr_format,
         case FI_SOCKADDR_IB:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_sockaddr_ib), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(&addr->sib, buf, sizeof(addr->sib));
             break;
         case FI_ADDR_PSMX:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_psm_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(&addr->psm, buf, sizeof(addr->psm));
             break;
         case FI_ADDR_PSMX2:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_psm2_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(&addr->psm2, buf, sizeof(addr->psm2));
             break;
         case FI_ADDR_GNI:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_gni_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(&addr->gni, buf, sizeof(addr->gni));
             break;
         case FI_ADDR_CXI:
             NA_CHECK_SUBSYS_ERROR(addr,
                 buf_size < sizeof(struct na_ofi_cxi_addr), error, ret,
-                NA_OVERFLOW, "Buffer size too small to copy addr");
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
             memcpy(&addr->cxi, buf, sizeof(addr->cxi));
             break;
         default:
@@ -2139,9 +2145,9 @@ static NA_INLINE unsigned int
 na_ofi_addr_key_hash(hg_hash_table_key_t key)
 {
     struct na_ofi_addr_key *addr_key = (struct na_ofi_addr_key *) key;
-    na_uint32_t hi, lo;
+    uint32_t hi, lo;
 
-    hi = (na_uint32_t) (addr_key->val >> 32);
+    hi = (uint32_t) (addr_key->val >> 32);
     lo = (addr_key->val & 0xFFFFFFFFU);
 
     return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
@@ -2317,9 +2323,9 @@ static NA_INLINE unsigned int
 na_ofi_fi_addr_hash(hg_hash_table_key_t key)
 {
     fi_addr_t fi_addr = *((fi_addr_t *) key);
-    na_uint32_t hi, lo;
+    uint32_t hi, lo;
 
-    hi = (na_uint32_t) (fi_addr >> 32);
+    hi = (uint32_t) (fi_addr >> 32);
     lo = (fi_addr & 0xFFFFFFFFU);
 
     return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
@@ -2539,24 +2545,24 @@ na_ofi_freeinfo(struct fi_info *fi_info)
 }
 
 /*---------------------------------------------------------------------------*/
-static na_bool_t
+static bool
 na_ofi_match_provider(
     const struct na_ofi_verify_info *verify_info, const struct fi_info *fi_info)
 {
     /* Domain must match expected address format (keep this check as OFI does
      * not seem to filter providers on addr_format) */
     if (verify_info->addr_format != fi_info->addr_format)
-        return NA_FALSE;
+        return false;
 
     /* Does not match provider name */
     if (strcmp(na_ofi_prov_name[verify_info->prov_type],
             fi_info->fabric_attr->prov_name) != 0)
-        return NA_FALSE;
+        return false;
 
     /* Does not match domain name (if provided) */
     if (verify_info->domain_name && verify_info->domain_name[0] != '\0' &&
         strcmp(verify_info->domain_name, fi_info->domain_attr->name) != 0)
-        return NA_FALSE;
+        return false;
 
         /* Match loc info as a last resort if nothing else was provided */
 #ifdef NA_HAS_HWLOC
@@ -2569,7 +2575,7 @@ na_ofi_match_provider(
 #endif
 
     /* Nothing prevents us from not picking that provider */
-    return NA_TRUE;
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2653,7 +2659,7 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
     switch (addr_format) {
         case FI_SOCKADDR_IN:
         case FI_SOCKADDR_IN6: {
-            na_uint16_t port = 0;
+            uint16_t port = 0;
             struct sockaddr *sa = NULL;
             char **ifa_name_p = NULL;
             socklen_t salen = 0;
@@ -2757,7 +2763,7 @@ na_ofi_free_hostname_info(
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
-    na_uint16_t *port_p, char **domain_name_p)
+    uint16_t *port_p, char **domain_name_p)
 {
     char domain_name[65];
     char *hostname = NULL;
@@ -2783,7 +2789,7 @@ na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
         if (strchr(hostname, ':')) {
             char *port_str = NULL;
             strtok_r(hostname, ":", &port_str);
-            *port_p = (na_uint16_t) strtoul(port_str, NULL, 10);
+            *port_p = (uint16_t) strtoul(port_str, NULL, 10);
         }
 
         /* Extract domain */
@@ -2815,8 +2821,8 @@ na_ofi_parse_cxi_info(
 {
     char nic_name[5] = {"cxiX"}; /* cxi[0-9] */
     char pid_name[4];
-    na_uint16_t pid = 0; /* [0-510] */
-    na_uint16_t pid_mask = 0x1ff;
+    uint16_t pid = 0; /* [0-510] */
+    uint16_t pid_mask = 0x1ff;
     char *node = NULL;
     na_return_t ret;
 
@@ -3111,7 +3117,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, na_bool_t no_wait, struct fi_info *fi_info,
+    const char *auth_key, bool no_wait, struct fi_info *fi_info,
     struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
@@ -3167,7 +3173,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
      * FI_WAIT_FD/FI_WAIT_SET. */
     if (no_wait || !(na_ofi_prov_flags[na_ofi_fabric->prov_type] &
                        (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD))) {
-        na_ofi_domain->no_wait = NA_TRUE;
+        na_ofi_domain->no_wait = true;
 
         fi_info->domain_attr->control_progress = FI_PROGRESS_MANUAL;
         fi_info->domain_attr->data_progress = FI_PROGRESS_MANUAL;
@@ -3324,8 +3330,8 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
-    na_uint8_t max_contexts, struct fi_info *fi_info,
+    const struct na_ofi_domain *na_ofi_domain, bool no_wait,
+    uint8_t max_contexts, struct fi_info *fi_info,
     struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
     struct na_ofi_endpoint *na_ofi_endpoint = NULL;
@@ -3363,7 +3369,7 @@ error:
 static na_return_t
 na_ofi_basic_ep_open(const struct na_ofi_fabric *na_ofi_fabric,
     const struct na_ofi_domain *na_ofi_domain, struct fi_info *fi_info,
-    na_bool_t no_wait, struct na_ofi_endpoint *na_ofi_endpoint)
+    bool no_wait, struct na_ofi_endpoint *na_ofi_endpoint)
 {
     na_return_t ret;
     int rc;
@@ -3419,7 +3425,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
-    struct fi_info *fi_info, na_uint8_t max_contexts,
+    struct fi_info *fi_info, uint8_t max_contexts,
     struct na_ofi_endpoint *na_ofi_endpoint)
 {
     na_return_t ret;
@@ -3471,9 +3477,9 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     /* Valid only when not using SEP */
     if (na_ofi_endpoint->eq && na_ofi_endpoint->eq->retry_op_queue) {
         /* Check that unexpected op queue is empty */
-        na_bool_t empty =
+        bool empty =
             HG_QUEUE_IS_EMPTY(&na_ofi_endpoint->eq->retry_op_queue->queue);
-        NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, out, ret, NA_BUSY,
+        NA_CHECK_SUBSYS_ERROR(ctx, empty == false, out, ret, NA_BUSY,
             "Retry op queue should be empty");
     }
 
@@ -3504,7 +3510,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, na_bool_t no_wait,
+    const struct na_ofi_domain *na_ofi_domain, bool no_wait,
     struct na_ofi_eq **na_ofi_eq_p)
 {
     struct na_ofi_eq *na_ofi_eq = NULL;
@@ -3652,12 +3658,12 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_get_uri(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, char *buf, na_size_t *buf_size_p,
+    const struct na_ofi_domain *na_ofi_domain, char *buf, size_t *buf_size_p,
     const struct na_ofi_addr_key *addr_key)
 {
     char fi_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'}, *fi_addr_str_ptr;
     size_t fi_addr_strlen = NA_OFI_MAX_URI_LEN;
-    na_size_t addr_strlen;
+    size_t addr_strlen;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -3684,7 +3690,8 @@ na_ofi_get_uri(const struct na_ofi_fabric *na_ofi_fabric,
         strlen(fi_addr_str_ptr) + strlen(na_ofi_fabric->prov_name) + 3;
     if (buf) {
         NA_CHECK_SUBSYS_ERROR(addr, addr_strlen >= *buf_size_p, out, ret,
-            NA_OVERFLOW, "Buffer size too small to copy addr");
+            NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+            *buf_size_p);
 
         /* Generate URI */
         rc = snprintf(buf, *buf_size_p, "%s://%s", na_ofi_fabric->prov_name,
@@ -3830,9 +3837,9 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr)
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void *
 na_ofi_mem_alloc(
-    struct na_ofi_class *na_ofi_class, na_size_t size, struct fid_mr **mr_hdl)
+    struct na_ofi_class *na_ofi_class, size_t size, struct fid_mr **mr_hdl)
 {
-    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+    size_t page_size = (size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
     int rc;
 
@@ -4049,9 +4056,9 @@ na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE unsigned long
 na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len)
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len)
 {
-    na_size_t remaining_len =
+    size_t remaining_len =
         len - MIN(len, iov[iov_start_index].iov_len - iov_start_offset);
     unsigned long i, iov_index;
 
@@ -4067,10 +4074,10 @@ na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len,
     struct iovec *new_iov, unsigned long new_iovcnt)
 {
-    na_size_t remaining_len = len;
+    size_t remaining_len = len;
     unsigned long i, iov_index;
 
     /* Offset is only within first segment */
@@ -4094,12 +4101,12 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
-    unsigned long iovcnt, na_uint64_t key, unsigned long iov_start_index,
-    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
+    unsigned long iovcnt, uint64_t key, unsigned long iov_start_index,
+    na_offset_t iov_start_offset, size_t len, struct fi_rma_iov *new_iov,
     unsigned long new_iovcnt)
 {
     uint64_t addr;
-    na_size_t remaining_len = len;
+    size_t remaining_len = len;
     unsigned long i, iov_index;
 
     /* Reference by virtual address, rather than a 0-based offset */
@@ -4135,19 +4142,18 @@ na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
 static na_return_t
 na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     na_cb_type_t cb_type, na_cb_t callback, void *arg,
-    na_ofi_rma_op_t fi_rma_op, na_uint64_t fi_rma_flags,
+    na_ofi_rma_op_t fi_rma_op, uint64_t fi_rma_flags,
     struct na_ofi_mem_handle *na_ofi_mem_handle_local, na_offset_t local_offset,
     struct na_ofi_mem_handle *na_ofi_mem_handle_remote,
-    na_offset_t remote_offset, na_size_t length,
-    struct na_ofi_addr *na_ofi_addr, na_uint8_t remote_id,
-    struct na_ofi_op_id *na_ofi_op_id)
+    na_offset_t remote_offset, size_t length, struct na_ofi_addr *na_ofi_addr,
+    uint8_t remote_id, struct na_ofi_op_id *na_ofi_op_id)
 {
     struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     struct iovec *local_iov = NA_OFI_IOV(na_ofi_mem_handle_local),
                  *remote_iov = NA_OFI_IOV(na_ofi_mem_handle_remote);
     unsigned long local_iovcnt = na_ofi_mem_handle_local->desc.info.iovcnt,
                   remote_iovcnt = na_ofi_mem_handle_remote->desc.info.iovcnt;
-    na_uint64_t remote_key = na_ofi_mem_handle_remote->desc.info.fi_mr_key;
+    uint64_t remote_key = na_ofi_mem_handle_remote->desc.info.fi_mr_key;
     unsigned long local_iov_start_index = 0, remote_iov_start_index = 0;
     na_offset_t local_iov_start_offset = 0, remote_iov_start_offset = 0;
     struct iovec *liov;
@@ -4489,7 +4495,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
 
     /* Fill unexpected info */
     recv_unexpected_info->tag = (na_tag_t) (tag & NA_OFI_TAG_MASK);
-    recv_unexpected_info->actual_buf_size = (na_size_t) len;
+    recv_unexpected_info->actual_buf_size = (size_t) len;
     recv_unexpected_info->source = (na_addr_t) na_ofi_addr;
 
     return NA_SUCCESS;
@@ -4515,7 +4521,7 @@ na_ofi_cq_process_recv_expected_event(
     /* Check buf_size and msg_size */
     NA_CHECK_SUBSYS_ERROR(msg, len > na_ofi_op_id->info.msg.buf_size, out, ret,
         NA_MSGSIZE, "Expected recv msg size too large for buffer");
-    recv_expected_info->actual_buf_size = (na_size_t) len;
+    recv_expected_info->actual_buf_size = (size_t) len;
 
 out:
     return ret;
@@ -4545,7 +4551,7 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
     na_return_t ret;
 
     do {
-        na_bool_t canceled = NA_FALSE;
+        bool canceled = false;
         na_cb_type_t cb_type;
         ssize_t rc = 0;
 
@@ -4563,7 +4569,7 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
         /* Check if OP ID was canceled */
         if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELING) {
             hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
-            canceled = NA_TRUE;
+            canceled = true;
         }
         hg_thread_spin_unlock(&op_queue->lock);
 
@@ -4641,7 +4647,7 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
             /* Do not repush OP ID if it was canceled in the meantime */
             if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELING) {
                 hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
-                canceled = NA_TRUE;
+                canceled = true;
             } else {
                 NA_LOG_SUBSYS_DEBUG(
                     op, "Re-pushing %p for retry", (void *) na_ofi_op_id);
@@ -4823,21 +4829,21 @@ error:
 /* Plugin callbacks */
 /********************/
 
-static na_bool_t
+static bool
 na_ofi_check_protocol(const char *protocol_name)
 {
     struct fi_info *prov, *providers = NULL;
     enum na_ofi_prov_type type;
-    na_bool_t accept;
+    bool accept;
     na_return_t na_ret;
 
     type = na_ofi_prov_name_to_type(protocol_name);
-    NA_CHECK_SUBSYS_ERROR(cls, type == NA_OFI_PROV_NULL, out, accept, NA_FALSE,
+    NA_CHECK_SUBSYS_ERROR(cls, type == NA_OFI_PROV_NULL, out, accept, false,
         "Protocol %s not supported", protocol_name);
 
 /* Only the sockets provider is currently supported on macOS */
 #ifdef __APPLE__
-    NA_CHECK_SUBSYS_ERROR(fatal, type == NA_OFI_PROV_TCP, out, accept, NA_FALSE,
+    NA_CHECK_SUBSYS_ERROR(fatal, type == NA_OFI_PROV_TCP, out, accept, false,
         "Protocol \"tcp\" not supported on macOS, please use \"sockets\" "
         "instead");
 #endif
@@ -4852,7 +4858,7 @@ na_ofi_check_protocol(const char *protocol_name)
          */
         na_ofi_provider_check(type, protocol_name);
         NA_GOTO_SUBSYS_ERROR(
-            cls, out, accept, NA_FALSE, "na_ofi_getinfo() failed");
+            cls, out, accept, false, "na_ofi_getinfo() failed");
     }
 
     for (prov = providers; prov != NULL; prov = prov->next) {
@@ -4862,7 +4868,7 @@ na_ofi_check_protocol(const char *protocol_name)
             break;
         }
     }
-    accept = (na_bool_t) (prov != NULL);
+    accept = (bool) (prov != NULL);
 
     fi_freeinfo(providers);
 
@@ -4872,14 +4878,14 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
-    na_bool_t NA_UNUSED listen)
+na_ofi_initialize(
+    na_class_t *na_class, const struct na_info *na_info, bool NA_UNUSED listen)
 {
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     struct na_ofi_class *na_ofi_class = NULL;
     enum na_ofi_prov_type prov_type;
-    na_bool_t no_wait;
-    na_size_t msg_size_max;
+    bool no_wait;
+    size_t msg_size_max;
     char *domain_name = NULL;
     struct na_ofi_info info = {.addr_format = FI_FORMAT_UNSPEC,
         .node = NULL,
@@ -4985,7 +4991,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         na_init_info.max_contexts > na_ofi_class->domain->context_max, error,
         ret, NA_INVALID_ARG,
         "Maximum number of requested contexts (%" PRIu8 ") exceeds provider "
-        "limitation(%" PRIu64 ")",
+        "limitation(%zu)",
         na_init_info.max_contexts, na_ofi_class->domain->context_max);
     na_ofi_class->context_max = na_init_info.max_contexts;
 
@@ -5008,8 +5014,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         na_ofi_mem_buf_deregister, (void *) na_ofi_class);
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_class->mem_pool == NULL, error, ret,
         NA_NOMEM,
-        "Could not create memory pool with %d blocks of size %d x %" PRIu64
-        " bytes",
+        "Could not create memory pool with %d blocks of size %d x %zu bytes",
         NA_OFI_MEM_BLOCK_COUNT, NA_OFI_MEM_CHUNK_COUNT,
         MAX(na_ofi_class->unexpected_size_max,
             na_ofi_class->expected_size_max));
@@ -5065,7 +5070,7 @@ na_ofi_finalize(na_class_t *na_class)
         return ret;
 
     /* Class is now finalizing */
-    na_ofi_class->finalizing = NA_TRUE;
+    na_ofi_class->finalizing = true;
 
     /* Iterate over remaining addresses and free them */
     hg_hash_table_iterate(
@@ -5088,7 +5093,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_context_create(na_class_t *na_class, void **context_p, na_uint8_t id)
+na_ofi_context_create(na_class_t *na_class, void **context_p, uint8_t id)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_context *na_ofi_context = NULL;
@@ -5183,11 +5188,11 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
     int rc;
 
     if (na_ofi_with_sep(na_ofi_class)) {
-        na_bool_t empty;
+        bool empty;
 
         /* Check that retry op queue is empty */
         empty = HG_QUEUE_IS_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
-        NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, out, ret, NA_BUSY,
+        NA_CHECK_SUBSYS_ERROR(ctx, empty == false, out, ret, NA_BUSY,
             "Retry op queue should be empty");
 
         if (na_ofi_context->fi_tx) {
@@ -5342,7 +5347,7 @@ na_ofi_addr_dup(
 }
 
 /*---------------------------------------------------------------------------*/
-static na_bool_t
+static bool
 na_ofi_addr_cmp(
     na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
 {
@@ -5350,7 +5355,7 @@ na_ofi_addr_cmp(
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
     return NA_OFI_CLASS(na_class)->endpoint->src_addr ==
@@ -5360,7 +5365,7 @@ na_ofi_addr_is_self(na_class_t *na_class, na_addr_t addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_addr_to_string(
-    na_class_t *na_class, char *buf, na_size_t *buf_size_p, na_addr_t addr)
+    na_class_t *na_class, char *buf, size_t *buf_size_p, na_addr_t addr)
 {
     return na_ofi_get_uri(NA_OFI_CLASS(na_class)->fabric,
         NA_OFI_CLASS(na_class)->domain, buf, buf_size_p,
@@ -5368,7 +5373,7 @@ na_ofi_addr_to_string(
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_addr_get_serialize_size(na_class_t *na_class, na_addr_t NA_UNUSED addr)
 {
     return na_ofi_raw_addr_serialize_size(
@@ -5378,7 +5383,7 @@ na_ofi_addr_get_serialize_size(na_class_t *na_class, na_addr_t NA_UNUSED addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_addr_serialize(
-    na_class_t *na_class, void *buf, na_size_t buf_size, na_addr_t addr)
+    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr)
 {
     const struct na_ofi_addr_key *addr_key =
         &((struct na_ofi_addr *) addr)->addr_key;
@@ -5390,8 +5395,8 @@ na_ofi_addr_serialize(
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr_p,
-    const void *buf, na_size_t buf_size)
+na_ofi_addr_deserialize(
+    na_class_t *na_class, na_addr_t *addr_p, const void *buf, size_t buf_size)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
@@ -5423,21 +5428,21 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
     return NA_OFI_CLASS(na_class)->unexpected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_msg_get_max_expected_size(const na_class_t *na_class)
 {
     return NA_OFI_CLASS(na_class)->expected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
     if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)))
@@ -5456,7 +5461,7 @@ na_ofi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 
 /*---------------------------------------------------------------------------*/
 static void *
-na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
+na_ofi_msg_buf_alloc(na_class_t *na_class, size_t size, void **plugin_data)
 {
     struct fid_mr *mr_hdl = NULL;
     void *mem_ptr = NULL;
@@ -5494,7 +5499,7 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
+na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size)
 {
     /*
      * For those providers that don't support FI_SOURCE/FI_SOURCE_ERR, insert
@@ -5512,8 +5517,8 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
 static na_return_t
 na_ofi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_context_t *context, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, void *plugin_data, na_addr_t dest_addr,
-    na_uint8_t dest_id, na_tag_t tag, na_op_id_t *op_id)
+    size_t buf_size, void *plugin_data, na_addr_t dest_addr, uint8_t dest_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) dest_addr;
     struct na_ofi_msg_info msg_info = {.buf.const_ptr = buf,
@@ -5532,7 +5537,7 @@ na_ofi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t NA_UNUSED *na_class,
     na_context_t *context, na_cb_t callback, void *arg, void *buf,
-    na_size_t buf_size, void *plugin_data, na_op_id_t *op_id)
+    size_t buf_size, void *plugin_data, na_op_id_t *op_id)
 {
     struct na_ofi_msg_info msg_info = {.buf.ptr = buf,
         .buf_size = buf_size,
@@ -5548,8 +5553,8 @@ na_ofi_msg_recv_unexpected(na_class_t NA_UNUSED *na_class,
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id)
 {
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) dest_addr;
@@ -5568,9 +5573,8 @@ na_ofi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) source_addr;
     struct na_ofi_msg_info msg_info = {.buf.ptr = buf,
@@ -5588,7 +5592,7 @@ na_ofi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
-    na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
+    size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -5614,13 +5618,13 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_mem_handle_create_segments(na_class_t *na_class,
-    struct na_segment *segments, na_size_t segment_count, unsigned long flags,
+    struct na_segment *segments, size_t segment_count, unsigned long flags,
     na_mem_handle_t *mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
-    na_size_t i;
+    size_t i;
 
     NA_CHECK_SUBSYS_WARNING(mem, segment_count == 1, "Segment count is 1");
 
@@ -5629,7 +5633,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
         segment_count >
             NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit,
         error, ret, NA_INVALID_ARG,
-        "Segment count exceeds provider limit (%" PRIu64 ")",
+        "Segment count exceeds provider limit (%zu)",
         NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit);
 
     /* Allocate memory handle */
@@ -5687,7 +5691,7 @@ na_ofi_mem_handle_free(
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_mem_handle_get_max_segments(const na_class_t *na_class)
 {
 #ifdef NA_OFI_USE_REGV
@@ -5701,7 +5705,7 @@ na_ofi_mem_handle_get_max_segments(const na_class_t *na_class)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
-    enum na_mem_type mem_type, na_uint64_t device)
+    enum na_mem_type mem_type, uint64_t device)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
@@ -5823,7 +5827,7 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_ofi_mem_handle_get_serialize_size(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
@@ -5837,13 +5841,13 @@ na_ofi_mem_handle_get_serialize_size(
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
-    na_size_t buf_size, na_mem_handle_t mem_handle)
+    size_t buf_size, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
     struct iovec *iov = NA_OFI_IOV(na_ofi_mem_handle);
     char *buf_ptr = (char *) buf;
-    na_size_t buf_size_left = buf_size;
+    size_t buf_size_left = buf_size;
     na_return_t ret = NA_SUCCESS;
 
     /* Descriptor info */
@@ -5861,11 +5865,11 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
+    na_mem_handle_t *mem_handle, const void *buf, size_t buf_size)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     const char *buf_ptr = (const char *) buf;
-    na_size_t buf_size_left = buf_size;
+    size_t buf_size_left = buf_size;
     struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -5913,9 +5917,8 @@ error:
 static na_return_t
 na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
-    na_op_id_t *op_id)
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id)
 {
     return na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_PUT, callback, arg,
         fi_writemsg, NA_OFI_PUT_COMPLETION,
@@ -5929,9 +5932,8 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 static na_return_t
 na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
-    na_op_id_t *op_id)
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id)
 {
     return na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_GET, callback, arg,
         fi_readmsg, NA_OFI_GET_COMPLETION,
@@ -5964,17 +5966,17 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     struct fid *fids[1];
-    na_bool_t retry_queue_empty;
+    bool retry_queue_empty;
     int rc;
 
     if (na_ofi_class->no_wait)
-        return NA_FALSE;
+        return false;
 
     /* Keep making progress if retry queue is not empty */
     hg_thread_spin_lock(&na_ofi_context->eq->retry_op_queue->lock);
@@ -5982,25 +5984,25 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
         HG_QUEUE_IS_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
     hg_thread_spin_unlock(&na_ofi_context->eq->retry_op_queue->lock);
     if (!retry_queue_empty)
-        return NA_FALSE;
+        return false;
 
     /* Assume it is safe to block if provider is using wait set */
     if ((na_ofi_prov_flags[na_ofi_class->fabric->prov_type] & NA_OFI_WAIT_SET)
         /* PSM2 shows very slow performance with fi_trywait() */
         || na_ofi_class->fabric->prov_type == NA_OFI_PROV_PSM2)
-        return NA_TRUE;
+        return true;
 
     fids[0] = &na_ofi_context->eq->fi_cq->fid;
     /* Check whether it is safe to block on that fd */
     rc = fi_trywait(na_ofi_class->fabric->fi_fabric, fids, 1);
     if (rc == FI_SUCCESS)
-        return NA_TRUE;
+        return true;
     else if (rc == -FI_EAGAIN)
-        return NA_FALSE;
+        return false;
     else {
         NA_LOG_SUBSYS_ERROR(poll, "fi_trywait() failed, rc: %d (%s)", rc,
             fi_strerror((int) -rc));
-        return NA_FALSE;
+        return false;
     }
 }
 
@@ -6107,7 +6109,7 @@ na_ofi_cancel(
     if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_QUEUED) {
         struct na_ofi_op_queue *op_queue =
             NA_OFI_CONTEXT(context)->eq->retry_op_queue;
-        na_bool_t canceled = NA_FALSE;
+        bool canceled = false;
 
         /* If dequeued by process_retries() in the meantime, we'll just let it
          * cancel there */
@@ -6118,7 +6120,7 @@ na_ofi_cancel(
                 &op_queue->queue, na_ofi_op_id, na_ofi_op_id, entry);
             hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
             hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
-            canceled = NA_TRUE;
+            canceled = true;
         }
         hg_thread_spin_unlock(&op_queue->lock);
 

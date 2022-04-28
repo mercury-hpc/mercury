@@ -261,14 +261,14 @@ NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
-NA_Initialize(const char *info_string, na_bool_t listen)
+NA_Initialize(const char *info_string, bool listen)
 {
     return NA_Initialize_opt(info_string, listen, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
-NA_Initialize_opt(const char *info_string, na_bool_t listen,
+NA_Initialize_opt(const char *info_string, bool listen,
     const struct na_init_info *na_init_info)
 {
     struct na_private_class *na_private_class = NULL;
@@ -276,7 +276,7 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     unsigned int plugin_index;
     const unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
-    na_bool_t plugin_found = NA_FALSE;
+    bool plugin_found = false;
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(cls, info_string == NULL, error, ret, NA_INVALID_ARG,
@@ -300,7 +300,7 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         na_info->class_name, na_info->protocol_name, na_info->host_name);
 
     for (plugin_index = 0; plugin_index < plugin_count; plugin_index++) {
-        na_bool_t verified = NA_FALSE;
+        bool verified = false;
 
         NA_CHECK_SUBSYS_ERROR(cls,
             na_class_table[plugin_index]->class_name == NULL, error, ret,
@@ -338,7 +338,7 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         }
 
         /* All checks have passed */
-        plugin_found = NA_TRUE;
+        plugin_found = true;
         break;
     }
 
@@ -433,7 +433,7 @@ NA_Context_create(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 na_context_t *
-NA_Context_create_id(na_class_t *na_class, na_uint8_t id)
+NA_Context_create_id(na_class_t *na_class, uint8_t id)
 {
     na_return_t ret = NA_SUCCESS;
     struct na_private_context *na_private_context = NULL;
@@ -488,7 +488,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 {
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    na_bool_t empty;
+    bool empty;
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(
@@ -498,7 +498,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 
     /* Check that completion queue is empty now */
     empty = hg_atomic_queue_is_empty(na_private_context->completion_queue);
-    NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(ctx, empty == false, done, ret, NA_BUSY,
         "Completion queue should be empty");
     hg_atomic_queue_free(na_private_context->completion_queue);
 
@@ -506,7 +506,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
     empty = HG_QUEUE_IS_EMPTY(&na_private_context->backfill_queue);
     hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
-    NA_CHECK_SUBSYS_ERROR(ctx, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(ctx, empty == false, done, ret, NA_BUSY,
         "Completion queue should be empty");
 
     /* Destroy completion queue mutex/cond */
@@ -722,18 +722,18 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_bool_t
+bool
 NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
 {
-    na_bool_t ret = NA_FALSE;
+    bool ret = false;
 
     NA_CHECK_SUBSYS_ERROR_NORET(addr, na_class == NULL, done, "NULL NA class");
 
     if (addr1 == NA_ADDR_NULL && addr2 == NA_ADDR_NULL)
-        NA_GOTO_DONE(done, ret, NA_TRUE);
+        NA_GOTO_DONE(done, ret, true);
 
     if (addr1 == NA_ADDR_NULL || addr2 == NA_ADDR_NULL)
-        NA_GOTO_DONE(done, ret, NA_FALSE);
+        NA_GOTO_DONE(done, ret, false);
 
     NA_CHECK_SUBSYS_ERROR_NORET(
         addr, na_class->ops == NULL, done, "NULL NA class ops");
@@ -752,10 +752,10 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_to_string(
-    na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr)
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr)
 {
     char *buf_ptr = buf;
-    na_size_t buf_size_used = 0, plugin_buf_size = 0;
+    size_t buf_size_used = 0, plugin_buf_size = 0;
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(
@@ -797,7 +797,7 @@ NA_Addr_to_string(
     *buf_size = buf_size_used + plugin_buf_size;
 
     NA_LOG_SUBSYS_DEBUG(addr,
-        "Generated string (%s) from address (%p), buf_size=%" PRIu64, buf_ptr,
+        "Generated string (%s) from address (%p), buf_size=%zu", buf_ptr,
         (void *) addr, *buf_size);
 
 done:
@@ -807,7 +807,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_serialize(
-    na_class_t *na_class, void *buf, na_size_t buf_size, na_addr_t addr)
+    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -837,7 +837,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_deserialize(
-    na_class_t *na_class, na_addr_t *addr, const void *buf, na_size_t buf_size)
+    na_class_t *na_class, na_addr_t *addr, const void *buf, size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -867,7 +867,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 void *
-NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
+NA_Msg_buf_alloc(na_class_t *na_class, size_t buf_size, void **plugin_data)
 {
     void *ret = NULL;
 
@@ -881,7 +881,7 @@ NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
     if (na_class->ops->msg_buf_alloc)
         ret = na_class->ops->msg_buf_alloc(na_class, buf_size, plugin_data);
     else {
-        na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+        size_t page_size = (size_t) hg_mem_get_page_size();
 
         ret = hg_mem_aligned_alloc(page_size, buf_size);
         NA_CHECK_SUBSYS_ERROR_NORET(msg, ret == NULL, done,
@@ -891,8 +891,8 @@ NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
     }
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "Allocated msg buffer (%p), size (%" PRIu64 " bytes), plugin data (%p)",
-        ret, buf_size, *plugin_data);
+        "Allocated msg buffer (%p), size (%zu bytes), plugin data (%p)", ret,
+        buf_size, *plugin_data);
 
 done:
     return ret;
@@ -929,7 +929,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
+NA_Msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -946,7 +946,7 @@ NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
         ret = na_class->ops->msg_init_unexpected(na_class, buf, buf_size);
 
         NA_LOG_SUBSYS_DEBUG(
-            msg, "Init unexpected buf (%p), size (%" PRIu64 ")", buf, buf_size);
+            msg, "Init unexpected buf (%p), size (%zu)", buf, buf_size);
     }
 
 done:
@@ -955,7 +955,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size)
+NA_Msg_init_expected(na_class_t *na_class, void *buf, size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -972,7 +972,7 @@ NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size)
         ret = na_class->ops->msg_init_expected(na_class, buf, buf_size);
 
         NA_LOG_SUBSYS_DEBUG(
-            msg, "Init expected buf (%p), size (%" PRIu64 ")", buf, buf_size);
+            msg, "Init expected buf (%p), size (%zu)", buf, buf_size);
     }
 
 done:
@@ -981,7 +981,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
+NA_Mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
@@ -1003,8 +1003,7 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
         na_class, buf, buf_size, flags, mem_handle);
 
     NA_LOG_SUBSYS_DEBUG(mem,
-        "Created new mem handle (%p), buf (%p), buf_size (%" PRIu64
-        "), flags (%lu)",
+        "Created new mem handle (%p), buf (%p), buf_size (%zu), flags (%lu)",
         (void *) *mem_handle, buf, buf_size, flags);
 
 done:
@@ -1014,7 +1013,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
-    na_size_t segment_count, unsigned long flags, na_mem_handle_t *mem_handle)
+    size_t segment_count, unsigned long flags, na_mem_handle_t *mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1036,7 +1035,7 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
         na_class, segments, segment_count, flags, mem_handle);
 
     NA_LOG_SUBSYS_DEBUG(mem,
-        "Created new mem handle (%p) with %" PRIu64 " segments, flags (%lu)",
+        "Created new mem handle (%p) with %zu segments, flags (%lu)",
         (void *) *mem_handle, segment_count, flags);
 
 done:
@@ -1071,7 +1070,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
-    enum na_mem_type mem_type, na_uint64_t device)
+    enum na_mem_type mem_type, uint64_t device)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1118,7 +1117,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
+NA_Mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
     na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
@@ -1151,7 +1150,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-    const void *buf, na_size_t buf_size)
+    const void *buf, size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1181,7 +1180,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_bool_t
+bool
 NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
     struct na_private_context *na_private_context =
@@ -1192,12 +1191,12 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 
     /* Do not try to wait if NA_NO_BLOCK is set */
     if (na_class->progress_mode & NA_NO_BLOCK)
-        return NA_FALSE;
+        return false;
 
     /* Something is in one of the completion queues */
     if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
         hg_atomic_get32(&na_private_context->backfill_queue_count))
-        return NA_FALSE;
+        return false;
 
     /* Check plugin try wait */
     NA_CHECK_SUBSYS_ERROR_NORET(
@@ -1207,10 +1206,10 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 
     NA_LOG_SUBSYS_DEBUG(poll, "Safe to wait on context (%p)", (void *) context);
 
-    return NA_TRUE;
+    return true;
 
 error:
-    return NA_FALSE;
+    return false;
 }
 
 /*---------------------------------------------------------------------------*/
