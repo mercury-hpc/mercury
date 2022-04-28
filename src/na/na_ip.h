@@ -37,8 +37,7 @@ extern "C" {
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PRIVATE na_return_t
-na_ip_parse_subnet(
-    const char *spec, na_uint32_t *net_p, na_uint32_t *netmask_p);
+na_ip_parse_subnet(const char *spec, uint32_t *net_p, uint32_t *netmask_p);
 
 /**
  * Get preferred ip address (based on provided subnet).
@@ -50,7 +49,7 @@ na_ip_parse_subnet(
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PRIVATE na_return_t
-na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr);
+na_ip_pref_addr(uint32_t net, uint32_t netmask, char *outstr);
 
 /**
  * Return interface name and sockaddr from a given hostname / port. If non-null,
@@ -67,7 +66,7 @@ na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PRIVATE na_return_t
-na_ip_check_interface(const char *name, na_uint16_t port, int family,
+na_ip_check_interface(const char *name, uint16_t port, int family,
     char **ifa_name_p, struct sockaddr **sa_p, socklen_t *salen_p);
 
 #ifdef __cplusplus

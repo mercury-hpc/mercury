@@ -51,7 +51,7 @@ NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
  * \return Pointer to NA class or NULL in case of failure
  */
 NA_PUBLIC na_class_t *
-NA_Initialize(const char *info_string, na_bool_t listen) NA_WARN_UNUSED_RESULT;
+NA_Initialize(const char *info_string, bool listen) NA_WARN_UNUSED_RESULT;
 
 /**
  * Initialize the network abstraction layer with options provided by init_info.
@@ -66,7 +66,7 @@ NA_Initialize(const char *info_string, na_bool_t listen) NA_WARN_UNUSED_RESULT;
  * \return Pointer to NA class or NULL in case of failure
  */
 NA_PUBLIC na_class_t *
-NA_Initialize_opt(const char *info_string, na_bool_t listen,
+NA_Initialize_opt(const char *info_string, bool listen,
     const struct na_init_info *na_init_info) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -123,9 +123,9 @@ NA_Get_class_protocol(const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  *
  * \param na_class [IN]         pointer to NA class
  *
- * \return NA_TRUE if listening or NA_FALSE if not
+ * \return true if listening or false if not
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 NA_Is_listening(const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -147,7 +147,7 @@ NA_Context_create(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  * \return Pointer to NA context or NULL in case of failure
  */
 NA_PUBLIC na_context_t *
-NA_Context_create_id(na_class_t *na_class, na_uint8_t id) NA_WARN_UNUSED_RESULT;
+NA_Context_create_id(na_class_t *na_class, uint8_t id) NA_WARN_UNUSED_RESULT;
 
 /**
  * Destroy a context created by using NA_Context_create().
@@ -257,9 +257,9 @@ NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
  * \param addr1 [IN]            abstract address
  * \param addr2 [IN]            abstract address
  *
- * \return NA_TRUE if addresses are determined to be equal, NA_FALSE otherwise
+ * \return true if addresses are determined to be equal, false otherwise
  */
-NA_PUBLIC na_bool_t
+NA_PUBLIC bool
 NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
 
 /**
@@ -268,9 +268,9 @@ NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
  * \param na_class [IN/OUT]     pointer to NA class
  * \param addr [IN]             abstract address
  *
- * \return NA_TRUE if self or NA_FALSE if not
+ * \return true if self or false if not
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 NA_Addr_is_self(na_class_t *na_class, na_addr_t addr);
 
 /**
@@ -289,7 +289,7 @@ NA_Addr_is_self(na_class_t *na_class, na_addr_t addr);
  */
 NA_PUBLIC na_return_t
 NA_Addr_to_string(
-    na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr);
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr);
 
 /**
  * Get size required to serialize address.
@@ -299,7 +299,7 @@ NA_Addr_to_string(
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Addr_get_serialize_size(
     na_class_t *na_class, na_addr_t addr) NA_WARN_UNUSED_RESULT;
 
@@ -315,7 +315,7 @@ NA_Addr_get_serialize_size(
  */
 NA_PUBLIC na_return_t
 NA_Addr_serialize(
-    na_class_t *na_class, void *buf, na_size_t buf_size, na_addr_t addr);
+    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr);
 
 /**
  * Deserialize address from a buffer. The returned address must be freed with
@@ -330,7 +330,7 @@ NA_Addr_serialize(
  */
 NA_PUBLIC na_return_t
 NA_Addr_deserialize(
-    na_class_t *na_class, na_addr_t *addr, const void *buf, na_size_t buf_size);
+    na_class_t *na_class, na_addr_t *addr, const void *buf, size_t buf_size);
 
 /**
  * Get the maximum size of messages supported by unexpected send/recv.
@@ -340,7 +340,7 @@ NA_Addr_deserialize(
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_max_unexpected_size(
     const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
 
@@ -352,7 +352,7 @@ NA_Msg_get_max_unexpected_size(
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_max_expected_size(const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -363,7 +363,7 @@ NA_Msg_get_max_expected_size(const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_unexpected_header_size(
     const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
 
@@ -375,7 +375,7 @@ NA_Msg_get_unexpected_header_size(
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_expected_header_size(
     const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
 
@@ -403,7 +403,7 @@ NA_Msg_get_max_tag(const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  * \return Pointer to allocated memory or NULL in case of failure
  */
 NA_PUBLIC void *
-NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size,
+NA_Msg_buf_alloc(na_class_t *na_class, size_t buf_size,
     void **plugin_data) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -433,7 +433,7 @@ NA_Msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size);
+NA_Msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size);
 
 /**
  * Send an unexpected message to dest_addr. Unexpected sends do not require a
@@ -468,8 +468,8 @@ NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size);
  */
 static NA_INLINE na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /**
@@ -497,8 +497,8 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
  */
 static NA_INLINE na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_op_id_t *op_id);
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_op_id_t *op_id);
 
 /**
  * Initialize a buffer so that it can be safely passed to the
@@ -513,7 +513,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size);
+NA_Msg_init_expected(na_class_t *na_class, void *buf, size_t buf_size);
 
 /**
  * Send an expected message to dest_addr. After completion, the user callback is
@@ -545,8 +545,8 @@ NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size);
  */
 static NA_INLINE na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /**
@@ -576,9 +576,8 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
  */
 static NA_INLINE na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
-    na_tag_t tag, na_op_id_t *op_id);
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
 
 /**
  * Create memory handle for RMA operations.
@@ -598,7 +597,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
+NA_Mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
 /**
@@ -622,7 +621,7 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
  */
 NA_PUBLIC na_return_t
 NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
-    na_size_t segment_count, unsigned long flags, na_mem_handle_t *mem_handle);
+    size_t segment_count, unsigned long flags, na_mem_handle_t *mem_handle);
 
 /**
  * Free memory handle.
@@ -643,7 +642,7 @@ NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Mem_handle_get_max_segments(
     const na_class_t *na_class) NA_WARN_UNUSED_RESULT;
 
@@ -661,7 +660,7 @@ NA_Mem_handle_get_max_segments(
  */
 NA_PUBLIC na_return_t
 NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
-    enum na_mem_type mem_type, na_uint64_t device);
+    enum na_mem_type mem_type, uint64_t device);
 
 /**
  * Unregister memory.
@@ -682,7 +681,7 @@ NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
  *
  * \return Non-negative value
  */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Mem_handle_get_serialize_size(
     na_class_t *na_class, na_mem_handle_t mem_handle) NA_WARN_UNUSED_RESULT;
 
@@ -703,7 +702,7 @@ NA_Mem_handle_get_serialize_size(
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
+NA_Mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
     na_mem_handle_t mem_handle);
 
 /**
@@ -718,7 +717,7 @@ NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
  */
 NA_PUBLIC na_return_t
 NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-    const void *buf, na_size_t buf_size);
+    const void *buf, size_t buf_size);
 
 /**
  * Put data to remote address.
@@ -749,7 +748,7 @@ static NA_INLINE na_return_t
 NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t data_size, na_addr_t remote_addr, na_uint8_t remote_id,
+    size_t data_size, na_addr_t remote_addr, uint8_t remote_id,
     na_op_id_t *op_id);
 
 /**
@@ -780,7 +779,7 @@ static NA_INLINE na_return_t
 NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t data_size, na_addr_t remote_addr, na_uint8_t remote_id,
+    size_t data_size, na_addr_t remote_addr, uint8_t remote_id,
     na_op_id_t *op_id);
 
 /**
@@ -805,9 +804,9 @@ NA_Poll_get_fd(
  * \param na_class [IN/OUT]     pointer to NA class
  * \param context [IN/OUT]      pointer to context of execution
  *
- * \return NA_TRUE if it is safe to block or NA_FALSE otherwise
+ * \return true if it is safe to block or false otherwise
  */
-NA_PUBLIC na_bool_t
+NA_PUBLIC bool
 NA_Poll_try_wait(na_class_t *na_class, na_context_t *context);
 
 /**
@@ -883,8 +882,8 @@ struct na_class {
     const struct na_class_ops *ops; /* Class operations */
     void *plugin_class;             /* Plugin private class */
     char *protocol_name;            /* Name of protocol */
-    na_uint32_t progress_mode;      /* NA progress mode */
-    na_bool_t listen;               /* Listen for connections */
+    uint8_t progress_mode;          /* NA progress mode */
+    bool listen;                    /* Listen for connections */
 };
 
 /* NA context definition */
@@ -895,13 +894,13 @@ struct na_context {
 /* NA plugin callbacks */
 struct na_class_ops {
     const char *class_name;
-    na_bool_t (*check_protocol)(const char *protocol_name);
+    bool (*check_protocol)(const char *protocol_name);
     na_return_t (*initialize)(
-        na_class_t *na_class, const struct na_info *na_info, na_bool_t listen);
+        na_class_t *na_class, const struct na_info *na_info, bool listen);
     na_return_t (*finalize)(na_class_t *na_class);
     void (*cleanup)(void);
     na_return_t (*context_create)(
-        na_class_t *na_class, void **plugin_context, na_uint8_t id);
+        na_class_t *na_class, void **plugin_context, uint8_t id);
     na_return_t (*context_destroy)(na_class_t *na_class, void *plugin_context);
     na_op_id_t *(*op_create)(na_class_t *na_class);
     na_return_t (*op_destroy)(na_class_t *na_class, na_op_id_t *op_id);
@@ -912,75 +911,73 @@ struct na_class_ops {
     na_return_t (*addr_self)(na_class_t *na_class, na_addr_t *addr);
     na_return_t (*addr_dup)(
         na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
-    na_bool_t (*addr_cmp)(
-        na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
-    na_bool_t (*addr_is_self)(na_class_t *na_class, na_addr_t addr);
+    bool (*addr_cmp)(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
+    bool (*addr_is_self)(na_class_t *na_class, na_addr_t addr);
     na_return_t (*addr_to_string)(
-        na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr);
-    na_size_t (*addr_get_serialize_size)(na_class_t *na_class, na_addr_t addr);
+        na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr);
+    size_t (*addr_get_serialize_size)(na_class_t *na_class, na_addr_t addr);
     na_return_t (*addr_serialize)(
-        na_class_t *na_class, void *buf, na_size_t buf_size, na_addr_t addr);
+        na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr);
     na_return_t (*addr_deserialize)(na_class_t *na_class, na_addr_t *addr,
-        const void *buf, na_size_t buf_size);
-    na_size_t (*msg_get_max_unexpected_size)(const na_class_t *na_class);
-    na_size_t (*msg_get_max_expected_size)(const na_class_t *na_class);
-    na_size_t (*msg_get_unexpected_header_size)(const na_class_t *na_class);
-    na_size_t (*msg_get_expected_header_size)(const na_class_t *na_class);
+        const void *buf, size_t buf_size);
+    size_t (*msg_get_max_unexpected_size)(const na_class_t *na_class);
+    size_t (*msg_get_max_expected_size)(const na_class_t *na_class);
+    size_t (*msg_get_unexpected_header_size)(const na_class_t *na_class);
+    size_t (*msg_get_expected_header_size)(const na_class_t *na_class);
     na_tag_t (*msg_get_max_tag)(const na_class_t *na_class);
     void *(*msg_buf_alloc)(
-        na_class_t *na_class, na_size_t buf_size, void **plugin_data);
+        na_class_t *na_class, size_t buf_size, void **plugin_data);
     na_return_t (*msg_buf_free)(
         na_class_t *na_class, void *buf, void *plugin_data);
     na_return_t (*msg_init_unexpected)(
-        na_class_t *na_class, void *buf, na_size_t buf_size);
+        na_class_t *na_class, void *buf, size_t buf_size);
     na_return_t (*msg_send_unexpected)(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, const void *buf,
-        na_size_t buf_size, void *plugin_data, na_addr_t dest_addr,
-        na_uint8_t dest_id, na_tag_t tag, na_op_id_t *op_id);
+        size_t buf_size, void *plugin_data, na_addr_t dest_addr,
+        uint8_t dest_id, na_tag_t tag, na_op_id_t *op_id);
     na_return_t (*msg_recv_unexpected)(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, void *buf,
-        na_size_t buf_size, void *plugin_data, na_op_id_t *op_id);
+        size_t buf_size, void *plugin_data, na_op_id_t *op_id);
     na_return_t (*msg_init_expected)(
-        na_class_t *na_class, void *buf, na_size_t buf_size);
+        na_class_t *na_class, void *buf, size_t buf_size);
     na_return_t (*msg_send_expected)(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, const void *buf,
-        na_size_t buf_size, void *plugin_data, na_addr_t dest_addr,
-        na_uint8_t dest_id, na_tag_t tag, na_op_id_t *op_id);
+        size_t buf_size, void *plugin_data, na_addr_t dest_addr,
+        uint8_t dest_id, na_tag_t tag, na_op_id_t *op_id);
     na_return_t (*msg_recv_expected)(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, void *buf,
-        na_size_t buf_size, void *plugin_data, na_addr_t source_addr,
-        na_uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
+        size_t buf_size, void *plugin_data, na_addr_t source_addr,
+        uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
     na_return_t (*mem_handle_create)(na_class_t *na_class, void *buf,
-        na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle);
+        size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle);
     na_return_t (*mem_handle_create_segments)(na_class_t *na_class,
-        struct na_segment *segments, na_size_t segment_count,
-        unsigned long flags, na_mem_handle_t *mem_handle);
+        struct na_segment *segments, size_t segment_count, unsigned long flags,
+        na_mem_handle_t *mem_handle);
     na_return_t (*mem_handle_free)(
         na_class_t *na_class, na_mem_handle_t mem_handle);
-    na_size_t (*mem_handle_get_max_segments)(const na_class_t *na_class);
+    size_t (*mem_handle_get_max_segments)(const na_class_t *na_class);
     na_return_t (*mem_register)(na_class_t *na_class,
-        na_mem_handle_t mem_handle, enum na_mem_type mem_type,
-        na_uint64_t device);
+        na_mem_handle_t mem_handle, enum na_mem_type mem_type, uint64_t device);
     na_return_t (*mem_deregister)(
         na_class_t *na_class, na_mem_handle_t mem_handle);
-    na_size_t (*mem_handle_get_serialize_size)(
+    size_t (*mem_handle_get_serialize_size)(
         na_class_t *na_class, na_mem_handle_t mem_handle);
     na_return_t (*mem_handle_serialize)(na_class_t *na_class, void *buf,
-        na_size_t buf_size, na_mem_handle_t mem_handle);
+        size_t buf_size, na_mem_handle_t mem_handle);
     na_return_t (*mem_handle_deserialize)(na_class_t *na_class,
-        na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
+        na_mem_handle_t *mem_handle, const void *buf, size_t buf_size);
     na_return_t (*put)(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, na_mem_handle_t local_mem_handle,
         na_offset_t local_offset, na_mem_handle_t remote_mem_handle,
-        na_offset_t remote_offset, na_size_t length, na_addr_t remote_addr,
-        na_uint8_t remote_id, na_op_id_t *op_id);
+        na_offset_t remote_offset, size_t length, na_addr_t remote_addr,
+        uint8_t remote_id, na_op_id_t *op_id);
     na_return_t (*get)(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, na_mem_handle_t local_mem_handle,
         na_offset_t local_offset, na_mem_handle_t remote_mem_handle,
-        na_offset_t remote_offset, na_size_t length, na_addr_t remote_addr,
-        na_uint8_t remote_id, na_op_id_t *op_id);
+        na_offset_t remote_offset, size_t length, na_addr_t remote_addr,
+        uint8_t remote_id, na_op_id_t *op_id);
     int (*na_poll_get_fd)(na_class_t *na_class, na_context_t *context);
-    na_bool_t (*na_poll_try_wait)(na_class_t *na_class, na_context_t *context);
+    bool (*na_poll_try_wait)(na_class_t *na_class, na_context_t *context);
     na_return_t (*progress)(
         na_class_t *na_class, na_context_t *context, unsigned int timeout);
     na_return_t (*cancel)(
@@ -1002,21 +999,21 @@ NA_Get_class_protocol(const na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 NA_Is_listening(const na_class_t *na_class)
 {
     return na_class->listen;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 NA_Addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
     return na_class->ops->addr_is_self(na_class, addr);
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Addr_get_serialize_size(na_class_t *na_class, na_addr_t addr)
 {
     return (na_class->ops->addr_get_serialize_size)
@@ -1025,21 +1022,21 @@ NA_Addr_get_serialize_size(na_class_t *na_class, na_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_max_unexpected_size(const na_class_t *na_class)
 {
     return na_class->ops->msg_get_max_unexpected_size(na_class);
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_max_expected_size(const na_class_t *na_class)
 {
     return na_class->ops->msg_get_max_expected_size(na_class);
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_unexpected_header_size(const na_class_t *na_class)
 {
     return (na_class->ops->msg_get_unexpected_header_size)
@@ -1048,7 +1045,7 @@ NA_Msg_get_unexpected_header_size(const na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Msg_get_expected_header_size(const na_class_t *na_class)
 {
     return (na_class->ops->msg_get_expected_header_size)
@@ -1066,8 +1063,8 @@ NA_Msg_get_max_tag(const na_class_t *na_class)
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id)
 {
     return na_class->ops->msg_send_unexpected(na_class, context, callback, arg,
@@ -1077,8 +1074,8 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_op_id_t *op_id)
 {
     return na_class->ops->msg_recv_unexpected(
         na_class, context, callback, arg, buf, buf_size, plugin_data, op_id);
@@ -1087,8 +1084,8 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id)
 {
     return na_class->ops->msg_send_expected(na_class, context, callback, arg,
@@ -1098,16 +1095,15 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id)
 {
     return na_class->ops->msg_recv_expected(na_class, context, callback, arg,
         buf, buf_size, plugin_data, source_addr, source_id, tag, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Mem_handle_get_max_segments(const na_class_t *na_class)
 {
     return (na_class->ops->mem_handle_get_max_segments)
@@ -1116,7 +1112,7 @@ NA_Mem_handle_get_max_segments(const na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 NA_Mem_handle_get_serialize_size(
     na_class_t *na_class, na_mem_handle_t mem_handle)
 {
@@ -1128,7 +1124,7 @@ static NA_INLINE na_return_t
 NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t data_size, na_addr_t remote_addr, na_uint8_t remote_id,
+    size_t data_size, na_addr_t remote_addr, uint8_t remote_id,
     na_op_id_t *op_id)
 {
     return na_class->ops->put(na_class, context, callback, arg,
@@ -1141,7 +1137,7 @@ static NA_INLINE na_return_t
 NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t data_size, na_addr_t remote_addr, na_uint8_t remote_id,
+    size_t data_size, na_addr_t remote_addr, uint8_t remote_id,
     na_op_id_t *op_id)
 {
     return na_class->ops->get(na_class, context, callback, arg,

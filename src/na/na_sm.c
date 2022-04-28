@@ -181,7 +181,7 @@ typedef union {
         unsigned int buf_idx : 8;   /* Index reserved: 64 MAX */
         unsigned int type : 8;      /* Message type */
     } hdr;
-    na_uint64_t val;
+    uint64_t val;
 } na_sm_msg_hdr_t;
 
 /* Make sure this is cache-line aligned */
@@ -234,7 +234,7 @@ typedef union {
         unsigned int type : 8;     /* Cmd type */
         unsigned int pad : 8;      /* 8 bits left */
     } hdr;
-    na_uint64_t val;
+    uint64_t val;
 } na_sm_cmd_hdr_t;
 
 /* Cmd queue (allocate queue's flexible array member statically) */
@@ -255,8 +255,8 @@ struct na_sm_cmd_queue {
 
 /* Address key */
 struct na_sm_addr_key {
-    pid_t pid;     /* PID */
-    na_uint8_t id; /* SM ID */
+    pid_t pid;  /* PID */
+    uint8_t id; /* SM ID */
 };
 
 /* Shared region */
@@ -292,8 +292,8 @@ struct na_sm_addr {
     na_sm_poll_type_t rx_poll_type;     /* Rx poll type */
     hg_atomic_int32_t refcount;         /* Ref count */
     hg_atomic_int32_t status;           /* Status bits */
-    na_uint8_t queue_pair_idx;          /* Shared queue pair index */
-    na_bool_t unexpected;               /* Unexpected address */
+    uint8_t queue_pair_idx;             /* Shared queue pair index */
+    bool unexpected;                    /* Unexpected address */
 };
 
 /* Address list */
@@ -312,7 +312,7 @@ struct na_sm_map {
 struct na_sm_mem_desc_info {
     unsigned long iovcnt; /* Segment count */
     size_t len;           /* Size of region */
-    na_uint8_t flags;     /* Flag of operation access */
+    uint8_t flags;        /* Flag of operation access */
 };
 
 /* IOV descriptor */
@@ -342,7 +342,7 @@ struct na_sm_unexpected_info {
     HG_QUEUE_ENTRY(na_sm_unexpected_info) entry;
     struct na_sm_addr *na_sm_addr;
     void *buf;
-    na_size_t buf_size;
+    size_t buf_size;
     na_tag_t tag;
 };
 
@@ -355,7 +355,7 @@ struct na_sm_unexpected_msg_queue {
 /* RMA op */
 typedef na_return_t (*na_sm_process_vm_op_t)(pid_t pid,
     const struct iovec *local_iov, unsigned long liovcnt,
-    const struct iovec *remote_iov, unsigned long riovcnt, na_size_t length);
+    const struct iovec *remote_iov, unsigned long riovcnt, size_t length);
 
 /* Operation ID */
 struct na_sm_op_id {
@@ -390,8 +390,8 @@ struct na_sm_endpoint {
     int sock;                                  /* Sock fd */
     na_sm_poll_type_t sock_poll_type;          /* Sock poll type */
     hg_atomic_int32_t nofile;                  /* Number of opened fds */
-    na_uint32_t nofile_max;                    /* Max number of fds */
-    na_bool_t listen;                          /* Listen on sock */
+    uint32_t nofile_max;                       /* Max number of fds */
+    bool listen;                               /* Listen on sock */
 };
 
 /* Private context */
@@ -402,8 +402,8 @@ struct na_sm_context {
 /* Private data */
 struct na_sm_class {
     struct na_sm_endpoint endpoint; /* Endpoint */
-    na_size_t iov_max;              /* Max number of IOVs */
-    na_uint8_t context_max;         /* Max number of contexts */
+    size_t iov_max;                 /* Max number of IOVs */
+    uint8_t context_max;            /* Max number of contexts */
 };
 
 /********************/
@@ -428,13 +428,13 @@ na_sm_errno_to_na(int rc);
  * Map shared-memory object.
  */
 static void *
-na_sm_shm_map(const char *name, na_size_t length, na_bool_t create);
+na_sm_shm_map(const char *name, size_t length, bool create);
 
 /**
  * Unmap shared-memory object.
  */
 static na_return_t
-na_sm_shm_unmap(const char *name, void *addr, na_size_t length);
+na_sm_shm_unmap(const char *name, void *addr, size_t length);
 
 /**
  * Clean up dangling shm segments.
@@ -452,21 +452,21 @@ na_sm_msg_queue_init(struct na_sm_msg_queue *na_sm_queue);
 /**
  * Multi-producer enqueue.
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_msg_queue_push(
     struct na_sm_msg_queue *na_sm_queue, na_sm_msg_hdr_t msg_hdr);
 
 /**
  * Multi-consumer dequeue.
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_msg_queue_pop(
     struct na_sm_msg_queue *na_sm_msg_queue, na_sm_msg_hdr_t *msg_hdr_ptr);
 
 /**
  * Check whether queue is empty.
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_msg_queue_is_empty(struct na_sm_msg_queue *na_sm_queue);
 
 /**
@@ -478,14 +478,14 @@ na_sm_cmd_queue_init(struct na_sm_cmd_queue *na_sm_queue);
 /**
  * Multi-producer enqueue.
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_cmd_queue_push(
     struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t cmd_hdr);
 
 /**
  * Multi-consumer dequeue.
  */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_cmd_queue_pop(
     struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t *cmd_hdr_ptr);
 
@@ -512,8 +512,7 @@ na_sm_string_to_addr(
  * Open shared-memory region.
  */
 static na_return_t
-na_sm_region_open(
-    const char *uri, na_bool_t create, struct na_sm_region **region_p);
+na_sm_region_open(const char *uri, bool create, struct na_sm_region **region_p);
 
 /**
  * Close shared-memory region.
@@ -531,7 +530,7 @@ na_sm_region_get_addr_key(const char *uri, struct na_sm_addr_key *addr_key_p);
  * Open UNIX domain socket.
  */
 static na_return_t
-na_sm_sock_open(const char *uri, na_bool_t create, int *sock);
+na_sm_sock_open(const char *uri, bool create, int *sock);
 
 /**
  * Close socket.
@@ -563,14 +562,14 @@ na_sm_sock_path_cleanup(
  */
 static na_return_t
 na_sm_event_create(
-    const char *uri, na_uint8_t pair_index, unsigned char pair, int *event);
+    const char *uri, uint8_t pair_index, unsigned char pair, int *event);
 
 /**
  * Destroy event.
  */
 static na_return_t
-na_sm_event_destroy(const char *uri, na_uint8_t pair_index, unsigned char pair,
-    na_bool_t remove, int event);
+na_sm_event_destroy(const char *uri, uint8_t pair_index, unsigned char pair,
+    bool remove, int event);
 
 /**
  * Set event.
@@ -582,7 +581,7 @@ na_sm_event_set(int event);
  * Get event.
  */
 static NA_INLINE na_return_t
-na_sm_event_get(int event, na_bool_t *signaled);
+na_sm_event_get(int event, bool *signaled);
 
 /**
  * Register addr to poll set.
@@ -601,7 +600,7 @@ na_sm_poll_deregister(hg_poll_set_t *poll_set, int fd);
  */
 static na_return_t
 na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
-    na_bool_t listen, na_bool_t no_wait, na_uint32_t nofile_max);
+    bool listen, bool no_wait, uint32_t nofile_max);
 
 /**
  * Close shared-memory endpoint.
@@ -613,13 +612,13 @@ na_sm_endpoint_close(struct na_sm_endpoint *na_sm_endpoint);
  * Reserve queue pair.
  */
 static na_return_t
-na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index);
+na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, uint8_t *index);
 
 /**
  * Release queue pair.
  */
 static NA_INLINE void
-na_sm_queue_pair_release(struct na_sm_region *na_sm_region, na_uint8_t index);
+na_sm_queue_pair_release(struct na_sm_region *na_sm_region, uint8_t index);
 
 /**
  * Lookup addr key from map.
@@ -648,7 +647,7 @@ na_sm_addr_map_remove(
  */
 static na_return_t
 na_sm_addr_create(struct na_sm_endpoint *na_sm_endpoint, const char *uri,
-    struct na_sm_addr_key *addr_key, na_bool_t unexpected,
+    struct na_sm_addr_key *addr_key, bool unexpected,
     struct na_sm_addr **addr_p);
 
 /**
@@ -686,14 +685,14 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr);
  */
 static na_return_t
 na_sm_addr_event_send(int sock, const char *dest_name, na_sm_cmd_hdr_t cmd_hdr,
-    int tx_notify, int rx_notify, na_bool_t ignore_error);
+    int tx_notify, int rx_notify, bool ignore_error);
 
 /**
  * Recv events as ancillary data.
  */
 static na_return_t
 na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
-    int *rx_notify, na_bool_t *received);
+    int *rx_notify, bool *received);
 
 /**
  * Send msg.
@@ -701,7 +700,7 @@ na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
 static na_return_t
 na_sm_msg_send(struct na_sm_class *na_sm_class, na_context_t *context,
     na_cb_type_t cb_type, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, struct na_sm_addr *na_sm_addr, na_tag_t tag,
+    size_t buf_size, struct na_sm_addr *na_sm_addr, na_tag_t tag,
     struct na_sm_op_id *na_sm_op_id);
 
 /**
@@ -709,7 +708,7 @@ na_sm_msg_send(struct na_sm_class *na_sm_class, na_context_t *context,
  */
 static na_return_t
 na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
-    const void *buf, na_size_t buf_size, struct na_sm_addr *na_sm_addr,
+    const void *buf, size_t buf_size, struct na_sm_addr *na_sm_addr,
     na_tag_t tag);
 
 /**
@@ -747,7 +746,7 @@ na_sm_rma(struct na_sm_class *na_sm_class, na_context_t *context,
     na_sm_process_vm_op_t process_vm_op,
     struct na_sm_mem_handle *na_sm_mem_handle_local, na_offset_t local_offset,
     struct na_sm_mem_handle *na_sm_mem_handle_remote, na_offset_t remote_offset,
-    na_size_t length, struct na_sm_addr *na_sm_addr,
+    size_t length, struct na_sm_addr *na_sm_addr,
     struct na_sm_op_id *na_sm_op_id);
 
 /**
@@ -763,14 +762,14 @@ na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
  */
 static NA_INLINE unsigned long
 na_sm_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len);
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len);
 
 /**
  * Create new IOV for transferring length data.
  */
 static NA_INLINE void
 na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len,
     struct iovec *new_iov, unsigned long new_iovcnt);
 
 /**
@@ -779,7 +778,7 @@ na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 static na_return_t
 na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
     unsigned long liovcnt, const struct iovec *remote_iov,
-    unsigned long riovcnt, na_size_t length);
+    unsigned long riovcnt, size_t length);
 
 /**
  * Wrapper for process_vm_readv().
@@ -787,34 +786,33 @@ na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
 static na_return_t
 na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
     unsigned long liovcnt, const struct iovec *remote_iov,
-    unsigned long riovcnt, na_size_t length);
+    unsigned long riovcnt, size_t length);
 
 /**
  * Poll waiting for timeout milliseconds.
  */
 static na_return_t
 na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
-    unsigned int timeout, na_bool_t *progressed_ptr);
+    unsigned int timeout, bool *progressed_ptr);
 
 /**
  * Poll without waiting.
  */
 static na_return_t
-na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed_ptr);
+na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr);
 
 /**
  * Progress on endpoint sock.
  */
 static na_return_t
-na_sm_progress_sock(
-    struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed);
+na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, bool *progressed);
 
 /**
  * Progress cmd queue.
  */
 static na_return_t
 na_sm_progress_cmd_queue(
-    struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed);
+    struct na_sm_endpoint *na_sm_endpoint, bool *progressed);
 
 /**
  * Process cmd.
@@ -827,20 +825,20 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
  * Progress on tx notifications.
  */
 static na_return_t
-na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed);
+na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, bool *progressed);
 
 /**
  * Progress on rx notifications.
  */
 static na_return_t
-na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed);
+na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, bool *progressed);
 
 /**
  * Progress rx queue.
  */
 static na_return_t
 na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
-    struct na_sm_addr *poll_addr, na_bool_t *progressed);
+    struct na_sm_addr *poll_addr, bool *progressed);
 
 /**
  * Process unexpected messages.
@@ -889,13 +887,13 @@ static NA_INLINE void
 na_sm_release(void *arg);
 
 /* check_protocol */
-static na_bool_t
+static bool
 na_sm_check_protocol(const char *protocol_name);
 
 /* initialize */
 static na_return_t
 na_sm_initialize(
-    na_class_t *na_class, const struct na_info *na_info, na_bool_t listen);
+    na_class_t *na_class, const struct na_info *na_info, bool listen);
 
 /* finalize */
 static na_return_t
@@ -903,7 +901,7 @@ na_sm_finalize(na_class_t *na_class);
 
 /* context_create */
 static na_return_t
-na_sm_context_create(na_class_t *na_class, void **context, na_uint8_t id);
+na_sm_context_create(na_class_t *na_class, void **context, uint8_t id);
 
 /* context_destroy */
 static na_return_t
@@ -938,38 +936,38 @@ static na_return_t
 na_sm_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr_p);
 
 /* addr_cmp */
-static na_bool_t
+static bool
 na_sm_addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
 
 /* addr_is_self */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_addr_is_self(na_class_t *na_class, na_addr_t addr);
 
 /* addr_to_string */
 static na_return_t
 na_sm_addr_to_string(
-    na_class_t *na_class, char *buf, na_size_t *buf_size, na_addr_t addr);
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr);
 
 /* addr_get_serialize_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_addr_get_serialize_size(na_class_t *na_class, na_addr_t addr);
 
 /* addr_serialize */
 static na_return_t
 na_sm_addr_serialize(
-    na_class_t *na_class, void *buf, na_size_t buf_size, na_addr_t addr);
+    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr);
 
 /* addr_deserialize */
 static na_return_t
-na_sm_addr_deserialize(na_class_t *na_class, na_addr_t *addr_p, const void *buf,
-    na_size_t buf_size);
+na_sm_addr_deserialize(
+    na_class_t *na_class, na_addr_t *addr_p, const void *buf, size_t buf_size);
 
 /* msg_get_max_unexpected_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_msg_get_max_unexpected_size(const na_class_t *na_class);
 
 /* msg_get_max_expected_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_msg_get_max_expected_size(const na_class_t *na_class);
 
 /* msg_get_max_tag */
@@ -979,40 +977,39 @@ na_sm_msg_get_max_tag(const na_class_t *na_class);
 /* msg_send_unexpected */
 static na_return_t
 na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_unexpected */
 static na_return_t
 na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_op_id_t *op_id);
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_op_id_t *op_id);
 
 /* msg_send_expected */
 static na_return_t
 na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
-    na_tag_t tag, na_op_id_t *op_id);
+    na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
+    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
 
 /* mem_handle_create */
 static na_return_t
-na_sm_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
+na_sm_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle_p);
 
 #ifdef NA_SM_HAS_CMA
 /* mem_handle_create_segments */
 static na_return_t
 na_sm_mem_handle_create_segments(na_class_t *na_class,
-    struct na_segment *segments, na_size_t segment_count, unsigned long flags,
+    struct na_segment *segments, size_t segment_count, unsigned long flags,
     na_mem_handle_t *mem_handle_p);
 #endif
 
@@ -1021,46 +1018,44 @@ static na_return_t
 na_sm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
 /* mem_handle_get_max_segments */
-static na_size_t
+static size_t
 na_sm_mem_handle_get_max_segments(const na_class_t *na_class);
 
 /* mem_handle_get_serialize_size */
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_mem_handle_get_serialize_size(
     na_class_t *na_class, na_mem_handle_t mem_handle);
 
 /* mem_handle_serialize */
 static na_return_t
-na_sm_mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
+na_sm_mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
     na_mem_handle_t mem_handle);
 
 /* mem_handle_deserialize */
 static na_return_t
 na_sm_mem_handle_deserialize(na_class_t *na_class,
-    na_mem_handle_t *mem_handle_p, const void *buf, na_size_t buf_size);
+    na_mem_handle_t *mem_handle_p, const void *buf, size_t buf_size);
 
 /* put */
 static NA_INLINE na_return_t
 na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
-    na_op_id_t *op_id);
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
 
 /* get */
 static NA_INLINE na_return_t
 na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
-    na_op_id_t *op_id);
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
 
 /* poll_get_fd */
 static NA_INLINE int
 na_sm_poll_get_fd(na_class_t *na_class, na_context_t *context);
 
 /* poll_try_wait */
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_poll_try_wait(na_class_t *na_class, na_context_t *context);
 
 /* progress */
@@ -1242,11 +1237,11 @@ NA_SM_Host_id_copy(na_sm_id_t *dst, na_sm_id_t src)
 }
 
 /*---------------------------------------------------------------------------*/
-na_bool_t
+bool
 NA_SM_Host_id_cmp(na_sm_id_t id1, na_sm_id_t id2)
 {
 #ifdef NA_SM_HAS_UUID
-    return (uuid_compare(id1, id2) == 0) ? NA_TRUE : NA_FALSE;
+    return (uuid_compare(id1, id2) == 0) ? true : false;
 #else
     return (id1 == id2);
 #endif
@@ -1352,14 +1347,13 @@ na_sm_errno_to_na(int rc)
 
 /*---------------------------------------------------------------------------*/
 static void *
-na_sm_shm_map(const char *name, na_size_t length, na_bool_t create)
+na_sm_shm_map(const char *name, size_t length, bool create)
 {
-    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+    size_t page_size = (size_t) hg_mem_get_page_size();
 
     /* Check alignment */
     NA_CHECK_SUBSYS_WARNING(mem, length / page_size * page_size != length,
-        "Not aligned properly, page size=%" PRIu64 " bytes, length=%" PRIu64
-        " bytes",
+        "Not aligned properly, page size=%zu bytes, length=%zu bytes",
         page_size, length);
 
     return hg_mem_shm_map(name, length, create);
@@ -1367,7 +1361,7 @@ na_sm_shm_map(const char *name, na_size_t length, na_bool_t create)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_shm_unmap(const char *name, void *addr, na_size_t length)
+na_sm_shm_unmap(const char *name, void *addr, size_t length)
 {
     return (hg_mem_shm_unmap(name, addr, length) == HG_UTIL_SUCCESS)
                ? NA_SUCCESS
@@ -1409,29 +1403,29 @@ na_sm_msg_queue_init(struct na_sm_msg_queue *na_sm_queue)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_msg_queue_push(
     struct na_sm_msg_queue *na_sm_queue, na_sm_msg_hdr_t msg_hdr)
 {
     int rc = hg_atomic_queue_push(
         (struct hg_atomic_queue *) na_sm_queue, (void *) msg_hdr.val);
 
-    return (likely(rc == HG_UTIL_SUCCESS)) ? NA_TRUE : NA_FALSE;
+    return (likely(rc == HG_UTIL_SUCCESS)) ? true : false;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_msg_queue_pop(
     struct na_sm_msg_queue *na_sm_queue, na_sm_msg_hdr_t *msg_hdr_ptr)
 {
-    msg_hdr_ptr->val = (na_uint64_t) hg_atomic_queue_pop_mc(
+    msg_hdr_ptr->val = (uint64_t) hg_atomic_queue_pop_mc(
         (struct hg_atomic_queue *) na_sm_queue);
 
-    return (likely(msg_hdr_ptr->val)) ? NA_TRUE : NA_FALSE;
+    return (likely(msg_hdr_ptr->val)) ? true : false;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_msg_queue_is_empty(struct na_sm_msg_queue *na_sm_queue)
 {
     return hg_atomic_queue_is_empty((struct hg_atomic_queue *) na_sm_queue);
@@ -1454,25 +1448,25 @@ na_sm_cmd_queue_init(struct na_sm_cmd_queue *na_sm_queue)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_cmd_queue_push(
     struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t cmd_hdr)
 {
     int rc = hg_atomic_queue_push(
         (struct hg_atomic_queue *) na_sm_queue, (void *) cmd_hdr.val);
 
-    return (likely(rc == HG_UTIL_SUCCESS)) ? NA_TRUE : NA_FALSE;
+    return (likely(rc == HG_UTIL_SUCCESS)) ? true : false;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_cmd_queue_pop(
     struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t *cmd_hdr_ptr)
 {
-    cmd_hdr_ptr->val = (na_uint64_t) hg_atomic_queue_pop_mc(
+    cmd_hdr_ptr->val = (uint64_t) hg_atomic_queue_pop_mc(
         (struct hg_atomic_queue *) na_sm_queue);
 
-    return (likely(cmd_hdr_ptr->val)) ? NA_TRUE : NA_FALSE;
+    return (likely(cmd_hdr_ptr->val)) ? true : false;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1524,8 +1518,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_region_open(
-    const char *uri, na_bool_t create, struct na_sm_region **region_p)
+na_sm_region_open(const char *uri, bool create, struct na_sm_region **region_p)
 {
     char filename[NA_SM_MAX_FILENAME];
     struct na_sm_region *na_sm_region = NULL;
@@ -1619,7 +1612,7 @@ na_sm_region_get_addr_key(const char *uri, struct na_sm_addr_key *addr_key_p)
     /* Open SHM object */
     NA_LOG_SUBSYS_DEBUG(cls, "shm_map() %s", filename);
     na_sm_region = (struct na_sm_region *) na_sm_shm_map(
-        filename, sizeof(struct na_sm_region), NA_FALSE);
+        filename, sizeof(struct na_sm_region), false);
     NA_CHECK_SUBSYS_ERROR(cls, na_sm_region == NULL, done, ret, NA_NODEV,
         "Could not map SM region (%s)", filename);
 
@@ -1636,12 +1629,12 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_sock_open(const char *uri, na_bool_t create, int *sock)
+na_sm_sock_open(const char *uri, bool create, int *sock)
 {
     int socket_type = SOCK_DGRAM, /* reliable with AF_UNIX */
         fd = -1, rc;
     char pathname[NA_SM_MAX_FILENAME];
-    na_bool_t created_sock_path = NA_FALSE;
+    bool created_sock_path = false;
     na_return_t ret = NA_SUCCESS;
 
     /* Create a non-blocking socket so that we can poll for incoming connections
@@ -1681,7 +1674,7 @@ na_sm_sock_open(const char *uri, na_bool_t create, int *sock)
         ret = na_sm_sock_path_create(pathname);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not create socket path (%s)", pathname);
-        created_sock_path = NA_TRUE;
+        created_sock_path = true;
 
         /* Bind and create named socket */
         NA_LOG_SUBSYS_DEBUG(cls, "bind() %s", addr.sun_path);
@@ -1831,7 +1824,7 @@ na_sm_sock_path_cleanup(const char *fpath, const struct stat NA_UNUSED *sb,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_event_create(const char NA_UNUSED *uri, na_uint8_t NA_UNUSED pair_index,
+na_sm_event_create(const char NA_UNUSED *uri, uint8_t NA_UNUSED pair_index,
     unsigned char NA_UNUSED pair, int *event)
 {
     na_return_t ret = NA_SUCCESS;
@@ -1891,8 +1884,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_event_destroy(const char NA_UNUSED *uri, na_uint8_t NA_UNUSED pair_index,
-    unsigned char NA_UNUSED pair, na_bool_t NA_UNUSED remove, int event)
+na_sm_event_destroy(const char NA_UNUSED *uri, uint8_t NA_UNUSED pair_index,
+    unsigned char NA_UNUSED pair, bool NA_UNUSED remove, int event)
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -1952,7 +1945,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
-na_sm_event_get(int event, na_bool_t *signaled)
+na_sm_event_get(int event, bool *signaled)
 {
     na_return_t ret = NA_SUCCESS;
 #ifdef HG_UTIL_HAS_SYSEVENTFD_H
@@ -1968,14 +1961,14 @@ na_sm_event_get(int event, na_bool_t *signaled)
     s = read(event, &count, sizeof(uint64_t));
     if (s != sizeof(uint64_t)) {
         if (likely(errno == EAGAIN)) {
-            *signaled = NA_FALSE;
+            *signaled = false;
             goto done;
         } else
             NA_GOTO_SUBSYS_ERROR(ctx, done, ret, na_sm_errno_to_na(errno),
                 "read() failed (%s)", strerror(errno));
     }
 
-    *signaled = NA_TRUE;
+    *signaled = true;
 #endif
 
 done:
@@ -2016,15 +2009,15 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
-    na_bool_t listen, na_bool_t no_wait, na_uint32_t nofile_max)
+    bool listen, bool no_wait, uint32_t nofile_max)
 {
     static hg_atomic_int32_t sm_id_g = HG_ATOMIC_VAR_INIT(0);
     struct na_sm_addr_key addr_key = {0, 0};
     struct na_sm_region *shared_region = NULL;
     char uri[NA_SM_MAX_FILENAME], *uri_p = NULL;
-    na_uint8_t queue_pair_idx = 0;
-    na_bool_t queue_pair_reserved = NA_FALSE, sock_registered = NA_FALSE,
-              tx_notify_registered = NA_FALSE;
+    uint8_t queue_pair_idx = 0;
+    bool queue_pair_reserved = false, sock_registered = false,
+         tx_notify_registered = false;
     int tx_notify = -1, rx_notify = -1;
     na_return_t ret = NA_SUCCESS, err_ret;
 
@@ -2094,7 +2087,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
         uri_p = uri;
 
         /* If we're listening, create a new shm region using URI */
-        ret = na_sm_region_open(uri_p, NA_TRUE, &shared_region);
+        ret = na_sm_region_open(uri_p, true, &shared_region);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not open shared-memory region");
 
@@ -2105,7 +2098,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
         ret = na_sm_queue_pair_reserve(shared_region, &queue_pair_idx);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not reserve queue pair");
-        queue_pair_reserved = NA_TRUE;
+        queue_pair_reserved = true;
     }
 
     if (!no_wait) {
@@ -2129,7 +2122,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
                 na_sm_endpoint->sock, &na_sm_endpoint->sock_poll_type);
             NA_CHECK_SUBSYS_NA_ERROR(
                 cls, error, ret, "Could not add sock to poll set");
-            sock_registered = NA_TRUE;
+            sock_registered = true;
         }
 
         /* Create local tx signaling event */
@@ -2147,8 +2140,8 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
         na_sm_endpoint->sock = -1;
 
     /* Allocate source address */
-    ret = na_sm_addr_create(na_sm_endpoint, uri_p, &addr_key, NA_FALSE,
-        &na_sm_endpoint->source_addr);
+    ret = na_sm_addr_create(
+        na_sm_endpoint, uri_p, &addr_key, false, &na_sm_endpoint->source_addr);
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "Could not allocate source address");
 
@@ -2173,7 +2166,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
             &na_sm_endpoint->source_addr->tx_poll_type);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not add tx notify to poll set");
-        tx_notify_registered = NA_TRUE;
+        tx_notify_registered = true;
 
         na_sm_endpoint->source_addr->rx_notify = rx_notify;
         na_sm_endpoint->source_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
@@ -2254,7 +2247,7 @@ na_sm_endpoint_close(struct na_sm_endpoint *na_sm_endpoint)
 {
     struct na_sm_addr *source_addr = na_sm_endpoint->source_addr;
     na_return_t ret = NA_SUCCESS;
-    na_bool_t empty;
+    bool empty;
 
     /* Check that poll addr list is empty */
     empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
@@ -2275,27 +2268,27 @@ na_sm_endpoint_close(struct na_sm_endpoint *na_sm_endpoint)
         /* Sanity check */
         empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
     }
-    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Poll addr list should be empty");
 
     /* Check that unexpected message queue is empty */
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_msg_queue.queue);
-    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Unexpected msg queue should be empty");
 
     /* Check that unexpected op queue is empty */
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_op_queue.queue);
-    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Unexpected op queue should be empty");
 
     /* Check that expected op queue is empty */
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->expected_op_queue.queue);
-    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Expected op queue should be empty");
 
     /* Check that retry op queue is empty */
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
-    NA_CHECK_SUBSYS_ERROR(cls, empty == NA_FALSE, done, ret, NA_BUSY,
+    NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Retry op queue should be empty");
 
     if (source_addr) {
@@ -2387,7 +2380,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
+na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, uint8_t *index)
 {
     unsigned int j = 0;
 
@@ -2420,7 +2413,7 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
                     "Reserved pair index %u\n### Available: %s", (i + (j * 64)),
                     lltoa((uint64_t) available, buf, 2));
 #endif
-                *index = (na_uint8_t) (i + (j * 64));
+                *index = (uint8_t) (i + (j * 64));
                 return NA_SUCCESS;
             }
 
@@ -2434,7 +2427,7 @@ na_sm_queue_pair_reserve(struct na_sm_region *na_sm_region, na_uint8_t *index)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_sm_queue_pair_release(struct na_sm_region *na_sm_region, na_uint8_t index)
+na_sm_queue_pair_release(struct na_sm_region *na_sm_region, uint8_t index)
 {
     hg_atomic_or64(
         &na_sm_region->available.val[index / 64], (int64_t) 1 << index % 64);
@@ -2478,8 +2471,7 @@ na_sm_addr_map_insert(struct na_sm_endpoint *na_sm_endpoint,
     }
 
     /* Allocate address */
-    ret =
-        na_sm_addr_create(na_sm_endpoint, uri, addr_key, NA_FALSE, &na_sm_addr);
+    ret = na_sm_addr_create(na_sm_endpoint, uri, addr_key, false, &na_sm_addr);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not allocate address");
 
     /* Insert new value */
@@ -2529,7 +2521,7 @@ unlock:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_addr_create(struct na_sm_endpoint *na_sm_endpoint, const char *uri,
-    struct na_sm_addr_key *addr_key, na_bool_t unexpected,
+    struct na_sm_addr_key *addr_key, bool unexpected,
     struct na_sm_addr **addr_p)
 {
     struct na_sm_addr *na_sm_addr = NULL;
@@ -2603,8 +2595,7 @@ na_sm_addr_ref_decr(struct na_sm_addr *na_sm_addr)
 {
     struct na_sm_endpoint *na_sm_endpoint = na_sm_addr->endpoint;
     int32_t refcount = hg_atomic_decr32(&na_sm_addr->refcount);
-    na_bool_t resolved =
-        hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED;
+    bool resolved = hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED;
 
     if (refcount > 0 && !(refcount == 1 && !resolved))
         /* Cannot free yet unless this address was not resolved */
@@ -2640,7 +2631,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
     /* Open shm region */
     if (!na_sm_addr->shared_region) {
         ret = na_sm_region_open(
-            na_sm_addr->uri, NA_FALSE, &na_sm_addr->shared_region);
+            na_sm_addr->uri, false, &na_sm_addr->shared_region);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "Could not open shared-memory region");
     }
@@ -2677,7 +2668,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
         rc = na_sm_cmd_queue_push(
             &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
         NA_CHECK_SUBSYS_ERROR(
-            addr, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+            addr, rc == false, error, ret, NA_AGAIN, "Full queue");
         hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_CMD_PUSHED);
     }
 
@@ -2713,7 +2704,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
 
         /* Send events to remote process */
         ret = na_sm_addr_event_send(na_sm_endpoint->sock, na_sm_addr->uri,
-            cmd_hdr, na_sm_addr->tx_notify, na_sm_addr->rx_notify, NA_FALSE);
+            cmd_hdr, na_sm_addr->tx_notify, na_sm_addr->rx_notify, false);
         if (unlikely(ret == NA_AGAIN))
             return ret;
         else
@@ -2742,7 +2733,7 @@ error:
 
             if (na_sm_addr->tx_notify > 0) {
                 err_ret = na_sm_event_destroy(na_sm_addr->uri,
-                    na_sm_addr->queue_pair_idx, 't', NA_TRUE,
+                    na_sm_addr->queue_pair_idx, 't', true,
                     na_sm_addr->tx_notify);
                 NA_CHECK_SUBSYS_ERROR_DONE(addr, err_ret != NA_SUCCESS,
                     "na_sm_event_destroy() failed");
@@ -2751,7 +2742,7 @@ error:
             }
             if (na_sm_addr->rx_notify > 0) {
                 err_ret = na_sm_event_destroy(na_sm_addr->uri,
-                    na_sm_addr->queue_pair_idx, 'r', NA_TRUE,
+                    na_sm_addr->queue_pair_idx, 'r', true,
                     na_sm_addr->rx_notify);
                 NA_CHECK_SUBSYS_ERROR_DONE(addr, err_ret != NA_SUCCESS,
                     "na_sm_event_destroy() failed");
@@ -2792,12 +2783,12 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr)
         if (na_sm_endpoint->poll_set) {
             /* Send events to remote process (silence error as this is best
              * effort to clean up resources) */
-            ret = na_sm_addr_event_send(na_sm_endpoint->sock, na_sm_addr->uri,
-                cmd_hdr, -1, -1, NA_TRUE);
+            ret = na_sm_addr_event_send(
+                na_sm_endpoint->sock, na_sm_addr->uri, cmd_hdr, -1, -1, true);
             NA_CHECK_SUBSYS_NA_ERROR(
                 addr, done, ret, "Could not send addr events");
         } else {
-            na_bool_t rc;
+            bool rc;
 
             NA_LOG_SUBSYS_DEBUG(addr,
                 "Pushing cmd with %d for %d/%u/%u val=%" PRIu64,
@@ -2808,7 +2799,7 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr)
             rc = na_sm_cmd_queue_push(
                 &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
             NA_CHECK_SUBSYS_ERROR(
-                addr, rc == NA_FALSE, done, ret, NA_AGAIN, "Full queue");
+                addr, rc == false, done, ret, NA_AGAIN, "Full queue");
         }
 
         /* Close shared-memory region */
@@ -2845,7 +2836,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_addr_event_send(int sock, const char *dest_name, na_sm_cmd_hdr_t cmd_hdr,
-    int tx_notify, int rx_notify, na_bool_t ignore_error)
+    int tx_notify, int rx_notify, bool ignore_error)
 {
     struct sockaddr_un addr;
     struct msghdr msg;
@@ -2917,7 +2908,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
-    int *rx_notify, na_bool_t *received)
+    int *rx_notify, bool *received)
 {
     struct msghdr msg;
     struct cmsghdr *cmsg;
@@ -2951,14 +2942,14 @@ na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
     nrecv = recvmsg(sock, &msg, 0);
     if (nrecv == -1) {
         if (likely(errno == EAGAIN)) {
-            *received = NA_FALSE;
+            *received = false;
             goto done;
         } else
             NA_GOTO_SUBSYS_ERROR(addr, done, ret, na_sm_errno_to_na(errno),
                 "recvmsg() failed (%s)", strerror(errno));
     }
 
-    *received = NA_TRUE;
+    *received = true;
 
     /* Retrieve ancillary data */
     cmsg = CMSG_FIRSTHDR(&msg);
@@ -2981,13 +2972,13 @@ done:
 static na_return_t
 na_sm_msg_send(struct na_sm_class *na_sm_class, na_context_t *context,
     na_cb_type_t cb_type, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, struct na_sm_addr *na_sm_addr, na_tag_t tag,
+    size_t buf_size, struct na_sm_addr *na_sm_addr, na_tag_t tag,
     struct na_sm_op_id *na_sm_op_id)
 {
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_COPY_BUF_SIZE, error, ret,
-        NA_OVERFLOW, "Exceeds copy buf size, %" PRIu64, buf_size);
+        NA_OVERFLOW, "Exceeds copy buf size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, error, ret, NA_INVALID_ARG,
@@ -3030,13 +3021,13 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
-    const void *buf, na_size_t buf_size, struct na_sm_addr *na_sm_addr,
+    const void *buf, size_t buf_size, struct na_sm_addr *na_sm_addr,
     na_tag_t tag)
 {
     unsigned int buf_idx;
     na_sm_msg_hdr_t msg_hdr;
     na_return_t ret;
-    na_bool_t rc;
+    bool rc;
 
     /* Attempt to resolve address first if not resolved */
     if (hg_atomic_get32(&na_sm_addr->status) != NA_SM_ADDR_RESOLVED) {
@@ -3067,7 +3058,7 @@ na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
 
     rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
     NA_CHECK_SUBSYS_ERROR(
-        msg, rc == NA_FALSE, release, ret, NA_AGAIN, "Full queue");
+        msg, rc == false, release, ret, NA_AGAIN, "Full queue");
 
     /* Notify remote if notifications are enabled */
     if (na_sm_addr == na_sm_endpoint->source_addr &&
@@ -3164,7 +3155,7 @@ na_sm_rma(struct na_sm_class *na_sm_class, na_context_t *context,
     na_sm_process_vm_op_t process_vm_op,
     struct na_sm_mem_handle *na_sm_mem_handle_local, na_offset_t local_offset,
     struct na_sm_mem_handle *na_sm_mem_handle_remote, na_offset_t remote_offset,
-    na_size_t length, struct na_sm_addr *na_sm_addr,
+    size_t length, struct na_sm_addr *na_sm_addr,
     struct na_sm_op_id *na_sm_op_id)
 {
     struct iovec *local_iov = NA_SM_IOV(na_sm_mem_handle_local),
@@ -3325,9 +3316,9 @@ na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE unsigned long
 na_sm_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len)
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len)
 {
-    na_size_t remaining_len =
+    size_t remaining_len =
         len - MIN(len, iov[iov_start_index].iov_len - iov_start_offset);
     unsigned long i, iov_index;
 
@@ -3343,10 +3334,10 @@ na_sm_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len,
     struct iovec *new_iov, unsigned long new_iovcnt)
 {
-    na_size_t remaining_len = len;
+    size_t remaining_len = len;
     unsigned long i, iov_index;
 
     /* Offset is only within first segment */
@@ -3372,7 +3363,7 @@ na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 static na_return_t
 na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
     unsigned long liovcnt, const struct iovec *remote_iov,
-    unsigned long riovcnt, na_size_t length)
+    unsigned long riovcnt, size_t length)
 {
     na_return_t ret;
     ssize_t nwrite;
@@ -3396,9 +3387,8 @@ na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
                 "process_vm_writev() failed (%s)", strerror(errno));
     }
 
-    NA_CHECK_SUBSYS_ERROR(rma, (na_size_t) nwrite != length, error, ret,
-        NA_MSGSIZE, "Wrote %" PRIu64 " bytes, was expecting %" PRIu64 " bytes",
-        nwrite, length);
+    NA_CHECK_SUBSYS_ERROR(rma, (size_t) nwrite != length, error, ret,
+        NA_MSGSIZE, "Wrote %zd bytes, was expecting %zu bytes", nwrite, length);
 
     return NA_SUCCESS;
 
@@ -3411,7 +3401,7 @@ error:
 static na_return_t
 na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
     unsigned long liovcnt, const struct iovec *remote_iov,
-    unsigned long riovcnt, na_size_t length)
+    unsigned long riovcnt, size_t length)
 {
     kern_return_t kret;
     mach_port_name_t remote_task;
@@ -3447,7 +3437,7 @@ error:
 static na_return_t
 na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
     unsigned long liovcnt, const struct iovec *remote_iov,
-    unsigned long riovcnt, na_size_t length)
+    unsigned long riovcnt, size_t length)
 {
     na_return_t ret;
     ssize_t nread;
@@ -3471,9 +3461,8 @@ na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
                 "process_vm_readv() failed (%s)", strerror(errno));
     }
 
-    NA_CHECK_SUBSYS_ERROR(rma, (na_size_t) nread != length, error, ret,
-        NA_MSGSIZE, "Read %" PRIu64 " bytes, was expecting %" PRIu64 " bytes",
-        nread, length);
+    NA_CHECK_SUBSYS_ERROR(rma, (size_t) nread != length, error, ret, NA_MSGSIZE,
+        "Read %zd bytes, was expecting %zu bytes", nread, length);
 
     return NA_SUCCESS;
 
@@ -3486,7 +3475,7 @@ error:
 static na_return_t
 na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
     unsigned long liovcnt, const struct iovec *remote_iov,
-    unsigned long riovcnt, na_size_t length)
+    unsigned long riovcnt, size_t length)
 {
     kern_return_t kret;
     mach_port_name_t remote_task;
@@ -3510,9 +3499,8 @@ na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
         NA_PROTOCOL_ERROR, "mach_vm_read_overwrite() failed (%s)",
         mach_error_string(kret));
 
-    NA_CHECK_SUBSYS_ERROR(rma, (na_size_t) nread != length, error, ret,
-        NA_MSGSIZE, "Read %" PRIu64 " bytes, was expecting %" PRIu64 " bytes",
-        nread, length);
+    NA_CHECK_SUBSYS_ERROR(rma, (size_t) nread != length, error, ret, NA_MSGSIZE,
+        "Read %" PRIu64 " bytes, was expecting %zu bytes", nread, length);
 
     return NA_SUCCESS;
 
@@ -3524,11 +3512,11 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
-    unsigned int timeout, na_bool_t *progressed_ptr)
+    unsigned int timeout, bool *progressed_ptr)
 {
     struct hg_poll_event *events = NA_SM_CONTEXT(context)->events;
     unsigned int nevents = 0, i;
-    na_bool_t progressed = NA_FALSE;
+    bool progressed = false;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -3542,15 +3530,15 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
 
     if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
         NA_LOG_SUBSYS_DEBUG(poll, "Interrupted");
-        *progressed_ptr = NA_FALSE;
+        *progressed_ptr = false;
         return ret;
     }
 
     /* Process events */
     for (i = 0; i < nevents; i++) {
         struct na_sm_addr *poll_addr = NULL;
-        na_bool_t progressed_notify = NA_FALSE;
-        na_bool_t progressed_rx = NA_FALSE;
+        bool progressed_notify = false;
+        bool progressed_rx = false;
 
         switch (*(na_sm_poll_type_t *) events[i].data.ptr) {
             case NA_SM_POLL_SOCK:
@@ -3598,17 +3586,17 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed_ptr)
+na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr)
 {
     struct na_sm_addr_list *poll_addr_list = &na_sm_endpoint->poll_addr_list;
     struct na_sm_addr *poll_addr;
-    na_bool_t progressed = NA_FALSE;
+    bool progressed = false;
     na_return_t ret = NA_SUCCESS;
 
     /* Check whether something is in one of the rx queues */
     hg_thread_spin_lock(&poll_addr_list->lock);
     HG_LIST_FOREACH (poll_addr, &poll_addr_list->list, entry) {
-        na_bool_t progressed_rx = NA_FALSE;
+        bool progressed_rx = false;
 
         hg_thread_spin_unlock(&poll_addr_list->lock);
 
@@ -3624,7 +3612,7 @@ na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed_ptr)
 
     /* Look for message in cmd queue (if listening) */
     if (na_sm_endpoint->source_addr->shared_region) {
-        na_bool_t progressed_cmd = NA_FALSE;
+        bool progressed_cmd = false;
 
         ret = na_sm_progress_cmd_queue(na_sm_endpoint, &progressed_cmd);
         NA_CHECK_SUBSYS_NA_ERROR(
@@ -3640,8 +3628,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress_sock(
-    struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed)
+na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, bool *progressed)
 {
     na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
     int tx_notify = -1, rx_notify = -1;
@@ -3671,7 +3658,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_progress_cmd_queue(
-    struct na_sm_endpoint *na_sm_endpoint, na_bool_t *progressed)
+    struct na_sm_endpoint *na_sm_endpoint, bool *progressed)
 {
     na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
     na_return_t ret = NA_SUCCESS;
@@ -3679,7 +3666,7 @@ na_sm_progress_cmd_queue(
     /* Look for message in cmd queue */
     if (!na_sm_cmd_queue_pop(
             &na_sm_endpoint->source_addr->shared_region->cmd_queue, &cmd_hdr)) {
-        *progressed = NA_FALSE;
+        *progressed = false;
         goto done;
     }
 
@@ -3710,7 +3697,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
 
             /* Allocate source address */
             ret = na_sm_addr_create(
-                na_sm_endpoint, NULL, &addr_key, NA_TRUE, &na_sm_addr);
+                na_sm_endpoint, NULL, &addr_key, true, &na_sm_addr);
             NA_CHECK_SUBSYS_NA_ERROR(
                 addr, done, ret, "Could not allocate unexpected address");
 
@@ -3756,7 +3743,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
         }
         case NA_SM_RELEASED: {
             struct na_sm_addr *na_sm_addr = NULL;
-            na_bool_t found = NA_FALSE;
+            bool found = false;
 
             /* Find address from list of addresses to poll */
             hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
@@ -3765,7 +3752,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
                 if ((na_sm_addr->queue_pair_idx == cmd_hdr.hdr.pair_idx) &&
                     (na_sm_addr->addr_key.pid == (pid_t) cmd_hdr.hdr.pid) &&
                     (na_sm_addr->addr_key.id == cmd_hdr.hdr.id)) {
-                    found = NA_TRUE;
+                    found = true;
                     break;
                 }
             }
@@ -3793,7 +3780,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
+na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, bool *progressed)
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -3812,7 +3799,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
+na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, bool *progressed)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -3831,14 +3818,14 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
-    struct na_sm_addr *poll_addr, na_bool_t *progressed)
+    struct na_sm_addr *poll_addr, bool *progressed)
 {
     na_sm_msg_hdr_t msg_hdr = {.val = 0};
     na_return_t ret = NA_SUCCESS;
 
     /* Look for message in rx queue */
     if (!na_sm_msg_queue_pop(poll_addr->rx_queue, &msg_hdr)) {
-        *progressed = NA_FALSE;
+        *progressed = false;
         goto done;
     }
 
@@ -3863,7 +3850,7 @@ na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
                 poll, done, ret, NA_INVALID_ARG, "Unknown type of operation");
     }
 
-    *progressed = NA_TRUE;
+    *progressed = true;
 
 done:
     return ret;
@@ -3895,7 +3882,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
         na_sm_op_id->completion_data.callback_info.info.recv_unexpected =
             (struct na_cb_info_recv_unexpected){
                 .tag = (na_tag_t) msg_hdr.hdr.tag,
-                .actual_buf_size = (na_size_t) msg_hdr.hdr.buf_size,
+                .actual_buf_size = (size_t) msg_hdr.hdr.buf_size,
                 .source = (na_addr_t) poll_addr};
         na_sm_addr_ref_incr(poll_addr);
 
@@ -3919,7 +3906,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
             NA_NOMEM, "Could not allocate unexpected info");
 
         na_sm_unexpected_info->na_sm_addr = poll_addr;
-        na_sm_unexpected_info->buf_size = (na_size_t) msg_hdr.hdr.buf_size;
+        na_sm_unexpected_info->buf_size = (size_t) msg_hdr.hdr.buf_size;
         na_sm_unexpected_info->tag = (na_tag_t) msg_hdr.hdr.tag;
 
         /* Allocate buf */
@@ -4037,7 +4024,7 @@ na_sm_process_retries(struct na_sm_endpoint *na_sm_endpoint)
             /* Immediate completion, add directly to completion queue. */
             na_sm_complete(na_sm_op_id, NA_SUCCESS);
         } else if (ret == NA_AGAIN) {
-            na_bool_t canceled = NA_FALSE;
+            bool canceled = false;
 
             /* Check if it was canceled in the meantime */
             hg_thread_spin_lock(&op_queue->lock);
@@ -4047,7 +4034,7 @@ na_sm_process_retries(struct na_sm_endpoint *na_sm_endpoint)
                 HG_QUEUE_REMOVE(
                     &op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
                 hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
-                canceled = NA_TRUE;
+                canceled = true;
             }
             hg_thread_spin_unlock(&op_queue->lock);
 
@@ -4136,13 +4123,13 @@ na_sm_release(void *arg)
 /* Plugin callbacks */
 /********************/
 
-static na_bool_t
+static bool
 na_sm_check_protocol(const char *protocol_name)
 {
-    na_bool_t accept = NA_FALSE;
+    bool accept = false;
 
     if (!strcmp("sm", protocol_name))
-        accept = NA_TRUE;
+        accept = true;
 
     return accept;
 }
@@ -4150,11 +4137,11 @@ na_sm_check_protocol(const char *protocol_name)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_initialize(
-    na_class_t *na_class, const struct na_info *na_info, na_bool_t listen)
+    na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
     struct rlimit rlimit;
-    na_bool_t no_wait = NA_FALSE;
-    na_uint8_t context_max = 1; /* Default */
+    bool no_wait = false;
+    uint8_t context_max = 1; /* Default */
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -4162,7 +4149,7 @@ na_sm_initialize(
     if (na_info->na_init_info) {
         /* Progress mode */
         if (na_info->na_init_info->progress_mode & NA_NO_BLOCK)
-            no_wait = NA_TRUE;
+            no_wait = true;
         /* Max contexts */
         context_max = na_info->na_init_info->max_contexts;
     }
@@ -4184,7 +4171,7 @@ na_sm_initialize(
         NA_NOMEM, "Could not allocate SM private class");
     memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
 #ifdef NA_SM_HAS_CMA
-    NA_SM_CLASS(na_class)->iov_max = (na_size_t) sysconf(_SC_IOV_MAX);
+    NA_SM_CLASS(na_class)->iov_max = (size_t) sysconf(_SC_IOV_MAX);
 #else
     NA_SM_CLASS(na_class)->iov_max = 1;
 #endif
@@ -4192,7 +4179,7 @@ na_sm_initialize(
 
     /* Open endpoint */
     ret = na_sm_endpoint_open(&NA_SM_CLASS(na_class)->endpoint,
-        na_info->host_name, listen, no_wait, (na_uint32_t) rlimit.rlim_cur);
+        na_info->host_name, listen, no_wait, (uint32_t) rlimit.rlim_cur);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open endpoint");
 
     return ret;
@@ -4231,7 +4218,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_context_create(
-    na_class_t NA_UNUSED *na_class, void **context, na_uint8_t NA_UNUSED id)
+    na_class_t NA_UNUSED *na_class, void **context, uint8_t NA_UNUSED id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -4392,7 +4379,7 @@ na_sm_addr_dup(
 }
 
 /*---------------------------------------------------------------------------*/
-static na_bool_t
+static bool
 na_sm_addr_cmp(na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
 {
     struct na_sm_addr *na_sm_addr1 = (struct na_sm_addr *) addr1;
@@ -4403,7 +4390,7 @@ na_sm_addr_cmp(na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
     return na_sm_addr_cmp(na_class,
@@ -4412,11 +4399,11 @@ na_sm_addr_is_self(na_class_t *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
-    na_size_t *buf_size, na_addr_t addr)
+na_sm_addr_to_string(
+    na_class_t NA_UNUSED *na_class, char *buf, size_t *buf_size, na_addr_t addr)
 {
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) addr;
-    na_size_t string_len;
+    size_t string_len;
     char uri[NA_SM_MAX_FILENAME], *uri_p;
     char addr_string[NA_SM_MAX_FILENAME] = {'\0'};
     na_return_t ret = NA_SUCCESS;
@@ -4447,7 +4434,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     return sizeof(((struct na_sm_addr *) addr)->addr_key);
@@ -4455,12 +4442,12 @@ na_sm_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
-    na_size_t buf_size, na_addr_t addr)
+na_sm_addr_serialize(
+    na_class_t NA_UNUSED *na_class, void *buf, size_t buf_size, na_addr_t addr)
 {
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) addr;
     char *buf_ptr = (char *) buf;
-    na_size_t buf_size_left = buf_size;
+    size_t buf_size_left = buf_size;
     na_return_t ret = NA_SUCCESS;
 
     /* Encode addr key */
@@ -4473,14 +4460,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_deserialize(na_class_t *na_class, na_addr_t *addr_p, const void *buf,
-    na_size_t buf_size)
+na_sm_addr_deserialize(
+    na_class_t *na_class, na_addr_t *addr_p, const void *buf, size_t buf_size)
 {
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     struct na_sm_addr *na_sm_addr = NULL;
     struct na_sm_addr_key addr_key;
     const char *buf_ptr = (const char *) buf;
-    na_size_t buf_size_left = buf_size;
+    size_t buf_size_left = buf_size;
     na_return_t ret = NA_SUCCESS;
 
     /* Decode addr key */
@@ -4517,14 +4504,14 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
 {
     return NA_SM_UNEXPECTED_SIZE;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
 {
     return NA_SM_EXPECTED_SIZE;
@@ -4540,9 +4527,9 @@ na_sm_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr,
-    na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     return na_sm_msg_send(NA_SM_CLASS(na_class), context, NA_CB_SEND_UNEXPECTED,
         callback, arg, buf, buf_size, (struct na_sm_addr *) dest_addr, tag,
@@ -4552,7 +4539,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    na_cb_t callback, void *arg, void *buf, size_t buf_size,
     void NA_UNUSED *plugin_data, na_op_id_t *op_id)
 {
     struct na_sm_unexpected_msg_queue *unexpected_msg_queue =
@@ -4562,7 +4549,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, error, ret,
-        NA_OVERFLOW, "Exceeds unexpected size, %" PRIu64, buf_size);
+        NA_OVERFLOW, "Exceeds unexpected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, error, ret, NA_INVALID_ARG,
@@ -4592,7 +4579,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_sm_op_id->completion_data.callback_info.info.recv_unexpected =
             (struct na_cb_info_recv_unexpected){
                 .tag = (na_tag_t) na_sm_unexpected_info->tag,
-                .actual_buf_size = (na_size_t) na_sm_unexpected_info->buf_size,
+                .actual_buf_size = (size_t) na_sm_unexpected_info->buf_size,
                 .source = (na_addr_t) na_sm_unexpected_info->na_sm_addr};
         na_sm_addr_ref_incr(na_sm_unexpected_info->na_sm_addr);
 
@@ -4627,9 +4614,9 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr,
-    na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, const void *buf, size_t buf_size,
+    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     return na_sm_msg_send(NA_SM_CLASS(na_class), context, NA_CB_SEND_EXPECTED,
         callback, arg, buf, buf_size, (struct na_sm_addr *) dest_addr, tag,
@@ -4639,9 +4626,9 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    na_cb_t callback, void *arg, void *buf, size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t source_addr,
-    na_uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
+    uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_sm_op_queue *expected_op_queue =
         &NA_SM_CLASS(na_class)->endpoint.expected_op_queue;
@@ -4650,7 +4637,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, error, ret,
-        NA_OVERFLOW, "Exceeds expected size, %" PRIu64, buf_size);
+        NA_OVERFLOW, "Exceeds expected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, error, ret, NA_INVALID_ARG,
@@ -4685,7 +4672,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
-    na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle_p)
+    size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle_p)
 {
     struct na_sm_mem_handle *na_sm_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -4712,13 +4699,13 @@ done:
 #ifdef NA_SM_HAS_CMA
 static na_return_t
 na_sm_mem_handle_create_segments(na_class_t *na_class,
-    struct na_segment *segments, na_size_t segment_count, unsigned long flags,
+    struct na_segment *segments, size_t segment_count, unsigned long flags,
     na_mem_handle_t *mem_handle_p)
 {
     struct na_sm_mem_handle *na_sm_mem_handle = NULL;
     struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
-    na_size_t i;
+    size_t i;
 
     NA_CHECK_SUBSYS_WARNING(mem, segment_count == 1, "Segment count is 1");
 
@@ -4783,14 +4770,14 @@ na_sm_mem_handle_free(
 }
 
 /*---------------------------------------------------------------------------*/
-static na_size_t
+static size_t
 na_sm_mem_handle_get_max_segments(const na_class_t *na_class)
 {
     return NA_SM_CLASS(na_class)->iov_max;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_size_t
+static NA_INLINE size_t
 na_sm_mem_handle_get_serialize_size(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
@@ -4804,13 +4791,13 @@ na_sm_mem_handle_get_serialize_size(
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
-    na_size_t NA_UNUSED buf_size, na_mem_handle_t mem_handle)
+    size_t NA_UNUSED buf_size, na_mem_handle_t mem_handle)
 {
     struct na_sm_mem_handle *na_sm_mem_handle =
         (struct na_sm_mem_handle *) mem_handle;
     struct iovec *iov = NA_SM_IOV(na_sm_mem_handle);
     char *buf_ptr = (char *) buf;
-    na_size_t buf_size_left = buf_size;
+    size_t buf_size_left = buf_size;
     na_return_t ret = NA_SUCCESS;
 
     /* Descriptor info */
@@ -4828,12 +4815,11 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t *mem_handle_p, const void *buf,
-    NA_UNUSED na_size_t buf_size)
+    na_mem_handle_t *mem_handle_p, const void *buf, NA_UNUSED size_t buf_size)
 {
     struct na_sm_mem_handle *na_sm_mem_handle = NULL;
     const char *buf_ptr = (const char *) buf;
-    na_size_t buf_size_left = buf_size;
+    size_t buf_size_left = buf_size;
     struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -4880,9 +4866,8 @@ error:
 static NA_INLINE na_return_t
 na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
-    na_op_id_t *op_id)
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
 {
     return na_sm_rma(NA_SM_CLASS(na_class), context, NA_CB_PUT, callback, arg,
         na_sm_process_vm_writev, (struct na_sm_mem_handle *) local_mem_handle,
@@ -4895,9 +4880,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 static NA_INLINE na_return_t
 na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
-    na_op_id_t *op_id)
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
+    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
 {
     return na_sm_rma(NA_SM_CLASS(na_class), context, NA_CB_GET, callback, arg,
         na_sm_process_vm_readv, (struct na_sm_mem_handle *) local_mem_handle,
@@ -4923,19 +4907,19 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
+static NA_INLINE bool
 na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     struct na_sm_addr *na_sm_addr;
-    na_bool_t empty = NA_FALSE;
+    bool empty = false;
 
     /* Check whether something is in one of the rx queues */
     hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
     HG_LIST_FOREACH (na_sm_addr, &na_sm_endpoint->poll_addr_list.list, entry) {
         if (!na_sm_msg_queue_is_empty(na_sm_addr->rx_queue)) {
             hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
-            return NA_FALSE;
+            return false;
         }
     }
     hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
@@ -4945,9 +4929,9 @@ na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
     empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
     hg_thread_spin_unlock(&na_sm_endpoint->retry_op_queue.lock);
     if (!empty)
-        return NA_FALSE;
+        return false;
 
-    return NA_TRUE;
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4964,7 +4948,7 @@ na_sm_progress(
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     do {
-        na_bool_t progressed = NA_FALSE;
+        bool progressed = false;
 
         if (na_sm_endpoint->poll_set) {
             /* Make blocking progress */
@@ -5043,7 +5027,7 @@ na_sm_cancel(
 
     /* Remove op id from queue it is on */
     if (op_queue) {
-        na_bool_t canceled = NA_FALSE;
+        bool canceled = false;
 
         hg_thread_spin_lock(&op_queue->lock);
         if (hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_QUEUED) {
@@ -5055,7 +5039,7 @@ na_sm_cancel(
                 HG_QUEUE_REMOVE(
                     &op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
                 hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
-                canceled = NA_TRUE;
+                canceled = true;
             }
         }
         hg_thread_spin_unlock(&op_queue->lock);

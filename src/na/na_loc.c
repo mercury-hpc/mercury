@@ -111,7 +111,7 @@ na_loc_info_destroy(struct na_loc_info *na_loc_info)
 }
 
 /*---------------------------------------------------------------------------*/
-na_bool_t
+bool
 na_loc_check_pcidev(const struct na_loc_info *na_loc_info,
     unsigned int domain_id, unsigned int bus_id, unsigned int device_id,
     unsigned int function_id)
@@ -138,7 +138,7 @@ na_loc_check_pcidev(const struct na_loc_info *na_loc_info,
     NA_CHECK_SUBSYS_ERROR_NORET(
         cls, obj == NULL, error, "hwloc_get_non_io_ancestor_obj() failed");
 
-    return (na_bool_t) hwloc_bitmap_intersects(
+    return (bool) hwloc_bitmap_intersects(
         na_loc_info->proc_cpuset, obj->cpuset);
 #else
     (void) domain_id;
@@ -148,5 +148,5 @@ na_loc_check_pcidev(const struct na_loc_info *na_loc_info,
 #endif
 
 error:
-    return NA_FALSE;
+    return false;
 }

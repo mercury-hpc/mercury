@@ -54,9 +54,9 @@ na_loc_info_destroy(struct na_loc_info *na_loc_info);
  * \param device_id  [IN]       PCI device ID
  * \param function_id  [IN]     PCI function ID
  *
- * \return NA_TRUE if they share the same cpu set, NA_FALSE otherwise
+ * \return true if they share the same cpu set, false otherwise
  */
-NA_PRIVATE na_bool_t
+NA_PRIVATE bool
 na_loc_check_pcidev(const struct na_loc_info *na_loc_info,
     unsigned int domain_id, unsigned int bus_id, unsigned int device_id,
     unsigned int function_id);

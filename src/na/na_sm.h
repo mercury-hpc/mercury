@@ -85,9 +85,9 @@ NA_SM_Host_id_copy(na_sm_id_t *dst, na_sm_id_t src);
  * \param id1 [IN]              SM host ID
  * \param id2 [IN]              SM host ID
  *
- * \return NA_TRUE if equal or NA_FALSE otherwise
+ * \return true if equal or false otherwise
  */
-NA_PUBLIC na_bool_t
+NA_PUBLIC bool
 NA_SM_Host_id_cmp(na_sm_id_t id1, na_sm_id_t id2);
 
 #ifdef __cplusplus

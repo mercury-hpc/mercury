@@ -20,7 +20,7 @@
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_ip_parse_subnet(const char *spec, na_uint32_t *net_p, na_uint32_t *netmask_p)
+na_ip_parse_subnet(const char *spec, uint32_t *net_p, uint32_t *netmask_p)
 {
     int addr[4], depth, nb;
     const char *sp;
@@ -51,8 +51,8 @@ na_ip_parse_subnet(const char *spec, na_uint32_t *net_p, na_uint32_t *netmask_p)
     }
     /* avoid right shifting by 32... it's undefined behavior */
     *netmask_p = (nb == 32) ? 0xffffffff : ~(0xffffffff >> nb);
-    *net_p = (na_uint32_t) ((addr[0] << 24) | (addr[1] << 16) | (addr[2] << 8) |
-                            addr[3]) &
+    *net_p = (uint32_t) ((addr[0] << 24) | (addr[1] << 16) | (addr[2] << 8) |
+                         addr[3]) &
              *netmask_p;
 
 done:
@@ -61,7 +61,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr)
+na_ip_pref_addr(uint32_t net, uint32_t netmask, char *outstr)
 {
     struct ifaddrs *ifaddr, *cur;
     struct sockaddr_in *sin;
@@ -108,7 +108,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_ip_check_interface(const char *name, na_uint16_t port, int family,
+na_ip_check_interface(const char *name, uint16_t port, int family,
     char **ifa_name_p, struct sockaddr **sa_p, socklen_t *salen_p)
 {
     struct ifaddrs *ifaddrs = NULL, *ifaddr;
