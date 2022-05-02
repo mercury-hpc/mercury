@@ -907,10 +907,10 @@ struct hg_core_handle {
     void (*data_free_callback)(void *); /* User data free callback */
     void *in_buf;                       /* Input buffer */
     void *out_buf;                      /* Output buffer */
-    na_size_t in_buf_size;              /* Input buffer size */
-    na_size_t out_buf_size;             /* Output buffer size */
-    na_size_t na_in_header_offset;      /* Input NA header offset */
-    na_size_t na_out_header_offset;     /* Output NA header offset */
+    size_t in_buf_size;                 /* Input buffer size */
+    size_t out_buf_size;                /* Output buffer size */
+    size_t na_in_header_offset;         /* Input NA header offset */
+    size_t na_out_header_offset;        /* Output NA header offset */
 };
 
 /*---------------------------------------------------------------------------*/
