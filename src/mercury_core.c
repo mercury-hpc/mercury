@@ -140,7 +140,7 @@ struct hg_core_private_class {
     hg_atomic_int32_t n_bulks;      /* Atomic used for number of bulk handles */
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     hg_thread_spin_t func_map_lock; /* Function map lock */
-    na_uint32_t progress_mode;      /* NA progress mode */
+    uint32_t progress_mode;         /* NA progress mode */
     hg_uint32_t request_post_init;  /* Init count of posted requests */
     hg_uint32_t request_post_incr;  /* Incr count of posted requests */
     hg_bool_t na_ext_init;          /* NA externally initialized */
@@ -193,11 +193,11 @@ struct hg_core_self_cb_info {
 
 /* HG addr */
 struct hg_core_private_addr {
-    struct hg_core_addr core_addr;    /* Must remain as first field */
-    na_size_t na_addr_serialize_size; /* Cached serialization size */
+    struct hg_core_addr core_addr; /* Must remain as first field */
+    size_t na_addr_serialize_size; /* Cached serialization size */
 #ifdef NA_HAS_SM
-    na_size_t na_sm_addr_serialize_size; /* Cached serialization size */
-    na_sm_id_t host_id;                  /* NA SM Host ID */
+    size_t na_sm_addr_serialize_size; /* Cached serialization size */
+    na_sm_id_t host_id;               /* NA SM Host ID */
 #endif
     hg_atomic_int32_t ref_count; /* Reference count */
 };
@@ -240,8 +240,8 @@ struct hg_core_private_handle {
     na_op_id_t *na_send_op_id; /* Operation ID for send */
     na_op_id_t *na_recv_op_id; /* Operation ID for recv */
     na_op_id_t *na_ack_op_id;  /* Operation ID for ack */
-    na_size_t in_buf_used;     /* Amount of input buffer used */
-    na_size_t out_buf_used;    /* Amount of output buffer used */
+    size_t in_buf_used;        /* Amount of input buffer used */
+    size_t out_buf_used;       /* Amount of output buffer used */
     na_tag_t tag;              /* Tag used for request and response */
     hg_atomic_int32_t na_op_completed_count; /* Completed NA operation count */
     hg_atomic_int32_t ref_count;             /* Reference count */
@@ -1560,7 +1560,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
     struct hg_core_private_addr *hg_core_addr = NULL;
     na_class_t **na_class_ptr = NULL;
     na_addr_t *na_addr_ptr = NULL;
-    na_size_t *na_addr_serialize_size_ptr = NULL;
+    size_t *na_addr_serialize_size_ptr = NULL;
     na_return_t na_ret;
 #ifdef NA_HAS_SM
     char lookup_name[HG_CORE_ADDR_MAX_SIZE] = {'\0'};
@@ -1905,11 +1905,11 @@ hg_core_addr_to_string(
     na_class_t *na_class = hg_core_addr->core_addr.core_class->na_class;
     na_addr_t na_addr = hg_core_addr->core_addr.na_addr;
     char *buf_ptr = buf;
-    hg_size_t new_buf_size = 0, buf_size_used = 0;
+    size_t new_buf_size = 0, buf_size_used = 0;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    new_buf_size = *buf_size;
+    new_buf_size = (size_t) *buf_size;
 
 #ifdef NA_HAS_SM
     /* When we have local and remote addresses */
@@ -1936,7 +1936,7 @@ hg_core_addr_to_string(
         }
         buf_size_used += (hg_size_t) desc_len;
         if (*buf_size > (unsigned int) desc_len)
-            new_buf_size = *buf_size - (hg_size_t) desc_len;
+            new_buf_size = *buf_size - (size_t) desc_len;
 
         /* Get NA SM address string */
         na_ret =
@@ -1964,7 +1964,7 @@ hg_core_addr_to_string(
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
         "Could not convert address to string (%s)", NA_Error_to_string(na_ret));
 
-    *buf_size = new_buf_size + buf_size_used;
+    *buf_size = (hg_size_t) (new_buf_size + buf_size_used);
 
 done:
     return ret;
@@ -1975,7 +1975,7 @@ static hg_size_t
 hg_core_addr_get_serialize_size(
     struct hg_core_private_addr *hg_core_addr, hg_uint8_t flags)
 {
-    hg_size_t ret = sizeof(na_size_t);
+    hg_size_t ret = sizeof(size_t);
 
     if (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL) {
         if (hg_core_addr->na_addr_serialize_size == 0) {
@@ -1989,7 +1989,7 @@ hg_core_addr_get_serialize_size(
     }
 
 #ifdef NA_HAS_SM
-    ret += sizeof(na_size_t);
+    ret += sizeof(size_t);
 
     if ((flags & HG_CORE_SM) &&
         hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
@@ -2024,7 +2024,7 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
         na_return_t na_ret;
 
         HG_CORE_ENCODE(done, ret, buf_ptr, buf_size_left,
-            &hg_core_addr->na_addr_serialize_size, na_size_t);
+            &hg_core_addr->na_addr_serialize_size, size_t);
 
         na_ret = NA_Addr_serialize(hg_core_addr->core_addr.core_class->na_class,
             buf_ptr, buf_size_left, hg_core_addr->core_addr.na_addr);
@@ -2033,11 +2033,11 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
         buf_ptr += hg_core_addr->na_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_addr_serialize_size;
     } else {
-        na_size_t na_sm_addr_serialize_size = 0;
+        size_t na_sm_addr_serialize_size = 0;
 
         /* Encode a 0 instead of flag */
         HG_CORE_ENCODE(done, ret, buf_ptr, buf_size_left,
-            &na_sm_addr_serialize_size, na_size_t);
+            &na_sm_addr_serialize_size, size_t);
     }
 
 #ifdef NA_HAS_SM
@@ -2046,7 +2046,7 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
         na_return_t na_ret;
 
         HG_CORE_ENCODE(done, ret, buf_ptr, buf_size_left,
-            &hg_core_addr->na_sm_addr_serialize_size, na_size_t);
+            &hg_core_addr->na_sm_addr_serialize_size, size_t);
 
         na_ret =
             NA_Addr_serialize(hg_core_addr->core_addr.core_class->na_sm_class,
@@ -2059,11 +2059,11 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
         buf_size_left -= hg_core_addr->na_sm_addr_serialize_size;
 */
     } else {
-        na_size_t na_sm_addr_serialize_size = 0;
+        size_t na_sm_addr_serialize_size = 0;
 
         /* Encode a 0 instead of flag */
         HG_CORE_ENCODE(done, ret, buf_ptr, buf_size_left,
-            &na_sm_addr_serialize_size, na_size_t);
+            &na_sm_addr_serialize_size, size_t);
     }
 #else
     (void) flags;
@@ -2091,7 +2091,7 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
         "Could not create deserialized HG addr");
 
     HG_CORE_DECODE(error, ret, buf_ptr, buf_size_left,
-        &hg_core_addr->na_addr_serialize_size, na_size_t);
+        &hg_core_addr->na_addr_serialize_size, size_t);
 
     if (hg_core_addr->na_addr_serialize_size != 0) {
         na_return_t na_ret =
@@ -2103,13 +2103,14 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
         buf_ptr += hg_core_addr->na_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_addr_serialize_size;
 
-        is_self &= NA_Addr_is_self(hg_core_class->core_class.na_class,
-            hg_core_addr->core_addr.na_addr);
+        is_self &=
+            (hg_bool_t) NA_Addr_is_self(hg_core_class->core_class.na_class,
+                hg_core_addr->core_addr.na_addr);
     }
 
 #ifdef NA_HAS_SM
     HG_CORE_DECODE(error, ret, buf_ptr, buf_size_left,
-        &hg_core_addr->na_sm_addr_serialize_size, na_size_t);
+        &hg_core_addr->na_sm_addr_serialize_size, size_t);
 
     if (hg_core_addr->na_sm_addr_serialize_size != 0) {
         na_return_t na_ret =
@@ -2122,8 +2123,9 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
         buf_ptr += hg_core_addr->na_sm_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_sm_addr_serialize_size;
         */
-        is_self &= NA_Addr_is_self(hg_core_class->core_class.na_class,
-            hg_core_addr->core_addr.na_addr);
+        is_self &=
+            (hg_bool_t) NA_Addr_is_self(hg_core_class->core_class.na_class,
+                hg_core_addr->core_addr.na_addr);
     }
 #endif
     hg_core_addr->core_addr.is_self = is_self;
@@ -2906,8 +2908,8 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
 
     /* More data on output requires an ack once it is processed */
     if (hg_core_handle->out_header.msg.response.flags & HG_CORE_MORE_DATA) {
-        na_size_t buf_size = hg_core_handle->core_handle.na_out_header_offset +
-                             sizeof(hg_uint8_t);
+        size_t buf_size = hg_core_handle->core_handle.na_out_header_offset +
+                          sizeof(hg_uint8_t);
         hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
             buf_size, &hg_core_handle->ack_buf_plugin_data);
         HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret, HG_NA_ERROR,
@@ -3095,8 +3097,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         hg_core_handle->in_buf_used =
             na_cb_info_recv_unexpected->actual_buf_size;
 
-        HG_LOG_DEBUG(
-            "Processing input for handle %p, tag=%u, buf_size=%" PRIu64,
+        HG_LOG_DEBUG("Processing input for handle %p, tag=%u, buf_size=%zu",
             (void *) hg_core_handle, hg_core_handle->tag,
             hg_core_handle->in_buf_used);
 
@@ -3393,7 +3394,7 @@ hg_core_send_ack(hg_core_handle_t handle)
         (struct hg_core_private_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
-    na_size_t buf_size = handle->na_out_header_offset + sizeof(hg_uint8_t);
+    size_t buf_size = handle->na_out_header_offset + sizeof(hg_uint8_t);
 
     /* Increment number of expected NA operations */
     hg_core_handle->na_op_count++;
