@@ -4,71 +4,85 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## New features
 
+- __[NA OFI]__
+    - Choose addr format dynamically based on user preferences
+    - Add support for IPv6
+    - Add support for `FI_SOCKADDR_IB`
+    - Add support for HPE `cxi` provider,
+      init info format for `cxi` is:
+        - `NIC:PID` (both or only one may be passed), NIC is `cxi[0-9]`, PID is `[0-510]`
+    - Use `hwloc` to select interface to use if NIC information is available
+      (only supported by `cxi` at the moment)
+    - Support device memory types and `FI_HMEM` for `verbs` and `cxi` providers
+    - Update min required version to libfabric 1.9
+    - Improve debug output to print verbose FI info of selected provider
 - __[NA UCX]__
-    - Add initial support for UCX. As opposed to other plugins, the UCX plugin is able through the `ucx+all` init string to decide on which protocol to use.
-- __[NA SM]__
-    - Update default addressing format to follow `PID-ID` instead of `PID/ID`
-    - Allow for passing of arbitrary SM init URIs
-    - Enable support for bulk handle address binding
-    - Add `sm_info_string` field to HG init info, which allows for specific init URIs to be used for SM when `auto_sm` is enabled.
+    - Use active messaging `UCP_FEATURE_AM` for unexpected messages (only), this
+      allows for removal of address resolution and retry on first message to
+      exchange connection IDs
+    - Turn on mempool by default
+    - Support device memory types
+- __[NA PSM]__
+    - Add mercury NA plugin for the qlogic/intel PSM interface
+        - Also support PSM2 (Intel OmniPath) through the PSM NA plugin
 - __[NA]__
-    - Add `thread_mode` to NA init options and add `NA_THREAD_MODE_SINGLE` to relax thread-safety requirements.
-    - Add `na_cb_info_recv_expected` to return `actual_buf_size`.
-    - Add `na_cb_type_to_string()` to convert callback enum type to printable string.
+    - Add `na_addr_format` init info
+    - Update `NA_Mem_register()` API call to support memory types (e.g., CUDA, ROCm, ZE) and devices IDs
+    - Add `na_loc` module for `hwloc` detection
+    - Remove `na_uint`, `na_int`, `na_bool_t` and `na_size_t` types
+    - Use separate versioning for library and update to v3.0.0
 - __[NA IP]__
-    - Add `na_ip_check_interface()` routine that can be used by plugins to select IP interface to use.
+    - Refactor `na_ip_check_interface()` to only use `getaddrinfo()` and `getifaddrs()`
+    - Add family argument to force detection of IPv4/IPv6 addresses
+    - Add ip debug log
 - __[HG util]__
-    - Add `hg_mem_header_alloc()`/`free()` calls to allocate buffers with a preceding header.
-    - Add thread annotation module for thread safety analysis.
-    - Add `mercury_mem_pool` memory pool to facilitate allocation and memory registration of a pool of buffers.
-    - Enable format argument checking on logging functions.
-    - Add `hg_time_from_ms()` and `hg_time_to_ms()` for time conversion to ms.
+    - Add `mercury_byteswap.h` for `bswap` macros
+    - Add `mercury_inet.h` for `htonll` and `ntohll` routine
+    - Add `mercury_param.h` to use `sys/param.h` or `MIN/MAX` macros etc
+    - Use separate versioning for library and update to v3.0.0
 - __[HG bulk]__
-    - Return transfer size `size` through `hg_cb_info` and `hg_cb_info_bulk`.
+    - Add support for memory attributes through a new `HG_Bulk_create_attr()` routine (support CUDA, ROCm, ZE)
+- __[HG]__
+    - Remove `MERCURY_ENABLE_STATS` CMake option and use `'diag'` log subsys instead
+        - Modify behavior of `stats` field to turn on diagnostics
+        - Refactor existing counters (used only if debug is on)
+    - Add checksum levels that can be manually controlled at runtime (disabled by default, `HG_CHECKSUM_NONE` level)
+    - Update to mchecksum v2.0
 
 ## Bug fixes
 
 - __[NA OFI]__
-    - Require at least v1.7.0 of libfabric.
-    - Fix handling of completion queue events and completion of retried operations that fail.
-    - Fix progress loop to reduce time calls.
-    - Force per-region registration for all providers and remove deprecated FI_MR_SCALABLE type of registrations and global MR keys.
-- __[NA SM]__
-    - Refactoring and clean up of sends/cancelation/retries/rma/address keys.
-    - Remove use of usernames from SM paths.
+    - Switch `tcp` provider to `FI_PROGRESS_MANUAL`
+    - Prevent empty authorization keys from being passed
+    - New implementation of address management
+        - Fix duplicate addresses on multithreaded lookups
+        - Redefine address keys and raw addresses to prevent allocations
+        - Use FI addr map to lookup by FI addr
+        - Improve serialization and deserialization of addresses
+    - Fix provider table and use EP proto
+    - Refactor and clean up plugin initialization 
+        - Clean up ip and domain checking
+        - Ensure interface name is not used as domain name for verbs etc
+        - Use NA IP module and add missing `NA_OFI_VERIFY_PROV_DOM` for `tcp` provider
+        - Rework handling of `fi_info` to open fabric/domain/endpoint
+        - Separate fabric from domain and keep single domain per NA class
+        - Refactor handling of scalable vs standard endpoints
+    - Improve handling of retries after `FI_EAGAIN` return code
+        - Abort retried ops after default 90s timeout
+        - Abort ops to a target being retried after first `NA_HOSTUNREACH` error in CQ
+- __[NA UCX]__
+    - Fix potential error not returned correctly on `conn_insert()`
 - __[HG util]__
-    - Prevent use of `CLOCK_MONOTONIC_COARSE` on PPC platforms and default to `CLOCK_MONOTONIC`.
-    - Fix debug logs that were not freed at exit.
-    - Remove return value of mutex lock/unlock routines.
-    - Fix log subsys to prevent setting duplicates.
-    - Simplify handling of compiler attributes and add `mercury_compiler_attributes.h` module.
-    - Remove `hg_util_` integer types and use `stdint.h`.
-    - Remove OpenPA dependency for atomics and use built-in atomics instead (requires gcc >= 4.7).
-- __[HG/HG util/NA]__
-    - Fix thread safety warnings and potential thread locking issues.
-    - Fix log level set routines that were not enabling the underlying log sub-system.
-    - Avoid reading system timers and optimize handling of timeouts. 
-- __[HG bulk]__
-    - Fix erroneous call to `NA_Mem_deregister()` when handle is deserialized.
-    - Correctly mark op as canceled if canceled from NA.
-    - Clean up and simplify handling of NA error return codes in callback.
-    - Minimal tracking of bulk handles that are not freed.
-- __[HG Core]__
-    - Fix error handling when NA send fails during an `HG_Forward()` operation.
-    - Correctly map NA error return code back to HG error return code in user callback.
-    - Correctly print HG handle debug information.
-    - In short responses like ACKs, leave room at the front of a buffer for
-    the NA header, and expect the header to be present.
-    - Fix potential issue on context destroy where handles could have been reposted while finalizing if RPCs were still in the queue.
-- __[General]__
-    - Warning and static analysis issues were fixed.
-
+    - Make sure we round up ms time conversion, this ensures that small timeouts
+    do not result in busy spin.
+    - Fix `'none'` log level not recognized
+    - Let mercury log print counters on exit when debug outlet is on
+- __[HG proc]__
+    - Prevent call to `save_ptr()/restore_ptr()` during `HG_FREE`
 
 ## :warning: Known Issues
 
 - __[NA OFI]__
     - [tcp/verbs;ofi_rxm] Using more than 256 peers requires `FI_UNIVERSE_SIZE` to be set.
-    - [tcp;ofi_rxm] Remains unstable, use `sockets` as a fallback in case of issues.
-        - __Please note that libfabric v1.13.0 and v1.13.1 have address management issues with that transport. Please either downgrade to v1.12.1 (or earlier) or upgrade to v1.13.2 (or later).__
 - __[NA UCX]__
     - `NA_Addr_to_string()` cannot be used on non-listening processes to convert a self-address to a string.
