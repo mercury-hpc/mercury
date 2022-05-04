@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - master
-  pull_request:
-    branches:
-      - master
+    paths-ignore:
+      - 'Documentation/**'
+      - 'LICENSE.txt'
+      - 'README.md'
 
 jobs:
   format:
