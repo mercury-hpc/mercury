@@ -8,6 +8,13 @@ on:
       - 'Documentation/**'
       - 'LICENSE.txt'
       - 'README.md'
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - 'Documentation/**'
+      - 'LICENSE.txt'
+      - 'README.md'
 
 jobs:
   format:
