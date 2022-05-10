@@ -2979,7 +2979,7 @@ na_ucx_addr_deserialize(
 error:
     if (na_ucx_addr)
         na_ucx_addr_destroy(na_ucx_addr);
-    if (worker_addr)
+    else if (worker_addr)
         free(worker_addr);
 
     return ret;
