@@ -546,7 +546,7 @@ struct na_ofi_fabric {
     char *name;                         /* Fabric name */
     char *prov_name;                    /* Provider name */
     enum na_ofi_prov_type prov_type;    /* Provider type */
-    hg_atomic_int32_t refcount;         /* Refcount of this fabric */
+    int32_t refcount;                   /* Refcount of this fabric */
 } HG_LOCK_CAPABILITY("fabric");
 
 /* Get info */
@@ -2970,7 +2970,7 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
         if ((strcmp(fi_info->fabric_attr->name, na_ofi_fabric->name) == 0) &&
             (strcmp(fi_info->fabric_attr->prov_name,
                  na_ofi_fabric->prov_name) == 0)) {
-            hg_atomic_incr32(&na_ofi_fabric->refcount);
+            na_ofi_fabric->refcount++;
             break;
         }
     }
@@ -2990,7 +2990,7 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
         "Could not allocate na_ofi_fabric");
     memset(na_ofi_fabric, 0, sizeof(*na_ofi_fabric));
     na_ofi_fabric->prov_type = prov_type;
-    hg_atomic_init32(&na_ofi_fabric->refcount, 1);
+    na_ofi_fabric->refcount = 1;
 
     /* Dup name */
     na_ofi_fabric->name = strdup(fi_info->fabric_attr->name);
@@ -3040,8 +3040,12 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
     if (!na_ofi_fabric)
         return NA_SUCCESS;
 
-    if (hg_atomic_decr32(&na_ofi_fabric->refcount))
+    /* Remove from fabric list */
+    hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
+    if (--na_ofi_fabric->refcount > 0) {
+        hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
         return NA_SUCCESS;
+    }
 
     /* Close fabric */
     if (na_ofi_fabric->fi_fabric) {
@@ -3050,9 +3054,6 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
             "fi_close() fabric failed, rc: %d (%s)", rc, fi_strerror(-rc));
         na_ofi_fabric->fi_fabric = NULL;
     }
-
-    /* Remove from fabric list */
-    hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
     HG_LIST_REMOVE(na_ofi_fabric, entry);
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
 
@@ -3063,7 +3064,8 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
     return NA_SUCCESS;
 
 error:
-    hg_atomic_incr32(&na_ofi_fabric->refcount);
+    na_ofi_fabric->refcount++;
+    hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
 
     return ret;
 }
