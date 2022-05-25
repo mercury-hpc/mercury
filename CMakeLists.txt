@@ -220,6 +220,7 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
       OUTPUT_NAME_UBSAN          ${LIB_DEBUG_NAME}
       VERSION                    ${LIB_VERSION}
       SOVERSION                  ${API_VERSION}
+      INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
   )
 
   #----- Use MSVC Naming conventions for Shared Libraries
