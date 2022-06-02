@@ -80,7 +80,8 @@ struct na_op_id;
 
 /* Parse host string and fill info */
 static na_return_t
-na_info_parse(const char *host_string, struct na_info **na_info_ptr);
+na_info_parse(
+    const char *host_string, char **class_name_p, struct na_info **na_info_p);
 
 /* Free host info */
 static void
@@ -91,7 +92,7 @@ na_info_free(struct na_info *na_info);
 /*******************/
 
 /* NA plugin class table */
-static const struct na_class_ops *const na_class_table[] = {
+static const struct na_class_ops *const na_class_table_g[] = {
 #ifdef NA_HAS_SM
     &NA_PLUGIN_OPS(sm), /* Keep NA SM first for protocol selection */
 #endif
@@ -120,12 +121,12 @@ static const struct na_class_ops *const na_class_table[] = {
 
 /* Return code string table */
 #define X(a) #a,
-static const char *const na_return_name[] = {NA_RETURN_VALUES};
+static const char *const na_return_name_g[] = {NA_RETURN_VALUES};
 #undef X
 
 /* Callback type string table */
 #define X(a) #a,
-static const char *const na_cb_type_name[] = {NA_CB_TYPES};
+static const char *const na_cb_type_name_g[] = {NA_CB_TYPES};
 #undef X
 
 /* NA_LOG_DEBUG_LESIZE: default number of debug log entries. */
@@ -155,8 +156,10 @@ HG_LOG_SUBSYS_DECL_STATE_REGISTER(ip, NA_SUBSYS_NAME, HG_LOG_OFF);
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_info_parse(const char *info_string, struct na_info **na_info_ptr)
+na_info_parse(
+    const char *info_string, char **class_name_p, struct na_info **na_info_p)
 {
+    char *class_name = NULL;
     struct na_info *na_info = NULL;
     char *input_string = NULL, *token = NULL, *locator = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -164,11 +167,8 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
     na_info = (struct na_info *) malloc(sizeof(struct na_info));
     NA_CHECK_SUBSYS_ERROR(cls, na_info == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA info struct");
-
-    /* Initialize NA info */
-    na_info->class_name = NULL;
-    na_info->protocol_name = NULL;
-    na_info->host_name = NULL;
+    *na_info = (struct na_info){
+        .host_name = NULL, .protocol_name = NULL, .na_init_info = NULL};
 
     /* Copy info string and work from that */
     input_string = strdup(info_string);
@@ -190,9 +190,9 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
         token = strtok_r(token, NA_CLASS_DELIMITER, &_locator);
 
         /* Get NA class name */
-        na_info->class_name = strdup(token);
-        NA_CHECK_SUBSYS_ERROR(cls, na_info->class_name == NULL, error, ret,
-            NA_NOMEM, "Could not duplicate NA info class name");
+        class_name = strdup(token);
+        NA_CHECK_SUBSYS_ERROR(cls, class_name == NULL, error, ret, NA_NOMEM,
+            "Could not duplicate NA info class name");
 
         /* Get protocol name */
         na_info->protocol_name = strdup(_locator);
@@ -222,12 +222,14 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
         "Could not duplicate NA info host name");
 
 done:
-    *na_info_ptr = na_info;
+    *class_name_p = class_name;
+    *na_info_p = na_info;
     free(input_string);
 
     return ret;
 
 error:
+    free(class_name);
     na_info_free(na_info);
     free(input_string);
 
@@ -241,7 +243,6 @@ na_info_free(struct na_info *na_info)
     if (!na_info)
         return;
 
-    free(na_info->class_name);
     free(na_info->protocol_name);
     free(na_info->host_name);
     free(na_info);
@@ -272,12 +273,11 @@ NA_Initialize_opt(const char *info_string, bool listen,
     const struct na_init_info *na_init_info)
 {
     struct na_private_class *na_private_class = NULL;
+    char *class_name = NULL;
     struct na_info *na_info = NULL;
-    unsigned int plugin_index;
-    const unsigned int plugin_count =
-        sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
-    bool plugin_found = false;
+    const struct na_class_ops *ops = NULL;
     na_return_t ret = NA_SUCCESS;
+    int i;
 
     NA_CHECK_SUBSYS_ERROR(cls, info_string == NULL, error, ret, NA_INVALID_ARG,
         "NULL info string");
@@ -288,7 +288,7 @@ NA_Initialize_opt(const char *info_string, bool listen,
         "Could not allocate class");
     memset(na_private_class, 0, sizeof(struct na_private_class));
 
-    ret = na_info_parse(info_string, &na_info);
+    ret = na_info_parse(info_string, &class_name, &na_info);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse host string");
 
     na_info->na_init_info = na_init_info;
@@ -297,55 +297,38 @@ NA_Initialize_opt(const char *info_string, bool listen,
 
     /* Print debug info */
     NA_LOG_SUBSYS_DEBUG(cls, "Class: %s, Protocol: %s, Hostname: %s",
-        na_info->class_name, na_info->protocol_name, na_info->host_name);
+        class_name, na_info->protocol_name, na_info->host_name);
 
-    for (plugin_index = 0; plugin_index < plugin_count; plugin_index++) {
-        bool verified = false;
-
-        NA_CHECK_SUBSYS_ERROR(cls,
-            na_class_table[plugin_index]->class_name == NULL, error, ret,
+    for (i = 0, ops = na_class_table_g[0]; ops != NULL;
+         i++, ops = na_class_table_g[i]) {
+        NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
             NA_PROTONOSUPPORT, "class name is not defined");
-
-        NA_CHECK_SUBSYS_ERROR(cls,
-            na_class_table[plugin_index]->check_protocol == NULL, error, ret,
+        NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
             NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
 
         /* Skip check protocol if class name does not match */
-        if (na_info->class_name) {
-            if (strcmp(na_class_table[plugin_index]->class_name,
-                    na_info->class_name) != 0)
-                continue;
-        }
-
-        /* Check that protocol is supported */
-        verified = na_class_table[plugin_index]->check_protocol(
-            na_info->protocol_name);
-        if (!verified) {
-            NA_CHECK_SUBSYS_ERROR(fatal, na_info->class_name, error, ret,
-                NA_PROTONOSUPPORT,
-                "Specified class name does not support requested protocol");
+        if ((class_name != NULL) && (strcmp(ops->class_name, class_name) != 0))
             continue;
-        }
 
-        /* If no class name specified, take the first plugin that supports
-         * the protocol */
-        if (!na_info->class_name) {
-            /* While we're here, dup the class_name */
-            na_info->class_name =
-                strdup(na_class_table[plugin_index]->class_name);
-            NA_CHECK_SUBSYS_ERROR(cls, na_info->class_name == NULL, error, ret,
-                NA_NOMEM, "Unable to dup class name string");
-        }
-
-        /* All checks have passed */
-        plugin_found = true;
-        break;
+        /* Check that protocol is supported, if no class name specified, take
+         * the first plugin that supports the protocol */
+        if (ops->check_protocol(na_info->protocol_name))
+            break;
+        else
+            NA_CHECK_SUBSYS_ERROR(fatal, class_name != NULL, error, ret,
+                NA_PROTONOSUPPORT,
+                "Specified class name \"%s\" does not support requested "
+                "protocol",
+                class_name);
     }
-
-    NA_CHECK_SUBSYS_ERROR(fatal, !plugin_found, error, ret, NA_PROTONOSUPPORT,
+    NA_CHECK_SUBSYS_ERROR(fatal, ops == NULL, error, ret, NA_PROTONOSUPPORT,
         "No suitable plugin found that matches %s", info_string);
 
-    na_private_class->na_class.ops = na_class_table[plugin_index];
+    na_private_class->na_class.protocol_name = strdup(na_info->protocol_name);
+    NA_CHECK_SUBSYS_ERROR(cls, na_private_class->na_class.protocol_name == NULL,
+        error, ret, NA_NOMEM, "Could not duplicate protocol name");
+
+    na_private_class->na_class.ops = ops;
     NA_CHECK_SUBSYS_ERROR(cls, na_private_class->na_class.ops == NULL, error,
         ret, NA_INVALID_ARG, "NULL NA class ops");
 
@@ -357,17 +340,15 @@ NA_Initialize_opt(const char *info_string, bool listen,
         &na_private_class->na_class, na_info, listen);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not initialize plugin");
 
-    na_private_class->na_class.protocol_name = strdup(na_info->protocol_name);
-    NA_CHECK_SUBSYS_ERROR(cls, na_private_class->na_class.protocol_name == NULL,
-        error, ret, NA_NOMEM, "Could not duplicate protocol name");
-
     na_private_class->na_class.listen = listen;
 
+    free(class_name);
     na_info_free(na_info);
 
     return (na_class_t *) na_private_class;
 
 error:
+    free(class_name);
     na_info_free(na_info);
     if (na_private_class) {
         free(na_private_class->na_class.protocol_name);
@@ -405,16 +386,13 @@ done:
 void
 NA_Cleanup(void)
 {
-    unsigned int plugin_count =
-        sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
-    unsigned int i;
+    const struct na_class_ops *ops = NULL;
+    int i;
 
-    for (i = 0; i < plugin_count; i++) {
-        if (!na_class_table[i]->cleanup)
-            continue;
-
-        na_class_table[i]->cleanup();
-    }
+    for (i = 0, ops = na_class_table_g[0]; ops != NULL;
+         i++, ops = na_class_table_g[i])
+        if (ops->cleanup)
+            ops->cleanup();
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1470,14 +1448,14 @@ done:
 const char *
 NA_Error_to_string(na_return_t errnum)
 {
-    return na_return_name[errnum];
+    return na_return_name_g[errnum];
 }
 
 /*---------------------------------------------------------------------------*/
 const char *
 na_cb_type_to_string(na_cb_type_t cb_type)
 {
-    return na_cb_type_name[cb_type];
+    return na_cb_type_name_g[cb_type];
 }
 
 /*---------------------------------------------------------------------------*/

@@ -870,7 +870,6 @@ NA_Error_to_string(na_return_t errnum) NA_WARN_UNUSED_RESULT;
 
 /* NA info definition */
 struct na_info {
-    char *class_name;    /* Class name (e.g., bmi) */
     char *protocol_name; /* Protocol (e.g., tcp, ib) */
     char *host_name;     /* Host (may be NULL in anonymous mode) */
     /* Additional init info (NULL if no info) */
