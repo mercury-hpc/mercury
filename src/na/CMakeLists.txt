@@ -182,7 +182,7 @@ endif()
 # UCX
 option(NA_USE_UCX "Use UCX plugin." OFF)
 if(NA_USE_UCX)
-  find_package(UCX 1.9 REQUIRED)
+  find_package(UCX 1.10 REQUIRED)
   message(STATUS "UCX include directory: ${UCX_INCLUDE_DIR}")
   set(NA_PLUGINS ${NA_PLUGINS} ucx)
   set(NA_HAS_UCX 1)
