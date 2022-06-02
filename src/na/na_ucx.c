@@ -920,23 +920,6 @@ na_ucp_config_init(
     NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
         "ucp_config_modify() failed (%s)", ucs_status_string(status));
 
-    /* Use mutex instead of spinlock */
-    // status = ucp_config_modify(config, "USE_MT_MUTEX", "y");
-    // NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
-    // NA_PROTOCOL_ERROR,
-    //     "ucp_config_modify() failed (%s)", ucs_status_string(status));
-
-    /* TODO Currently assume that systems are homogeneous */
-    status = ucp_config_modify(config, "UNIFIED_MODE", "y");
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_config_modify() failed (%s)", ucs_status_string(status));
-
-    /* Add address debug info if running in debug */
-    // status = ucp_config_modify(config, "ADDRESS_DEBUG_INFO", "y");
-    // NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
-    // NA_PROTOCOL_ERROR,
-    //     "ucp_config_modify() failed (%s)", ucs_status_string(status));
-
     /* Set network devices to use */
     if (net_devices) {
         status = ucp_config_modify(config, "NET_DEVICES", net_devices);
@@ -1695,7 +1678,7 @@ static na_return_t
 na_ucp_msg_recv(ucp_worker_h worker, void *buf, size_t buf_size, ucp_tag_t tag,
     void *request)
 {
-    ucp_tag_recv_info_t tag_recv_info;
+    ucp_tag_recv_info_t tag_recv_info = {.length = 0, .sender_tag = 0};
     const ucp_request_param_t recv_params = {
         .op_attr_mask = UCP_OP_ATTR_FIELD_REQUEST | UCP_OP_ATTR_FIELD_CALLBACK |
                         UCP_OP_ATTR_FIELD_RECV_INFO,
