@@ -235,6 +235,9 @@ struct na_ucx_class {
     bool no_wait;                  /* Wait disabled */
 };
 
+/* Datatype used for printing info */
+enum na_ucp_type { NA_UCP_CONFIG, NA_UCP_CONTEXT, NA_UCP_WORKER };
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -242,6 +245,14 @@ struct na_ucx_class {
 /*---------------------------------------------------------------------------*/
 /* NA UCP helpers                                                            */
 /*---------------------------------------------------------------------------*/
+
+/**
+ * Print debug info.
+ */
+#ifdef NA_HAS_DEBUG
+static char *
+na_ucp_tostr(void *data, enum na_ucp_type datatype);
+#endif
 
 /**
  * Init config.
@@ -855,6 +866,42 @@ static const char *ucs_thread_mode_names[UCS_THREAD_MODE_LAST] = {
 #endif
 
 /*---------------------------------------------------------------------------*/
+#ifdef NA_HAS_DEBUG
+static char *
+na_ucp_tostr(void *data, enum na_ucp_type datatype)
+{
+    static char buf[4096];
+    FILE *stream = NULL;
+
+    stream = fmemopen(buf, sizeof(buf), "w");
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, stream == NULL, error, "fmemopen() failed");
+
+    switch (datatype) {
+        case NA_UCP_CONFIG:
+            ucp_config_print((ucp_config_t *) data, stream, "UCX variables",
+                UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER);
+            break;
+        case NA_UCP_CONTEXT:
+            ucp_context_print_info((ucp_context_h) data, stream);
+            break;
+        case NA_UCP_WORKER:
+            ucp_worker_print_info((ucp_worker_h) data, stream);
+            break;
+        default:
+            break;
+    }
+
+    fclose(stream);
+
+    return buf;
+
+error:
+    return NULL;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_ucp_config_init(
     const char *tls, const char *net_devices, ucp_config_t **config_p)
@@ -901,11 +948,9 @@ na_ucp_config_init(
             cls, "Could not find NET_DEVICE to use, using default");
 
     /* Print UCX config */
-    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-        ucp_config_print(config, hg_log_get_stream_debug(),
-            "NA UCX class configuration used",
-            UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER),
-        "Now using the following UCX global configuration");
+    NA_LOG_SUBSYS_DEBUG_EXT(cls,
+        "Now using the following UCX global configuration", "%s",
+        na_ucp_tostr(config, NA_UCP_CONFIG));
 
     *config_p = config;
 
@@ -956,9 +1001,8 @@ na_ucp_context_create(const ucp_config_t *config, bool no_wait,
         "ucp_init() failed (%s)", ucs_status_string(status));
 
     /* Print context info */
-    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-        ucp_context_print_info(context, hg_log_get_stream_debug()),
-        "Context info");
+    NA_LOG_SUBSYS_DEBUG_EXT(
+        cls, "Context info", "%s", na_ucp_tostr(context, NA_UCP_CONTEXT));
 
     /* Query context to ensure we got what we asked for */
     status = ucp_context_query(context, &context_attrs);
@@ -1020,9 +1064,8 @@ na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
         "ucp_worker_create() failed (%s)", ucs_status_string(status));
 
     /* Print worker info */
-    NA_LOG_SUBSYS_DEBUG_FUNC(ctx,
-        ucp_worker_print_info(worker, hg_log_get_stream_debug()),
-        "Worker info");
+    NA_LOG_SUBSYS_DEBUG_EXT(
+        ctx, "Worker info", "%s", na_ucp_tostr(worker, NA_UCP_WORKER));
 
     /* Query worker attributes */
     status = ucp_worker_query(worker, &worker_attrs);

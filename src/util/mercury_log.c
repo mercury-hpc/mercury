@@ -99,7 +99,7 @@ static HG_QUEUE_HEAD(hg_log_outlet)
     hg_log_outlets_g = HG_QUEUE_HEAD_INITIALIZER(hg_log_outlets_g);
 
 /* Default 'printf' log function */
-static int (*hg_log_func_g)(FILE *stream, const char *format, ...) = fprintf;
+static hg_log_func_t hg_log_func_g = fprintf;
 
 /* Default log level */
 static enum hg_log_level hg_log_level_g = HG_LOG_LEVEL_ERROR;
@@ -385,9 +385,16 @@ hg_log_name_to_level(const char *log_level)
 
 /*---------------------------------------------------------------------------*/
 void
-hg_log_set_func(int (*log_func)(FILE *stream, const char *format, ...))
+hg_log_set_func(hg_log_func_t log_func)
 {
     hg_log_func_g = log_func;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_log_func_t
+hg_log_get_func(void)
+{
+    return hg_log_func_g;
 }
 
 /*---------------------------------------------------------------------------*/

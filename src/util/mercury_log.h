@@ -111,25 +111,24 @@
 /* Log macro */
 #define HG_LOG_WRITE(name, log_level, ...)                                     \
     do {                                                                       \
-        if (HG_LOG_OUTLET(name).level < log_level)                             \
-            break;                                                             \
-        hg_log_write(&HG_LOG_OUTLET(name), log_level, __FILE__, __LINE__,      \
-            __func__, __VA_ARGS__);                                            \
-    } while (0)
-
-/* Log macro */
-#define HG_LOG_WRITE_DEBUG(name, debug_func, ...)                              \
-    do {                                                                       \
-        if (HG_LOG_OUTLET(name).level < HG_LOG_LEVEL_MIN_DEBUG)                \
-            break;                                                             \
-        if (HG_LOG_OUTLET(name).level >= HG_LOG_LEVEL_MIN_DEBUG &&             \
+        if (log_level == HG_LOG_LEVEL_DEBUG &&                                 \
+            HG_LOG_OUTLET(name).level >= HG_LOG_LEVEL_MIN_DEBUG &&             \
             HG_LOG_OUTLET(name).debug_log)                                     \
             hg_dlog_addlog(HG_LOG_OUTLET(name).debug_log, __FILE__, __LINE__,  \
                 __func__, NULL, NULL);                                         \
+        if (HG_LOG_OUTLET(name).level >= log_level)                            \
+            hg_log_write(&HG_LOG_OUTLET(name), log_level, __FILE__, __LINE__,  \
+                __func__, __VA_ARGS__);                                        \
+    } while (0)
+
+#define HG_LOG_WRITE_DEBUG_EXT(name, header, ...)                              \
+    do {                                                                       \
         if (HG_LOG_OUTLET(name).level == HG_LOG_LEVEL_DEBUG) {                 \
+            hg_log_func_t log_func = hg_log_get_func();                        \
             hg_log_write(&HG_LOG_OUTLET(name), HG_LOG_LEVEL_DEBUG, __FILE__,   \
-                __LINE__, __func__, __VA_ARGS__);                              \
-            debug_func;                                                        \
+                __LINE__, __func__, header);                                   \
+            log_func(hg_log_get_stream_debug(), __VA_ARGS__);                  \
+            log_func(hg_log_get_stream_debug(), "---\n");                      \
         }                                                                      \
     } while (0)
 
@@ -199,6 +198,9 @@ struct hg_log_outlet {
     HG_QUEUE_ENTRY(hg_log_outlet) entry; /* List entry */
 };
 
+/* Log function */
+typedef int (*hg_log_func_t)(FILE *stream, const char *format, ...);
+
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -263,7 +265,15 @@ hg_log_name_to_level(const char *log_level);
  * \param log_func [IN]         pointer to function
  */
 HG_UTIL_PUBLIC void
-hg_log_set_func(int (*log_func)(FILE *stream, const char *format, ...));
+hg_log_set_func(hg_log_func_t log_func);
+
+/**
+ * Get the logging function.
+ *
+ * \return pointer pointer to function
+ */
+HG_UTIL_PUBLIC hg_log_func_t
+hg_log_get_func(void);
 
 /**
  * Set the stream for error output.

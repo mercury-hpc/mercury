@@ -2601,10 +2601,8 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
 #ifdef NA_HAS_DEBUG
     for (prov = providers; prov != NULL; prov = prov->next) {
         if (na_ofi_match_provider(&verify_info, prov)) {
-            // NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-            //     fprintf(hg_log_get_stream_debug(), "---\n%s---\n",
-            //         fi_tostr(prov, FI_TYPE_INFO)),
-            //     "Verbose FI info for provider %u", count);
+            // NA_LOG_SUBSYS_DEBUG_EXT(cls, "Verbose FI info for provider",
+            //     "#%u %s", count, fi_tostr(prov, FI_TYPE_INFO));
             count++;
         }
     }
@@ -2615,10 +2613,8 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
     /* Try to find provider that matches protocol and domain/host name */
     for (prov = providers; prov != NULL; prov = prov->next) {
         if (na_ofi_match_provider(&verify_info, prov)) {
-            NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-                fprintf(hg_log_get_stream_debug(), "---\n%s---\n",
-                    fi_tostr(prov, FI_TYPE_INFO)),
-                "FI info for selected provider");
+            NA_LOG_SUBSYS_DEBUG_EXT(cls, "FI info for selected provider", "%s",
+                fi_tostr(prov, FI_TYPE_INFO));
             break;
         }
     }
@@ -2977,10 +2973,8 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
 
     if (na_ofi_fabric != NULL) {
-        NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-            fprintf(hg_log_get_stream_debug(), "%s",
-                fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR)),
-            "using existing fi_fabric");
+        NA_LOG_SUBSYS_DEBUG_EXT(cls, "using existing fi_fabric", "%s",
+            fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR));
         *na_ofi_fabric_p = na_ofi_fabric;
         return NA_SUCCESS;
     }
@@ -3007,10 +3001,8 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
     NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_fabric() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-        fprintf(hg_log_get_stream_debug(), "%s",
-            fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR)),
-        "fi_fabric opened");
+    NA_LOG_SUBSYS_DEBUG_EXT(cls, "fi_fabric opened", "%s",
+        fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR));
 
     /* Insert to global fabric list */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
@@ -3191,10 +3183,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     na_ofi_domain->context_max =
         MIN(fi_info->domain_attr->tx_ctx_cnt, fi_info->domain_attr->rx_ctx_cnt);
 
-    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-        fprintf(hg_log_get_stream_debug(), "%s",
-            fi_tostr(fi_info->domain_attr, FI_TYPE_DOMAIN_ATTR)),
-        "fi_domain opened");
+    NA_LOG_SUBSYS_DEBUG_EXT(cls, "fi_domain opened", "%s",
+        fi_tostr(fi_info->domain_attr, FI_TYPE_DOMAIN_ATTR));
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
     if (na_ofi_fabric->prov_type == NA_OFI_PROV_GNI) {
@@ -3404,10 +3394,8 @@ na_ofi_basic_ep_open(const struct na_ofi_fabric *na_ofi_fabric,
     NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    NA_LOG_SUBSYS_DEBUG_FUNC(cls,
-        fprintf(hg_log_get_stream_debug(), "%s",
-            fi_tostr(fi_info->ep_attr, FI_TYPE_EP_ATTR)),
-        "fi_endpoint opened");
+    NA_LOG_SUBSYS_DEBUG_EXT(cls, "fi_endpoint opened", "%s",
+        fi_tostr(fi_info->ep_attr, FI_TYPE_EP_ATTR));
 
     return NA_SUCCESS;
 
