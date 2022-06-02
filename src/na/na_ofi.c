@@ -4889,9 +4889,8 @@ na_ofi_initialize(
 #endif
 
     NA_LOG_SUBSYS_DEBUG(cls,
-        "Entering na_ofi_initialize() class_name \"%s\", protocol_name \"%s\","
-        " host_name \"%s\"",
-        na_info->class_name, na_info->protocol_name, na_info->host_name);
+        "Entering na_ofi_initialize() protocol_name \"%s\", host_name \"%s\"",
+        na_info->protocol_name, na_info->host_name);
 
     /* Get init info and overwrite defaults */
     if (na_info->na_init_info)
