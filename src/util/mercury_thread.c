@@ -6,6 +6,10 @@
 
 #include "mercury_thread.h"
 
+#if !defined(_WIN32) && !defined(__APPLE__)
+#    include <sched.h>
+#endif
+
 /*---------------------------------------------------------------------------*/
 void
 hg_thread_init(hg_thread_t *thread)
@@ -83,7 +87,7 @@ hg_thread_yield(void)
 #elif defined(__APPLE__)
     pthread_yield_np();
 #else
-    pthread_yield();
+    sched_yield();
 #endif
 
     return HG_UTIL_SUCCESS;
