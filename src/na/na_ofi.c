@@ -10,6 +10,7 @@
 #include "na_ip.h"
 #include "na_loc.h"
 
+#include "mercury_hash_string.h"
 #include "mercury_hash_table.h"
 #include "mercury_inet.h"
 #include "mercury_list.h"
@@ -91,6 +92,16 @@
 /* clang-format off */
 #define NA_OFI_PROV_TYPES                                                      \
     X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0, 0, 0)                              \
+    X(NA_OFI_PROV_SHM,                                                         \
+      "shm",                                                                   \
+      "sm",                                                                    \
+      FI_ADDR_STR,                                                             \
+      FI_ADDR_STR,                                                             \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_SHM,                                                            \
+      FI_SOURCE | FI_DIRECTED_RECV | FI_HMEM,                                  \
+      NA_OFI_SOURCE_MSG                                                        \
+    )                                                                          \
     X(NA_OFI_PROV_SOCKETS,                                                     \
       "sockets",                                                               \
       "",                                                                      \
@@ -379,6 +390,11 @@ struct na_ofi_cxi_addr {
     } caddr;
 };
 
+/* String address */
+struct na_ofi_str_addr {
+    char buf[NA_OFI_MAX_URI_LEN];
+};
+
 /* Raw address */
 union na_ofi_raw_addr {
     struct sockaddr_in sin;
@@ -388,6 +404,7 @@ union na_ofi_raw_addr {
     struct na_ofi_psm2_addr psm2;
     struct na_ofi_gni_addr gni;
     struct na_ofi_cxi_addr cxi;
+    struct na_ofi_str_addr str;
 };
 
 /* Address key */
@@ -650,6 +667,8 @@ static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr);
 static na_return_t
 na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr);
+static na_return_t
+na_ofi_str_to_str(const char *str, struct na_ofi_str_addr *str_addr);
 
 /**
  * Convert the address to a 64-bit key to search corresponding FI addr.
@@ -670,6 +689,8 @@ static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr);
+static NA_INLINE uint64_t
+na_ofi_str_to_key(const struct na_ofi_str_addr *addr);
 
 /**
  * Convert a key back to an address. (only for sin serialization)
@@ -1546,6 +1567,8 @@ na_ofi_prov_addr_size(uint32_t addr_format)
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
             return sizeof(struct na_ofi_cxi_addr);
+        case FI_ADDR_STR:
+            return sizeof(struct na_ofi_str_addr);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             return 0;
@@ -1604,6 +1627,8 @@ na_ofi_str_to_raw_addr(
             return na_ofi_str_to_gni(str, &addr->gni);
         case FI_ADDR_CXI:
             return na_ofi_str_to_cxi(str, &addr->cxi);
+        case FI_ADDR_STR:
+            return na_ofi_str_to_str(str, &addr->str);
         default:
             NA_LOG_SUBSYS_ERROR(
                 fatal, "Unsupported address format: %" PRIu32, addr_format);
@@ -1849,6 +1874,25 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_str_to_str(const char *str, struct na_ofi_str_addr *str_addr)
+{
+    na_return_t ret;
+    int rc;
+
+    rc = snprintf(str_addr->buf, sizeof(str_addr->buf), "fi_%s", str);
+    NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > (int) sizeof(str_addr->buf),
+        error, ret, NA_OVERFLOW,
+        "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
+        sizeof(str_addr->buf));
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static NA_INLINE uint64_t
 na_ofi_raw_addr_to_key(uint32_t addr_format, const union na_ofi_raw_addr *addr)
 {
@@ -1867,6 +1911,8 @@ na_ofi_raw_addr_to_key(uint32_t addr_format, const union na_ofi_raw_addr *addr)
             return na_ofi_gni_to_key(&addr->gni);
         case FI_ADDR_CXI:
             return na_ofi_cxi_to_key(&addr->cxi);
+        case FI_ADDR_STR:
+            return na_ofi_str_to_key(&addr->str);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             return 0;
@@ -1924,6 +1970,13 @@ na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr)
 }
 
 /*---------------------------------------------------------------------------*/
+static NA_INLINE uint64_t
+na_ofi_str_to_key(const struct na_ofi_str_addr *addr)
+{
+    return (uint64_t) hg_hash_string(addr->buf);
+}
+
+/*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key)
 {
@@ -1952,6 +2005,8 @@ na_ofi_raw_addr_serialize_size(uint32_t addr_format)
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
             return sizeof(struct na_ofi_cxi_addr);
+        case FI_ADDR_STR:
+            return sizeof(struct na_ofi_str_addr);
         default:
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             return 0;
@@ -2019,6 +2074,13 @@ na_ofi_raw_addr_serialize(uint32_t addr_format, void *buf, size_t buf_size,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(buf, &addr->cxi, sizeof(addr->cxi));
+            break;
+        case FI_ADDR_STR:
+            NA_CHECK_SUBSYS_ERROR(addr,
+                buf_size < sizeof(struct na_ofi_str_addr), error, ret,
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
+            strncpy(buf, addr->str.buf, sizeof(addr->str));
             break;
         default:
             NA_GOTO_SUBSYS_ERROR(addr, error, ret, NA_PROTONOSUPPORT,
@@ -2094,6 +2156,13 @@ na_ofi_raw_addr_deserialize(uint32_t addr_format, union na_ofi_raw_addr *addr,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(&addr->cxi, buf, sizeof(addr->cxi));
+            break;
+        case FI_ADDR_STR:
+            NA_CHECK_SUBSYS_ERROR(addr,
+                buf_size < sizeof(struct na_ofi_str_addr), error, ret,
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
+            strncpy(addr->str.buf, buf, sizeof(addr->str) - 1);
             break;
         default:
             NA_GOTO_SUBSYS_ERROR(addr, error, ret, NA_PROTONOSUPPORT,
@@ -2717,6 +2786,7 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
         case FI_ADDR_PSMX:
         case FI_ADDR_PSMX2:
         case FI_ADDR_GNI:
+        case FI_ADDR_STR:
             /* Nothing to do */
             break;
         case FI_SOCKADDR_IB:
@@ -3614,11 +3684,20 @@ na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class)
     na_return_t ret;
     int rc;
 
-    /* Make sure expected addr format len is same as OFI addr len */
-    NA_CHECK_SUBSYS_ERROR(addr, addrlen != na_ofi_class->fi_info->src_addrlen,
-        error, ret, NA_PROTONOSUPPORT,
-        "Address lengths do not match (expected %zu, got %zu)", addrlen,
-        na_ofi_class->fi_info->src_addrlen);
+    /* Make sure expected addr format len is same as OFI addr len. In the case
+     * of FI_ADDR_STR, just make sure we do not exceed the max string length */
+    if (addr_format == FI_ADDR_STR)
+        NA_CHECK_SUBSYS_ERROR(addr,
+            addrlen < na_ofi_class->fi_info->src_addrlen, error, ret,
+            NA_PROTONOSUPPORT,
+            "Address lengths do not match (expected %zu, got %zu)", addrlen,
+            na_ofi_class->fi_info->src_addrlen);
+    else
+        NA_CHECK_SUBSYS_ERROR(addr,
+            addrlen != na_ofi_class->fi_info->src_addrlen, error, ret,
+            NA_PROTONOSUPPORT,
+            "Address lengths do not match (expected %zu, got %zu)", addrlen,
+            na_ofi_class->fi_info->src_addrlen);
 
     /* Retrieve endpoint addr */
     rc = fi_getname(
