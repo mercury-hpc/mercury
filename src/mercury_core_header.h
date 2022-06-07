@@ -13,19 +13,12 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
-#if defined(__GNUC__) || defined(_WIN32)
-#    pragma pack(push, 1)
-#else
-#    warning                                                                   \
-        "Proc header struct padding may not be consistent across platforms."
-#endif
-
-union hg_core_header_hash {
+HG_PACKED(union hg_core_header_hash {
     hg_uint16_t header; /* Header checksum (16-bits checksum) */
     hg_uint32_t pad;
-};
+});
 
-struct hg_core_header_request {
+HG_PACKED(struct hg_core_header_request {
     hg_uint8_t hg;       /* Mercury identifier */
     hg_uint8_t protocol; /* Version number */
     hg_uint64_t id;      /* RPC request identifier */
@@ -34,9 +27,9 @@ struct hg_core_header_request {
     /* 96 bits here */
     union hg_core_header_hash hash; /* Hash */
     /* 128 bits here */
-};
+});
 
-struct hg_core_header_response {
+HG_PACKED(struct hg_core_header_response {
     hg_int8_t ret_code; /* Return code */
     hg_uint8_t flags;   /* Flags */
     hg_uint16_t cookie; /* Cookie */
@@ -44,10 +37,7 @@ struct hg_core_header_response {
     /* 96 bits here */
     union hg_core_header_hash hash; /* Hash */
     /* 128 bits here */
-};
-#if defined(__GNUC__) || defined(_WIN32)
-#    pragma pack(pop)
-#endif
+});
 
 /* Common header struct request/response */
 struct hg_core_header {

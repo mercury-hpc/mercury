@@ -40,6 +40,9 @@
 /* Alignment */
 #define NA_ALIGNED(x, a) HG_ATTR_ALIGNED(x, a)
 
+/* Packed */
+#define NA_PACKED(x) HG_ATTR_PACKED(x)
+
 /* Fallthrough */
 #define NA_FALLTHROUGH HG_ATTR_FALLTHROUGH
 

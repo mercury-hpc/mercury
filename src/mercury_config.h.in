@@ -64,6 +64,9 @@ typedef hg_uint8_t hg_bool_t;
 #    define HG_INLINE __inline__
 #endif
 
+/* Packed */
+#define HG_PACKED(x) HG_ATTR_PACKED(x)
+
 /* Fallthrough macro */
 #define HG_FALLTHROUGH HG_ATTR_FALLTHROUGH
 
