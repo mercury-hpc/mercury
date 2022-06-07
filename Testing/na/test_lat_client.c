@@ -198,7 +198,7 @@ int
 main(int argc, char *argv[])
 {
     struct na_test_lat_info info;
-    size_t size;
+    size_t size, min_size;
     na_return_t na_ret;
 
     /* Initialize the interface */
@@ -218,8 +218,10 @@ main(int argc, char *argv[])
         fflush(stdout);
     }
 
+    min_size = (info.header_size > 0) ? info.header_size : 1;
+
     /* Msg with different sizes */
-    for (size = info.header_size; size <= info.max_buf_size; size *= 2) {
+    for (size = min_size; size <= info.max_buf_size; size *= 2) {
         na_ret = na_test_lat_run(&info, size);
         NA_TEST_CHECK_NA_ERROR(error, na_ret,
             "na_test_measure_latency(%zu) failed (%s)", size,
