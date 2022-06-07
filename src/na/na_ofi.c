@@ -185,16 +185,16 @@ static const char *const na_ofi_prov_name[] = {NA_OFI_PROV_TYPES};
 static const char *const na_ofi_prov_alt_name[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) d,
-static uint32_t const na_ofi_prov_addr_format_pref[] = {NA_OFI_PROV_TYPES};
+static int const na_ofi_prov_addr_format_pref[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) e,
-static uint32_t const na_ofi_prov_addr_format_native[] = {NA_OFI_PROV_TYPES};
+static int const na_ofi_prov_addr_format_native[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) f,
 static enum fi_progress const na_ofi_prov_progress[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) g,
-static uint32_t const na_ofi_prov_ep_proto[] = {NA_OFI_PROV_TYPES};
+static int const na_ofi_prov_ep_proto[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) h,
 static unsigned long const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
@@ -570,7 +570,7 @@ struct na_ofi_fabric {
 struct na_ofi_info {
     char *node;
     char *service;
-    uint32_t addr_format;
+    int addr_format;
     void *src_addr;
     size_t src_addrlen;
 };
@@ -579,7 +579,7 @@ struct na_ofi_info {
 struct na_ofi_verify_info {
     const struct na_loc_info *loc_info; /* Loc info */
     const char *domain_name;            /* Domain name */
-    uint32_t addr_format;               /* Addr format */
+    int addr_format;                    /* Addr format */
     enum na_ofi_prov_type prov_type;    /* Provider type */
 };
 
@@ -619,7 +619,7 @@ na_ofi_prov_name_to_type(const char *prov_name);
 /**
  * Determine addr format to use based on preferences.
  */
-static NA_INLINE uint32_t
+static NA_INLINE int
 na_ofi_prov_addr_format(
     enum na_ofi_prov_type prov_type, enum na_addr_format na_init_format);
 
@@ -627,7 +627,7 @@ na_ofi_prov_addr_format(
  * Get provider encoded address size.
  */
 static NA_INLINE size_t
-na_ofi_prov_addr_size(uint32_t addr_format);
+na_ofi_prov_addr_size(int addr_format);
 
 /**
  * Uses Scalable endpoints (SEP).
@@ -652,7 +652,7 @@ na_ofi_addr_prov(const char *str);
  */
 static NA_INLINE na_return_t
 na_ofi_str_to_raw_addr(
-    const char *str, uint32_t addr_format, union na_ofi_raw_addr *addr);
+    const char *str, int addr_format, union na_ofi_raw_addr *addr);
 static na_return_t
 na_ofi_str_to_sin(const char *str, struct sockaddr_in *sin_addr);
 static na_return_t
@@ -674,7 +674,7 @@ na_ofi_str_to_str(const char *str, struct na_ofi_str_addr *str_addr);
  * Convert the address to a 64-bit key to search corresponding FI addr.
  */
 static NA_INLINE uint64_t
-na_ofi_raw_addr_to_key(uint32_t addr_format, const union na_ofi_raw_addr *addr);
+na_ofi_raw_addr_to_key(int addr_format, const union na_ofi_raw_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_sin_to_key(const struct sockaddr_in *addr);
 static NA_INLINE uint64_t
@@ -702,20 +702,20 @@ na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key);
  * Size required to serialize raw addr.
  */
 static NA_INLINE size_t
-na_ofi_raw_addr_serialize_size(uint32_t addr_format);
+na_ofi_raw_addr_serialize_size(int addr_format);
 
 /**
  * Serialize addr key.
  */
 static na_return_t
-na_ofi_raw_addr_serialize(uint32_t addr_format, void *buf, size_t buf_size,
+na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
     const union na_ofi_raw_addr *addr);
 
 /**
  * Deserialize addr key.
  */
 static na_return_t
-na_ofi_raw_addr_deserialize(uint32_t addr_format, union na_ofi_raw_addr *addr,
+na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
     const void *buf, size_t buf_size);
 
 /**
@@ -809,7 +809,7 @@ na_ofi_match_provider(const struct na_ofi_verify_info *verify_info,
  */
 static na_return_t
 na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
-    const char *hostname_info, uint32_t addr_format, char **domain_name_p,
+    const char *hostname_info, int addr_format, char **domain_name_p,
     char **node_p, char **service_p, void **src_addr_p, size_t *src_addrlen_p);
 
 /**
@@ -1529,7 +1529,7 @@ na_ofi_prov_name_to_type(const char *prov_name)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE uint32_t
+static NA_INLINE int
 na_ofi_prov_addr_format(
     enum na_ofi_prov_type prov_type, enum na_addr_format na_init_format)
 {
@@ -1550,7 +1550,7 @@ na_ofi_prov_addr_format(
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE size_t
-na_ofi_prov_addr_size(uint32_t addr_format)
+na_ofi_prov_addr_size(int addr_format)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -1610,7 +1610,7 @@ na_ofi_addr_prov(const char *str)
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 na_ofi_str_to_raw_addr(
-    const char *str, uint32_t addr_format, union na_ofi_raw_addr *addr)
+    const char *str, int addr_format, union na_ofi_raw_addr *addr)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -1631,7 +1631,7 @@ na_ofi_str_to_raw_addr(
             return na_ofi_str_to_str(str, &addr->str);
         default:
             NA_LOG_SUBSYS_ERROR(
-                fatal, "Unsupported address format: %" PRIu32, addr_format);
+                fatal, "Unsupported address format: %d", addr_format);
             return NA_PROTONOSUPPORT;
     }
 }
@@ -1894,7 +1894,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE uint64_t
-na_ofi_raw_addr_to_key(uint32_t addr_format, const union na_ofi_raw_addr *addr)
+na_ofi_raw_addr_to_key(int addr_format, const union na_ofi_raw_addr *addr)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -1988,7 +1988,7 @@ na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE size_t
-na_ofi_raw_addr_serialize_size(uint32_t addr_format)
+na_ofi_raw_addr_serialize_size(int addr_format)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -2015,7 +2015,7 @@ na_ofi_raw_addr_serialize_size(uint32_t addr_format)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_raw_addr_serialize(uint32_t addr_format, void *buf, size_t buf_size,
+na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
     const union na_ofi_raw_addr *addr)
 {
     na_return_t ret;
@@ -2095,7 +2095,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_raw_addr_deserialize(uint32_t addr_format, union na_ofi_raw_addr *addr,
+na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
     const void *buf, size_t buf_size)
 {
     na_return_t ret;
@@ -2529,7 +2529,7 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     hints->ep_attr->type = FI_EP_RDM;
 
     /* set endpoint protocol */
-    hints->ep_attr->protocol = na_ofi_prov_ep_proto[prov_type];
+    hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
 
     /* caps: capabilities required for all providers */
     hints->caps = FI_TAGGED | FI_RMA;
@@ -2571,7 +2571,7 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 
     if (info) {
         /* Use addr format if not FI_FORMAT_UNSPEC */
-        hints->addr_format = info->addr_format;
+        hints->addr_format = (uint32_t) info->addr_format;
 
         /* Set src addr hints (FI_SOURCE must not be set in that case) */
         if (info->src_addr) {
@@ -2620,7 +2620,7 @@ na_ofi_match_provider(
 {
     /* Domain must match expected address format (keep this check as OFI does
      * not seem to filter providers on addr_format) */
-    if (verify_info->addr_format != fi_info->addr_format)
+    if ((uint32_t) verify_info->addr_format != fi_info->addr_format)
         return false;
 
     /* Does not match provider name */
@@ -2713,7 +2713,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
-    const char *hostname_info, uint32_t addr_format, char **domain_name_p,
+    const char *hostname_info, int addr_format, char **domain_name_p,
     char **node_p, char **service_p, void **src_addr_p, size_t *src_addrlen_p)
 {
     char *hostname = NULL;
@@ -2804,7 +2804,7 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
 
         default:
             NA_LOG_SUBSYS_ERROR(
-                fatal, "Unsupported address format: %" PRIu32, addr_format);
+                fatal, "Unsupported address format: %d", addr_format);
             return NA_PROTONOSUPPORT;
     }
 
@@ -3300,7 +3300,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         "fi_av_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     /* Create primary addr hash-table */
-    switch (fi_info->addr_format) {
+    switch ((int) fi_info->addr_format) {
         case FI_SOCKADDR_IN6:
             map_key_equal_func = na_ofi_addr_key_equal_sin6;
             break;
@@ -3312,6 +3312,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         case FI_ADDR_PSMX2:
         case FI_ADDR_GNI:
         case FI_ADDR_CXI:
+        case FI_ADDR_STR:
         default:
             map_key_equal_func = na_ofi_addr_key_equal_default;
             break;
@@ -3679,7 +3680,7 @@ static na_return_t
 na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class)
 {
     struct na_ofi_addr_key addr_key;
-    uint32_t addr_format = na_ofi_class->fi_info->addr_format;
+    int addr_format = (int) na_ofi_class->fi_info->addr_format;
     size_t addrlen = na_ofi_prov_addr_size(addr_format);
     na_return_t ret;
     int rc;
@@ -4535,7 +4536,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
         na_ofi_addr_ref_incr(na_ofi_addr);
     } else {
         struct na_ofi_addr_key addr_key;
-        uint32_t addr_format = na_ofi_class->fi_info->addr_format;
+        int addr_format = (int) na_ofi_class->fi_info->addr_format;
 
         if (src_err_addr && src_err_addrlen) {
             NA_CHECK_SUBSYS_ERROR(addr, src_err_addrlen > sizeof(addr_key.addr),
@@ -4998,7 +4999,7 @@ na_ofi_initialize(
     /* Get addr format */
     info.addr_format =
         na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
-    NA_CHECK_SUBSYS_ERROR(cls, info.addr_format == FI_FORMAT_UNSPEC, error, ret,
+    NA_CHECK_SUBSYS_ERROR(cls, info.addr_format <= FI_FORMAT_UNSPEC, error, ret,
         NA_PROTONOSUPPORT, "Unsupported address format");
 
     /* Parse hostname info and get domain name etc */
@@ -5338,7 +5339,7 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
-    uint32_t addr_format = na_ofi_class->fi_info->addr_format;
+    int addr_format = (int) na_ofi_class->fi_info->addr_format;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -5445,7 +5446,7 @@ static NA_INLINE size_t
 na_ofi_addr_get_serialize_size(na_class_t *na_class, na_addr_t NA_UNUSED addr)
 {
     return na_ofi_raw_addr_serialize_size(
-        NA_OFI_CLASS(na_class)->fi_info->addr_format);
+        (int) NA_OFI_CLASS(na_class)->fi_info->addr_format);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5457,7 +5458,7 @@ na_ofi_addr_serialize(
         &((struct na_ofi_addr *) addr)->addr_key;
 
     return na_ofi_raw_addr_serialize(
-        NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
+        (int) NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
         &addr_key->addr);
 }
 
@@ -5468,7 +5469,7 @@ na_ofi_addr_deserialize(
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
-    uint32_t addr_format = na_ofi_class->fi_info->addr_format;
+    int addr_format = (int) na_ofi_class->fi_info->addr_format;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
 
@@ -5515,7 +5516,7 @@ na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
     if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)))
         return na_ofi_raw_addr_serialize_size(
-            NA_OFI_CLASS(na_class)->fi_info->addr_format);
+            (int) NA_OFI_CLASS(na_class)->fi_info->addr_format);
 
     return 0;
 }
@@ -5575,7 +5576,7 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size)
      */
     if (na_ofi_with_msg_hdr(NA_OFI_CLASS(na_class)))
         return na_ofi_raw_addr_serialize(
-            NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
+            (int) NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
             &NA_OFI_CLASS(na_class)->endpoint->src_addr->addr_key.addr);
 
     return NA_SUCCESS;
