@@ -55,10 +55,17 @@
  */
 #define NA_OFI_VERSION FI_VERSION(1, 9)
 
+/* Fallback for undefined OPX values */
+#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
+    FI_VERSION(1, 15))
+#    define FI_ADDR_OPX  -1
+#    define FI_PROTO_OPX -1
+#endif
+
 /* Fallback for undefined CXI values */
 #ifndef NA_OFI_HAS_EXT_CXI_H
-#    define FI_ADDR_CXI  FI_FORMAT_UNSPEC
-#    define FI_PROTO_CXI FI_PROTO_UNSPEC
+#    define FI_ADDR_CXI  -2
+#    define FI_PROTO_CXI -2
 #endif
 
 /* Default basic bits */
@@ -74,6 +81,7 @@
 #define NA_OFI_SEP        (1 << 4) /* supports SEPs */
 #define NA_OFI_SOURCE_MSG (1 << 5) /* requires source info in the MSG */
 #define NA_OFI_LOC_INFO   (1 << 6) /* supports locality info */
+#define NA_OFI_CONTEXT2   (1 << 7) /* requires FI_CONTEXT2 */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -141,6 +149,16 @@
       FI_PROTO_PSMX2,                                                          \
       FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                            \
       NA_OFI_SIGNAL | NA_OFI_SEP | NA_OFI_LOC_INFO                             \
+    )                                                                          \
+    X(NA_OFI_PROV_OPX,                                                         \
+      "opx",                                                                   \
+      "",                                                                      \
+      FI_ADDR_OPX,                                                             \
+      FI_ADDR_OPX,                                                             \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_OPX,                                                            \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_SEP | NA_OFI_SOURCE_MSG | NA_OFI_CONTEXT2                         \
     )                                                                          \
     X(NA_OFI_PROV_VERBS,                                                       \
       "verbs;ofi_rxm",                                                         \
@@ -357,6 +375,19 @@ struct na_ofi_psm2_addr {
     uint64_t addr1;
 };
 
+/* OPX address */
+NA_PACKED(union na_ofi_opx_addr {
+    uint64_t raw;
+    NA_PACKED(struct {
+        uint8_t hfi1_rx;
+        uint8_t hfi1_unit;
+        uint8_t reliability_rx;
+        uint16_t endpoint_id;
+        uint16_t lid;
+        uint8_t rx_index;
+    });
+});
+
 /* GNI address */
 struct na_ofi_gni_addr {
     struct {
@@ -402,6 +433,7 @@ union na_ofi_raw_addr {
     struct na_ofi_sockaddr_ib sib;
     struct na_ofi_psm_addr psm;
     struct na_ofi_psm2_addr psm2;
+    union na_ofi_opx_addr opx;
     struct na_ofi_gni_addr gni;
     struct na_ofi_cxi_addr cxi;
     struct na_ofi_str_addr str;
@@ -489,7 +521,7 @@ struct na_ofi_op_id {
         struct na_ofi_rma_info rma;
     } info;                             /* Op info                  */
     HG_QUEUE_ENTRY(na_ofi_op_id) entry; /* Entry in queue           */
-    struct fi_context fi_ctx;           /* Context handle           */
+    struct fi_context fi_ctx[2];        /* Context handle           */
     hg_time_t retry_deadline;           /* Retry deadline           */
     struct na_ofi_class *na_ofi_class;  /* NA class associated      */
     na_context_t *context;              /* NA context associated    */
@@ -664,6 +696,8 @@ na_ofi_str_to_psm(const char *str, struct na_ofi_psm_addr *psm_addr);
 static na_return_t
 na_ofi_str_to_psm2(const char *str, struct na_ofi_psm2_addr *psm2_addr);
 static na_return_t
+na_ofi_str_to_opx(const char *str, union na_ofi_opx_addr *opx_addr);
+static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr);
 static na_return_t
 na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr);
@@ -685,6 +719,8 @@ static NA_INLINE uint64_t
 na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr);
+static NA_INLINE uint64_t
+na_ofi_opx_to_key(const union na_ofi_opx_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
 static NA_INLINE uint64_t
@@ -1563,6 +1599,8 @@ na_ofi_prov_addr_size(int addr_format)
             return sizeof(struct na_ofi_psm_addr);
         case FI_ADDR_PSMX2:
             return sizeof(struct na_ofi_psm2_addr);
+        case FI_ADDR_OPX:
+            return sizeof(union na_ofi_opx_addr);
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
@@ -1623,6 +1661,8 @@ na_ofi_str_to_raw_addr(
             return na_ofi_str_to_psm(str, &addr->psm);
         case FI_ADDR_PSMX2:
             return na_ofi_str_to_psm2(str, &addr->psm2);
+        case FI_ADDR_OPX:
+            return na_ofi_str_to_opx(str, &addr->opx);
         case FI_ADDR_GNI:
             return na_ofi_str_to_gni(str, &addr->gni);
         case FI_ADDR_CXI:
@@ -1818,6 +1858,32 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_ofi_str_to_opx(const char *str, union na_ofi_opx_addr *opx_addr)
+{
+    uint8_t rx_index, hfi1_rx, hfi1_unit, reliability_rx;
+    uint16_t lid, endpoint_id;
+    na_return_t ret;
+    int rc;
+
+    rc = sscanf(str, "%*[^:]://%04hx.%04hx.%02hhx.%02hhx.%02hhx.%02hhx", &lid,
+        &endpoint_id, &rx_index, &hfi1_rx, &hfi1_unit, &reliability_rx);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 6, error, ret, NA_PROTONOSUPPORT,
+        "Could not convert addr string to OPX addr format");
+    *opx_addr = (union na_ofi_opx_addr){.lid = lid,
+        .endpoint_id = endpoint_id,
+        .rx_index = rx_index,
+        .hfi1_rx = hfi1_rx,
+        .hfi1_unit = hfi1_unit,
+        .reliability_rx = reliability_rx};
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr)
 {
     unsigned int version, name_type, rx_ctx_cnt;
@@ -1907,6 +1973,8 @@ na_ofi_raw_addr_to_key(int addr_format, const union na_ofi_raw_addr *addr)
             return na_ofi_psm_to_key(&addr->psm);
         case FI_ADDR_PSMX2:
             return na_ofi_psm2_to_key(&addr->psm2);
+        case FI_ADDR_OPX:
+            return na_ofi_opx_to_key(&addr->opx);
         case FI_ADDR_GNI:
             return na_ofi_gni_to_key(&addr->gni);
         case FI_ADDR_CXI:
@@ -1957,6 +2025,13 @@ na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE uint64_t
+na_ofi_opx_to_key(const union na_ofi_opx_addr *addr)
+{
+    return addr->raw;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr)
 {
     return ((uint64_t) addr->device_addr) << 32 | addr->cdm_id;
@@ -2001,6 +2076,8 @@ na_ofi_raw_addr_serialize_size(int addr_format)
             return sizeof(struct na_ofi_psm_addr);
         case FI_ADDR_PSMX2:
             return sizeof(struct na_ofi_psm2_addr);
+        case FI_ADDR_OPX:
+            return sizeof(union na_ofi_opx_addr);
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
@@ -2060,6 +2137,13 @@ na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(buf, &addr->psm2, sizeof(addr->psm2));
+            break;
+        case FI_ADDR_OPX:
+            NA_CHECK_SUBSYS_ERROR(addr,
+                buf_size < sizeof(union na_ofi_opx_addr), error, ret,
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
+            memcpy(buf, &addr->opx, sizeof(addr->opx));
             break;
         case FI_ADDR_GNI:
             NA_CHECK_SUBSYS_ERROR(addr,
@@ -2142,6 +2226,13 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(&addr->psm2, buf, sizeof(addr->psm2));
+            break;
+        case FI_ADDR_OPX:
+            NA_CHECK_SUBSYS_ERROR(addr,
+                buf_size < sizeof(union na_ofi_opx_addr), error, ret,
+                NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
+                buf_size);
+            memcpy(&addr->opx, buf, sizeof(addr->opx));
             break;
         case FI_ADDR_GNI:
             NA_CHECK_SUBSYS_ERROR(addr,
@@ -2523,7 +2614,11 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
      * modify an IO vector  of  length  >  1, including  any  related  memory
      * descriptor array, until the associated operation has completed.
      */
-    hints->mode = FI_CONTEXT | FI_ASYNC_IOV;
+    hints->mode = FI_ASYNC_IOV;
+    if (na_ofi_prov_flags[prov_type] & NA_OFI_CONTEXT2)
+        hints->mode |= FI_CONTEXT2;
+    else
+        hints->mode |= FI_CONTEXT;
 
     /* ep_type: reliable datagram (connection-less) */
     hints->ep_attr->type = FI_EP_RDM;
@@ -2785,6 +2880,7 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
         }
         case FI_ADDR_PSMX:
         case FI_ADDR_PSMX2:
+        case FI_ADDR_OPX:
         case FI_ADDR_GNI:
         case FI_ADDR_STR:
             /* Nothing to do */
@@ -2910,7 +3006,8 @@ na_ofi_parse_cxi_info(
         NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
             "Malformed CXI info, format is: cxi[0-9]:[0-510]");
 
-    snprintf(pid_name, sizeof(pid_name), "%" PRIu16, pid & pid_mask);
+    snprintf(
+        pid_name, sizeof(pid_name), "%" PRIu16, (uint16_t) (pid & pid_mask));
 
     *service_p = strdup(pid_name);
     NA_CHECK_SUBSYS_ERROR(cls, *service_p == NULL, error, ret, NA_NOMEM,
@@ -3310,6 +3407,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         case FI_SOCKADDR_IN:
         case FI_ADDR_PSMX:
         case FI_ADDR_PSMX2:
+        case FI_ADDR_OPX:
         case FI_ADDR_GNI:
         case FI_ADDR_CXI:
         case FI_ADDR_STR:
