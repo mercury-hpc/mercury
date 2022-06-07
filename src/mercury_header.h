@@ -13,30 +13,20 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
-#if defined(__GNUC__) || defined(_WIN32)
-#    pragma pack(push, 1)
-#else
-#    warning                                                                   \
-        "Proc header struct padding may not be consistent across platforms."
-#endif
-
-struct hg_header_hash {
+HG_PACKED(struct hg_header_hash {
     hg_uint32_t payload; /* Payload checksum (32-bits checksum) */
-};
+});
 
-struct hg_header_input {
+HG_PACKED(struct hg_header_input {
     struct hg_header_hash hash; /* Hash */
     /* 160 bits here */
-};
+});
 
-struct hg_header_output {
+HG_PACKED(struct hg_header_output {
     struct hg_header_hash hash; /* Hash */
     hg_uint32_t pad;
     /* 128 bits here */
-};
-#if defined(__GNUC__) || defined(_WIN32)
-#    pragma pack(pop)
-#endif
+});
 
 /* Common header struct input/output */
 struct hg_header {
