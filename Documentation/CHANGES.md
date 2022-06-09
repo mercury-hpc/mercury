@@ -8,6 +8,8 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Choose addr format dynamically based on user preferences
     - Add support for IPv6
     - Add support for `FI_SOCKADDR_IB`
+    - Add support for `FI_ADDR_STR` and shm provider
+    - Add support for `FI_ADDR_OPX` and opx provider
     - Add support for HPE `cxi` provider,
       init info format for `cxi` is:
         - `NIC:PID` (both or only one may be passed), NIC is `cxi[0-9]`, PID is `[0-510]`
@@ -22,6 +24,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
       exchange connection IDs
     - Turn on mempool by default
     - Support device memory types
+    - Bump min required version to 1.10
 - __[NA PSM]__
     - Add mercury NA plugin for the qlogic/intel PSM interface
         - Also support PSM2 (Intel OmniPath) through the PSM NA plugin
@@ -54,6 +57,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
 - __[NA OFI]__
     - Switch `tcp` provider to `FI_PROGRESS_MANUAL`
     - Prevent empty authorization keys from being passed
+    - Check max MR key used when `FI_MR_PROV_KEY` is not set
     - New implementation of address management
         - Fix duplicate addresses on multithreaded lookups
         - Redefine address keys and raw addresses to prevent allocations
@@ -72,13 +76,20 @@ This version brings bug fixes and updates to our v2.0.0 release.
         - Abort ops to a target being retried after first `NA_HOSTUNREACH` error in CQ
 - __[NA UCX]__
     - Fix potential error not returned correctly on `conn_insert()`
+    - Fix potential double free of worker_addr
+    - Remove use of unified mode
+    - Ensure address key is correctly reset
 - __[HG util]__
     - Make sure we round up ms time conversion, this ensures that small timeouts
     do not result in busy spin.
+    - Use sched_yield() instead of deprecated pthread_yield()
     - Fix `'none'` log level not recognized
+    - Fix external logging facility
     - Let mercury log print counters on exit when debug outlet is on
 - __[HG proc]__
     - Prevent call to `save_ptr()/restore_ptr()` during `HG_FREE`
+- __[CMake]__
+    - Correctly set INSTALL_RPATH for target libraries
 
 ## :warning: Known Issues
 
