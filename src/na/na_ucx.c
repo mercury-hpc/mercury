@@ -2240,6 +2240,7 @@ na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr)
             ucp_worker_release_address(na_ucx_addr->na_ucx_class->ucp_worker,
                 na_ucx_addr->worker_addr);
         na_ucx_addr->worker_addr = NULL;
+        na_ucx_addr->worker_addr_len = 0;
     }
 }
 
@@ -2257,6 +2258,9 @@ na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key)
         na_ucx_addr->addr_key.addr =
             (const struct sockaddr *) &na_ucx_addr->ss_addr;
         na_ucx_addr->addr_key.addrlen = addr_key->addrlen;
+    } else {
+        memset(&na_ucx_addr->ss_addr, 0, sizeof(na_ucx_addr->ss_addr));
+        na_ucx_addr->addr_key = (ucs_sock_addr_t){.addr = NULL, .addrlen = 0};
     }
 }
 
