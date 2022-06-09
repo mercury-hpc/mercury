@@ -101,6 +101,23 @@
         hg_atomic_set32(&_op->status, NA_UCX_OP_COMPLETED);                    \
     } while (0)
 
+#ifdef NA_HAS_DEBUG
+#    define NA_UCX_PRINT_ADDR_KEY_INFO(_msg, _key)                             \
+        do {                                                                   \
+            char _host_string[NI_MAXHOST];                                     \
+            char _serv_string[NI_MAXSERV];                                     \
+                                                                               \
+            (void) getnameinfo((_key)->addr, (_key)->addrlen, _host_string,    \
+                sizeof(_host_string), _serv_string, sizeof(_serv_string),      \
+                NI_NUMERICHOST | NI_NUMERICSERV);                              \
+                                                                               \
+            NA_LOG_SUBSYS_DEBUG(                                               \
+                addr, _msg " (%s:%s)", _host_string, _serv_string);            \
+        } while (0)
+#else
+#    define NA_UCX_PRINT_ADDR_KEY_INFO(_msg, _key) (void) 0
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -1217,6 +1234,8 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
     NA_CHECK_SUBSYS_ERROR_NORET(addr, na_ucx_addr != NULL, error,
         "An entry is already present for this address");
 
+    NA_UCX_PRINT_ADDR_KEY_INFO("Inserting new address", &addr_key);
+
     /* Insert new entry and create new address */
     na_ret = na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
         &addr_key, conn_request, &na_ucx_addr);
@@ -2224,9 +2243,12 @@ static void
 na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr)
 {
     /* Make sure we remove from map before we close the EP */
-    if (na_ucx_addr->addr_key.addr)
+    if (na_ucx_addr->addr_key.addr) {
+        NA_UCX_PRINT_ADDR_KEY_INFO("Removing address", &na_ucx_addr->addr_key);
+
         na_ucx_addr_map_remove(
             &na_ucx_addr->na_ucx_class->addr_map, &na_ucx_addr->addr_key);
+    }
 
     if (na_ucx_addr->ucp_ep != NULL) {
         ucp_ep_close_nb(na_ucx_addr->ucp_ep, UCP_EP_CLOSE_MODE_FORCE);
@@ -2281,24 +2303,6 @@ na_ucx_addr_create(struct na_ucx_class *na_ucx_class, ucs_sock_addr_t *addr_key,
         "Could not allocate NA UCX addr");
 
     na_ucx_addr_reset(na_ucx_addr, addr_key);
-
-#ifdef NA_HAS_DEBUG
-    if (addr_key && addr_key->addr) {
-        char host_string[NI_MAXHOST];
-        char serv_string[NI_MAXSERV];
-        int rc;
-
-        rc = getnameinfo(addr_key->addr, addr_key->addrlen, host_string,
-            sizeof(host_string), serv_string, sizeof(serv_string),
-            NI_NUMERICHOST | NI_NUMERICSERV);
-        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "getnameinfo() failed (%s)", gai_strerror(rc));
-
-        NA_LOG_SUBSYS_DEBUG(
-            addr, "Created new address for %s:%s", host_string, serv_string);
-    }
-#endif
-
     NA_LOG_SUBSYS_DEBUG(addr, "Created address %p", (void *) na_ucx_addr);
 
     *na_ucx_addr_p = na_ucx_addr;
@@ -2325,6 +2329,7 @@ na_ucx_addr_ref_decr(struct na_ucx_addr *na_ucx_addr)
         struct na_ucx_addr_pool *addr_pool =
             &na_ucx_addr->na_ucx_class->addr_pool;
 
+        NA_LOG_SUBSYS_DEBUG(addr, "Releasing address %p", (void *) na_ucx_addr);
         na_ucx_addr_release(na_ucx_addr);
 
         /* Push address back to addr pool */
@@ -2818,9 +2823,8 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
     if (!na_ucx_addr) {
         na_return_t na_ret;
 
-        NA_LOG_SUBSYS_DEBUG(addr,
-            "Address for %s was not found, attempting to insert it",
-            host_string);
+        NA_LOG_SUBSYS_DEBUG(
+            addr, "Inserting new address (%s:%s)", host_string, serv_string);
 
         /* Insert new entry and create new address if needed */
         na_ret = na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
