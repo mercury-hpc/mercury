@@ -578,6 +578,7 @@ struct na_ofi_domain {
     size_t context_max;              /* Max contexts available */
     size_t eager_msg_size_max;       /* Max eager msg size */
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
+    int64_t max_key;                 /* Max key if not FI_MR_PROV_KEY */
     bool no_wait;                    /* Wait disabled on domain */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered */
 } HG_LOCK_CAPABILITY("domain");
@@ -3350,6 +3351,17 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     na_ofi_domain->context_max =
         MIN(fi_info->domain_attr->tx_ctx_cnt, fi_info->domain_attr->rx_ctx_cnt);
 
+    /* Cache max key */
+    NA_CHECK_SUBSYS_ERROR(cls, fi_info->domain_attr->mr_key_size > 8, error,
+        ret, NA_OVERFLOW, "MR key size (%zu) is not supported",
+        fi_info->domain_attr->mr_key_size);
+
+    na_ofi_domain->max_key =
+        (fi_info->domain_attr->mr_key_size == 8)
+            ? INT64_MAX
+            : (int64_t) (1UL << (fi_info->domain_attr->mr_key_size * 8)) - 1;
+    NA_LOG_SUBSYS_DEBUG(cls, "MR max key is %" PRId64, na_ofi_domain->max_key);
+
     NA_LOG_SUBSYS_DEBUG_EXT(cls, "fi_domain opened", "%s",
         fi_tostr(fi_info->domain_attr, FI_TYPE_DOMAIN_ATTR));
 
@@ -4100,7 +4112,8 @@ out:
 static uint64_t
 na_ofi_mem_key_gen(struct na_ofi_domain *na_ofi_domain)
 {
-    return (hg_atomic_cas64(&na_ofi_domain->requested_key, INT64_MAX, 0))
+    return (hg_atomic_cas64(
+               &na_ofi_domain->requested_key, na_ofi_domain->max_key, 0))
                ? 1 /* Incremented value */
                : (uint64_t) hg_atomic_incr64(&na_ofi_domain->requested_key);
 }
