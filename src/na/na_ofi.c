@@ -4415,8 +4415,18 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     /* Set RMA msg */
     NA_OFI_MSG_RMA_SET(fi_msg_rma, liov, riov, na_ofi_op_id);
 
-    NA_LOG_SUBSYS_DEBUG(
-        rma, "Posting RMA op (op id=%p)", (void *) na_ofi_op_id);
+    NA_LOG_SUBSYS_DEBUG(rma,
+        "Posting RMA op (%s, op id=%p), iov_count=%zu, desc[0]=%p, "
+        "msg_iov[0].iov_base=%p, msg_iov[0].iov_len=%zu, addr=%" PRIu64
+        ", rma_iov_count=%zu, rma_iov[0].addr=%" PRIu64
+        ", rma_iov[0].len=%zu, rma_iov[0].key=%" PRIu64
+        ", context=%p, data=%" PRIu64,
+        cb_type == NA_CB_GET ? "fi_readmsg" : "fi_writemsg",
+        (void *) na_ofi_op_id, fi_msg_rma.iov_count, fi_msg_rma.desc[0],
+        fi_msg_rma.msg_iov[0].iov_base, fi_msg_rma.msg_iov[0].iov_len,
+        fi_msg_rma.addr, fi_msg_rma.rma_iov_count, fi_msg_rma.rma_iov[0].addr,
+        fi_msg_rma.rma_iov[0].len, fi_msg_rma.rma_iov[0].key,
+        fi_msg_rma.context, fi_msg_rma.data);
 
     /* Post the OFI RMA operation */
     rc = fi_rma_op(na_ofi_context->fi_tx, &fi_msg_rma, fi_rma_flags);
@@ -4424,8 +4434,18 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
         na_ofi_op_retry(na_ofi_context, na_ofi_op_id);
     else
         NA_CHECK_SUBSYS_ERROR(rma, rc != 0, error, ret,
-            na_ofi_errno_to_na((int) -rc), "fi_rma_op() failed, rc: %zd (%s)",
-            rc, fi_strerror((int) -rc));
+            na_ofi_errno_to_na((int) -rc),
+            "%s() failed, rc: %zd (%s), iov_count=%zu, desc[0]=%p, "
+            "msg_iov[0].iov_base=%p, msg_iov[0].iov_len=%zu, addr=%" PRIu64
+            ", rma_iov_count=%zu, rma_iov[0].addr=%" PRIu64
+            ", rma_iov[0].len=%zu, rma_iov[0].key=%" PRIu64
+            ", context=%p, data=%" PRIu64,
+            cb_type == NA_CB_GET ? "fi_readmsg" : "fi_writemsg", rc,
+            fi_strerror((int) -rc), fi_msg_rma.iov_count, fi_msg_rma.desc[0],
+            fi_msg_rma.msg_iov[0].iov_base, fi_msg_rma.msg_iov[0].iov_len,
+            fi_msg_rma.addr, fi_msg_rma.rma_iov_count,
+            fi_msg_rma.rma_iov[0].addr, fi_msg_rma.rma_iov[0].len,
+            fi_msg_rma.rma_iov[0].key, fi_msg_rma.context, fi_msg_rma.data);
 
 out:
     return ret;
