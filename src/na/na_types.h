@@ -78,6 +78,10 @@ struct na_init_info {
      * needed. When setting NA_THREAD_MODE_SINGLE, only a single thread should
      * access both NA classes and contexts at a time. */
     uint8_t thread_mode;
+
+    /* Request support for tranfers to/from memory devices (e.g., GPU, etc).
+     * Default is: false. */
+    bool request_mem_device;
 };
 
 /* Segment */
@@ -199,7 +203,7 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
     {                                                                          \
         .ip_subnet = NULL, .auth_key = NULL, .max_unexpected_size = 0,         \
         .max_expected_size = 0, .progress_mode = 0, .max_contexts = 1,         \
-        .thread_mode = 0                                                       \
+        .thread_mode = 0, .request_mem_device = false                          \
     }
 
 #endif /* NA_TYPES_H */
