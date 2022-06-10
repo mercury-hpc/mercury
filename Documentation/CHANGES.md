@@ -30,6 +30,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
         - Also support PSM2 (Intel OmniPath) through the PSM NA plugin
 - __[NA]__
     - Add `na_addr_format` init info
+    - Add `request_mem_device` init info when GPU support is requested
     - Update `NA_Mem_register()` API call to support memory types (e.g., CUDA, ROCm, ZE) and devices IDs
     - Add `na_loc` module for `hwloc` detection
     - Remove `na_uint`, `na_int`, `na_bool_t` and `na_size_t` types

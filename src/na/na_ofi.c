@@ -82,6 +82,7 @@
 #define NA_OFI_SOURCE_MSG (1 << 5) /* requires source info in the MSG */
 #define NA_OFI_LOC_INFO   (1 << 6) /* supports locality info */
 #define NA_OFI_CONTEXT2   (1 << 7) /* requires FI_CONTEXT2 */
+#define NA_OFI_HMEM       (1 << 8) /* supports FI_HMEM */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -107,8 +108,8 @@
       FI_ADDR_STR,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_SHM,                                                            \
-      FI_SOURCE | FI_DIRECTED_RECV | FI_HMEM,                                  \
-      NA_OFI_SOURCE_MSG                                                        \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_SOURCE_MSG | NA_OFI_HMEM                                          \
     )                                                                          \
     X(NA_OFI_PROV_SOCKETS,                                                     \
       "sockets",                                                               \
@@ -167,8 +168,8 @@
       FI_SOCKADDR_IB,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
-      FI_SOURCE | FI_DIRECTED_RECV | FI_HMEM,                                  \
-      NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO                     \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO | NA_OFI_HMEM       \
     )                                                                          \
     X(NA_OFI_PROV_GNI,                                                         \
       "gni",                                                                   \
@@ -187,8 +188,8 @@
       FI_ADDR_CXI,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
-      FI_SOURCE | FI_DIRECTED_RECV | FI_HMEM,                                  \
-      NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO                                      \
+      FI_SOURCE | FI_DIRECTED_RECV,                                            \
+      NA_OFI_SOURCE_MSG | NA_OFI_LOC_INFO | NA_OFI_HMEM                        \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
 /* clang-format on */
@@ -601,11 +602,12 @@ struct na_ofi_fabric {
 
 /* Get info */
 struct na_ofi_info {
-    char *node;
-    char *service;
-    int addr_format;
-    void *src_addr;
-    size_t src_addrlen;
+    char *node;         /* Node/host IP info */
+    char *service;      /* Service/port info */
+    int addr_format;    /* Address format */
+    void *src_addr;     /* Native src addr */
+    size_t src_addrlen; /* Native src addr len */
+    bool use_hmem;      /* Use FI_HMEM */
 };
 
 /* Verify info */
@@ -2668,6 +2670,10 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     if (info) {
         /* Use addr format if not FI_FORMAT_UNSPEC */
         hints->addr_format = (uint32_t) info->addr_format;
+
+        /* Ask for HMEM support */
+        if (info->use_hmem && (na_ofi_prov_flags[prov_type] & NA_OFI_HMEM))
+            hints->caps |= FI_HMEM;
 
         /* Set src addr hints (FI_SOURCE must not be set in that case) */
         if (info->src_addr) {
@@ -5092,7 +5098,8 @@ na_ofi_initialize(
         .node = NULL,
         .service = NULL,
         .src_addr = NULL,
-        .src_addrlen = 0};
+        .src_addrlen = 0,
+        .use_hmem = false};
     struct na_loc_info *loc_info = NULL;
     na_return_t ret;
 #ifdef NA_OFI_HAS_ADDR_POOL
@@ -5132,6 +5139,12 @@ na_ofi_initialize(
         na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
     NA_CHECK_SUBSYS_ERROR(cls, info.addr_format <= FI_FORMAT_UNSPEC, error, ret,
         NA_PROTONOSUPPORT, "Unsupported address format");
+
+    /* Use HMEM */
+    if (na_init_info.request_mem_device) {
+        NA_LOG_SUBSYS_DEBUG(cls, "Requesting use of memory devices");
+        info.use_hmem = na_init_info.request_mem_device;
+    }
 
     /* Parse hostname info and get domain name etc */
     if (na_info->host_name != NULL) {
