@@ -63,9 +63,13 @@
 #endif
 
 /* Fallback for undefined CXI values */
-#ifndef NA_OFI_HAS_EXT_CXI_H
-#    define FI_ADDR_CXI  -2
-#    define FI_PROTO_CXI -2
+#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
+    FI_VERSION(1, 15))
+#    define FI_ADDR_CXI  (FI_ADDR_PSMX3 + 1)
+#    define FI_PROTO_CXI (FI_PROTO_PSMX3 + 1)
+#else
+#    define FI_ADDR_CXI  (FI_ADDR_OPX + 1)
+#    define FI_PROTO_CXI (FI_PROTO_OPX + 1)
 #endif
 
 /* Default basic bits */
@@ -2627,6 +2631,10 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     hints->ep_attr->type = FI_EP_RDM;
 
     /* set endpoint protocol */
+    NA_CHECK_SUBSYS_ERROR(cls,
+        na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
+        NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
+        na_ofi_prov_ep_proto[prov_type]);
     hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
 
     /* caps: capabilities required for all providers */
@@ -2661,7 +2669,7 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
      * appropriate time.
      */
     hints->domain_attr->mr_mode =
-        NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT | FI_MR_HMEM;
+        NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT;
 
     /* set default progress mode */
     hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
@@ -2669,11 +2677,16 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 
     if (info) {
         /* Use addr format if not FI_FORMAT_UNSPEC */
+        NA_CHECK_SUBSYS_ERROR(cls, info->addr_format <= FI_FORMAT_UNSPEC,
+            cleanup, ret, NA_PROTONOSUPPORT, "Unsupported address format (%d)",
+            info->addr_format);
         hints->addr_format = (uint32_t) info->addr_format;
 
         /* Ask for HMEM support */
-        if (info->use_hmem && (na_ofi_prov_flags[prov_type] & NA_OFI_HMEM))
+        if (info->use_hmem && (na_ofi_prov_flags[prov_type] & NA_OFI_HMEM)) {
             hints->caps |= FI_HMEM;
+            hints->domain_attr->mr_mode |= FI_MR_HMEM;
+        }
 
         /* Set src addr hints (FI_SOURCE must not be set in that case) */
         if (info->src_addr) {
