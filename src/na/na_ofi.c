@@ -4925,7 +4925,7 @@ na_ofi_op_retry_abort_addr(
 
     hg_thread_spin_lock(&op_queue->lock);
     HG_QUEUE_FOREACH (na_ofi_op_id, &op_queue->queue, entry) {
-        if (na_ofi_op_id->addr->fi_addr != fi_addr)
+        if (!na_ofi_op_id->addr || na_ofi_op_id->addr->fi_addr != fi_addr)
             continue;
 
         HG_QUEUE_REMOVE(&op_queue->queue, na_ofi_op_id, na_ofi_op_id, entry);
