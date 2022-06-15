@@ -2692,11 +2692,13 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
         if (info->src_addr) {
             hints->src_addr = info->src_addr;
             hints->src_addrlen = info->src_addrlen;
-        } else if (info->node || info->service) {
+        } else if (info->node && info->service) {
             /* For provider node resolution (always pass a numeric address) */
             flags = FI_SOURCE | FI_NUMERICHOST;
             node = info->node;
             service = info->service;
+            NA_LOG_SUBSYS_DEBUG(cls,
+                "Passing node/service (%s,%s) to fi_getinfo()", node, service);
         }
     }
 
@@ -2916,6 +2918,14 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
         case FI_ADDR_CXI:
             ret = na_ofi_parse_cxi_info(hostname_info, node_p, service_p);
             NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse cxi info");
+
+            /* Manually set domain name and use that for matching info if no
+             * specific port was passed. */
+            if ((*node_p != NULL) && (*service_p == NULL)) {
+                domain_name = strdup(*node_p);
+                NA_CHECK_SUBSYS_ERROR(cls, domain_name == NULL, out, ret,
+                    NA_NOMEM, "strdup() of %s failed", *node_p);
+            }
             break;
 
         default:
@@ -3026,12 +3036,16 @@ na_ofi_parse_cxi_info(
         NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
             "Malformed CXI info, format is: cxi[0-9]:[0-510]");
 
-    snprintf(
-        pid_name, sizeof(pid_name), "%" PRIu16, (uint16_t) (pid & pid_mask));
+    /* Let the service string be NULL if PID is 0 to prevent CXI failure on
+     * endpoint open when same PID is used */
+    if (pid > 0) {
+        snprintf(pid_name, sizeof(pid_name), "%" PRIu16,
+            (uint16_t) (pid & pid_mask));
 
-    *service_p = strdup(pid_name);
-    NA_CHECK_SUBSYS_ERROR(cls, *service_p == NULL, error, ret, NA_NOMEM,
-        "strdup() of pid_name failed");
+        *service_p = strdup(pid_name);
+        NA_CHECK_SUBSYS_ERROR(cls, *service_p == NULL, error, ret, NA_NOMEM,
+            "strdup() of pid_name failed");
+    }
 
     *node_p = node;
 
