@@ -128,10 +128,11 @@ struct hg_core_private_class {
 #endif
     hg_hash_table_t *func_map; /* Function map */
     hg_return_t (*more_data_acquire)(hg_core_handle_t, hg_op_t,
-        hg_return_t (*done_callback)(hg_core_handle_t)); /* more_data_acquire */
-    void (*more_data_release)(hg_core_handle_t);         /* more_data_release */
-    na_tag_t request_max_tag;                            /* Max value for tag */
-    hg_checksum_level_t checksum_level;                  /* Checksum level */
+        void (*done_callback)(
+            hg_core_handle_t, hg_return_t));     /* more_data_acquire */
+    void (*more_data_release)(hg_core_handle_t); /* more_data_release */
+    na_tag_t request_max_tag;                    /* Max value for tag */
+    hg_checksum_level_t checksum_level;          /* Checksum level */
 #ifdef HG_HAS_DEBUG
     struct hg_core_counters counters; /* Diag counters */
 #endif
@@ -598,19 +599,19 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info);
  */
 static hg_return_t
 hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
-    hg_bool_t *completed, hg_return_t (*done_callback)(hg_core_handle_t));
+    hg_bool_t *completed, void (*done_callback)(hg_core_handle_t, hg_return_t));
 
 /**
  * Callback for HG_CORE_MORE_DATA operation.
  */
-static HG_INLINE hg_return_t
-hg_core_more_data_complete(hg_core_handle_t handle);
+static HG_INLINE void
+hg_core_more_data_complete(hg_core_handle_t handle, hg_return_t ret);
 
 /**
  * Send ack for HG_CORE_MORE_DATA flag on output.
  */
-static hg_return_t
-hg_core_send_ack(hg_core_handle_t handle);
+static void
+hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret);
 
 /**
  * Ack callback. (HG_CORE_MORE_DATA flag on output)
@@ -3324,7 +3325,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
-    hg_bool_t *completed, hg_return_t (*done_callback)(hg_core_handle_t))
+    hg_bool_t *completed, void (*done_callback)(hg_core_handle_t, hg_return_t))
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -3377,24 +3378,37 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_return_t
-hg_core_more_data_complete(hg_core_handle_t handle)
-{
-    /* Complete and add to completion queue */
-    hg_core_complete((struct hg_core_private_handle *) handle, HG_SUCCESS);
-
-    return HG_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_core_send_ack(hg_core_handle_t handle)
+static HG_INLINE void
+hg_core_more_data_complete(hg_core_handle_t handle, hg_return_t ret)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
-    hg_return_t ret = HG_SUCCESS;
+
+    if (ret != HG_SUCCESS) {
+        if (ret != HG_CANCELED) {
+            /* Mark handle as errored */
+            hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
+        }
+        hg_atomic_cas32(
+            &hg_core_handle->ret_status, (int32_t) HG_SUCCESS, (int32_t) ret);
+    }
+
+    /* Complete and add to completion queue */
+    hg_core_complete(hg_core_handle,
+        (hg_return_t) hg_atomic_get32(&hg_core_handle->ret_status));
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret)
+{
+    struct hg_core_private_handle *hg_core_handle =
+        (struct hg_core_private_handle *) handle;
+    hg_return_t hg_ret;
     na_return_t na_ret;
     size_t buf_size = handle->na_out_header_offset + sizeof(hg_uint8_t);
+
+    HG_CHECK_ERROR(ret != HG_SUCCESS, error, hg_ret, ret, "Aborting ack send");
 
     /* Increment number of expected NA operations */
     hg_core_handle->na_op_count++;
@@ -3402,12 +3416,12 @@ hg_core_send_ack(hg_core_handle_t handle)
     /* Allocate buffer for ack */
     hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
         buf_size, &hg_core_handle->ack_buf_plugin_data);
-    HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret, HG_NA_ERROR,
+    HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, hg_ret, HG_NA_ERROR,
         "Could not allocate buffer for ack");
 
     na_ret = NA_Msg_init_expected(
         hg_core_handle->na_class, hg_core_handle->ack_buf, buf_size);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, hg_ret, (hg_return_t) na_ret,
         "Could not initialize ack buffer (%s)", NA_Error_to_string(na_ret));
 
     /* Post expected send (ack) */
@@ -3417,10 +3431,10 @@ hg_core_send_ack(hg_core_handle_t handle)
         hg_core_handle->na_addr, hg_core_handle->core_handle.info.context_id,
         hg_core_handle->tag, hg_core_handle->na_ack_op_id);
     /* Expected sends should always succeed after retry */
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, hg_ret, (hg_return_t) na_ret,
         "Could not post send for ack buffer (%s)", NA_Error_to_string(na_ret));
 
-    return ret;
+    return;
 
 error:
     if (hg_core_handle->ack_buf) {
@@ -3431,7 +3445,15 @@ error:
         hg_core_handle->ack_buf = NULL;
         hg_core_handle->ack_buf_plugin_data = NULL;
     }
-    return ret;
+    /* Mark handle as errored */
+    if (hg_ret != HG_CANCELED)
+        hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
+    hg_atomic_cas32(
+        &hg_core_handle->ret_status, (int32_t) HG_SUCCESS, (int32_t) ret);
+
+    /* Complete and add to completion queue */
+    hg_core_complete(hg_core_handle,
+        (hg_return_t) hg_atomic_get32(&hg_core_handle->ret_status));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4259,7 +4281,7 @@ HG_Core_cleanup(void)
 hg_return_t
 HG_Core_set_more_data_callback(struct hg_core_class *hg_core_class,
     hg_return_t (*more_data_acquire_callback)(hg_core_handle_t, hg_op_t,
-        hg_return_t (*done_callback)(hg_core_handle_t)),
+        void (*done_callback)(hg_core_handle_t, hg_return_t)),
     void (*more_data_release_callback)(hg_core_handle_t))
 {
     struct hg_core_private_class *private_class =

@@ -63,19 +63,19 @@ struct hg_private_handle {
     struct hg_header hg_header; /* Header for input/output */
     hg_cb_t forward_cb;         /* Forward callback */
     hg_cb_t respond_cb;         /* Respond callback */
-    hg_return_t (*extra_bulk_transfer_cb)(
-        hg_core_handle_t);        /* Bulk transfer callback */
-    void *forward_arg;            /* Forward callback args */
-    void *respond_arg;            /* Respond callback args */
-    void *in_extra_buf;           /* Extra input buffer */
-    void *out_extra_buf;          /* Extra output buffer */
-    hg_proc_t in_proc;            /* Proc for input */
-    hg_proc_t out_proc;           /* Proc for output */
-    hg_bulk_t in_extra_bulk;      /* Extra input bulk handle */
-    hg_bulk_t out_extra_bulk;     /* Extra output bulk handle */
-    hg_size_t in_extra_buf_size;  /* Extra input buffer size */
-    hg_size_t out_extra_buf_size; /* Extra output buffer size */
-    hg_bool_t use_checksums;      /* Handle uses checksums */
+    void (*extra_bulk_transfer_cb)(
+        hg_core_handle_t, hg_return_t); /* Bulk transfer callback */
+    void *forward_arg;                  /* Forward callback args */
+    void *respond_arg;                  /* Respond callback args */
+    void *in_extra_buf;                 /* Extra input buffer */
+    void *out_extra_buf;                /* Extra output buffer */
+    hg_proc_t in_proc;                  /* Proc for input */
+    hg_proc_t out_proc;                 /* Proc for output */
+    hg_bulk_t in_extra_bulk;            /* Extra input bulk handle */
+    hg_bulk_t out_extra_bulk;           /* Extra output bulk handle */
+    hg_size_t in_extra_buf_size;        /* Extra input buffer size */
+    hg_size_t out_extra_buf_size;       /* Extra output buffer size */
+    hg_bool_t use_checksums;            /* Handle uses checksums */
 };
 
 /* HG op id */
@@ -126,7 +126,7 @@ hg_handle_create_cb(hg_core_handle_t core_handle, void *arg);
  */
 static hg_return_t
 hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
-    hg_return_t (*done_cb)(hg_core_handle_t));
+    void (*done_cb)(hg_core_handle_t, hg_return_t));
 
 /**
  * More data free callback.
@@ -173,7 +173,7 @@ hg_free_struct(struct hg_private_handle *hg_handle,
  */
 static hg_return_t
 hg_get_extra_payload(struct hg_private_handle *hg_handle, hg_op_t op,
-    hg_return_t (*done_cb)(hg_core_handle_t));
+    void (*done_cb)(hg_core_handle_t, hg_return_t));
 
 /**
  * Get extra payload bulk transfer callback.
@@ -313,7 +313,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
-    hg_return_t (*done_cb)(hg_core_handle_t))
+    void (*done_cb)(hg_core_handle_t, hg_return_t))
 {
     struct hg_private_handle *hg_handle;
     void *extra_buf;
@@ -337,9 +337,7 @@ hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
 
     if (extra_buf) {
         /* We were forwarding to ourself and the extra buf is already set */
-        ret = done_cb(core_handle);
-        HG_CHECK_HG_ERROR(
-            error, ret, "Could not execute more data done callback");
+        done_cb(core_handle, HG_SUCCESS);
     } else {
         /* We need to do a bulk transfer to get the extra data */
         ret = hg_get_extra_payload(hg_handle, op, done_cb);
@@ -795,7 +793,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_get_extra_payload(struct hg_private_handle *hg_handle, hg_op_t op,
-    hg_return_t (*done_cb)(hg_core_handle_t core_handle))
+    void (*done_cb)(hg_core_handle_t, hg_return_t))
 {
     const struct hg_core_info *hg_core_info =
         HG_Core_get_info(hg_handle->handle.core_handle);
@@ -889,12 +887,11 @@ hg_get_extra_payload_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_private_handle *hg_handle =
         (struct hg_private_handle *) callback_info->arg;
-    hg_return_t ret =
-        hg_handle->extra_bulk_transfer_cb(hg_handle->handle.core_handle);
-    HG_CHECK_HG_ERROR(done, ret, "Could not execute bulk transfer callback");
 
-done:
-    return ret;
+    hg_handle->extra_bulk_transfer_cb(
+        hg_handle->handle.core_handle, callback_info->ret);
+
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
