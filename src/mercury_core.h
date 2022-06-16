@@ -150,7 +150,7 @@ HG_Core_cleanup(void);
 HG_PUBLIC hg_return_t
 HG_Core_set_more_data_callback(struct hg_core_class *hg_core_class,
     hg_return_t (*more_data_acquire_callback)(hg_core_handle_t, hg_op_t,
-        hg_return_t (*done_callback)(hg_core_handle_t)),
+        void (*done_callback)(hg_core_handle_t, hg_return_t)),
     void (*more_data_release_callback)(hg_core_handle_t));
 
 /**
