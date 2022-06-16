@@ -3019,14 +3019,17 @@ na_ofi_parse_cxi_info(
     na_return_t ret;
 
     /* Only port, e.g. ":510" */
-    if ((sscanf(hostname_info, ":%" SCNu16, &pid) == 1) && (pid < pid_mask)) {
+    if (sscanf(hostname_info, ":%" SCNu16, &pid) == 1) {
+        NA_CHECK_SUBSYS_ERROR(cls, pid >= pid_mask, error, ret,
+            NA_PROTONOSUPPORT, "CXI PID is %" PRIu16 ", must be [0-510]", pid);
         NA_LOG_SUBSYS_DEBUG(cls, "PID: %" PRIu16, pid);
     }
     /* cxi[0-9]:port or cxi[0-9] */
-    else if (((sscanf(hostname_info, "cxi%1[0-9]:%" SCNu16, &nic_name[3],
-                   &pid) == 2) &&
-                 (pid < pid_mask)) ||
+    else if ((sscanf(hostname_info, "cxi%1[0-9]:%" SCNu16, &nic_name[3],
+                  &pid) == 2) ||
              (sscanf(hostname_info, "cxi%1[0-9]", &nic_name[3]) == 1)) {
+        NA_CHECK_SUBSYS_ERROR(cls, pid >= pid_mask, error, ret,
+            NA_PROTONOSUPPORT, "CXI PID is %" PRIu16 ", must be [0-510]", pid);
         NA_LOG_SUBSYS_DEBUG(cls, "NIC name: %s, PID: %" PRIu16, nic_name, pid);
 
         node = strdup(nic_name);
