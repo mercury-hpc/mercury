@@ -2377,9 +2377,6 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
             hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_COMPLETED,
             "Operation was completed");
         HG_LOG_DEBUG("NA_CANCELED event on op ID %p", (void *) hg_bulk_op_id);
-        HG_CHECK_WARNING(
-            !(hg_atomic_get32(&hg_bulk_op_id->status) & HG_BULK_OP_CANCELED),
-            "Received NA_CANCELED event on op ID that was not canceled");
 
         hg_atomic_cas32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);

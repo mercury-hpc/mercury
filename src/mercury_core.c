@@ -3014,9 +3014,6 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
         HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
-        HG_CHECK_WARNING(
-            !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
-            "Received NA_CANCELED event on handle that was not canceled");
 
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);
@@ -3111,9 +3108,6 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
         HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
-        HG_CHECK_WARNING(
-            !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
-            "Received NA_CANCELED event on handle that was not canceled");
 
         /* TODO that should be moved somewhere else / Do not add handle to
          * completion queue if it was not posted */
@@ -3242,9 +3236,6 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
         HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
-        HG_CHECK_WARNING(
-            !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
-            "Received NA_CANCELED event on handle that was not canceled");
 
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);
@@ -3288,9 +3279,6 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
         HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
-        HG_CHECK_WARNING(
-            !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
-            "Received NA_CANCELED event on handle that was not canceled");
 
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);
@@ -3471,9 +3459,6 @@ hg_core_ack_cb(const struct na_cb_info *callback_info)
             hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
             "Operation was completed");
         HG_LOG_DEBUG("NA_CANCELED event on handle %p", (void *) hg_core_handle);
-        HG_CHECK_WARNING(
-            !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED),
-            "Received NA_CANCELED event on handle that was not canceled");
 
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);

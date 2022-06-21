@@ -4573,7 +4573,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
             break;
 
         default:
-            NA_LOG_SUBSYS_WARNING(poll,
+            NA_LOG_SUBSYS_WARNING(op,
                 "fi_cq_readerr() got err: %d (%s), "
                 "prov_errno: %d (%s)",
                 cq_err.err, fi_strerror(cq_err.err), cq_err.prov_errno,
@@ -4872,7 +4872,7 @@ na_ofi_cq_process_retries(struct na_ofi_context *na_ofi_context)
             /* Do not retry past deadline */
             hg_time_get_current_ms(&now);
             if (hg_time_less(na_ofi_op_id->retry_deadline, now)) {
-                NA_LOG_SUBSYS_ERROR(op,
+                NA_LOG_SUBSYS_WARNING(op,
                     "Retry time elapsed, aborting operation %p (%s)",
                     (void *) na_ofi_op_id, na_cb_type_to_string(cb_type));
                 hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_ERRORED);
@@ -4950,7 +4950,7 @@ na_ofi_op_retry_abort_addr(
     struct na_ofi_op_queue *op_queue = na_ofi_context->eq->retry_op_queue;
     struct na_ofi_op_id *na_ofi_op_id;
 
-    NA_LOG_SUBSYS_ERROR(op,
+    NA_LOG_SUBSYS_DEBUG(op,
         "Aborting all operations in retry queue to FI addr %" PRIu64, fi_addr);
 
     hg_thread_spin_lock(&op_queue->lock);
@@ -4959,7 +4959,7 @@ na_ofi_op_retry_abort_addr(
             continue;
 
         HG_QUEUE_REMOVE(&op_queue->queue, na_ofi_op_id, na_ofi_op_id, entry);
-        NA_LOG_SUBSYS_ERROR(op,
+        NA_LOG_SUBSYS_DEBUG(op,
             "Aborting operation ID %p (%s) in retry queue to FI addr %" PRIu64,
             (void *) na_ofi_op_id,
             na_cb_type_to_string(
