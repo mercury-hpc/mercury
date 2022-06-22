@@ -2612,15 +2612,15 @@ na_ucx_initialize(
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "Could not initialize UCX config");
 
-    /* No longer needed */
-    free(net_device);
-    net_device = NULL;
-
     /* Create UCP context and release config */
     ret = na_ucp_context_create(config, no_wait, context_thread_mode,
         &na_ucx_class->ucp_context, &na_ucx_class->ucp_request_size);
     na_ucp_config_release(config);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create UCX context");
+
+    /* No longer needed */
+    free(net_device);
+    net_device = NULL;
 
     /* Create single worker */
     ret = na_ucp_worker_create(na_ucx_class->ucp_context, worker_thread_mode,
