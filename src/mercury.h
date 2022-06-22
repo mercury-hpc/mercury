@@ -12,6 +12,8 @@
 
 #include "mercury_core.h"
 
+#include <stdio.h>
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -123,6 +125,25 @@ HG_Set_log_level(const char *level);
  */
 HG_PUBLIC void
 HG_Set_log_subsys(const char *subsys);
+
+/**
+ * Set the log function to use for HG. That setting is valid for all HG classes.
+ *
+ * \param log_func [IN]         function to use
+ */
+HG_PUBLIC void
+HG_Set_log_func(int (*log_func)(FILE *stream, const char *format, ...));
+
+/**
+ * Set the file stream to use for logging output.
+ * This setting is valid for all HG classes.
+ *
+ * \param level [IN]            level string, valid values are:
+ *                                "error", "warning", "debug"
+ * \param stream [IN]           file stream pointer
+ */
+HG_PUBLIC void
+HG_Set_log_stream(const char *level, FILE *stream);
 
 /**
  * Obtain the name of the given class.

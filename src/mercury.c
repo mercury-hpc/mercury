@@ -1073,6 +1073,33 @@ HG_Set_log_subsys(const char *subsys)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+HG_Set_log_func(int (*log_func)(FILE *stream, const char *format, ...))
+{
+    hg_log_set_func(log_func);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Set_log_stream(const char *level, FILE *stream)
+{
+    switch (hg_log_name_to_level(level)) {
+        case HG_LOG_LEVEL_ERROR:
+            hg_log_set_stream_error(stream);
+            break;
+        case HG_LOG_LEVEL_WARNING:
+            hg_log_set_stream_warning(stream);
+            break;
+        case HG_LOG_LEVEL_MIN_DEBUG:
+        case HG_LOG_LEVEL_DEBUG:
+            hg_log_set_stream_debug(stream);
+            break;
+        default:
+            break;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Class_set_handle_create_callback(hg_class_t *hg_class,
     hg_return_t (*callback)(hg_handle_t, void *), void *arg)
