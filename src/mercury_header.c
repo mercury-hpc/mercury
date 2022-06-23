@@ -85,10 +85,13 @@ hg_return_t
 hg_header_proc(
     hg_proc_op_t op, void *buf, size_t buf_size, struct hg_header *hg_header)
 {
-    void *buf_ptr = buf;
+#ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *header_hash = NULL;
+    void *buf_ptr = buf;
+#endif
     hg_return_t ret = HG_SUCCESS;
 
+#ifdef HG_HAS_CHECKSUMS
     switch (hg_header->op) {
         case HG_INPUT:
             HG_CHECK_ERROR(buf_size < sizeof(struct hg_header_input), done, ret,
@@ -108,5 +111,12 @@ hg_header_proc(
     HG_HEADER_PROC_TYPE(buf_ptr, header_hash->payload, hg_uint32_t, op);
 
 done:
+#else
+    (void) hg_header;
+    (void) buf;
+    (void) buf_size;
+    (void) op;
+#endif
+
     return ret;
 }

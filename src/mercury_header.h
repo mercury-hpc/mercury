@@ -13,6 +13,7 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+#ifdef HG_HAS_CHECKSUMS
 HG_PACKED(struct hg_header_hash {
     hg_uint32_t payload; /* Payload checksum (32-bits checksum) */
 });
@@ -24,9 +25,19 @@ HG_PACKED(struct hg_header_input {
 
 HG_PACKED(struct hg_header_output {
     struct hg_header_hash hash; /* Hash */
+    /* 160 bits here */
+});
+#else
+HG_PACKED(struct hg_header_input {
     hg_uint32_t pad;
     /* 128 bits here */
 });
+
+HG_PACKED(struct hg_header_output {
+    hg_uint32_t pad;
+    /* 128 bits here */
+});
+#endif
 
 /* Common header struct input/output */
 struct hg_header {
