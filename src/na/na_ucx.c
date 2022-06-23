@@ -1964,24 +1964,35 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
 
         /* TODO add support for IPv6 address parsing */
 
+        /* Extract net_device if explicitly listed with '/' before IP */
+        if (strstr(hostname, "/")) {
+            char *host_str = NULL, *tmp = hostname;
+
+            strtok_r(hostname, "/", &host_str);
+            if (strcmp(hostname, "") == 0)
+                ifa_name_p = net_device_p;
+            else {
+                *net_device_p = strdup(hostname);
+                NA_CHECK_SUBSYS_ERROR(cls, *net_device_p == NULL, done, ret,
+                    NA_NOMEM, "strdup() of net_device failed");
+            }
+            if (strcmp(host_str, "") == 0)
+                hostname = NULL;
+            else {
+                hostname = strdup(host_str);
+                NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, done, ret,
+                    NA_NOMEM, "strdup() of hostname failed");
+            }
+            free(tmp);
+        } else
+            ifa_name_p = net_device_p;
+
         /* Extract hostname : port */
-        if (strstr(hostname, ":")) {
+        if (hostname && strstr(hostname, ":")) {
             char *port_str = NULL;
             strtok_r(hostname, ":", &port_str);
             port = strtoul(port_str, NULL, 10) & 0xffff;
         }
-
-        /* Extract net_device if explicitly listed with '/' before IP */
-        if (strstr(hostname, "/")) {
-            char *host_str = NULL;
-            strtok_r(hostname, "/", &host_str);
-
-            *net_device_p = hostname;
-            hostname = strdup(host_str);
-            NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, done, ret, NA_NOMEM,
-                "strdup() of hostname failed");
-        } else
-            ifa_name_p = net_device_p;
     }
 
     /* TODO add support for IPv6 wildcards */
