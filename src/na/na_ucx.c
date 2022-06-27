@@ -143,12 +143,12 @@ struct na_ucx_map {
 };
 
 /* Memory descriptor */
-struct na_ucx_mem_desc {
-    void *base;           /* Base address */
-    size_t len;           /* Size of region */
-    size_t rkey_buf_size; /* Cached rkey buf size */
-    uint8_t flags;        /* Flag of operation access */
-};
+NA_PACKED(struct na_ucx_mem_desc {
+    uint64_t base;          /* Base address */
+    uint64_t len;           /* Size of region */
+    uint64_t rkey_buf_size; /* Cached rkey buf size */
+    uint8_t flags;          /* Flag of operation access */
+});
 
 /* Handle type */
 enum na_ucx_mem_handle_type {
@@ -2379,7 +2379,7 @@ na_ucx_rma(struct na_ucx_class NA_UNUSED *na_ucx_class, na_context_t *context,
     na_ucx_op_id->info.rma.buf =
         (char *) local_mem_handle->desc.base + local_offset;
     na_ucx_op_id->info.rma.remote_addr =
-        (uint64_t) remote_mem_handle->desc.base + remote_offset;
+        remote_mem_handle->desc.base + remote_offset;
     na_ucx_op_id->info.rma.buf_size = length;
     na_ucx_op_id->info.rma.remote_key = NULL;
 
@@ -2948,7 +2948,7 @@ error:
 static NA_INLINE size_t
 na_ucx_addr_get_serialize_size(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
-    return ((struct na_ucx_addr *) addr)->worker_addr_len + sizeof(size_t);
+    return ((struct na_ucx_addr *) addr)->worker_addr_len + sizeof(uint64_t);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2959,6 +2959,7 @@ na_ucx_addr_serialize(
     struct na_ucx_addr *na_ucx_addr = (struct na_ucx_addr *) addr;
     char *buf_ptr = (char *) buf;
     size_t buf_size_left = buf_size;
+    uint64_t len;
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(addr, na_ucx_addr->worker_addr == NULL, done, ret,
@@ -2970,8 +2971,8 @@ na_ucx_addr_serialize(
         "Space left to encode worker address is not sufficient");
 
     /* Encode worker_addr_len and worker_addr */
-    NA_ENCODE(done, ret, buf_ptr, buf_size_left, &na_ucx_addr->worker_addr_len,
-        size_t);
+    len = (uint64_t) na_ucx_addr->worker_addr_len;
+    NA_ENCODE(done, ret, buf_ptr, buf_size_left, &len, uint64_t);
     memcpy(buf_ptr, na_ucx_addr->worker_addr, na_ucx_addr->worker_addr_len);
 
 done:
@@ -2989,10 +2990,12 @@ na_ucx_addr_deserialize(
     size_t buf_size_left = buf_size;
     ucp_address_t *worker_addr = NULL;
     size_t worker_addr_len = 0;
+    uint64_t len = 0;
     na_return_t ret;
 
     /* Encode worker_addr_len and worker_addr */
-    NA_DECODE(error, ret, buf_ptr, buf_size_left, &worker_addr_len, size_t);
+    NA_DECODE(error, ret, buf_ptr, buf_size_left, &len, uint64_t);
+    worker_addr_len = (size_t) len;
 
     NA_CHECK_SUBSYS_ERROR(addr, buf_size_left < worker_addr_len, error, ret,
         NA_OVERFLOW, "Space left to decode worker address is not sufficient");
@@ -3257,9 +3260,9 @@ na_ucx_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     NA_CHECK_SUBSYS_ERROR(mem, na_ucx_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA UCX memory handle");
 
-    na_ucx_mem_handle->desc.base = buf;
+    na_ucx_mem_handle->desc.base = (uint64_t) buf;
     na_ucx_mem_handle->desc.flags = flags & 0xff;
-    na_ucx_mem_handle->desc.len = buf_size;
+    na_ucx_mem_handle->desc.len = (uint64_t) buf_size;
     hg_atomic_init32(&na_ucx_mem_handle->type, NA_UCX_MEM_HANDLE_LOCAL);
     hg_thread_mutex_init(&na_ucx_mem_handle->rkey_unpack_lock);
 
@@ -3322,8 +3325,9 @@ na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
         .field_mask =
             UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH |
             UCP_MEM_MAP_PARAM_FIELD_PROT | UCP_MEM_MAP_PARAM_FIELD_MEMORY_TYPE,
-        .address = na_ucx_mem_handle->desc.base,
-        .length = na_ucx_mem_handle->desc.len};
+        .address = (void *) na_ucx_mem_handle->desc.base,
+        .length = (size_t) na_ucx_mem_handle->desc.len};
+    size_t rkey_buf_size;
     ucs_status_t status;
     na_return_t ret;
 
@@ -3384,9 +3388,10 @@ na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
     /* TODO that could have been a good candidate for publish */
     status = ucp_rkey_pack(NA_UCX_CLASS(na_class)->ucp_context,
         na_ucx_mem_handle->ucp_mr.mem, &na_ucx_mem_handle->rkey_buf,
-        &na_ucx_mem_handle->desc.rkey_buf_size);
+        &rkey_buf_size);
     NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
         "ucp_rkey_pack() failed (%s)", ucs_status_string(status));
+    na_ucx_mem_handle->desc.rkey_buf_size = (uint64_t) rkey_buf_size;
 
     return NA_SUCCESS;
 
