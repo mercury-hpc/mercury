@@ -341,7 +341,6 @@ HG_Bulk_cancel(hg_op_id_t op_id);
 
 /* HG bulk descriptor info */
 struct hg_bulk_desc_info {
-    struct hg_bulk_attr attrs; /* Memory attributes */
     hg_size_t len;             /* Size of region */
     hg_uint32_t segment_count; /* Segment count */
     hg_uint8_t flags;          /* Flags of operation access */
