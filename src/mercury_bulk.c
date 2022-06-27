@@ -1010,7 +1010,7 @@ hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
     /* Eager mode (in eager mode, the actual data will be copied) */
     if ((flags & HG_BULK_EAGER) && (desc_info->flags & HG_BULK_READ_ONLY) &&
         !(desc_info->flags & HG_BULK_VIRT) &&
-        (desc_info->attrs.mem_type == HG_MEM_TYPE_HOST))
+        (hg_bulk->attrs.mem_type == HG_MEM_TYPE_HOST))
         ret += desc_info->len;
 
     return ret;
@@ -1063,7 +1063,7 @@ hg_bulk_serialize(
      */
     if ((flags & HG_BULK_EAGER) && (desc_info.flags & HG_BULK_READ_ONLY) &&
         !(desc_info.flags & HG_BULK_VIRT) &&
-        (desc_info.attrs.mem_type == HG_MEM_TYPE_HOST)) {
+        (hg_bulk->attrs.mem_type == HG_MEM_TYPE_HOST)) {
         HG_LOG_DEBUG("HG_BULK_EAGER flag set");
         desc_info.flags |= HG_BULK_EAGER;
     } else
@@ -1406,7 +1406,8 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
         hg_bulk->desc.info.flags |= HG_BULK_VIRT;
 
     HG_CHECK_WARNING(buf_size_left != 0,
-        "Buffer size left for decoding bulk handle is not zero");
+        "Buffer size left for decoding bulk handle is not zero (%" PRIu64 ")",
+        buf_size_left);
 
     hg_core_bulk_incr(hg_bulk->core_class);
     *hg_bulk_ptr = hg_bulk;
