@@ -52,6 +52,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
         - Refactor existing counters (used only if debug is on)
     - Add checksum levels that can be manually controlled at runtime (disabled by default, `HG_CHECKSUM_NONE` level)
     - Update to mchecksum v2.0
+    - Add `HG_Set_log_func()` and `HG_Set_log_stream()` to control log output
 
 ## Bug fixes
 
@@ -80,6 +81,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Fix potential double free of worker_addr
     - Remove use of unified mode
     - Ensure address key is correctly reset
+    - Fix hostname / net device parsing to allow for multiple net devices
 - __[HG util]__
     - Make sure we round up ms time conversion, this ensures that small timeouts
     do not result in busy spin.
@@ -89,6 +91,10 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Let mercury log print counters on exit when debug outlet is on
 - __[HG proc]__
     - Prevent call to `save_ptr()/restore_ptr()` during `HG_FREE`
+- __[HG Bulk]__
+    - Remove some `NA_CANCELED` event warnings.
+- __[HG]__
+    - Properly handle error when overflow bulk transfer is interrupted. Previously the RPC callback was triggered regarldless, potentially causing issues.
 - __[CMake]__
     - Correctly set INSTALL_RPATH for target libraries
 
