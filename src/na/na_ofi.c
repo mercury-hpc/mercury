@@ -229,6 +229,10 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* Address / URI max len */
 #define NA_OFI_MAX_URI_LEN (128)
 
+/* Address serialization optimization */
+/* Don't enable for now to prevent backward compatibility issues */
+// #define NA_OFI_ADDR_OPT
+
 /* IB */
 #ifndef AF_IB
 #    define AF_IB 27
@@ -414,16 +418,14 @@ struct na_ofi_gni_addr {
 };
 
 /* CXI address */
-struct na_ofi_cxi_addr {
-    union {
-        struct {
-            uint32_t pid : 9;  /* C_DFA_PID_BITS_MAX */
-            uint32_t nic : 20; /* C_DFA_NIC_BITS */
-            uint32_t valid : 1;
-            uint32_t unused : 2;
-        } detail;
-        uint32_t raw;
-    } caddr;
+union na_ofi_cxi_addr {
+    uint32_t raw;
+    struct {
+        uint32_t pid : 9;  /* C_DFA_PID_BITS_MAX */
+        uint32_t nic : 20; /* C_DFA_NIC_BITS */
+        uint32_t valid : 1;
+        uint32_t unused : 2;
+    };
 };
 
 /* String address */
@@ -440,7 +442,7 @@ union na_ofi_raw_addr {
     struct na_ofi_psm2_addr psm2;
     union na_ofi_opx_addr opx;
     struct na_ofi_gni_addr gni;
-    struct na_ofi_cxi_addr cxi;
+    union na_ofi_cxi_addr cxi;
     struct na_ofi_str_addr str;
 };
 
@@ -461,10 +463,10 @@ struct na_ofi_addr {
 
 /* Memory descriptor info */
 struct na_ofi_mem_desc_info {
-    uint64_t fi_mr_key;   /* FI MR key                   */
-    size_t len;           /* Size of region              */
-    unsigned long iovcnt; /* Segment count               */
-    uint8_t flags;        /* Flag of operation access    */
+    uint64_t fi_mr_key; /* FI MR key                   */
+    uint64_t len;       /* Size of region              */
+    uint64_t iovcnt;    /* Segment count               */
+    uint8_t flags;      /* Flag of operation access    */
 };
 
 /* Memory descriptor */
@@ -707,7 +709,7 @@ na_ofi_str_to_opx(const char *str, union na_ofi_opx_addr *opx_addr);
 static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr);
 static na_return_t
-na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr);
+na_ofi_str_to_cxi(const char *str, union na_ofi_cxi_addr *cxi_addr);
 static na_return_t
 na_ofi_str_to_str(const char *str, struct na_ofi_str_addr *str_addr);
 
@@ -731,15 +733,17 @@ na_ofi_opx_to_key(const union na_ofi_opx_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
 static NA_INLINE uint64_t
-na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr);
+na_ofi_cxi_to_key(const union na_ofi_cxi_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_str_to_key(const struct na_ofi_str_addr *addr);
 
 /**
  * Convert a key back to an address. (only for sin serialization)
  */
+#ifdef NA_OFI_ADDR_OPT
 static NA_INLINE void
 na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key);
+#endif
 
 /**
  * Size required to serialize raw addr.
@@ -1098,33 +1102,32 @@ na_ofi_msg_recv(na_context_t *context, na_cb_type_t cb_type, na_cb_t callback,
  * Get IOV index and offset pair from an absolute offset.
  */
 static NA_INLINE void
-na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
-    na_offset_t offset, unsigned long *iov_start_index,
-    na_offset_t *iov_start_offset);
+na_ofi_iov_get_index_offset(const struct iovec *iov, size_t iovcnt,
+    na_offset_t offset, size_t *iov_start_index, na_offset_t *iov_start_offset);
 
 /**
  * Get IOV count for a given length.
  */
-static NA_INLINE unsigned long
-na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len);
+static NA_INLINE size_t
+na_ofi_iov_get_count(const struct iovec *iov, size_t iovcnt,
+    size_t iov_start_index, na_offset_t iov_start_offset, size_t len);
 
 /**
  * Create new IOV for transferring length data.
  */
 static NA_INLINE void
-na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len,
-    struct iovec *new_iov, unsigned long new_iovcnt);
+na_ofi_iov_translate(const struct iovec *iov, size_t iovcnt,
+    size_t iov_start_index, na_offset_t iov_start_offset, size_t len,
+    struct iovec *new_iov, size_t new_iovcnt);
 
 /**
  * Create new RMA IOV for transferring length data.
  */
 static NA_INLINE void
 na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
-    unsigned long iovcnt, uint64_t key, unsigned long iov_start_index,
+    size_t iovcnt, uint64_t key, size_t iov_start_index,
     na_offset_t iov_start_offset, size_t len, struct fi_rma_iov *new_iov,
-    unsigned long new_iovcnt);
+    size_t new_iovcnt);
 
 /**
  * Do RMA operation (put/get).
@@ -1611,7 +1614,7 @@ na_ofi_prov_addr_size(int addr_format)
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
-            return sizeof(struct na_ofi_cxi_addr);
+            return sizeof(union na_ofi_cxi_addr);
         case FI_ADDR_STR:
             return sizeof(struct na_ofi_str_addr);
         default:
@@ -1931,12 +1934,12 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr)
+na_ofi_str_to_cxi(const char *str, union na_ofi_cxi_addr *cxi_addr)
 {
     na_return_t ret;
     int rc;
 
-    rc = sscanf(str, "%*[^:]://%" SCNx32, &cxi_addr->caddr.raw);
+    rc = sscanf(str, "%*[^:]://%" SCNx32, &cxi_addr->raw);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Could not convert addr string to CXI addr format");
 
@@ -2046,9 +2049,9 @@ na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE uint64_t
-na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr)
+na_ofi_cxi_to_key(const union na_ofi_cxi_addr *addr)
 {
-    return (uint64_t) addr->caddr.raw;
+    return (uint64_t) addr->raw;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2059,6 +2062,7 @@ na_ofi_str_to_key(const struct na_ofi_str_addr *addr)
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef NA_OFI_ADDR_OPT
 static NA_INLINE void
 na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key)
 {
@@ -2067,6 +2071,7 @@ na_ofi_key_to_sin(struct sockaddr_in *addr, uint64_t key)
     addr->sin_port = (in_port_t) (key & 0xffffffff);
     memset(&addr->sin_zero, 0, sizeof(addr->sin_zero));
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE size_t
@@ -2074,7 +2079,11 @@ na_ofi_raw_addr_serialize_size(int addr_format)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
+#ifdef NA_OFI_ADDR_OPT
             return sizeof(uint64_t);
+#else
+            return sizeof(struct sockaddr_in);
+#endif
         case FI_SOCKADDR_IN6:
             return sizeof(struct in6_addr) + sizeof(in_port_t);
         case FI_SOCKADDR_IB:
@@ -2088,7 +2097,7 @@ na_ofi_raw_addr_serialize_size(int addr_format)
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
-            return sizeof(struct na_ofi_cxi_addr);
+            return sizeof(union na_ofi_cxi_addr);
         case FI_ADDR_STR:
             return sizeof(struct na_ofi_str_addr);
         default:
@@ -2106,12 +2115,19 @@ na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
 
     switch (addr_format) {
         case FI_SOCKADDR_IN: {
+#ifdef NA_OFI_ADDR_OPT
             uint64_t val = na_ofi_sin_to_key(&addr->sin);
 
             NA_CHECK_SUBSYS_ERROR(addr, buf_size < sizeof(val), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(buf, &val, sizeof(val));
+#else
+            NA_CHECK_SUBSYS_ERROR(addr, buf_size < sizeof(struct sockaddr_in),
+                error, ret, NA_OVERFLOW,
+                "Buffer size (%zu) too small to copy addr", buf_size);
+            memcpy(buf, &addr->sin, sizeof(addr->sin));
+#endif
             break;
         }
         case FI_SOCKADDR_IN6: {
@@ -2161,7 +2177,7 @@ na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
             break;
         case FI_ADDR_CXI:
             NA_CHECK_SUBSYS_ERROR(addr,
-                buf_size < sizeof(struct na_ofi_cxi_addr), error, ret,
+                buf_size < sizeof(union na_ofi_cxi_addr), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(buf, &addr->cxi, sizeof(addr->cxi));
@@ -2193,6 +2209,7 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
 
     switch (addr_format) {
         case FI_SOCKADDR_IN: {
+#ifdef NA_OFI_ADDR_OPT
             uint64_t val;
 
             NA_CHECK_SUBSYS_ERROR(addr, buf_size < sizeof(val), error, ret,
@@ -2200,6 +2217,12 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
                 buf_size);
             memcpy(&val, buf, sizeof(val));
             na_ofi_key_to_sin(&addr->sin, val);
+#else
+            NA_CHECK_SUBSYS_ERROR(addr, buf_size < sizeof(struct sockaddr_in),
+                error, ret, NA_OVERFLOW,
+                "Buffer size (%zu) too small to copy addr", buf_size);
+            memcpy(&addr->sin, buf, sizeof(addr->sin));
+#endif
             break;
         }
         case FI_SOCKADDR_IN6: {
@@ -2250,7 +2273,7 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
             break;
         case FI_ADDR_CXI:
             NA_CHECK_SUBSYS_ERROR(addr,
-                buf_size < sizeof(struct na_ofi_cxi_addr), error, ret,
+                buf_size < sizeof(union na_ofi_cxi_addr), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(&addr->cxi, buf, sizeof(addr->cxi));
@@ -4248,12 +4271,11 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
-    na_offset_t offset, unsigned long *iov_start_index,
-    na_offset_t *iov_start_offset)
+na_ofi_iov_get_index_offset(const struct iovec *iov, size_t iovcnt,
+    na_offset_t offset, size_t *iov_start_index, na_offset_t *iov_start_offset)
 {
     na_offset_t new_iov_offset = offset, next_offset = 0;
-    unsigned long i, new_iov_start_index = 0;
+    size_t i, new_iov_start_index = 0;
 
     /* Get start index and handle offset */
     for (i = 0; i < iovcnt; i++) {
@@ -4271,13 +4293,13 @@ na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE unsigned long
-na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len)
+static NA_INLINE size_t
+na_ofi_iov_get_count(const struct iovec *iov, size_t iovcnt,
+    size_t iov_start_index, na_offset_t iov_start_offset, size_t len)
 {
     size_t remaining_len =
         len - MIN(len, iov[iov_start_index].iov_len - iov_start_offset);
-    unsigned long i, iov_index;
+    size_t i, iov_index;
 
     for (i = 1, iov_index = iov_start_index + 1;
          remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
@@ -4290,12 +4312,12 @@ na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
-    unsigned long iov_start_index, na_offset_t iov_start_offset, size_t len,
-    struct iovec *new_iov, unsigned long new_iovcnt)
+na_ofi_iov_translate(const struct iovec *iov, size_t iovcnt,
+    size_t iov_start_index, na_offset_t iov_start_offset, size_t len,
+    struct iovec *new_iov, size_t new_iovcnt)
 {
     size_t remaining_len = len;
-    unsigned long i, iov_index;
+    size_t i, iov_index;
 
     /* Offset is only within first segment */
     new_iov[0].iov_base =
@@ -4318,13 +4340,13 @@ na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
-    unsigned long iovcnt, uint64_t key, unsigned long iov_start_index,
+    size_t iovcnt, uint64_t key, size_t iov_start_index,
     na_offset_t iov_start_offset, size_t len, struct fi_rma_iov *new_iov,
-    unsigned long new_iovcnt)
+    size_t new_iovcnt)
 {
     uint64_t addr;
     size_t remaining_len = len;
-    unsigned long i, iov_index;
+    size_t i, iov_index;
 
     /* Reference by virtual address, rather than a 0-based offset */
     addr = (fi_info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
@@ -4368,10 +4390,10 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
     struct iovec *local_iov = NA_OFI_IOV(na_ofi_mem_handle_local),
                  *remote_iov = NA_OFI_IOV(na_ofi_mem_handle_remote);
-    unsigned long local_iovcnt = na_ofi_mem_handle_local->desc.info.iovcnt,
-                  remote_iovcnt = na_ofi_mem_handle_remote->desc.info.iovcnt;
+    size_t local_iovcnt = (size_t) na_ofi_mem_handle_local->desc.info.iovcnt,
+           remote_iovcnt = (size_t) na_ofi_mem_handle_remote->desc.info.iovcnt;
     uint64_t remote_key = na_ofi_mem_handle_remote->desc.info.fi_mr_key;
-    unsigned long local_iov_start_index = 0, remote_iov_start_index = 0;
+    size_t local_iov_start_index = 0, remote_iov_start_index = 0;
     na_offset_t local_iov_start_offset = 0, remote_iov_start_offset = 0;
     struct iovec *liov;
     struct fi_rma_iov *riov;
@@ -5619,8 +5641,14 @@ na_ofi_addr_to_string(
 static NA_INLINE size_t
 na_ofi_addr_get_serialize_size(na_class_t *na_class, na_addr_t NA_UNUSED addr)
 {
+#ifdef NA_OFI_ADDR_OPT
     return na_ofi_raw_addr_serialize_size(
         (int) NA_OFI_CLASS(na_class)->fi_info->addr_format);
+#else
+    return na_ofi_raw_addr_serialize_size(
+               (int) NA_OFI_CLASS(na_class)->fi_info->addr_format) +
+           sizeof(uint64_t);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5631,9 +5659,25 @@ na_ofi_addr_serialize(
     const struct na_ofi_addr_key *addr_key =
         &((struct na_ofi_addr *) addr)->addr_key;
 
+#ifdef NA_OFI_ADDR_OPT
     return na_ofi_raw_addr_serialize(
         (int) NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
         &addr_key->addr);
+#else
+    char *buf_ptr = (char *) buf;
+    size_t buf_size_left = buf_size;
+    int addr_format = (int) NA_OFI_CLASS(na_class)->fi_info->addr_format;
+    uint64_t len = (uint64_t) na_ofi_raw_addr_serialize_size(addr_format);
+    na_return_t ret;
+
+    NA_ENCODE(error, ret, buf_ptr, buf_size_left, &len, uint64_t);
+
+    return na_ofi_raw_addr_serialize(
+        addr_format, buf_ptr, buf_size_left, &addr_key->addr);
+
+error:
+    return ret;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5647,11 +5691,29 @@ na_ofi_addr_deserialize(
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
 
+#ifdef NA_OFI_ADDR_OPT
     /* Deserialize raw address */
     ret =
         na_ofi_raw_addr_deserialize(addr_format, &addr_key.addr, buf, buf_size);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not deserialize address key");
+#else
+    const char *buf_ptr = (const char *) buf;
+    size_t buf_size_left = buf_size;
+    uint64_t len;
+
+    NA_DECODE(error, ret, buf_ptr, buf_size_left, &len, uint64_t);
+    NA_CHECK_SUBSYS_ERROR(addr,
+        len != (uint64_t) na_ofi_raw_addr_serialize_size(addr_format), error,
+        ret, NA_PROTOCOL_ERROR, "Address size mismatch (got %zu, expected %zu)",
+        len, na_ofi_raw_addr_serialize_size(addr_format));
+
+    /* Deserialize raw address */
+    ret = na_ofi_raw_addr_deserialize(
+        addr_format, &addr_key.addr, buf_ptr, buf_size_left);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        addr, error, ret, "Could not deserialize address key");
+#endif
 
     /* Create key from addr for faster lookups */
     addr_key.val = na_ofi_raw_addr_to_key(addr_format, &addr_key.addr);
@@ -5902,7 +5964,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
         iov[i].iov_len = segments[i].len;
         na_ofi_mem_handle->desc.info.len += iov[i].iov_len;
     }
-    na_ofi_mem_handle->desc.info.iovcnt = segment_count;
+    na_ofi_mem_handle->desc.info.iovcnt = (uint64_t) segment_count;
     na_ofi_mem_handle->desc.info.flags = flags & 0xff;
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
@@ -5956,7 +6018,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     const struct fi_info *fi_info = NA_OFI_CLASS(na_class)->fi_info;
     struct fi_mr_attr fi_mr_attr = {.mr_iov = NA_OFI_IOV(na_ofi_mem_handle),
-        .iov_count = na_ofi_mem_handle->desc.info.iovcnt,
+        .iov_count = (size_t) na_ofi_mem_handle->desc.info.iovcnt,
         .context = NULL,
         .auth_key_size = 0,
         .auth_key = NULL,
