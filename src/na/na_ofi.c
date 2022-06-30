@@ -5705,8 +5705,9 @@ na_ofi_addr_deserialize(
     NA_DECODE(error, ret, buf_ptr, buf_size_left, &len, uint64_t);
     NA_CHECK_SUBSYS_ERROR(addr,
         len != (uint64_t) na_ofi_raw_addr_serialize_size(addr_format), error,
-        ret, NA_PROTOCOL_ERROR, "Address size mismatch (got %zu, expected %zu)",
-        len, na_ofi_raw_addr_serialize_size(addr_format));
+        ret, NA_PROTOCOL_ERROR,
+        "Address size mismatch (got %" PRIu64 ", expected %zu)", len,
+        na_ofi_raw_addr_serialize_size(addr_format));
 
     /* Deserialize raw address */
     ret = na_ofi_raw_addr_deserialize(
