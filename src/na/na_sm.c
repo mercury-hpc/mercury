@@ -174,7 +174,7 @@
 /************************************/
 
 /* Msg header */
-typedef union {
+NA_PACKED(union na_sm_msg_hdr {
     struct {
         unsigned int tag : 32;      /* Message tag : UINT MAX */
         unsigned int buf_size : 16; /* Buffer length: 4KB MAX */
@@ -182,24 +182,24 @@ typedef union {
         unsigned int type : 8;      /* Message type */
     } hdr;
     uint64_t val;
-} na_sm_msg_hdr_t;
+});
 
 /* Make sure this is cache-line aligned */
-typedef union {
+union na_sm_cacheline_atomic_int64 {
     hg_atomic_int64_t val;
     char pad[NA_SM_CACHE_LINE_SIZE];
-} na_sm_cacheline_atomic_int64_t;
+};
 
-typedef union {
+union na_sm_cacheline_atomic_int256 {
     hg_atomic_int64_t val[4];
     char pad[NA_SM_CACHE_LINE_SIZE];
-} na_sm_cacheline_atomic_int256_t;
+};
 
 /* Msg buffers (page aligned) */
 struct na_sm_copy_buf {
     hg_thread_spin_t buf_locks[NA_SM_NUM_BUFS];    /* Locks on buffers */
     char buf[NA_SM_NUM_BUFS][NA_SM_COPY_BUF_SIZE]; /* Array of buffers */
-    na_sm_cacheline_atomic_int64_t available;      /* Available bitmask */
+    union na_sm_cacheline_atomic_int64 available;  /* Available bitmask */
 };
 
 /* Msg queue (allocate queue's flexible array member statically) */
@@ -223,10 +223,10 @@ struct na_sm_queue_pair {
 };
 
 /* Cmd values */
-typedef enum { NA_SM_RESERVED = 1, NA_SM_RELEASED } na_sm_cmd_t;
+enum na_sm_cmd { NA_SM_RESERVED = 1, NA_SM_RELEASED };
 
 /* Cmd header */
-typedef union {
+NA_PACKED(union na_sm_cmd_hdr {
     struct {
         unsigned int pid : 32;     /* PID */
         unsigned int id : 8;       /* ID */
@@ -235,7 +235,7 @@ typedef union {
         unsigned int pad : 8;      /* 8 bits left */
     } hdr;
     uint64_t val;
-} na_sm_cmd_hdr_t;
+});
 
 /* Cmd queue (allocate queue's flexible array member statically) */
 struct na_sm_cmd_queue {
@@ -264,17 +264,17 @@ struct na_sm_region {
     struct na_sm_addr_key addr_key;  /* Region IDs */
     struct na_sm_copy_buf copy_bufs; /* Pool of msg buffers */
     NA_ALIGNED(struct na_sm_queue_pair queue_pairs[NA_SM_MAX_PEERS],
-        NA_SM_PAGE_SIZE);                      /* Msg queue pairs */
-    struct na_sm_cmd_queue cmd_queue;          /* Cmd queue */
-    na_sm_cacheline_atomic_int256_t available; /* Available pairs */
+        NA_SM_PAGE_SIZE);                          /* Msg queue pairs */
+    struct na_sm_cmd_queue cmd_queue;              /* Cmd queue */
+    union na_sm_cacheline_atomic_int256 available; /* Available pairs */
 };
 
 /* Poll type */
-typedef enum na_sm_poll_type {
+enum na_sm_poll_type {
     NA_SM_POLL_SOCK = 1,
     NA_SM_POLL_RX_NOTIFY,
     NA_SM_POLL_TX_NOTIFY
-} na_sm_poll_type_t;
+};
 
 /* Address */
 struct na_sm_addr {
@@ -288,8 +288,8 @@ struct na_sm_addr {
     char *uri;                          /* Generated URI */
     int tx_notify;                      /* Notify fd for tx queue */
     int rx_notify;                      /* Notify fd for rx queue */
-    na_sm_poll_type_t tx_poll_type;     /* Tx poll type */
-    na_sm_poll_type_t rx_poll_type;     /* Rx poll type */
+    enum na_sm_poll_type tx_poll_type;  /* Tx poll type */
+    enum na_sm_poll_type rx_poll_type;  /* Rx poll type */
     hg_atomic_int32_t refcount;         /* Ref count */
     hg_atomic_int32_t status;           /* Status bits */
     uint8_t queue_pair_idx;             /* Shared queue pair index */
@@ -316,15 +316,15 @@ struct na_sm_mem_desc_info {
 };
 
 /* IOV descriptor */
-typedef union {
+union na_sm_iov {
     struct iovec s[NA_SM_IOV_STATIC_MAX]; /* Single segment */
     struct iovec *d;                      /* Multiple segments */
-} na_sm_iov_t;
+};
 
 /* Memory handle */
 struct na_sm_mem_handle {
     struct na_sm_mem_desc_info info; /* Segment info */
-    na_sm_iov_t iov;                 /* Remain last */
+    union na_sm_iov iov;             /* Remain last */
 };
 
 /* Msg info */
@@ -388,7 +388,7 @@ struct na_sm_endpoint {
     struct na_sm_addr *source_addr;            /* Source addr */
     hg_poll_set_t *poll_set;                   /* Poll set */
     int sock;                                  /* Sock fd */
-    na_sm_poll_type_t sock_poll_type;          /* Sock poll type */
+    enum na_sm_poll_type sock_poll_type;       /* Sock poll type */
     hg_atomic_int32_t nofile;                  /* Number of opened fds */
     uint32_t nofile_max;                       /* Max number of fds */
     bool listen;                               /* Listen on sock */
@@ -454,14 +454,14 @@ na_sm_msg_queue_init(struct na_sm_msg_queue *na_sm_queue);
  */
 static NA_INLINE bool
 na_sm_msg_queue_push(
-    struct na_sm_msg_queue *na_sm_queue, na_sm_msg_hdr_t msg_hdr);
+    struct na_sm_msg_queue *na_sm_queue, const union na_sm_msg_hdr *msg_hdr);
 
 /**
  * Multi-consumer dequeue.
  */
 static NA_INLINE bool
 na_sm_msg_queue_pop(
-    struct na_sm_msg_queue *na_sm_msg_queue, na_sm_msg_hdr_t *msg_hdr_ptr);
+    struct na_sm_msg_queue *na_sm_msg_queue, union na_sm_msg_hdr *msg_hdr);
 
 /**
  * Check whether queue is empty.
@@ -480,14 +480,14 @@ na_sm_cmd_queue_init(struct na_sm_cmd_queue *na_sm_queue);
  */
 static NA_INLINE bool
 na_sm_cmd_queue_push(
-    struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t cmd_hdr);
+    struct na_sm_cmd_queue *na_sm_queue, const union na_sm_cmd_hdr *cmd_hdr);
 
 /**
  * Multi-consumer dequeue.
  */
 static NA_INLINE bool
 na_sm_cmd_queue_pop(
-    struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t *cmd_hdr_ptr);
+    struct na_sm_cmd_queue *na_sm_queue, union na_sm_cmd_hdr *cmd_hdr);
 
 /**
  * Key hash for hash table.
@@ -684,14 +684,15 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr);
  * Send events as ancillary data.
  */
 static na_return_t
-na_sm_addr_event_send(int sock, const char *dest_name, na_sm_cmd_hdr_t cmd_hdr,
-    int tx_notify, int rx_notify, bool ignore_error);
+na_sm_addr_event_send(int sock, const char *dest_name,
+    union na_sm_cmd_hdr cmd_hdr, int tx_notify, int rx_notify,
+    bool ignore_error);
 
 /**
  * Recv events as ancillary data.
  */
 static na_return_t
-na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
+na_sm_addr_event_recv(int sock, union na_sm_cmd_hdr *cmd_hdr, int *tx_notify,
     int *rx_notify, bool *received);
 
 /**
@@ -819,7 +820,7 @@ na_sm_progress_cmd_queue(
  */
 static na_return_t
 na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
-    na_sm_cmd_hdr_t cmd_hdr, int tx_notify, int rx_notify);
+    union na_sm_cmd_hdr cmd_hdr, int tx_notify, int rx_notify);
 
 /**
  * Progress on tx notifications.
@@ -845,7 +846,7 @@ na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
  */
 static na_return_t
 na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
-    struct na_sm_addr *poll_addr, na_sm_msg_hdr_t msg_hdr,
+    struct na_sm_addr *poll_addr, union na_sm_msg_hdr msg_hdr,
     struct na_sm_unexpected_msg_queue *unexpected_msg_queue);
 
 /**
@@ -853,7 +854,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
  */
 static na_return_t
 na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
-    struct na_sm_addr *poll_addr, na_sm_msg_hdr_t msg_hdr);
+    struct na_sm_addr *poll_addr, union na_sm_msg_hdr msg_hdr);
 
 /**
  * Process retries.
@@ -1390,83 +1391,174 @@ na_sm_shm_cleanup(const char *fpath, const struct stat NA_UNUSED *sb,
 static void
 na_sm_msg_queue_init(struct na_sm_msg_queue *na_sm_queue)
 {
-    struct hg_atomic_queue *hg_atomic_queue =
-        (struct hg_atomic_queue *) na_sm_queue;
     unsigned int count = NA_SM_NUM_BUFS;
 
-    hg_atomic_queue->prod_size = hg_atomic_queue->cons_size = count;
-    hg_atomic_queue->prod_mask = hg_atomic_queue->cons_mask = count - 1;
-    hg_atomic_init32(&hg_atomic_queue->prod_head, 0);
-    hg_atomic_init32(&hg_atomic_queue->cons_head, 0);
-    hg_atomic_init32(&hg_atomic_queue->prod_tail, 0);
-    hg_atomic_init32(&hg_atomic_queue->cons_tail, 0);
+    na_sm_queue->prod_size = na_sm_queue->cons_size = count;
+    na_sm_queue->prod_mask = na_sm_queue->cons_mask = count - 1;
+    hg_atomic_init32(&na_sm_queue->prod_head, 0);
+    hg_atomic_init32(&na_sm_queue->cons_head, 0);
+    hg_atomic_init32(&na_sm_queue->prod_tail, 0);
+    hg_atomic_init32(&na_sm_queue->cons_tail, 0);
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bool
 na_sm_msg_queue_push(
-    struct na_sm_msg_queue *na_sm_queue, na_sm_msg_hdr_t msg_hdr)
+    struct na_sm_msg_queue *na_sm_queue, const union na_sm_msg_hdr *msg_hdr)
 {
-    int rc = hg_atomic_queue_push(
-        (struct hg_atomic_queue *) na_sm_queue, (void *) msg_hdr.val);
+    int32_t prod_head, prod_next, cons_tail;
 
-    return (likely(rc == HG_UTIL_SUCCESS)) ? true : false;
+    do {
+        prod_head = hg_atomic_get32(&na_sm_queue->prod_head);
+        prod_next = (prod_head + 1) & (int) na_sm_queue->prod_mask;
+        cons_tail = hg_atomic_get32(&na_sm_queue->cons_tail);
+
+        if (prod_next == cons_tail) {
+            hg_atomic_fence();
+            if (prod_head == hg_atomic_get32(&na_sm_queue->prod_head) &&
+                cons_tail == hg_atomic_get32(&na_sm_queue->cons_tail)) {
+                na_sm_queue->drops++;
+                /* Full */
+                return false;
+            }
+            continue;
+        }
+    } while (!hg_atomic_cas32(&na_sm_queue->prod_head, prod_head, prod_next));
+
+    hg_atomic_set64(&na_sm_queue->ring[prod_head], (int64_t) msg_hdr->val);
+
+    /*
+     * If there are other enqueues in progress
+     * that preceded us, we need to wait for them
+     * to complete
+     */
+    while (hg_atomic_get32(&na_sm_queue->prod_tail) != prod_head)
+        cpu_spinwait();
+
+    hg_atomic_set32(&na_sm_queue->prod_tail, prod_next);
+
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bool
 na_sm_msg_queue_pop(
-    struct na_sm_msg_queue *na_sm_queue, na_sm_msg_hdr_t *msg_hdr_ptr)
+    struct na_sm_msg_queue *na_sm_queue, union na_sm_msg_hdr *msg_hdr)
 {
-    msg_hdr_ptr->val = (uint64_t) hg_atomic_queue_pop_mc(
-        (struct hg_atomic_queue *) na_sm_queue);
+    int32_t cons_head, cons_next;
 
-    return (likely(msg_hdr_ptr->val)) ? true : false;
+    do {
+        cons_head = hg_atomic_get32(&na_sm_queue->cons_head);
+        cons_next = (cons_head + 1) & (int) na_sm_queue->cons_mask;
+
+        if (cons_head == hg_atomic_get32(&na_sm_queue->prod_tail))
+            return false;
+    } while (!hg_atomic_cas32(&na_sm_queue->cons_head, cons_head, cons_next));
+
+    msg_hdr->val = (uint64_t) hg_atomic_get64(&na_sm_queue->ring[cons_head]);
+
+    /*
+     * If there are other dequeues in progress
+     * that preceded us, we need to wait for them
+     * to complete
+     */
+    while (hg_atomic_get32(&na_sm_queue->cons_tail) != cons_head)
+        cpu_spinwait();
+
+    hg_atomic_set32(&na_sm_queue->cons_tail, cons_next);
+
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bool
 na_sm_msg_queue_is_empty(struct na_sm_msg_queue *na_sm_queue)
 {
-    return hg_atomic_queue_is_empty((struct hg_atomic_queue *) na_sm_queue);
+    return (hg_atomic_get32(&na_sm_queue->cons_head) ==
+            hg_atomic_get32(&na_sm_queue->prod_tail));
 }
 
 /*---------------------------------------------------------------------------*/
 static void
 na_sm_cmd_queue_init(struct na_sm_cmd_queue *na_sm_queue)
 {
-    struct hg_atomic_queue *hg_atomic_queue =
-        (struct hg_atomic_queue *) na_sm_queue;
     unsigned int count = NA_SM_MAX_PEERS * 2;
 
-    hg_atomic_queue->prod_size = hg_atomic_queue->cons_size = count;
-    hg_atomic_queue->prod_mask = hg_atomic_queue->cons_mask = count - 1;
-    hg_atomic_init32(&hg_atomic_queue->prod_head, 0);
-    hg_atomic_init32(&hg_atomic_queue->cons_head, 0);
-    hg_atomic_init32(&hg_atomic_queue->prod_tail, 0);
-    hg_atomic_init32(&hg_atomic_queue->cons_tail, 0);
+    na_sm_queue->prod_size = na_sm_queue->cons_size = count;
+    na_sm_queue->prod_mask = na_sm_queue->cons_mask = count - 1;
+    hg_atomic_init32(&na_sm_queue->prod_head, 0);
+    hg_atomic_init32(&na_sm_queue->cons_head, 0);
+    hg_atomic_init32(&na_sm_queue->prod_tail, 0);
+    hg_atomic_init32(&na_sm_queue->cons_tail, 0);
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bool
 na_sm_cmd_queue_push(
-    struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t cmd_hdr)
+    struct na_sm_cmd_queue *na_sm_queue, const union na_sm_cmd_hdr *cmd_hdr)
 {
-    int rc = hg_atomic_queue_push(
-        (struct hg_atomic_queue *) na_sm_queue, (void *) cmd_hdr.val);
+    int32_t prod_head, prod_next, cons_tail;
 
-    return (likely(rc == HG_UTIL_SUCCESS)) ? true : false;
+    do {
+        prod_head = hg_atomic_get32(&na_sm_queue->prod_head);
+        prod_next = (prod_head + 1) & (int) na_sm_queue->prod_mask;
+        cons_tail = hg_atomic_get32(&na_sm_queue->cons_tail);
+
+        if (prod_next == cons_tail) {
+            hg_atomic_fence();
+            if (prod_head == hg_atomic_get32(&na_sm_queue->prod_head) &&
+                cons_tail == hg_atomic_get32(&na_sm_queue->cons_tail)) {
+                na_sm_queue->drops++;
+                /* Full */
+                return false;
+            }
+            continue;
+        }
+    } while (!hg_atomic_cas32(&na_sm_queue->prod_head, prod_head, prod_next));
+
+    hg_atomic_set64(&na_sm_queue->ring[prod_head], (int64_t) cmd_hdr->val);
+
+    /*
+     * If there are other enqueues in progress
+     * that preceded us, we need to wait for them
+     * to complete
+     */
+    while (hg_atomic_get32(&na_sm_queue->prod_tail) != prod_head)
+        cpu_spinwait();
+
+    hg_atomic_set32(&na_sm_queue->prod_tail, prod_next);
+
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bool
 na_sm_cmd_queue_pop(
-    struct na_sm_cmd_queue *na_sm_queue, na_sm_cmd_hdr_t *cmd_hdr_ptr)
+    struct na_sm_cmd_queue *na_sm_queue, union na_sm_cmd_hdr *cmd_hdr)
 {
-    cmd_hdr_ptr->val = (uint64_t) hg_atomic_queue_pop_mc(
-        (struct hg_atomic_queue *) na_sm_queue);
+    int32_t cons_head, cons_next;
 
-    return (likely(cmd_hdr_ptr->val)) ? true : false;
+    do {
+        cons_head = hg_atomic_get32(&na_sm_queue->cons_head);
+        cons_next = (cons_head + 1) & (int) na_sm_queue->cons_mask;
+
+        if (cons_head == hg_atomic_get32(&na_sm_queue->prod_tail))
+            return false;
+    } while (!hg_atomic_cas32(&na_sm_queue->cons_head, cons_head, cons_next));
+
+    cmd_hdr->val = (uint64_t) hg_atomic_get64(&na_sm_queue->ring[cons_head]);
+
+    /*
+     * If there are other dequeues in progress
+     * that preceded us, we need to wait for them
+     * to complete
+     */
+    while (hg_atomic_get32(&na_sm_queue->cons_tail) != cons_head)
+        cpu_spinwait();
+
+    hg_atomic_set32(&na_sm_queue->cons_tail, cons_next);
+
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2620,7 +2712,7 @@ static na_return_t
 na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
 {
     struct na_sm_endpoint *na_sm_endpoint = na_sm_addr->endpoint;
-    na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
+    union na_sm_cmd_hdr cmd_hdr = {.val = 0};
     na_return_t ret;
     int rc;
 
@@ -2654,7 +2746,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
     }
 
     /* Fill cmd header */
-    cmd_hdr = (na_sm_cmd_hdr_t){.hdr.type = NA_SM_RESERVED,
+    cmd_hdr = (union na_sm_cmd_hdr){.hdr.type = NA_SM_RESERVED,
         .hdr.pid = (unsigned int) na_sm_endpoint->source_addr->addr_key.pid,
         .hdr.id = na_sm_endpoint->source_addr->addr_key.id & 0xff,
         .hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff};
@@ -2666,7 +2758,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
     /* Push cmd to cmd queue */
     if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_CMD_PUSHED)) {
         rc = na_sm_cmd_queue_push(
-            &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
+            &na_sm_addr->shared_region->cmd_queue, &cmd_hdr);
         NA_CHECK_SUBSYS_ERROR(
             addr, rc == false, error, ret, NA_AGAIN, "Full queue");
         hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_CMD_PUSHED);
@@ -2772,10 +2864,10 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr)
         na_sm_queue_pair_release(
             na_sm_addr->shared_region, na_sm_addr->queue_pair_idx);
     } else {
-        na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
+        union na_sm_cmd_hdr cmd_hdr = {.val = 0};
 
         /* Fill cmd header */
-        cmd_hdr = (na_sm_cmd_hdr_t){.hdr.type = NA_SM_RELEASED,
+        cmd_hdr = (union na_sm_cmd_hdr){.hdr.type = NA_SM_RELEASED,
             .hdr.pid = (unsigned int) na_sm_endpoint->source_addr->addr_key.pid,
             .hdr.id = na_sm_endpoint->source_addr->addr_key.id & 0xff,
             .hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff};
@@ -2797,7 +2889,7 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr)
 
             /* Push cmd to cmd queue */
             rc = na_sm_cmd_queue_push(
-                &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
+                &na_sm_addr->shared_region->cmd_queue, &cmd_hdr);
             NA_CHECK_SUBSYS_ERROR(
                 addr, rc == false, done, ret, NA_AGAIN, "Full queue");
         }
@@ -2835,8 +2927,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_event_send(int sock, const char *dest_name, na_sm_cmd_hdr_t cmd_hdr,
-    int tx_notify, int rx_notify, bool ignore_error)
+na_sm_addr_event_send(int sock, const char *dest_name,
+    union na_sm_cmd_hdr cmd_hdr, int tx_notify, int rx_notify,
+    bool ignore_error)
 {
     struct sockaddr_un addr;
     struct msghdr msg;
@@ -2907,7 +3000,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
+na_sm_addr_event_recv(int sock, union na_sm_cmd_hdr *cmd_hdr, int *tx_notify,
     int *rx_notify, bool *received)
 {
     struct msghdr msg;
@@ -3024,8 +3117,8 @@ na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
     const void *buf, size_t buf_size, struct na_sm_addr *na_sm_addr,
     na_tag_t tag)
 {
-    unsigned int buf_idx;
-    na_sm_msg_hdr_t msg_hdr;
+    unsigned int buf_idx = 0;
+    union na_sm_msg_hdr msg_hdr;
     na_return_t ret;
     bool rc;
 
@@ -3041,22 +3134,26 @@ na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
                 addr, error, ret, "Could not resolve address");
     }
 
-    /* Try to reserve buffer atomically */
-    ret = na_sm_buf_reserve(&na_sm_addr->shared_region->copy_bufs, &buf_idx);
-    if (unlikely(ret == NA_AGAIN))
-        return NA_AGAIN;
+    /* No need to reserve for 0-size messages */
+    if (buf_size > 0) {
+        /* Try to reserve buffer atomically */
+        ret =
+            na_sm_buf_reserve(&na_sm_addr->shared_region->copy_bufs, &buf_idx);
+        if (unlikely(ret == NA_AGAIN))
+            return NA_AGAIN;
 
-    /* Reservation succeeded, copy buffer */
-    na_sm_buf_copy_to(
-        &na_sm_addr->shared_region->copy_bufs, buf_idx, buf, buf_size);
+        /* Reservation succeeded, copy buffer */
+        na_sm_buf_copy_to(
+            &na_sm_addr->shared_region->copy_bufs, buf_idx, buf, buf_size);
+    }
 
     /* Post message to queue */
-    msg_hdr = (na_sm_msg_hdr_t){.hdr.type = cb_type,
+    msg_hdr = (union na_sm_msg_hdr){.hdr.type = cb_type,
         .hdr.buf_idx = buf_idx & 0xff,
         .hdr.buf_size = buf_size & 0xffff,
         .hdr.tag = tag};
 
-    rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
+    rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, &msg_hdr);
     NA_CHECK_SUBSYS_ERROR(
         msg, rc == false, release, ret, NA_AGAIN, "Full queue");
 
@@ -3075,7 +3172,8 @@ na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
     return NA_SUCCESS;
 
 release:
-    na_sm_buf_release(&na_sm_addr->shared_region->copy_bufs, buf_idx);
+    if (buf_size > 0)
+        na_sm_buf_release(&na_sm_addr->shared_region->copy_bufs, buf_idx);
 
 error:
     return ret;
@@ -3164,7 +3262,7 @@ na_sm_rma(struct na_sm_class *na_sm_class, na_context_t *context,
                   remote_iovcnt = na_sm_mem_handle_remote->info.iovcnt;
     unsigned long local_iov_start_index = 0, remote_iov_start_index = 0;
     na_offset_t local_iov_start_offset = 0, remote_iov_start_offset = 0;
-    na_sm_iov_t local_trans_iov, remote_trans_iov;
+    union na_sm_iov local_trans_iov, remote_trans_iov;
     struct iovec *liov, *riov;
     unsigned long liovcnt = 0, riovcnt = 0;
     na_return_t ret;
@@ -3540,7 +3638,7 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
         bool progressed_notify = false;
         bool progressed_rx = false;
 
-        switch (*(na_sm_poll_type_t *) events[i].data.ptr) {
+        switch (*(enum na_sm_poll_type *) events[i].data.ptr) {
             case NA_SM_POLL_SOCK:
                 NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_SOCK event");
                 ret = na_sm_progress_sock(na_sm_endpoint, &progressed_notify);
@@ -3573,7 +3671,7 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
             default:
                 NA_GOTO_SUBSYS_ERROR(poll, done, ret, NA_INVALID_ARG,
                     "Operation type %d not supported",
-                    *(na_sm_poll_type_t *) events[i].data.ptr);
+                    *(enum na_sm_poll_type *) events[i].data.ptr);
         }
         progressed |= (progressed_rx | progressed_notify);
     }
@@ -3630,7 +3728,7 @@ done:
 static na_return_t
 na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, bool *progressed)
 {
-    na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
+    union na_sm_cmd_hdr cmd_hdr = {.val = 0};
     int tx_notify = -1, rx_notify = -1;
     na_return_t ret = NA_SUCCESS;
 
@@ -3660,7 +3758,7 @@ static na_return_t
 na_sm_progress_cmd_queue(
     struct na_sm_endpoint *na_sm_endpoint, bool *progressed)
 {
-    na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
+    union na_sm_cmd_hdr cmd_hdr = {.val = 0};
     na_return_t ret = NA_SUCCESS;
 
     /* Look for message in cmd queue */
@@ -3680,7 +3778,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
-    na_sm_cmd_hdr_t cmd_hdr, int tx_notify, int rx_notify)
+    union na_sm_cmd_hdr cmd_hdr, int tx_notify, int rx_notify)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -3820,7 +3918,7 @@ static na_return_t
 na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
     struct na_sm_addr *poll_addr, bool *progressed)
 {
-    na_sm_msg_hdr_t msg_hdr = {.val = 0};
+    union na_sm_msg_hdr msg_hdr = {.val = 0};
     na_return_t ret = NA_SUCCESS;
 
     /* Look for message in rx queue */
@@ -3859,7 +3957,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
-    struct na_sm_addr *poll_addr, na_sm_msg_hdr_t msg_hdr,
+    struct na_sm_addr *poll_addr, union na_sm_msg_hdr msg_hdr,
     struct na_sm_unexpected_msg_queue *unexpected_msg_queue)
 {
     struct na_sm_unexpected_info *na_sm_unexpected_info = NULL;
@@ -3886,14 +3984,16 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
                 .source = (na_addr_t) poll_addr};
         na_sm_addr_ref_incr(poll_addr);
 
-        /* Copy buffer */
-        na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
-            msg_hdr.hdr.buf_idx, na_sm_op_id->info.msg.buf.ptr,
-            msg_hdr.hdr.buf_size);
+        if (msg_hdr.hdr.buf_size > 0) {
+            /* Copy buffer */
+            na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
+                msg_hdr.hdr.buf_idx, na_sm_op_id->info.msg.buf.ptr,
+                msg_hdr.hdr.buf_size);
 
-        /* Release buffer */
-        na_sm_buf_release(
-            &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+            /* Release buffer */
+            na_sm_buf_release(
+                &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+        }
 
         /* Complete operation (no need to notify) */
         na_sm_complete(na_sm_op_id, NA_SUCCESS);
@@ -3909,19 +4009,23 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
         na_sm_unexpected_info->buf_size = (size_t) msg_hdr.hdr.buf_size;
         na_sm_unexpected_info->tag = (na_tag_t) msg_hdr.hdr.tag;
 
-        /* Allocate buf */
-        na_sm_unexpected_info->buf = malloc(na_sm_unexpected_info->buf_size);
-        NA_CHECK_SUBSYS_ERROR(msg, na_sm_unexpected_info->buf == NULL, error,
-            ret, NA_NOMEM, "Could not allocate na_sm_unexpected_info buf");
+        if (na_sm_unexpected_info->buf_size > 0) {
+            /* Allocate buf */
+            na_sm_unexpected_info->buf =
+                malloc(na_sm_unexpected_info->buf_size);
+            NA_CHECK_SUBSYS_ERROR(msg, na_sm_unexpected_info->buf == NULL,
+                error, ret, NA_NOMEM,
+                "Could not allocate na_sm_unexpected_info buf");
 
-        /* Copy buffer */
-        na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
-            msg_hdr.hdr.buf_idx, na_sm_unexpected_info->buf,
-            msg_hdr.hdr.buf_size);
+            /* Copy buffer */
+            na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
+                msg_hdr.hdr.buf_idx, na_sm_unexpected_info->buf,
+                msg_hdr.hdr.buf_size);
 
-        /* Release buffer */
-        na_sm_buf_release(
-            &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+            /* Release buffer */
+            na_sm_buf_release(
+                &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+        }
 
         /* Otherwise push the unexpected message into our unexpected queue so
          * that we can treat it later when a recv_unexpected is posted */
@@ -3942,7 +4046,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
-    struct na_sm_addr *poll_addr, na_sm_msg_hdr_t msg_hdr)
+    struct na_sm_addr *poll_addr, union na_sm_msg_hdr msg_hdr)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -3969,14 +4073,16 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
     na_sm_op_id->completion_data.callback_info.info.recv_expected
         .actual_buf_size = msg_hdr.hdr.buf_size;
 
-    /* Copy buffer */
-    na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
-        msg_hdr.hdr.buf_idx, na_sm_op_id->info.msg.buf.ptr,
-        msg_hdr.hdr.buf_size);
+    if (msg_hdr.hdr.buf_size > 0) {
+        /* Copy buffer */
+        na_sm_buf_copy_from(&poll_addr->shared_region->copy_bufs,
+            msg_hdr.hdr.buf_idx, na_sm_op_id->info.msg.buf.ptr,
+            msg_hdr.hdr.buf_size);
 
-    /* Release buffer */
-    na_sm_buf_release(
-        &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+        /* Release buffer */
+        na_sm_buf_release(
+            &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+    }
 
     /* Complete operation */
     na_sm_complete(na_sm_op_id, NA_SUCCESS);
