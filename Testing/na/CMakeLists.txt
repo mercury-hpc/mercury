@@ -12,11 +12,11 @@ endif(WIN32)
 #
 # na prefix is added to executable
 #
-function(build_na_test_lat test_name)
-  add_executable(na_test_lat_${test_name} na_test_lat.c test_lat_${test_name}.c)
-  target_link_libraries(na_test_lat_${test_name} na_test)
+function(build_na_test_perf test_name)
+  add_executable(na_test_${test_name} na_test_perf.c test_${test_name}.c)
+  target_link_libraries(na_test_${test_name} na_test)
   if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(na_test_lat_${test_name})
+    set_coverage_flags(na_test_${test_name})
   endif()
 endfunction()
 
@@ -70,13 +70,11 @@ if(MERCURY_ENABLE_COVERAGE)
 endif()
 
 #------------------------------------------------------------------------------
-# Network abstraction test
-#build_na_test(client)
-#build_na_test(server)
-#build_na_test(cancel_client)
-#build_na_test(cancel_server)
-build_na_test_lat(client)
-build_na_test_lat(server)
+# Network abstraction perf test
+build_na_test_perf(lat)
+build_na_test_perf(bw_put)
+build_na_test_perf(bw_get)
+build_na_test_perf(perf_server)
 
 #------------------------------------------------------------------------------
 # Set list of tests

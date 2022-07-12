@@ -80,22 +80,25 @@ na_test_usage(const char *execname)
 {
     printf("usage: %s [OPTIONS]\n", execname);
     printf("    NA OPTIONS\n");
-    printf("    -h, --help          Print a usage message and exit\n");
-    printf("    -c, --comm          Select NA plugin\n"
-           "                        NA plugins: bmi, mpi, cci, etc\n");
-    printf("    -d, --domain        Select NA OFI domain\n");
-    printf("    -p, --protocol      Select plugin protocol\n"
-           "                        Available protocols: tcp, ib, etc\n");
-    printf("    -H, --hostname      Select hostname / IP address to use\n"
-           "                        Default: any\n");
-    printf("    -P, --port          Select port to use\n"
-           "                        Default: any\n");
-    printf("    -L, --listen        Listen for incoming messages\n");
-    printf("    -S, --self_send     Send to self\n");
-    printf("    -k, --key           Pass auth key\n");
-    printf("    -l, --loop          Number of loops (default: 1)\n");
-    printf("    -b, --busy          Busy wait\n");
-    printf("    -V, --verbose       Print verbose output\n");
+    printf("    -h, --help           Print a usage message and exit\n");
+    printf("    -c, --comm           Select NA plugin\n"
+           "                         NA plugins: bmi, mpi, cci, etc\n");
+    printf("    -d, --domain         Select NA OFI domain\n");
+    printf("    -p, --protocol       Select plugin protocol\n"
+           "                         Available protocols: tcp, ib, etc\n");
+    printf("    -H, --hostname       Select hostname / IP address to use\n"
+           "                         Default: any\n");
+    printf("    -P, --port           Select port to use\n"
+           "                         Default: any\n");
+    printf("    -L, --listen         Listen for incoming messages\n");
+    printf("    -S, --self_send      Send to self\n");
+    printf("    -k, --key            Pass auth key\n");
+    printf("    -l, --loop           Number of loops (default: 1)\n");
+    printf("    -b, --busy           Busy wait\n");
+    printf("    -y  --buf_size_min   Min buffer size (in bytes)\n");
+    printf("    -z, --buf_size_max   Max buffer size (in bytes)\n");
+    printf("    -R, --force-register Force registration of buffers\n");
+    printf("    -V, --verbose        Print verbose output\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -158,8 +161,20 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'X': /* number of contexts */
                 na_test_info->max_contexts = (uint8_t) atoi(na_test_opt_arg_g);
                 break;
+            case 'y': /* min buffer size */
+                na_test_info->buf_size_min = (size_t) atol(na_test_opt_arg_g);
+                break;
+            case 'z': /* max buffer size */
+                na_test_info->buf_size_max = (size_t) atol(na_test_opt_arg_g);
+                break;
             case 'Z': /* msg size */
-                na_test_info->max_msg_size = atoi(na_test_opt_arg_g);
+                na_test_info->max_msg_size = (size_t) atol(na_test_opt_arg_g);
+                break;
+            case 'R': /* force-register */
+                na_test_info->force_register = true;
+                break;
+            case 'v': /* verify */
+                na_test_info->verify = true;
                 break;
             case 'V': /* verbose */
                 na_test_info->verbose = true;

@@ -35,17 +35,21 @@ struct na_test_info {
     bool busy_wait;          /* Busy wait */
     uint8_t max_classes;     /* Max classes */
     uint8_t max_contexts;    /* Max contexts */
-    int max_msg_size;        /* Max msg size */
+    size_t max_msg_size;     /* Max msg size */
+    size_t buf_size_min;     /* Min buffer size */
+    size_t buf_size_max;     /* Max buffer size */
     bool verbose;            /* Verbose mode */
     int max_number_of_peers; /* Max number of peers */
 #ifdef HG_TEST_HAS_PARALLEL
     MPI_Comm mpi_comm;    /* MPI comm */
     bool mpi_no_finalize; /* Prevent from finalizing MPI */
 #endif
-    int mpi_comm_rank; /* MPI comm rank */
-    int mpi_comm_size; /* MPI comm size */
-    bool extern_init;  /* Extern init */
-    bool use_threads;  /* Use threads */
+    int mpi_comm_rank;   /* MPI comm rank */
+    int mpi_comm_size;   /* MPI comm size */
+    bool extern_init;    /* Extern init */
+    bool use_threads;    /* Use threads */
+    bool force_register; /* Force registration each iteration */
+    bool verify;         /* Verify data */
 };
 
 /*****************/
