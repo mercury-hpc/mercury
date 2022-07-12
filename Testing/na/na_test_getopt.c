@@ -13,7 +13,7 @@
 
 int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:d:p:H:P:LsSk:l:bC:X:VaZ:y:z:x:mt:B";
+const char *na_test_short_opt_g = "hc:d:p:H:P:LsSk:l:bC:X:VaZ:y:z:x:mt:BRv";
 /* clang-format off */
 const struct na_test_opt na_test_opt_g[] = {
     {"help", no_arg, 'h'},
@@ -39,6 +39,8 @@ const struct na_test_opt na_test_opt_g[] = {
     {"memory", no_arg, 'm'},
     {"threads", require_arg, 't'},
     {"bidirectional", no_arg, 'B'},
+    {"force-register", no_arg, 'R'},
+    {"verify", no_arg, 'v'},
     {NULL, 0, '\0'} /* Must add this at the end */
 };
 /* clang-format on */
