@@ -11,6 +11,7 @@
 
 #include "na_plugin.h"
 
+#include "mercury_inet.h"
 #include "mercury_list.h"
 #include "mercury_time.h"
 
@@ -45,8 +46,6 @@ typedef struct psm_ep_open_opts psm_ep_open_opts_t;
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <arpa/inet.h> /* ntohl, htonl */
 
 /******************************************************************************
  * compile time defs and configuration

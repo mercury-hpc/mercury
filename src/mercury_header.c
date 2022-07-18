@@ -7,11 +7,8 @@
 #include "mercury_header.h"
 #include "mercury_error.h"
 
-#ifdef _WIN32
-#    include <winsock2.h>
-#else
-#    include <arpa/inet.h>
-#endif
+#include "mercury_inet.h"
+
 #include <stdlib.h>
 #include <string.h>
 
