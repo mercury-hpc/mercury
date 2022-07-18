@@ -14,6 +14,7 @@
 #else
 #    include "mercury_byteswap.h"
 #    include <arpa/inet.h>
+#    include <netinet/in.h>
 #    if defined(__APPLE__)
 #        include <machine/endian.h>
 #    else

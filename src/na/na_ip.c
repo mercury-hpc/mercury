@@ -8,6 +8,8 @@
 
 #include "na_error.h"
 
+#include "mercury_inet.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <ifaddrs.h>
