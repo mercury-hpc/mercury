@@ -277,10 +277,6 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* Maximum number of pre-allocated IOV entries */
 #define NA_OFI_IOV_STATIC_MAX (8)
 
-/* The completion flags for PUT/GET operations */
-#define NA_OFI_PUT_COMPLETION (FI_COMPLETION | FI_DELIVERY_COMPLETE)
-#define NA_OFI_GET_COMPLETION (FI_COMPLETION)
-
 /* Receive context bits for SEP */
 #define NA_OFI_SEP_RX_CTX_BITS (8)
 
@@ -4714,8 +4710,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
         error, ret, NA_OVERFLOW, "Invalid tag value %" PRIu64, tag);
 
     /* Use src_addr when available */
-    if ((na_ofi_prov_extra_caps[na_ofi_class->fabric->prov_type] & FI_SOURCE) &&
-        src_addr != FI_ADDR_UNSPEC) {
+    if (na_ofi_class->fi_info->caps & FI_SOURCE && src_addr != FI_ADDR_UNSPEC) {
         NA_LOG_SUBSYS_DEBUG(
             addr, "Retrieving address for FI addr %" PRIu64, src_addr);
 
@@ -6017,7 +6012,6 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
-    struct na_ofi_fabric *fabric = NA_OFI_CLASS(na_class)->fabric;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     const struct fi_info *fi_info = NA_OFI_CLASS(na_class)->fi_info;
     struct fi_mr_attr fi_mr_attr = {.mr_iov = NA_OFI_IOV(na_ofi_mem_handle),
@@ -6067,8 +6061,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
             break;
     }
     NA_CHECK_SUBSYS_ERROR(mem,
-        !(na_ofi_prov_extra_caps[fabric->prov_type] & FI_HMEM) &&
-            (fi_mr_attr.iface != FI_HMEM_SYSTEM),
+        !(fi_info->caps & FI_HMEM) && (fi_mr_attr.iface != FI_HMEM_SYSTEM),
         error, ret, NA_OPNOTSUPPORTED,
         "selected provider does not support device registration");
 
@@ -6229,7 +6222,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id)
 {
     return na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_PUT, callback, arg,
-        fi_writemsg, NA_OFI_PUT_COMPLETION,
+        fi_writemsg, FI_DELIVERY_COMPLETE,
         (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
         (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
         (struct na_ofi_addr *) remote_addr, remote_id,
@@ -6244,10 +6237,9 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id)
 {
     return na_ofi_rma(NA_OFI_CLASS(na_class), context, NA_CB_GET, callback, arg,
-        fi_readmsg, NA_OFI_GET_COMPLETION,
-        (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
-        (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
-        (struct na_ofi_addr *) remote_addr, remote_id,
+        fi_readmsg, 0, (struct na_ofi_mem_handle *) local_mem_handle,
+        local_offset, (struct na_ofi_mem_handle *) remote_mem_handle,
+        remote_offset, length, (struct na_ofi_addr *) remote_addr, remote_id,
         (struct na_ofi_op_id *) op_id);
 }
 
