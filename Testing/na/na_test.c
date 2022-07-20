@@ -97,7 +97,9 @@ na_test_usage(const char *execname)
     printf("    -b, --busy           Busy wait\n");
     printf("    -y  --buf_size_min   Min buffer size (in bytes)\n");
     printf("    -z, --buf_size_max   Max buffer size (in bytes)\n");
+    printf("    -w  --buf_count      Number of buffers used\n");
     printf("    -R, --force-register Force registration of buffers\n");
+    printf("    -M, --millionbps     Output in Million B/s instead of MB/s\n");
     printf("    -V, --verbose        Print verbose output\n");
 }
 
@@ -167,6 +169,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'z': /* max buffer size */
                 na_test_info->buf_size_max = (size_t) atol(na_test_opt_arg_g);
                 break;
+            case 'w': /* buffer count */
+                na_test_info->buf_count = (size_t) atol(na_test_opt_arg_g);
+                break;
             case 'Z': /* msg size */
                 na_test_info->max_msg_size = (size_t) atol(na_test_opt_arg_g);
                 break;
@@ -178,6 +183,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'V': /* verbose */
                 na_test_info->verbose = true;
+                break;
+            case 'M': /* OSU-style output Million Bytes/s */
+                na_test_info->millionbps = true;
                 break;
             default:
                 break;

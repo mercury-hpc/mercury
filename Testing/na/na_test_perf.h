@@ -39,37 +39,39 @@ struct na_test_perf_info {
     na_mem_handle_t local_handle;      /* Local handle */
     na_mem_handle_t remote_handle;     /* Remote handle */
     na_mem_handle_t verify_handle;     /* Local handle to verify buffer */
-    na_op_id_t *rma_op_id;             /* RMA op ID */
+    na_op_id_t **rma_op_ids;           /* RMA op IDs */
     size_t msg_unexp_header_size;      /* Header size */
     size_t msg_exp_header_size;        /* Header size */
     size_t msg_unexp_size_max;         /* Max buffer size */
     size_t msg_exp_size_max;           /* Max buffer size */
     size_t rma_size_min;               /* Min buffer size */
     size_t rma_size_max;               /* Max buffer size */
+    size_t rma_count;                  /* Buffer count */
     hg_request_t *request;             /* Request */
     int poll_fd;                       /* Poll fd */
+};
+
+struct na_test_perf_rma_info {
+    int32_t expected_count; /* Expected count */
+    int32_t complete_count; /* Completed count */
+    hg_request_t *request;  /* Request */
 };
 
 /*****************/
 /* Public Macros */
 /*****************/
 
-#define STRING(s)  #s
-#define XSTRING(s) STRING(s)
-#define VERSION_NAME                                                           \
-    XSTRING(NA_VERSION_MAJOR)                                                  \
-    "." XSTRING(NA_VERSION_MINOR) "." XSTRING(NA_VERSION_PATCH)
-
-#define SMALL_SKIP 1000
-
-#define NDIGITS 2
-#define NWIDTH  15
-
 #define NA_TEST_PERF_TAG_LAT_INIT 0
 #define NA_TEST_PERF_TAG_LAT      1
 #define NA_TEST_PERF_TAG_PUT      10
 #define NA_TEST_PERF_TAG_GET      20
 #define NA_TEST_PERF_TAG_DONE     111
+
+#define NA_TEST_PERF_LAT_SKIP_SMALL 100
+#define NA_TEST_PERF_LAT_SKIP_LARGE 10
+#define NA_TEST_PERF_BW_SKIP_SMALL  10
+#define NA_TEST_PERF_BW_SKIP_LARGE  2
+#define NA_TEST_PERF_LARGE_SIZE     8192
 
 /*********************/
 /* Public Prototypes */
@@ -89,12 +91,31 @@ na_test_perf_request_trigger(
 int
 na_test_perf_request_complete(const struct na_cb_info *na_cb_info);
 
+int
+na_test_perf_rma_request_complete(const struct na_cb_info *na_cb_info);
+
 na_return_t
 na_test_perf_init(
     int argc, char *argv[], bool listen, struct na_test_perf_info *info);
 
 void
 na_test_perf_cleanup(struct na_test_perf_info *info);
+
+void
+na_test_perf_print_header_lat(const struct na_test_perf_info *info,
+    const char *benchmark, size_t min_size);
+
+void
+na_test_perf_print_lat(
+    const struct na_test_perf_info *info, size_t buf_size, hg_time_t t);
+
+void
+na_test_perf_print_header_bw(
+    const struct na_test_perf_info *info, const char *benchmark);
+
+void
+na_test_perf_print_bw(
+    const struct na_test_perf_info *info, size_t buf_size, hg_time_t t);
 
 void
 na_test_perf_init_data(void *buf, size_t buf_size, size_t header_size);

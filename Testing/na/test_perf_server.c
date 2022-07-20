@@ -76,6 +76,7 @@ na_test_perf_req_process(const struct na_cb_info *na_cb_info)
         (struct na_test_perf_recv_info *) na_cb_info->arg;
     struct na_test_perf_info *info = recv_info->info;
     na_return_t ret = NA_SUCCESS;
+    size_t i;
 
     recv_info->recv = na_cb_info->info.recv_unexpected;
 
@@ -84,7 +85,8 @@ na_test_perf_req_process(const struct na_cb_info *na_cb_info)
             /* init data separately to avoid a memcpy */
             na_test_perf_init_data(info->msg_exp_buf, info->msg_exp_size_max,
                 info->msg_exp_header_size);
-            NA_FALLTHROUGH;
+            hg_request_complete(info->request);
+            break;
         case NA_TEST_PERF_TAG_LAT:
             /* Respond with same data */
             ret = NA_Msg_send_expected(info->na_class, info->context,
@@ -103,8 +105,11 @@ na_test_perf_req_process(const struct na_cb_info *na_cb_info)
                 NA_Error_to_string(ret));
             break;
         case NA_TEST_PERF_TAG_GET:
-            /* init data */
-            na_test_perf_init_data(info->rma_buf, info->rma_size_max, 0);
+            /* Init data */
+            for (i = 0; i < info->rma_count; i++)
+                na_test_perf_init_data(
+                    (char *) info->rma_buf + i * info->rma_size_max,
+                    info->rma_size_max, 0);
 
             ret = na_test_perf_mem_handle_send(
                 info, recv_info->recv.source, recv_info->recv.tag);

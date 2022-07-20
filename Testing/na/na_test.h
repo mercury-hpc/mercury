@@ -38,6 +38,7 @@ struct na_test_info {
     size_t max_msg_size;     /* Max msg size */
     size_t buf_size_min;     /* Min buffer size */
     size_t buf_size_max;     /* Max buffer size */
+    size_t buf_count;        /* Buffer count */
     bool verbose;            /* Verbose mode */
     int max_number_of_peers; /* Max number of peers */
 #ifdef HG_TEST_HAS_PARALLEL
@@ -50,6 +51,7 @@ struct na_test_info {
     bool use_threads;    /* Use threads */
     bool force_register; /* Force registration each iteration */
     bool verify;         /* Verify data */
+    bool millionbps;     /* OSU-style of output in Million Bytes/s */
 };
 
 /*****************/
