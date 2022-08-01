@@ -606,12 +606,13 @@ struct na_ofi_fabric {
 
 /* Get info */
 struct na_ofi_info {
-    char *node;         /* Node/host IP info */
-    char *service;      /* Service/port info */
-    int addr_format;    /* Address format */
-    void *src_addr;     /* Native src addr */
-    size_t src_addrlen; /* Native src addr len */
-    bool use_hmem;      /* Use FI_HMEM */
+    char *node;                    /* Node/host IP info */
+    char *service;                 /* Service/port info */
+    enum fi_threading thread_mode; /* Thread mode */
+    int addr_format;               /* Address format */
+    void *src_addr;                /* Native src addr */
+    size_t src_addrlen;            /* Native src addr len */
+    bool use_hmem;                 /* Use FI_HMEM */
 };
 
 /* Verify info */
@@ -894,7 +895,7 @@ na_ofi_class_free(struct na_ofi_class *na_ofi_class);
  * Open fabric.
  */
 na_return_t
-na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
+na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
     struct na_ofi_fabric **na_ofi_fabric_p);
 
 /**
@@ -2678,7 +2679,6 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     hints->rx_attr->op_flags = FI_COMPLETION;
 
     /* all providers should support this */
-    hints->domain_attr->threading = FI_THREAD_SAFE;
     hints->domain_attr->av_type = FI_AV_MAP;
 
     /* Resource management will be enabled for this provider domain. */
@@ -2702,6 +2702,9 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
             cleanup, ret, NA_PROTONOSUPPORT, "Unsupported address format (%d)",
             info->addr_format);
         hints->addr_format = (uint32_t) info->addr_format;
+
+        /* Set requested thread mode */
+        hints->domain_attr->threading = info->thread_mode;
 
         /* Ask for HMEM support */
         if (info->use_hmem && (na_ofi_prov_flags[prov_type] & NA_OFI_HMEM)) {
@@ -3174,7 +3177,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
+na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
     struct na_ofi_fabric **na_ofi_fabric_p)
 {
     struct na_ofi_fabric *na_ofi_fabric = NULL;
@@ -3187,19 +3190,16 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
      * network.
      */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
-    HG_LIST_FOREACH (na_ofi_fabric, &na_ofi_fabric_list_g, entry) {
-        if ((strcmp(fi_info->fabric_attr->name, na_ofi_fabric->name) == 0) &&
-            (strcmp(fi_info->fabric_attr->prov_name,
-                 na_ofi_fabric->prov_name) == 0)) {
-            na_ofi_fabric->refcount++;
+    HG_LIST_FOREACH (na_ofi_fabric, &na_ofi_fabric_list_g, entry)
+        if ((strcmp(attr->name, na_ofi_fabric->name) == 0) &&
+            (strcmp(attr->prov_name, na_ofi_fabric->prov_name) == 0))
             break;
-        }
-    }
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
 
     if (na_ofi_fabric != NULL) {
         NA_LOG_SUBSYS_DEBUG_EXT(cls, "using existing fi_fabric", "%s",
-            fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR));
+            fi_tostr(attr, FI_TYPE_FABRIC_ATTR));
+        na_ofi_fabric->refcount++;
         *na_ofi_fabric_p = na_ofi_fabric;
         return NA_SUCCESS;
     }
@@ -3212,22 +3212,22 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_info *fi_info,
     na_ofi_fabric->refcount = 1;
 
     /* Dup name */
-    na_ofi_fabric->name = strdup(fi_info->fabric_attr->name);
+    na_ofi_fabric->name = strdup(attr->name);
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_fabric->name == NULL, error, ret,
         NA_NOMEM, "Could not duplicate fabric name");
 
     /* Dup provider name */
-    na_ofi_fabric->prov_name = strdup(fi_info->fabric_attr->prov_name);
+    na_ofi_fabric->prov_name = strdup(attr->prov_name);
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_fabric->prov_name == NULL, error, ret,
         NA_NOMEM, "Could not duplicate prov_name");
 
     /* Open fi fabric */
-    rc = fi_fabric(fi_info->fabric_attr, &na_ofi_fabric->fi_fabric, NULL);
+    rc = fi_fabric(attr, &na_ofi_fabric->fi_fabric, NULL);
     NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_fabric() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    NA_LOG_SUBSYS_DEBUG_EXT(cls, "fi_fabric opened", "%s",
-        fi_tostr(fi_info->fabric_attr, FI_TYPE_FABRIC_ATTR));
+    NA_LOG_SUBSYS_DEBUG_EXT(
+        cls, "fi_fabric opened", "%s", fi_tostr(attr, FI_TYPE_FABRIC_ATTR));
 
     /* Insert to global fabric list */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
@@ -3257,12 +3257,16 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
     if (!na_ofi_fabric)
         return NA_SUCCESS;
 
+    NA_LOG_SUBSYS_DEBUG(cls, "Closing fabric");
+
     /* Remove from fabric list */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
     if (--na_ofi_fabric->refcount > 0) {
         hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
         return NA_SUCCESS;
     }
+
+    NA_LOG_SUBSYS_DEBUG(cls, "Freeing fabric");
 
     /* Close fabric */
     if (na_ofi_fabric->fi_fabric) {
@@ -3340,6 +3344,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
+    struct fi_domain_attr *domain_attr = fi_info->domain_attr;
     struct fi_av_attr av_attr = {0};
     hg_hash_table_equal_func_t map_key_equal_func;
     na_return_t ret;
@@ -3366,10 +3371,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         na_ofi_domain->fi_gni_auth_key.raw.protection_key =
             (uint32_t) strtoul(auth_key, NULL, 10);
 
-        fi_info->domain_attr->auth_key =
-            (void *) &na_ofi_domain->fi_gni_auth_key;
-        fi_info->domain_attr->auth_key_size =
-            sizeof(na_ofi_domain->fi_gni_auth_key);
+        domain_attr->auth_key = (void *) &na_ofi_domain->fi_gni_auth_key;
+        domain_attr->auth_key_size = sizeof(na_ofi_domain->fi_gni_auth_key);
     }
 #elif defined(NA_OFI_HAS_EXT_CXI_H)
     /* Keep CXI auth key using the following format svc_id:vni */
@@ -3380,9 +3383,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         NA_CHECK_SUBSYS_ERROR(cls, rc != 2, error, ret, NA_PROTONOSUPPORT,
             "Could not retrieve CXI auth key, format is \"svc_id:vni\"");
 
-        fi_info->domain_attr->auth_key = (void *) &na_ofi_domain->cxi_auth_key;
-        fi_info->domain_attr->auth_key_size =
-            sizeof(na_ofi_domain->cxi_auth_key);
+        domain_attr->auth_key = (void *) &na_ofi_domain->cxi_auth_key;
+        domain_attr->auth_key_size = sizeof(na_ofi_domain->cxi_auth_key);
     }
 #else
     (void) auth_key;
@@ -3394,8 +3396,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
                        (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD))) {
         na_ofi_domain->no_wait = true;
 
-        fi_info->domain_attr->control_progress = FI_PROGRESS_MANUAL;
-        fi_info->domain_attr->data_progress = FI_PROGRESS_MANUAL;
+        domain_attr->control_progress = FI_PROGRESS_MANUAL;
+        domain_attr->data_progress = FI_PROGRESS_MANUAL;
     }
 
     /* Create the fi access domain */
@@ -3406,21 +3408,21 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
 
     /* Cache max number of contexts */
     na_ofi_domain->context_max =
-        MIN(fi_info->domain_attr->tx_ctx_cnt, fi_info->domain_attr->rx_ctx_cnt);
+        MIN(domain_attr->tx_ctx_cnt, domain_attr->rx_ctx_cnt);
 
     /* Cache max key */
-    NA_CHECK_SUBSYS_ERROR(cls, fi_info->domain_attr->mr_key_size > 8, error,
-        ret, NA_OVERFLOW, "MR key size (%zu) is not supported",
-        fi_info->domain_attr->mr_key_size);
+    NA_CHECK_SUBSYS_ERROR(cls, domain_attr->mr_key_size > 8, error, ret,
+        NA_OVERFLOW, "MR key size (%zu) is not supported",
+        domain_attr->mr_key_size);
 
     na_ofi_domain->max_key =
-        (fi_info->domain_attr->mr_key_size == 8)
+        (domain_attr->mr_key_size == 8)
             ? INT64_MAX
-            : (int64_t) (1UL << (fi_info->domain_attr->mr_key_size * 8)) - 1;
+            : (int64_t) (1UL << (domain_attr->mr_key_size * 8)) - 1;
     NA_LOG_SUBSYS_DEBUG(cls, "MR max key is %" PRId64, na_ofi_domain->max_key);
 
     NA_LOG_SUBSYS_DEBUG_EXT(cls, "fi_domain opened", "%s",
-        fi_tostr(fi_info->domain_attr, FI_TYPE_DOMAIN_ATTR));
+        fi_tostr(domain_attr, FI_TYPE_DOMAIN_ATTR));
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
     if (na_ofi_fabric->prov_type == NA_OFI_PROV_GNI) {
@@ -3527,6 +3529,8 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
 
     if (!na_ofi_domain)
         goto out;
+
+    NA_LOG_SUBSYS_DEBUG(cls, "Closing domain");
 
     /* Close AV */
     if (na_ofi_domain->fi_av) {
@@ -3701,6 +3705,8 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
 
     if (!na_ofi_endpoint)
         goto out;
+
+    NA_LOG_SUBSYS_DEBUG(ctx, "Closing endpoint");
 
     /* Valid only when not using SEP */
     if (na_ofi_endpoint->eq && na_ofi_endpoint->eq->retry_op_queue) {
@@ -5144,6 +5150,7 @@ na_ofi_initialize(
     size_t msg_size_max;
     char *domain_name = NULL;
     struct na_ofi_info info = {.addr_format = FI_FORMAT_UNSPEC,
+        .thread_mode = FI_THREAD_UNSPEC,
         .node = NULL,
         .service = NULL,
         .src_addr = NULL,
@@ -5195,6 +5202,11 @@ na_ofi_initialize(
         info.use_hmem = na_init_info.request_mem_device;
     }
 
+    /* Thread mode */
+    info.thread_mode = (na_init_info.thread_mode & NA_THREAD_MODE_SINGLE)
+                           ? FI_THREAD_DOMAIN
+                           : FI_THREAD_SAFE;
+
     /* Parse hostname info and get domain name etc */
     if (na_info->host_name != NULL) {
         ret = na_ofi_parse_hostname_info(prov_type, na_info->host_name,
@@ -5230,7 +5242,7 @@ na_ofi_initialize(
 
     /* Open fabric */
     ret = na_ofi_fabric_open(
-        prov_type, na_ofi_class->fi_info, &na_ofi_class->fabric);
+        prov_type, na_ofi_class->fi_info->fabric_attr, &na_ofi_class->fabric);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open fabric for %s",
         na_ofi_prov_name[prov_type]);
 
