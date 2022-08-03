@@ -69,7 +69,8 @@
 #elif (FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 14) /* = 1.14 */
 #    define FI_ADDR_CXI  (FI_ADDR_PSMX3 + 1)
 #    define FI_PROTO_CXI (FI_PROTO_PSMX3 + 1)
-#else /* >= 1.15 */
+#elif (FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 15 &&                      \
+       FI_REVISION_VERSION < 2) /* 1.15 */
 #    define FI_ADDR_CXI  (FI_ADDR_OPX + 1)
 #    define FI_PROTO_CXI (FI_PROTO_OPX + 1)
 #endif
