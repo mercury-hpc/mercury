@@ -17,15 +17,7 @@ set(MERCURY_UTIL_INSTALL_INCLUDE_DIR ${MERCURY_INSTALL_INCLUDE_DIR})
 set(MERCURY_UTIL_INSTALL_DATA_DIR ${MERCURY_INSTALL_DATA_DIR})
 set(MERCURY_UTIL_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-set(MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES
-  ${MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES}
-  ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-  )
-set(MERCURY_EXT_PKG_LIB_DEPENDENCIES
-  ${MERCURY_EXT_PKG_LIB_DEPENDENCIES}
-  ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
-)
-set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} mercury_util)
+set(MERCURY_EXT_PKG_EXPORTED_LIBS ${MERCURY_EXT_PKG_EXPORTED_LIBS} mercury_util)
 
 # NA
 set(NA_INSTALL_BIN_DIR ${MERCURY_INSTALL_BIN_DIR})
@@ -34,15 +26,7 @@ set(NA_INSTALL_INCLUDE_DIR ${MERCURY_INSTALL_INCLUDE_DIR})
 set(NA_INSTALL_DATA_DIR ${MERCURY_INSTALL_DATA_DIR})
 set(NA_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
-set(MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES
-  ${MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES}
-  ${NA_EXT_INCLUDE_DEPENDENCIES}
-  )
-set(MERCURY_EXT_PKG_LIB_DEPENDENCIES
-  ${MERCURY_EXT_PKG_LIB_DEPENDENCIES}
-  ${NA_EXT_LIB_DEPENDENCIES}
-)
-set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} na)
+set(MERCURY_EXT_PKG_EXPORTED_LIBS ${MERCURY_EXT_PKG_EXPORTED_LIBS} na)
 
 #------------------------------------------------------------------------------
 # External dependencies
@@ -89,14 +73,7 @@ if(MERCURY_USE_CHECKSUMS)
     set(MCHECKSUM_EXTERNAL_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
     add_subdirectory(mchecksum)
     include(${MCHECKSUM_BINARY_DIR}/mchecksum-config.cmake)
-    set(MERCURY_EXPORTED_LIBS mchecksum ${MERCURY_EXPORTED_LIBS})
-    get_target_property(MCHECKSUM_EXT_LIB_DEPENDENCIES mchecksum INTERFACE_LINK_LIBRARIES)
-    if(MCHECKSUM_EXT_LIB_DEPENDENCIES)
-      set(MERCURY_EXT_PKG_LIB_DEPENDENCIES
-        ${MERCURY_EXT_PKG_LIB_DEPENDENCIES}
-        ${MCHECKSUM_EXT_LIB_DEPENDENCIES}
-      )
-    endif()
+    set(MERCURY_EXT_PKG_EXPORTED_LIBS mchecksum ${MERCURY_EXT_PKG_EXPORTED_LIBS})
   endif()
 endif()
 
@@ -127,6 +104,10 @@ if(WIN32)
   set(MERCURY_EXT_LIB_DEPENDENCIES ${MERCURY_EXT_LIB_DEPENDENCIES} ws2_32)
 endif(WIN32)
 
+# Define ext pkg dependencies
+set(MERCURY_EXT_PKG_DEPENDENCIES ${MERCURY_EXT_PKG_DEPENDENCIES}
+    ${MERCURY_EXT_PKG_EXPORTED_LIBS})
+
 #------------------------------------------------------------------------------
 # Configure module header files
 #------------------------------------------------------------------------------
@@ -150,9 +131,6 @@ set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
 )
-set(MERCURY_HL_SRCS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl.c
-)
 
 #------------------------------------------------------------------------------
 # Specify project public header files to be installed
@@ -171,11 +149,6 @@ set(MERCURY_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
-)
-
-set(MERCURY_HL_PUBLIC_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl_macros.h
 )
 
 #------------------------------------------------------------------------------
@@ -209,11 +182,8 @@ target_include_directories(mercury
 target_include_directories(mercury
   SYSTEM PUBLIC ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
 )
-target_link_libraries(mercury
-  ${MERCURY_EXPORTED_LIBS}
-  ${MERCURY_EXT_LIB_DEPENDENCIES}
-  ${MERCURY_EXT_PKG_DEPENDENCIES}
-  )
+target_link_libraries(mercury ${MERCURY_EXT_LIB_DEPENDENCIES}
+                      ${MERCURY_EXT_PKG_DEPENDENCIES})
 mercury_set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury)
@@ -222,20 +192,7 @@ set_target_properties(mercury PROPERTIES
   PUBLIC_HEADER "${MERCURY_PUBLIC_HEADERS}"
 )
 
-set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
-
-# MERCURY HL
-add_library(mercury_hl ${MERCURY_HL_SRCS} ${MERCURY_HL_PUBLIC_HEADERS})
-target_link_libraries(mercury_hl mercury)
-mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE} ${PROJECT_NAME})
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(mercury_hl)
-endif()
-set_target_properties(mercury_hl PROPERTIES
-  PUBLIC_HEADER "${MERCURY_HL_PUBLIC_HEADERS}"
-)
-
-set(MERCURY_EXPORTED_LIBS mercury_hl ${MERCURY_EXPORTED_LIBS})
+set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXT_PKG_EXPORTED_LIBS})
 
 #-----------------------------------------------------------------------------
 # Add file(s) to CMake Install
@@ -257,17 +214,6 @@ endif()
 install(
   TARGETS
     mercury
-  EXPORT
-    ${MERCURY_EXPORTED_TARGETS}
-  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  PUBLIC_HEADER DESTINATION ${MERCURY_INSTALL_INCLUDE_DIR}
-  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
-)
-
-install(
-  TARGETS
-    mercury_hl
   EXPORT
     ${MERCURY_EXPORTED_TARGETS}
   LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
@@ -305,35 +251,27 @@ endif()
 #------------------------------------------------------------------------------
 set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
 
-# Pkg-config configuration
+#-----------------------------------------------------------------------------
+# For automake compatibility, also provide a pkgconfig file
+#-----------------------------------------------------------------------------
 if(NOT WIN32)
   if(CMAKE_BUILD_TYPE)
     string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
   endif()
 
-  # Mercury package dependencies
-  foreach(pkg_dep ${MERCURY_EXT_PKG_DEPENDENCIES})
-    set(MERCURY_PKG_DEPENDENCIES "${MERCURY_PKG_DEPENDENCIES} ${pkg_dep}")
-  endforeach()
-  set(MERCURY_PKG_DEPENDENCIES ${MERCURY_PKG_DEPENDENCIES} PARENT_SCOPE)
+  # Retrieve Mercury library
+  if(lower_cmake_build_type MATCHES "debug")
+    get_target_property(MERCURY_LIBRARY mercury OUTPUT_NAME_DEBUG)
+  else()
+    get_target_property(MERCURY_LIBRARY mercury OUTPUT_NAME_RELEASE)
+  endif()
 
-  # Mercury private library dependencies
-  foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
-    if(lower_cmake_build_type MATCHES "debug")
-      get_target_property(MERCURY_LIBRARY ${exported_lib} OUTPUT_NAME_DEBUG)
-    else()
-      get_target_property(MERCURY_LIBRARY ${exported_lib} OUTPUT_NAME_RELEASE)
-    endif()
-    set(MERCURY_LIBRARIES "${MERCURY_LIBRARIES} -l${MERCURY_LIBRARY}")
-  endforeach()
-  set(MERCURY_LIBRARIES ${MERCURY_LIBRARIES} PARENT_SCOPE)
+  # Pkg dependencies
+  string(REPLACE ";" " "
+         MERCURY_PKG_DEPENDENCIES "${MERCURY_EXT_PKG_DEPENDENCIES}")
 
   # Mercury external library dependencies
   # Need to generate -llib if not already passed
-  set(MERCURY_EXT_LIB_DEPENDENCIES
-    ${MERCURY_EXT_LIB_DEPENDENCIES}
-    ${MERCURY_EXT_PKG_LIB_DEPENDENCIES}
-  )
   foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
     # get library name
     get_filename_component(lib_name ${lib_dep} NAME_WE)
@@ -351,22 +289,30 @@ if(NOT WIN32)
   endforeach()
   if(MERCURY_EXT_LIB_DEPENDENCIES_LIST)
     list(REMOVE_DUPLICATES MERCURY_EXT_LIB_DEPENDENCIES_LIST)
+    string(REPLACE ";" " "
+           MERCURY_LIB_DEPENDENCIES "${MERCURY_EXT_LIB_DEPENDENCIES_LIST}")
   endif()
-  foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES_LIST})
-    set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
-  endforeach()
-  set(MERCURY_LIB_DEPENDENCIES ${MERCURY_LIB_DEPENDENCIES} PARENT_SCOPE)
 
-  # External include dependencies
-  set(MERCURY_EXT_INCLUDE_DEPENDENCIES
-    ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-    ${MERCURY_EXT_PKG_INCLUDE_DEPENDENCIES}
-  )
+  # External include dependencies (should be rare)
   if(MERCURY_EXT_INCLUDE_DEPENDENCIES)
     list(REMOVE_DUPLICATES MERCURY_EXT_INCLUDE_DEPENDENCIES)
   endif()
   foreach(inc_dep ${MERCURY_EXT_INCLUDE_DEPENDENCIES})
-    set(MERCURY_INCLUDE_DEPENDENCIES "${MERCURY_INCLUDE_DEPENDENCIES} -I${inc_dep}")
+    set(MERCURY_INCLUDE_DEPENDENCIES
+        "${MERCURY_INCLUDE_DEPENDENCIES} -I${inc_dep}")
   endforeach()
-  set(MERCURY_INCLUDE_DEPENDENCIES ${MERCURY_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
+
+  # Configure pkg-config file
+  configure_file(
+    ${MERCURY_SOURCE_DIR}/CMake/${MERCURY_PACKAGE}.pc.in
+    ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}.pc @ONLY
+  )
+
+  # Install pkg-config file
+  install(
+    FILES
+      ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}.pc
+    DESTINATION
+      ${MERCURY_INSTALL_LIB_DIR}/pkgconfig
+  )
 endif()

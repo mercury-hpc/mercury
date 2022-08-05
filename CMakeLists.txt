@@ -339,23 +339,6 @@ install(
 )
 
 #-----------------------------------------------------------------------------
-# For automake compatibility, also provide a pkgconfig file
-#-----------------------------------------------------------------------------
-if(NOT WIN32)
-  configure_file(
-    ${MERCURY_SOURCE_DIR}/CMake/${MERCURY_PACKAGE}.pc.in
-    ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}.pc @ONLY
-  )
-
-  install(
-    FILES
-      ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}.pc
-    DESTINATION
-      ${MERCURY_INSTALL_LIB_DIR}/pkgconfig
-  )
-endif()
-
-#-----------------------------------------------------------------------------
 # CPack
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
