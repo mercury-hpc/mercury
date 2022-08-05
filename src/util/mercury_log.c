@@ -109,12 +109,17 @@ static char hg_log_subsys_g[HG_LOG_SUBSYS_MAX][HG_LOG_SUBSYS_NAME_MAX + 1] = {
     {"\0"}};
 
 /* Log level string table */
-#define X(a, b, c) b,
+#define X(a, b, c, d) b,
 static const char *const hg_log_level_name_g[] = {HG_LOG_LEVELS};
 #undef X
 
+/* Alt log level string table */
+#define X(a, b, c, d) c,
+static const char *const hg_log_level_alt_name_g[] = {HG_LOG_LEVELS};
+#undef X
+
 /* Standard log streams */
-#define X(a, b, c) c,
+#define X(a, b, c, d) d,
 static FILE **const hg_log_std_streams_g[] = {HG_LOG_LEVELS};
 #undef X
 static FILE *hg_log_streams_g[HG_LOG_LEVEL_MAX] = {NULL};
@@ -365,14 +370,15 @@ hg_log_set_subsys_level(const char *subsys, enum hg_log_level log_level)
 enum hg_log_level
 hg_log_name_to_level(const char *log_level)
 {
-    enum hg_log_level l = 0;
+    enum hg_log_level l;
 
     if (!log_level || strcasecmp("none", log_level) == 0)
         return HG_LOG_LEVEL_NONE;
 
-    while (strcasecmp(hg_log_level_name_g[l], log_level) != 0 &&
-           l != HG_LOG_LEVEL_MAX)
-        l++;
+    for (l = HG_LOG_LEVEL_NONE; l != HG_LOG_LEVEL_MAX; l++)
+        if ((strcasecmp(hg_log_level_name_g[l], log_level) == 0) ||
+            (strcasecmp(hg_log_level_alt_name_g[l], log_level) == 0))
+            break;
 
     if (l == HG_LOG_LEVEL_MAX) {
         fprintf(stderr,
