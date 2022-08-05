@@ -34,6 +34,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${NA_CMAKE_DIR})
 file(STRINGS version.txt version_txt)
 extract_version_components("${version_txt}" "${PROJECT_NAME}")
 set(NA_PACKAGE "na")
+set(NA_PACKAGE_DESCRIPTION "Mercury Network Abstraction (NA) Library")
 message(STATUS "${NA_PACKAGE} v${NA_VERSION_FULL}")
 
 #-----------------------------------------------------------------------------
@@ -471,5 +472,68 @@ install(
 # Set variables for parent scope
 #------------------------------------------------------------------------------
 set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
-set(NA_EXT_INCLUDE_DEPENDENCIES ${NA_EXT_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
-set(NA_EXT_LIB_DEPENDENCIES ${NA_EXT_LIB_DEPENDENCIES} PARENT_SCOPE)
+
+#-----------------------------------------------------------------------------
+# For automake compatibility, also provide a pkgconfig file
+#-----------------------------------------------------------------------------
+if(NOT WIN32)
+  if(CMAKE_BUILD_TYPE)
+    string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+  endif()
+
+  # Retrieve NA library
+  if(lower_cmake_build_type MATCHES "debug")
+    get_target_property(NA_LIBRARY na OUTPUT_NAME_DEBUG)
+  else()
+    get_target_property(NA_LIBRARY na OUTPUT_NAME_RELEASE)
+  endif()
+
+  # Pkg dependencies
+  set(NA_PKG_DEPENDENCIES mercury_util)
+
+  # NA external library dependencies
+  # Need to generate -llib if not already passed
+  foreach(lib_dep ${NA_EXT_LIB_DEPENDENCIES})
+    # get library name
+    get_filename_component(lib_name ${lib_dep} NAME_WE)
+    if(lib_name MATCHES "^-l" OR lib_name MATCHES "-pthread")
+      # lib_name found is -lxxx
+      set(NA_EXT_LIB_DEPENDENCIES_LIST
+          ${NA_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
+    else()
+      # lib_name is /path/to/lib so get library path and name
+      get_filename_component(lib_path ${lib_dep} PATH)
+      string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
+      set(NA_EXT_LIB_DEPENDENCIES_LIST
+          ${NA_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
+    endif()
+  endforeach()
+  if(NA_EXT_LIB_DEPENDENCIES_LIST)
+    list(REMOVE_DUPLICATES NA_EXT_LIB_DEPENDENCIES_LIST)
+    string(REPLACE ";" " "
+           NA_LIB_DEPENDENCIES "${NA_EXT_LIB_DEPENDENCIES_LIST}")
+  endif()
+
+  # External include dependencies (should be rare)
+  if(NA_EXT_INCLUDE_DEPENDENCIES)
+    list(REMOVE_DUPLICATES NA_EXT_INCLUDE_DEPENDENCIES)
+  endif()
+  foreach(inc_dep ${NA_EXT_INCLUDE_DEPENDENCIES})
+    set(NA_INCLUDE_DEPENDENCIES "${NA_INCLUDE_DEPENDENCIES} -I${inc_dep}")
+  endforeach()
+
+  # Configure pkg-config file
+  configure_file(
+    ${NA_SOURCE_DIR}/CMake/${NA_PACKAGE}.pc.in
+    ${NA_BINARY_DIR}/CMakeFiles/${NA_PACKAGE}.pc @ONLY
+  )
+
+  # Install pkg-config file
+  install(
+    FILES
+      ${NA_BINARY_DIR}/CMakeFiles/${NA_PACKAGE}.pc
+    DESTINATION
+      ${NA_INSTALL_LIB_DIR}/pkgconfig
+  )
+
+endif()

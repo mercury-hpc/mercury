@@ -23,8 +23,8 @@ endif()
 #------------------------------------------------------------------------------
 # Setup cmake module
 #------------------------------------------------------------------------------
-#set(MERCURY_UTIL_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
-#set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
+set(MERCURY_UTIL_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
 
 #------------------------------------------------------------------------------
 # Version information
@@ -33,7 +33,8 @@ endif()
 # easier to have a script to update version numbers automatically.
 file(STRINGS version.txt version_txt)
 extract_version_components("${version_txt}" "${PROJECT_NAME}")
-set(MERCURY_UTIL_PACKAGE "mercury-util")
+set(MERCURY_UTIL_PACKAGE "mercury_util")
+set(MERCURY_UTIL_PACKAGE_DESCRIPTION "Mercury Util Library")
 message(STATUS "${MERCURY_UTIL_PACKAGE} v${MERCURY_UTIL_VERSION_FULL}")
 
 #-----------------------------------------------------------------------------
@@ -266,7 +267,8 @@ target_include_directories(mercury_util
   SYSTEM PUBLIC ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
 )
 target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
-mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE} ${PROJECT_NAME})
+mercury_set_lib_options(mercury_util "mercury_util"
+                        ${MERCURY_UTIL_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_util)
 endif()
@@ -288,8 +290,65 @@ install(
   RUNTIME DESTINATION ${MERCURY_UTIL_INSTALL_BIN_DIR}
 )
 
-#------------------------------------------------------------------------------
-# Set variables for parent scope
-#------------------------------------------------------------------------------
-set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
-set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES} PARENT_SCOPE)
+#-----------------------------------------------------------------------------
+# For automake compatibility, also provide a pkgconfig file
+#-----------------------------------------------------------------------------
+if(NOT WIN32)
+  if(CMAKE_BUILD_TYPE)
+    string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+  endif()
+
+  # Retrieve util library
+  if(lower_cmake_build_type MATCHES "debug")
+    get_target_property(MERCURY_UTIL_LIBRARY mercury_util OUTPUT_NAME_DEBUG)
+  else()
+    get_target_property(MERCURY_UTIL_LIBRARY mercury_util OUTPUT_NAME_RELEASE)
+  endif()
+
+  # Mercury util external library dependencies
+  # Need to generate -llib if not already passed
+  foreach(lib_dep ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
+    # get library name
+    get_filename_component(lib_name ${lib_dep} NAME_WE)
+    if(lib_name MATCHES "^-l" OR lib_name MATCHES "-pthread")
+      # lib_name found is -lxxx
+      set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST
+          ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
+    else()
+      # lib_name is /path/to/lib so get library path and name
+      get_filename_component(lib_path ${lib_dep} PATH)
+      string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
+      set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST
+          ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
+    endif()
+  endforeach()
+  if(MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST)
+    list(REMOVE_DUPLICATES MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST)
+    string(REPLACE ";" " " MERCURY_UTIL_LIB_DEPENDENCIES
+           "${MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST}")
+  endif()
+
+  # External include dependencies
+  if(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES)
+    list(REMOVE_DUPLICATES MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES)
+  endif()
+  foreach(inc_dep ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
+    set(MERCURY_UTIL_INCLUDE_DEPENDENCIES
+        "${MERCURY_UTIL_INCLUDE_DEPENDENCIES} -I${inc_dep}")
+  endforeach()
+
+  # Configure pkg-config file
+  configure_file(
+    ${MERCURY_UTIL_SOURCE_DIR}/CMake/${MERCURY_UTIL_PACKAGE}.pc.in
+    ${MERCURY_UTIL_BINARY_DIR}/CMakeFiles/${MERCURY_UTIL_PACKAGE}.pc @ONLY
+  )
+
+  # Install pkg-config file
+  install(
+    FILES
+      ${MERCURY_UTIL_BINARY_DIR}/CMakeFiles/${MERCURY_UTIL_PACKAGE}.pc
+    DESTINATION
+      ${MERCURY_UTIL_INSTALL_LIB_DIR}/pkgconfig
+  )
+
+endif()
