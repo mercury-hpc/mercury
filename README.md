@@ -28,7 +28,7 @@ network abstraction layer.
 
 The OFI libfabric plugin as well as the SM plugin
 are stable and provide the best performance in most workloads. Libfabric
-providers currently supported are: `tcp`, `verbs`, `psm2`, `gni`.
+providers currently supported are: `tcp`, `verbs`, `gni`, `cxi`.
 
 The UCX plugin is also available as an alternative transport on platforms
 for which libfabric is either not available or not recommended to use,
@@ -123,20 +123,21 @@ Type `'c'` multiple times and choose suitable options. Recommended options are:
 
     BUILD_SHARED_LIBS                ON (or OFF if the library you link
                                      against requires static libraries)
-    BUILD_TESTING                    ON
+    BUILD_TESTING                    ON/OFF
     Boost_INCLUDE_DIR                /path/to/include/directory
     CMAKE_INSTALL_PREFIX             /path/to/install/directory
     MERCURY_ENABLE_DEBUG             ON/OFF
-    MERCURY_ENABLE_PARALLEL_TESTING  ON/OFF
+    MERCURY_TESTING_ENABLE_PARALLEL  ON/OFF
     MERCURY_USE_BOOST_PP             ON
-    MERCURY_USE_CHECKSUMS            ON
+    MERCURY_USE_CHECKSUMS            ON/OFF
     MERCURY_USE_SYSTEM_BOOST         ON/OFF
     MERCURY_USE_SYSTEM_MCHECKSUM     ON/OFF
     MERCURY_USE_XDR                  OFF
     NA_USE_BMI                       ON/OFF
     NA_USE_MPI                       ON/OFF
-    NA_USE_CCI                       ON/OFF
     NA_USE_OFI                       ON/OFF
+    NA_USE_PSM                       ON/OFF
+    NA_USE_PSM2                      ON/OFF
     NA_USE_SM                        ON/OFF
     NA_USE_UCX                       ON/OFF
 
