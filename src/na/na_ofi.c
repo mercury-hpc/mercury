@@ -6091,10 +6091,6 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
         fi_strerror(-rc), hg_atomic_get32(domain->mr_reg_count));
     hg_atomic_incr32(domain->mr_reg_count);
 
-    /* Retrieve key */
-    na_ofi_mem_handle->desc.info.fi_mr_key =
-        fi_mr_key(na_ofi_mem_handle->fi_mr);
-
     /* Attach MR to endpoint when provider requests it */
     if (fi_info->domain_attr->mr_mode & FI_MR_ENDPOINT) {
         struct na_ofi_endpoint *endpoint = NA_OFI_CLASS(na_class)->endpoint;
@@ -6107,6 +6103,10 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_mr_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
     }
+
+    /* Retrieve key */
+    na_ofi_mem_handle->desc.info.fi_mr_key =
+        fi_mr_key(na_ofi_mem_handle->fi_mr);
 
     return NA_SUCCESS;
 
