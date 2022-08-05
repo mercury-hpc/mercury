@@ -50,12 +50,12 @@
  * debug: print debug level logs
  */
 #define HG_LOG_LEVELS                                                          \
-    X(HG_LOG_LEVEL_NONE, "", NULL)                  /*!< no log */             \
-    X(HG_LOG_LEVEL_ERROR, "error", &stderr)         /*!< error log type */     \
-    X(HG_LOG_LEVEL_WARNING, "warning", &stdout)     /*!< warning log type */   \
-    X(HG_LOG_LEVEL_MIN_DEBUG, "min_debug", &stdout) /*!< debug log type */     \
-    X(HG_LOG_LEVEL_DEBUG, "debug", &stdout)         /*!< debug log type */     \
-    X(HG_LOG_LEVEL_MAX, "", NULL)
+    X(HG_LOG_LEVEL_NONE, "", "", NULL)                  /*!< no log */         \
+    X(HG_LOG_LEVEL_ERROR, "error", "err", &stderr)      /*!< error log */      \
+    X(HG_LOG_LEVEL_WARNING, "warning", "warn", &stdout) /*!< warning log */    \
+    X(HG_LOG_LEVEL_MIN_DEBUG, "min_debug", "trace", &stdout) /*!< trace log */ \
+    X(HG_LOG_LEVEL_DEBUG, "debug", "dbg", &stdout)           /*!< debug log */ \
+    X(HG_LOG_LEVEL_MAX, "", "", NULL)
 
 /* HG_LOG_OUTLET: global variable name of log outlet. */
 #define HG_LOG_OUTLET(name) HG_UTIL_CAT(name, _log_outlet_g)
@@ -180,7 +180,7 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
-#define X(a, b, c) a,
+#define X(a, b, c, d) a,
 /* Log levels */
 enum hg_log_level { HG_LOG_LEVELS };
 #undef X
