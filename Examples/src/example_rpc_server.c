@@ -18,7 +18,7 @@
 int
 main(void)
 {
-    hg_engine_init(NA_TRUE, "tcp://12345");
+    hg_engine_init(HG_TRUE, "tcp://:12345");
 
     hg_engine_print_self_addr();
 

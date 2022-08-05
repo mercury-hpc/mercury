@@ -8,6 +8,7 @@
 
 #include <mercury.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <snappy-c.h>
