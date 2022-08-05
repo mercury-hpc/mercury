@@ -16,6 +16,9 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Use `hwloc` to select interface to use if NIC information is available
       (only supported by `cxi` at the moment)
     - Support device memory types and `FI_HMEM` for `verbs` and `cxi` providers
+    - Add support for `FI_THREAD_DOMAIN`
+        - Passing `NA_THREAD_MODE_SINGLE` will relax default `FI_THREAD_SAFE`
+        thread mode and use `FI_THREAD_DOMAIN` instead.
     - Update min required version to libfabric 1.9
     - Improve debug output to print verbose FI info of selected provider
 - __[NA UCX]__
@@ -28,6 +31,8 @@ This version brings bug fixes and updates to our v2.0.0 release.
 - __[NA PSM]__
     - Add mercury NA plugin for the qlogic/intel PSM interface
         - Also support PSM2 (Intel OmniPath) through the PSM NA plugin
+- __[NA SM]__
+    - Add support for 0-size messages
 - __[NA]__
     - Add `na_addr_format` init info
     - Add `request_mem_device` init info when GPU support is requested
@@ -39,10 +44,14 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Refactor `na_ip_check_interface()` to only use `getaddrinfo()` and `getifaddrs()`
     - Add family argument to force detection of IPv4/IPv6 addresses
     - Add ip debug log
+- __[NA Test]__
+    - Introduce new perf tests to measure msg latency, put / get bandwidth. These
+    benchmarks produce results that are comparable with OSU benchmarks.
 - __[HG util]__
     - Add `mercury_byteswap.h` for `bswap` macros
     - Add `mercury_inet.h` for `htonll` and `ntohll` routine
     - Add `mercury_param.h` to use `sys/param.h` or `MIN/MAX` macros etc
+    - Add alternative log names: `err`, `warn`, `trace`, `dbg`
     - Use separate versioning for library and update to v3.0.0
 - __[HG bulk]__
     - Add support for memory attributes through a new `HG_Bulk_create_attr()` routine (support CUDA, ROCm, ZE)
@@ -97,6 +106,9 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Properly handle error when overflow bulk transfer is interrupted. Previously the RPC callback was triggered regarldless, potentially causing issues.
 - __[CMake]__
     - Correctly set INSTALL_RPATH for target libraries
+    - Split `mercury.pc` pkg config file into multiple `.pc` files for
+    `mercury_util` and `na` to prevent from overlinking against those libraries
+    when using pkg config.
 
 ## :warning: Known Issues
 
