@@ -69,7 +69,6 @@
 #endif
 
 /* Build Options */
-#cmakedefine NA_HAS_MULTI_PROGRESS
 #cmakedefine NA_HAS_DEBUG
 
 /* HWLOC */

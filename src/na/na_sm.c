@@ -11,6 +11,7 @@
 #include "na_sm.h"
 #include "na_plugin.h"
 
+#include "mercury_atomic_queue.h"
 #include "mercury_event.h"
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
@@ -915,10 +916,10 @@ na_sm_cleanup(void);
 
 /* op_create */
 static na_op_id_t *
-na_sm_op_create(na_class_t *na_class);
+na_sm_op_create(na_class_t *na_class, unsigned long flags);
 
 /* op_destroy */
-static na_return_t
+static void
 na_sm_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
@@ -926,7 +927,7 @@ static na_return_t
 na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p);
 
 /* addr_free */
-static na_return_t
+static void
 na_sm_addr_free(na_class_t *na_class, na_addr_t addr);
 
 /* addr_self */
@@ -1016,7 +1017,7 @@ na_sm_mem_handle_create_segments(na_class_t *na_class,
 #endif
 
 /* mem_handle_free */
-static na_return_t
+static void
 na_sm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
 /* mem_handle_get_max_segments */
@@ -1079,6 +1080,7 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     na_sm_initialize,                  /* initialize */
     na_sm_finalize,                    /* finalize */
     na_sm_cleanup,                     /* cleanup */
+    NULL,                              /* has_opt_feature */
     na_sm_context_create,              /* context_create */
     na_sm_context_destroy,             /* context_destroy */
     na_sm_op_create,                   /* op_create */
@@ -1104,6 +1106,7 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     NULL,                              /* msg_init_unexpected */
     na_sm_msg_send_unexpected,         /* msg_send_unexpected */
     na_sm_msg_recv_unexpected,         /* msg_recv_unexpected */
+    NULL,                              /* msg_multi_recv_unexpected */
     NULL,                              /* msg_init_expected */
     na_sm_msg_send_expected,           /* msg_send_expected */
     na_sm_msg_recv_expected,           /* msg_recv_expected */
@@ -2285,7 +2288,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
 
 error:
     if (na_sm_endpoint->source_addr)
-        free(na_sm_endpoint->source_addr);
+        na_sm_addr_destroy(na_sm_endpoint->source_addr);
     if (tx_notify > 0) {
         if (tx_notify_registered) {
             err_ret =
@@ -3628,7 +3631,7 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
         na_sm_errno_to_na(errno), "hg_poll_wait() failed");
 
     if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
-        NA_LOG_SUBSYS_DEBUG(poll, "Interrupted");
+        NA_LOG_SUBSYS_DEBUG(poll_loop, "Interrupted");
         *progressed_ptr = false;
         return ret;
     }
@@ -3641,13 +3644,13 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
 
         switch (*(enum na_sm_poll_type *) events[i].data.ptr) {
             case NA_SM_POLL_SOCK:
-                NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_SOCK event");
+                NA_LOG_SUBSYS_DEBUG(poll_loop, "NA_SM_POLL_SOCK event");
                 ret = na_sm_progress_sock(na_sm_endpoint, &progressed_notify);
                 NA_CHECK_SUBSYS_NA_ERROR(
                     poll, done, ret, "Could not progress sock");
                 break;
             case NA_SM_POLL_TX_NOTIFY:
-                NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_TX_NOTIFY event");
+                NA_LOG_SUBSYS_DEBUG(poll_loop, "NA_SM_POLL_TX_NOTIFY event");
                 poll_addr = container_of(
                     events[i].data.ptr, struct na_sm_addr, tx_poll_type);
                 ret = na_sm_progress_tx_notify(poll_addr, &progressed_notify);
@@ -3655,7 +3658,7 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
                     poll, done, ret, "Could not progress tx notify");
                 break;
             case NA_SM_POLL_RX_NOTIFY:
-                NA_LOG_SUBSYS_DEBUG(poll, "NA_SM_POLL_RX_NOTIFY event");
+                NA_LOG_SUBSYS_DEBUG(poll_loop, "NA_SM_POLL_RX_NOTIFY event");
                 poll_addr = container_of(
                     events[i].data.ptr, struct na_sm_addr, rx_poll_type);
 
@@ -4026,7 +4029,8 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
             /* Release buffer */
             na_sm_buf_release(
                 &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
-        }
+        } else
+            na_sm_unexpected_info->buf = NULL;
 
         /* Otherwise push the unexpected message into our unexpected queue so
          * that we can treat it later when a recv_unexpected is posted */
@@ -4246,20 +4250,15 @@ static na_return_t
 na_sm_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
+    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
+    struct na_sm_class *na_sm_class = NULL;
     struct rlimit rlimit;
-    bool no_wait = false;
-    uint8_t context_max = 1; /* Default */
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     int rc;
 
-    /* Get init info */
-    if (na_info->na_init_info) {
-        /* Progress mode */
-        if (na_info->na_init_info->progress_mode & NA_NO_BLOCK)
-            no_wait = true;
-        /* Max contexts */
-        context_max = na_info->na_init_info->max_contexts;
-    }
+    /* Get init info and overwrite defaults */
+    if (na_info->na_init_info)
+        na_init_info = *na_info->na_init_info;
 
     /* Reset errno */
     errno = 0;
@@ -4273,29 +4272,29 @@ na_sm_initialize(
         (uintmax_t) rlimit.rlim_cur, (uintmax_t) rlimit.rlim_max);
 
     /* Initialize private data */
-    na_class->plugin_class = malloc(sizeof(struct na_sm_class));
-    NA_CHECK_SUBSYS_ERROR(cls, na_class->plugin_class == NULL, error, ret,
-        NA_NOMEM, "Could not allocate SM private class");
-    memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
+    na_sm_class = (struct na_sm_class *) calloc(1, sizeof(*na_sm_class));
+    NA_CHECK_SUBSYS_ERROR(cls, na_sm_class == NULL, error, ret, NA_NOMEM,
+        "Could not allocate SM private class");
+
 #ifdef NA_SM_HAS_CMA
-    NA_SM_CLASS(na_class)->iov_max = (size_t) sysconf(_SC_IOV_MAX);
+    na_sm_class->iov_max = (size_t) sysconf(_SC_IOV_MAX);
 #else
-    NA_SM_CLASS(na_class)->iov_max = 1;
+    na_sm_class->iov_max = 1;
 #endif
-    NA_SM_CLASS(na_class)->context_max = context_max;
+    na_sm_class->context_max = na_init_info.max_contexts;
 
     /* Open endpoint */
-    ret = na_sm_endpoint_open(&NA_SM_CLASS(na_class)->endpoint,
-        na_info->host_name, listen, no_wait, (uint32_t) rlimit.rlim_cur);
+    ret = na_sm_endpoint_open(&na_sm_class->endpoint, na_info->host_name,
+        listen, na_init_info.progress_mode & NA_NO_BLOCK,
+        (uint32_t) rlimit.rlim_cur);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open endpoint");
 
-    return ret;
+    na_class->plugin_class = (void *) na_sm_class;
+
+    return NA_SUCCESS;
 
 error:
-    if (na_class->plugin_class) {
-        free(na_class->plugin_class);
-        na_class->plugin_class = NULL;
-    }
+    free(na_sm_class);
 
     return ret;
 }
@@ -4366,7 +4365,7 @@ na_sm_cleanup(void)
 
 /*---------------------------------------------------------------------------*/
 static na_op_id_t *
-na_sm_op_create(na_class_t *na_class)
+na_sm_op_create(na_class_t *na_class, unsigned long NA_UNUSED flags)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
 
@@ -4389,21 +4388,17 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_sm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
-    na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_SUBSYS_ERROR(op,
-        !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
-        ret, NA_BUSY, "Attempting to use OP ID that was not completed (%s)",
+    NA_CHECK_SUBSYS_WARNING(op,
+        !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED),
+        "Attempting to use OP ID that was not completed (%s)",
         na_cb_type_to_string(na_sm_op_id->completion_data.callback_info.type));
 
     free(na_sm_op_id);
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4428,11 +4423,17 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
     na_sm_addr = na_sm_addr_map_lookup(&na_sm_endpoint->addr_map, &addr_key);
     if (!na_sm_addr) {
         na_return_t na_ret;
+        int rc;
 
         NA_LOG_SUBSYS_DEBUG(addr,
             "Address for PID=%d, ID=%" PRIu8
             " was not found, attempting to insert it",
             addr_key.pid, addr_key.id);
+
+        /* Re-generate URI */
+        rc = NA_SM_PRINT_URI(uri, NA_SM_MAX_FILENAME, addr_key);
+        NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > NA_SM_MAX_FILENAME, error,
+            ret, NA_OVERFLOW, "NA_SM_PRINT_URI() failed, rc: %d", rc);
 
         /* Insert new entry and create new address if needed */
         na_ret = na_sm_addr_map_insert(na_sm_endpoint,
@@ -4456,12 +4457,10 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_sm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     na_sm_addr_ref_decr((struct na_sm_addr *) addr);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4678,10 +4677,6 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     HG_QUEUE_POP_HEAD(&unexpected_msg_queue->queue, entry);
     hg_thread_spin_unlock(&unexpected_msg_queue->lock);
     if (unlikely(na_sm_unexpected_info)) {
-        /* Copy buffers */
-        memcpy(na_sm_op_id->info.msg.buf.ptr, na_sm_unexpected_info->buf,
-            na_sm_unexpected_info->buf_size);
-
         /* Fill unexpected info */
         na_sm_op_id->completion_data.callback_info.info.recv_unexpected =
             (struct na_cb_info_recv_unexpected){
@@ -4690,7 +4685,12 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
                 .source = (na_addr_t) na_sm_unexpected_info->na_sm_addr};
         na_sm_addr_ref_incr(na_sm_unexpected_info->na_sm_addr);
 
-        free(na_sm_unexpected_info->buf);
+        if (na_sm_unexpected_info->buf_size > 0) {
+            /* Copy buffers */
+            memcpy(na_sm_op_id->info.msg.buf.ptr, na_sm_unexpected_info->buf,
+                na_sm_unexpected_info->buf_size);
+            free(na_sm_unexpected_info->buf);
+        }
         free(na_sm_unexpected_info);
         na_sm_complete(na_sm_op_id, NA_SUCCESS);
 
@@ -4862,7 +4862,7 @@ error:
 #endif
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_sm_mem_handle_free(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
@@ -4872,8 +4872,6 @@ na_sm_mem_handle_free(
     if (na_sm_mem_handle->info.iovcnt > NA_SM_IOV_STATIC_MAX)
         free(na_sm_mem_handle->iov.d);
     free(na_sm_mem_handle);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/

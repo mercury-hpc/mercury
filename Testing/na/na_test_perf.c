@@ -84,8 +84,9 @@ na_test_perf_request_trigger(
     unsigned int actual_count = 0;
     int ret = HG_UTIL_SUCCESS;
 
-    if (NA_Trigger(na_test_perf_info->context, timeout, 1, NULL,
-            &actual_count) != NA_SUCCESS)
+    (void) timeout;
+
+    if (NA_Trigger(na_test_perf_info->context, 1, &actual_count) != NA_SUCCESS)
         ret = HG_UTIL_FAIL;
     *flag = (actual_count) ? true : false;
 
@@ -93,18 +94,14 @@ na_test_perf_request_trigger(
 }
 
 /*---------------------------------------------------------------------------*/
-int
+void
 na_test_perf_request_complete(const struct na_cb_info *na_cb_info)
 {
-    hg_request_t *request = (hg_request_t *) na_cb_info->arg;
-
-    hg_request_complete(request);
-
-    return NA_SUCCESS;
+    hg_request_complete((hg_request_t *) na_cb_info->arg);
 }
 
 /*---------------------------------------------------------------------------*/
-int
+void
 na_test_perf_rma_request_complete(const struct na_cb_info *na_cb_info)
 {
     struct na_test_perf_rma_info *info =
@@ -112,8 +109,6 @@ na_test_perf_rma_request_complete(const struct na_cb_info *na_cb_info)
 
     if ((++info->complete_count) == info->expected_count)
         hg_request_complete(info->request);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -201,27 +196,41 @@ na_test_perf_init(
         info->rma_size_max);
 
     /* Prepare Msg buffers */
-    info->msg_unexp_buf = NA_Msg_buf_alloc(
-        info->na_class, info->msg_unexp_size_max, &info->msg_unexp_data);
-    NA_TEST_CHECK_ERROR(info->msg_unexp_buf == NULL, error, ret, NA_NOMEM,
-        "NA_Msg_buf_alloc() failed");
-    memset(info->msg_unexp_buf, 0, info->msg_unexp_size_max);
+    if (listen && info->na_test_info.multi_recv) {
+        info->msg_unexp_size_max *= 16;
+        info->msg_unexp_buf = NA_Msg_buf_alloc(info->na_class,
+            info->msg_unexp_size_max, NA_MULTI_RECV, &info->msg_unexp_data);
+        NA_TEST_CHECK_ERROR(info->msg_unexp_buf == NULL, error, ret, NA_NOMEM,
+            "NA_Msg_buf_alloc() failed");
+        memset(info->msg_unexp_buf, 0, info->msg_unexp_size_max);
+    } else {
+        info->msg_unexp_buf =
+            NA_Msg_buf_alloc(info->na_class, info->msg_unexp_size_max,
+                (listen) ? NA_RECV : NA_SEND, &info->msg_unexp_data);
+        NA_TEST_CHECK_ERROR(info->msg_unexp_buf == NULL, error, ret, NA_NOMEM,
+            "NA_Msg_buf_alloc() failed");
+        memset(info->msg_unexp_buf, 0, info->msg_unexp_size_max);
+    }
 
-    ret = NA_Msg_init_unexpected(
-        info->na_class, info->msg_unexp_buf, info->msg_unexp_size_max);
-    NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_init_expected() failed (%s)",
-        NA_Error_to_string(ret));
+    if (!listen) {
+        ret = NA_Msg_init_unexpected(
+            info->na_class, info->msg_unexp_buf, info->msg_unexp_size_max);
+        NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_init_expected() failed (%s)",
+            NA_Error_to_string(ret));
+    }
 
-    info->msg_exp_buf = NA_Msg_buf_alloc(
-        info->na_class, info->msg_exp_size_max, &info->msg_exp_data);
+    info->msg_exp_buf = NA_Msg_buf_alloc(info->na_class, info->msg_exp_size_max,
+        (listen) ? NA_SEND : NA_RECV, &info->msg_exp_data);
     NA_TEST_CHECK_ERROR(info->msg_exp_buf == NULL, error, ret, NA_NOMEM,
         "NA_Msg_buf_alloc() failed");
     memset(info->msg_exp_buf, 0, info->msg_exp_size_max);
 
-    ret = NA_Msg_init_expected(
-        info->na_class, info->msg_exp_buf, info->msg_exp_size_max);
-    NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_init_unexpected() failed (%s)",
-        NA_Error_to_string(ret));
+    if (listen) {
+        ret = NA_Msg_init_expected(
+            info->na_class, info->msg_exp_buf, info->msg_exp_size_max);
+        NA_TEST_CHECK_NA_ERROR(error, ret,
+            "NA_Msg_init_unexpected() failed (%s)", NA_Error_to_string(ret));
+    }
 
     /* Prepare RMA buf */
     info->rma_buf =
@@ -264,10 +273,11 @@ na_test_perf_init(
     }
 
     /* Create msg operation IDs */
-    info->msg_unexp_op_id = NA_Op_create(info->na_class);
+    info->msg_unexp_op_id = NA_Op_create(info->na_class,
+        (listen && info->na_test_info.multi_recv) ? NA_OP_MULTI : NA_OP_SINGLE);
     NA_TEST_CHECK_ERROR(info->msg_unexp_op_id == NULL, error, ret, NA_NOMEM,
         "NA_Op_create() failed");
-    info->msg_exp_op_id = NA_Op_create(info->na_class);
+    info->msg_exp_op_id = NA_Op_create(info->na_class, NA_OP_SINGLE);
     NA_TEST_CHECK_ERROR(info->msg_exp_op_id == NULL, error, ret, NA_NOMEM,
         "NA_Op_create() failed");
 
@@ -285,7 +295,7 @@ na_test_perf_init(
         info->rma_op_ids[i] = NULL;
 
     for (i = 0; i < info->rma_count; i++) {
-        info->rma_op_ids[i] = NA_Op_create(info->na_class);
+        info->rma_op_ids[i] = NA_Op_create(info->na_class, NA_OP_SINGLE);
         NA_TEST_CHECK_ERROR(info->rma_op_ids[i] == NULL, error, ret, NA_NOMEM,
             "NA_Op_create() failed");
     }
@@ -479,17 +489,15 @@ na_test_perf_mem_handle_send(
         NA_Error_to_string(ret));
 
     /* Send the serialized handle */
-    ret = NA_Msg_send_expected(info->na_class, info->context,
-        na_test_perf_request_complete, info->request, info->msg_exp_buf,
-        info->msg_exp_size_max, info->msg_exp_data, src_addr, 0, tag,
-        info->msg_exp_op_id);
+    ret = NA_Msg_send_expected(info->na_class, info->context, NULL, NULL,
+        info->msg_exp_buf, info->msg_exp_size_max, info->msg_exp_data, src_addr,
+        0, tag, info->msg_exp_op_id);
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_expected() failed (%s)",
         NA_Error_to_string(ret));
 
     return NA_SUCCESS;
 
 error:
-    hg_request_complete(info->request);
     return ret;
 }
 

@@ -16,20 +16,33 @@
 /************************************/
 
 struct na_test_perf_recv_info {
-    struct na_cb_info_recv_unexpected recv;
     struct na_test_perf_info *info;
     na_return_t ret;
+    bool post_new_recv;
+    bool done;
 };
+
+typedef na_return_t (*na_test_perf_recv_op_t)(na_class_t *na_class,
+    na_context_t *context, na_cb_t callback, void *arg, void *buf,
+    size_t buf_size, void *plugin_data, na_op_id_t *op_id);
 
 /********************/
 /* Local Prototypes */
 /********************/
 
 static na_return_t
-na_test_perf_loop(struct na_test_perf_info *info);
+na_test_perf_loop(struct na_test_perf_info *info,
+    na_test_perf_recv_op_t recv_op, na_cb_t recv_op_cb);
 
-static int
-na_test_perf_req_process(const struct na_cb_info *na_cb_info);
+static void
+na_test_perf_recv_cb(const struct na_cb_info *na_cb_info);
+
+static void
+na_test_perf_multi_recv_cb(const struct na_cb_info *na_cb_info);
+
+static void
+na_test_perf_process_recv(struct na_test_perf_recv_info *recv_info,
+    void *actual_buf, size_t actual_buf_size, na_addr_t source, na_tag_t tag);
 
 /*******************/
 /* Local Variables */
@@ -37,31 +50,47 @@ na_test_perf_req_process(const struct na_cb_info *na_cb_info);
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_test_perf_loop(struct na_test_perf_info *info)
+na_test_perf_loop(struct na_test_perf_info *info,
+    na_test_perf_recv_op_t recv_op, na_cb_t recv_op_cb)
 {
     struct na_test_perf_recv_info recv_info;
     na_return_t ret;
 
     memset(&recv_info, 0, sizeof(recv_info));
     recv_info.info = info;
+    recv_info.post_new_recv = true;
 
-    while (recv_info.recv.tag != NA_TEST_PERF_TAG_DONE) {
-        hg_request_reset(info->request);
+    do {
+        unsigned int actual_count = 0;
 
-        /* Post recv */
-        ret = NA_Msg_recv_unexpected(info->na_class, info->context,
-            na_test_perf_req_process, &recv_info, info->msg_unexp_buf,
-            info->msg_unexp_size_max, info->msg_unexp_data,
-            info->msg_unexp_op_id);
-        NA_TEST_CHECK_NA_ERROR(error, ret,
-            "NA_Msg_recv_unexpected() failed (%s)", NA_Error_to_string(ret));
+        if (recv_info.post_new_recv) {
+            recv_info.post_new_recv = false;
 
-        hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+            /* Post recv */
+            ret = recv_op(info->na_class, info->context, recv_op_cb, &recv_info,
+                info->msg_unexp_buf, info->msg_unexp_size_max,
+                info->msg_unexp_data, info->msg_unexp_op_id);
+            NA_TEST_CHECK_NA_ERROR(error, ret,
+                "NA_Msg_recv_unexpected() failed (%s)",
+                NA_Error_to_string(ret));
+        }
 
-        NA_TEST_CHECK_ERROR(recv_info.ret != NA_SUCCESS, error, ret,
-            recv_info.ret, "NA_Msg_recv_unexpected() failed (%s)",
-            NA_Error_to_string(recv_info.ret));
-    }
+        do {
+            ret = NA_Trigger(info->context, 1, &actual_count);
+            NA_TEST_CHECK_ERROR(recv_info.ret != NA_SUCCESS, error, ret,
+                recv_info.ret, "NA_Msg_recv_unexpected() failed (%s)",
+                NA_Error_to_string(recv_info.ret));
+        } while ((ret == NA_SUCCESS) && actual_count);
+        NA_TEST_CHECK_ERROR_NORET(ret != NA_SUCCESS && ret != NA_TIMEOUT, error,
+            "NA_Trigger() failed (%s)", NA_Error_to_string(ret));
+
+        if (recv_info.done)
+            break;
+
+        ret = NA_Progress(info->na_class, info->context, 1000);
+    } while ((ret == NA_SUCCESS) || (ret == NA_TIMEOUT));
+    NA_TEST_CHECK_ERROR_NORET(ret != NA_SUCCESS && ret != NA_TIMEOUT, error,
+        "NA_Progress() failed (%s)", NA_Error_to_string(ret));
 
     return NA_SUCCESS;
 
@@ -70,37 +99,60 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static int
-na_test_perf_req_process(const struct na_cb_info *na_cb_info)
+static void
+na_test_perf_recv_cb(const struct na_cb_info *na_cb_info)
 {
     struct na_test_perf_recv_info *recv_info =
         (struct na_test_perf_recv_info *) na_cb_info->arg;
+    const struct na_cb_info_recv_unexpected *msg_info =
+        &na_cb_info->info.recv_unexpected;
+
+    na_test_perf_process_recv(recv_info, NULL, msg_info->actual_buf_size,
+        msg_info->source, msg_info->tag);
+
+    recv_info->post_new_recv = true;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_test_perf_multi_recv_cb(const struct na_cb_info *na_cb_info)
+{
+    struct na_test_perf_recv_info *recv_info =
+        (struct na_test_perf_recv_info *) na_cb_info->arg;
+    const struct na_cb_info_multi_recv_unexpected *msg_info =
+        &na_cb_info->info.multi_recv_unexpected;
+
+    na_test_perf_process_recv(recv_info, msg_info->actual_buf,
+        msg_info->actual_buf_size, msg_info->source, msg_info->tag);
+
+    recv_info->post_new_recv = msg_info->last;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_test_perf_process_recv(struct na_test_perf_recv_info *recv_info,
+    void *actual_buf, size_t actual_buf_size, na_addr_t source, na_tag_t tag)
+{
     struct na_test_perf_info *info = recv_info->info;
     na_return_t ret = NA_SUCCESS;
     size_t i;
 
-    recv_info->recv = na_cb_info->info.recv_unexpected;
-
-    switch (recv_info->recv.tag) {
+    switch (tag) {
         case NA_TEST_PERF_TAG_LAT_INIT:
             /* init data separately to avoid a memcpy */
             na_test_perf_init_data(info->msg_exp_buf, info->msg_exp_size_max,
                 info->msg_exp_header_size);
-            hg_request_complete(info->request);
             break;
         case NA_TEST_PERF_TAG_LAT:
             /* Respond with same data */
-            ret = NA_Msg_send_expected(info->na_class, info->context,
-                na_test_perf_request_complete, info->request, info->msg_exp_buf,
-                recv_info->recv.actual_buf_size, info->msg_exp_data,
-                recv_info->recv.source, 0, recv_info->recv.tag,
-                info->msg_exp_op_id);
+            ret = NA_Msg_send_expected(info->na_class, info->context, NULL,
+                NULL, info->msg_exp_buf, actual_buf_size, info->msg_exp_data,
+                source, 0, tag, info->msg_exp_op_id);
             NA_TEST_CHECK_NA_ERROR(done, ret,
                 "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
             break;
         case NA_TEST_PERF_TAG_PUT:
-            ret = na_test_perf_mem_handle_send(
-                info, recv_info->recv.source, recv_info->recv.tag);
+            ret = na_test_perf_mem_handle_send(info, source, tag);
             NA_TEST_CHECK_NA_ERROR(done, ret,
                 "na_test_perf_mem_handle_send() failed (%s)",
                 NA_Error_to_string(ret));
@@ -112,27 +164,23 @@ na_test_perf_req_process(const struct na_cb_info *na_cb_info)
                     (char *) info->rma_buf + i * info->rma_size_max,
                     info->rma_size_max, 0);
 
-            ret = na_test_perf_mem_handle_send(
-                info, recv_info->recv.source, recv_info->recv.tag);
+            ret = na_test_perf_mem_handle_send(info, source, tag);
             NA_TEST_CHECK_NA_ERROR(done, ret,
                 "na_test_perf_mem_handle_send() failed (%s)",
                 NA_Error_to_string(ret));
             break;
         case NA_TEST_PERF_TAG_DONE:
-            hg_request_complete(info->request);
+            recv_info->done = true;
             break;
         default:
             ret = NA_PROTOCOL_ERROR;
-            hg_request_complete(info->request);
             break;
     }
 
-    (void) NA_Addr_free(info->na_class, recv_info->recv.source);
+    (void) NA_Addr_free(info->na_class, source);
 
 done:
     recv_info->ret = ret;
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -148,7 +196,11 @@ main(int argc, char *argv[])
         NA_Error_to_string(na_ret));
 
     /* Loop */
-    na_test_perf_loop(&info);
+    if (info.na_test_info.multi_recv)
+        na_test_perf_loop(
+            &info, NA_Msg_multi_recv_unexpected, na_test_perf_multi_recv_cb);
+    else
+        na_test_perf_loop(&info, NA_Msg_recv_unexpected, na_test_perf_recv_cb);
 
     /* Finalize interface */
     printf("Finalizing...\n");

@@ -2342,7 +2342,7 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
         NA_Msg_get_expected_header_size(na_class);
 
     hg_core_handle->core_handle.in_buf =
-        NA_Msg_buf_alloc(na_class, hg_core_handle->core_handle.in_buf_size,
+        NA_Msg_buf_alloc(na_class, hg_core_handle->core_handle.in_buf_size, 0,
             &hg_core_handle->in_buf_plugin_data);
     HG_CHECK_ERROR(hg_core_handle->core_handle.in_buf == NULL, error, ret,
         HG_NOMEM, "Could not allocate buffer for input");
@@ -2354,7 +2354,7 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
         "Could not initialize input buffer (%s)", NA_Error_to_string(na_ret));
 
     hg_core_handle->core_handle.out_buf =
-        NA_Msg_buf_alloc(na_class, hg_core_handle->core_handle.out_buf_size,
+        NA_Msg_buf_alloc(na_class, hg_core_handle->core_handle.out_buf_size, 0,
             &hg_core_handle->out_buf_plugin_data);
     HG_CHECK_ERROR(hg_core_handle->core_handle.out_buf == NULL, error, ret,
         HG_NOMEM, "Could not allocate buffer for output");
@@ -2365,13 +2365,13 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
         "Could not initialize output buffer (%s)", NA_Error_to_string(na_ret));
 
     /* Create NA operation IDs */
-    hg_core_handle->na_send_op_id = NA_Op_create(na_class);
+    hg_core_handle->na_send_op_id = NA_Op_create(na_class, 0);
     HG_CHECK_ERROR(hg_core_handle->na_send_op_id == NULL, error, ret,
         HG_NA_ERROR, "Could not create NA op ID");
-    hg_core_handle->na_recv_op_id = NA_Op_create(na_class);
+    hg_core_handle->na_recv_op_id = NA_Op_create(na_class, 0);
     HG_CHECK_ERROR(hg_core_handle->na_recv_op_id == NULL, error, ret,
         HG_NA_ERROR, "Could not create NA op ID");
-    hg_core_handle->na_ack_op_id = NA_Op_create(na_class);
+    hg_core_handle->na_ack_op_id = NA_Op_create(na_class, 0);
     HG_CHECK_ERROR(hg_core_handle->na_ack_op_id == NULL, error, ret,
         HG_NA_ERROR, "Could not create NA op ID");
 
@@ -2919,7 +2919,7 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
         size_t buf_size = hg_core_handle->core_handle.na_out_header_offset +
                           sizeof(hg_uint8_t);
         hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
-            buf_size, &hg_core_handle->ack_buf_plugin_data);
+            buf_size, 0, &hg_core_handle->ack_buf_plugin_data);
         HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret, HG_NA_ERROR,
             "Could not allocate buffer for ack");
 
@@ -3410,7 +3410,7 @@ hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret)
 
     /* Allocate buffer for ack */
     hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
-        buf_size, &hg_core_handle->ack_buf_plugin_data);
+        buf_size, 0, &hg_core_handle->ack_buf_plugin_data);
     HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, hg_ret, HG_NA_ERROR,
         "Could not allocate buffer for ack");
 

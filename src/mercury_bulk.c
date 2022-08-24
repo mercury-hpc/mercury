@@ -1606,7 +1606,7 @@ hg_bulk_op_create(
     /* Preallocate NA OP IDs */
     for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
         hg_bulk_op_id->na_op_ids.s[i] =
-            NA_Op_create(core_context->core_class->na_class);
+            NA_Op_create(core_context->core_class->na_class, 0);
         HG_CHECK_ERROR(hg_bulk_op_id->na_op_ids.s[i] == NULL, error, ret,
             HG_NA_ERROR, "NA_Op_create() failed");
     }
@@ -1614,7 +1614,7 @@ hg_bulk_op_create(
     if (core_context->core_class->na_sm_class) {
         for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
             hg_bulk_op_id->na_sm_op_ids.s[i] =
-                NA_Op_create(core_context->core_class->na_sm_class);
+                NA_Op_create(core_context->core_class->na_sm_class, 0);
             HG_CHECK_ERROR(hg_bulk_op_id->na_sm_op_ids.s[i] == NULL, error, ret,
                 HG_NA_ERROR, "NA_Op_create() failed");
         }
@@ -2216,7 +2216,8 @@ hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t na_origin_addr,
                 "Could not allocate memory for op_ids");
 
             for (i = 0; i < hg_bulk_op_id->op_count; i++) {
-                hg_bulk_na_op_ids->d[i] = NA_Op_create(hg_bulk_op_id->na_class);
+                hg_bulk_na_op_ids->d[i] =
+                    NA_Op_create(hg_bulk_op_id->na_class, 0);
                 HG_CHECK_ERROR(hg_bulk_na_op_ids->d[i] == NULL, done, ret,
                     HG_NA_ERROR, "Could not create NA op ID");
             }

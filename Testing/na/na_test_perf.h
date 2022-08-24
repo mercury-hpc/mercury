@@ -89,10 +89,10 @@ int
 na_test_perf_request_trigger(
     unsigned int timeout, unsigned int *flag, void *arg);
 
-int
+void
 na_test_perf_request_complete(const struct na_cb_info *na_cb_info);
 
-int
+void
 na_test_perf_rma_request_complete(const struct na_cb_info *na_cb_info);
 
 na_return_t

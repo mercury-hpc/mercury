@@ -65,6 +65,7 @@ struct hg_mem_pool {
     HG_QUEUE_HEAD(hg_mem_pool_block) blocks;       /* Block list      */
     hg_mem_pool_register_func_t register_func;     /* Register func   */
     hg_mem_pool_deregister_func_t deregister_func; /* Deregister func */
+    unsigned long flags;                           /* Optional flags */
     void *arg;                                     /* Func args       */
     size_t chunk_size;                             /* Chunk size      */
     size_t chunk_count;                            /* Chunk count     */
@@ -79,7 +80,7 @@ struct hg_mem_pool {
 /* Allocate new pool block */
 static struct hg_mem_pool_block *
 hg_mem_pool_block_alloc(size_t chunk_size, size_t chunk_count,
-    hg_mem_pool_register_func_t register_func, void *arg);
+    hg_mem_pool_register_func_t register_func, unsigned long flags, void *arg);
 
 /* Free pool block */
 static void
@@ -94,7 +95,7 @@ hg_mem_pool_block_free(struct hg_mem_pool_block *hg_mem_pool_block,
 
 struct hg_mem_pool *
 hg_mem_pool_create(size_t chunk_size, size_t chunk_count, size_t block_count,
-    hg_mem_pool_register_func_t register_func,
+    hg_mem_pool_register_func_t register_func, unsigned long flags,
     hg_mem_pool_deregister_func_t deregister_func, void *arg)
 {
     struct hg_mem_pool *hg_mem_pool = NULL;
@@ -106,6 +107,7 @@ hg_mem_pool_create(size_t chunk_size, size_t chunk_count, size_t block_count,
     HG_QUEUE_INIT(&hg_mem_pool->blocks);
     hg_mem_pool->register_func = register_func;
     hg_mem_pool->deregister_func = deregister_func;
+    hg_mem_pool->flags = flags;
     hg_mem_pool->arg = arg;
     hg_mem_pool->chunk_size = chunk_size;
     hg_mem_pool->chunk_count = chunk_count;
@@ -117,7 +119,7 @@ hg_mem_pool_create(size_t chunk_size, size_t chunk_count, size_t block_count,
     /* Allocate single block */
     for (i = 0; i < block_count; i++) {
         struct hg_mem_pool_block *hg_mem_pool_block = hg_mem_pool_block_alloc(
-            chunk_size, chunk_count, register_func, arg);
+            chunk_size, chunk_count, register_func, flags, arg);
         HG_UTIL_CHECK_ERROR_NORET(hg_mem_pool_block == NULL, error,
             "Could not allocate block of %zu bytes", chunk_size * chunk_count);
         HG_QUEUE_PUSH_TAIL(&hg_mem_pool->blocks, hg_mem_pool_block, entry);
@@ -154,7 +156,7 @@ hg_mem_pool_destroy(struct hg_mem_pool *hg_mem_pool)
 /*---------------------------------------------------------------------------*/
 static struct hg_mem_pool_block *
 hg_mem_pool_block_alloc(size_t chunk_size, size_t chunk_count,
-    hg_mem_pool_register_func_t register_func, void *arg)
+    hg_mem_pool_register_func_t register_func, unsigned long flags, void *arg)
 {
     struct hg_mem_pool_block *hg_mem_pool_block = NULL;
     size_t page_size = (size_t) hg_mem_get_page_size();
@@ -174,7 +176,7 @@ hg_mem_pool_block_alloc(size_t chunk_size, size_t chunk_count,
 
     /* Register memory if registration function is provided */
     if (register_func) {
-        int rc = register_func(mem_ptr, block_size, &mr_handle, arg);
+        int rc = register_func(mem_ptr, block_size, flags, &mr_handle, arg);
         if (unlikely(rc != HG_UTIL_SUCCESS)) {
             hg_mem_aligned_free(mem_ptr);
             HG_UTIL_GOTO_ERROR(done, mem_ptr, NULL, "register_func() failed");
@@ -266,7 +268,7 @@ hg_mem_pool_alloc(
 
             hg_mem_pool_block = hg_mem_pool_block_alloc(hg_mem_pool->chunk_size,
                 hg_mem_pool->chunk_count, hg_mem_pool->register_func,
-                hg_mem_pool->arg);
+                hg_mem_pool->flags, hg_mem_pool->arg);
             HG_UTIL_CHECK_ERROR(hg_mem_pool_block == NULL, done, mem_ptr, NULL,
                 "Could not allocate block of %zu bytes",
                 hg_mem_pool->chunk_size * hg_mem_pool->chunk_count);

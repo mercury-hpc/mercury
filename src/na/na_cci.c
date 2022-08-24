@@ -9,6 +9,7 @@
 #include "na_plugin.h"
 
 #include "mercury_list.h"
+#include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 
 #include <cci.h>
@@ -206,10 +207,10 @@ na_cci_finalize(na_class_t *na_class);
 
 /* op_create */
 static na_op_id_t *
-na_cci_op_create(na_class_t *na_class);
+na_cci_op_create(na_class_t *na_class, unsigned long flags);
 
 /* op_destroy */
-static na_return_t
+static void
 na_cci_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
@@ -228,7 +229,7 @@ static na_return_t
 na_cci_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
 
 /* addr_free */
-static na_return_t
+static void
 na_cci_addr_free(na_class_t *na_class, na_addr_t addr);
 
 /* addr_is_self */
@@ -295,7 +296,7 @@ static na_return_t
 na_cci_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
-static na_return_t
+static void
 na_cci_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
 static na_return_t
@@ -362,6 +363,7 @@ const struct na_class_ops NA_PLUGIN_OPS(cci) = {
     na_cci_initialize,                    /* initialize */
     na_cci_finalize,                      /* finalize */
     NULL,                                 /* cleanup */
+    NULL,                                 /* has_opt_feature */
     NULL,                                 /* context_create */
     NULL,                                 /* context_destroy */
     na_cci_op_create,                     /* op_create */
@@ -387,6 +389,7 @@ const struct na_class_ops NA_PLUGIN_OPS(cci) = {
     NULL,                                 /* msg_init_unexpected */
     na_cci_msg_send_unexpected,           /* msg_send_unexpected */
     na_cci_msg_recv_unexpected,           /* msg_recv_unexpected */
+    NULL,                                 /* msg_multi_recv_unexpected */
     NULL,                                 /* msg_init_expected */
     na_cci_msg_send_expected,             /* msg_send_expected */
     na_cci_msg_recv_expected,             /* msg_recv_expected */
@@ -737,7 +740,7 @@ na_cci_finalize(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_op_id_t *
-na_cci_op_create(na_class_t NA_UNUSED *na_class)
+na_cci_op_create(na_class_t NA_UNUSED *na_class, unsigned long NA_UNUSED flags)
 {
     na_cci_op_id_t *na_cci_op_id = NULL;
 
@@ -756,16 +759,13 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_cci_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) op_id;
-    na_return_t ret = NA_SUCCESS;
 
     /* No more references, cleanup */
     free(na_cci_op_id);
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -892,21 +892,12 @@ na_cci_addr_dup(
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_cci_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) addr;
-    na_return_t ret = NA_SUCCESS;
-
-    if (!na_cci_addr) {
-        NA_LOG_ERROR("NULL CCI addr");
-        ret = NA_INVALID_PARAM;
-        return ret;
-    }
 
     addr_decref(na_cci_addr);
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1331,15 +1322,13 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_cci_mem_handle_free(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
     na_cci_mem_handle_t *cci_mem_handle = (na_cci_mem_handle_t *) mem_handle;
 
     free(cci_mem_handle);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/

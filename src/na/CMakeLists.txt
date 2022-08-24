@@ -56,12 +56,6 @@ set(NA_BUILD_INCLUDE_DEPENDENCIES
 #------------------------------------------------------------------------------
 # Internal dependencies
 #------------------------------------------------------------------------------
-# Multi progress
-option(NA_ALLOW_MULTI_PROGRESS "Allow concurrent progress on single context." ON)
-if(NA_ALLOW_MULTI_PROGRESS)
-  set(NA_HAS_MULTI_PROGRESS 1)
-endif()
-mark_as_advanced(NA_ALLOW_MULTI_PROGRESS)
 
 #------------------------------------------------------------------------------
 # External dependencies / NA plugins

@@ -10,6 +10,8 @@
 
 #include "mercury_list.h"
 #include "mercury_thread.h"
+#include "mercury_thread_condition.h"
+#include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 
 #include <stdio.h>
@@ -192,7 +194,7 @@ na_mpi_accept_service(void *args);
 
 /* open_port */
 static na_return_t
-na_mpi_open_port(na_class_t *na_class);
+na_mpi_open_port(struct na_mpi_class *na_mpi_class);
 
 /* get_port_info */
 static na_return_t
@@ -200,7 +202,7 @@ na_mpi_get_port_info(const char *name, char *mpi_port_name, int *mpi_rank);
 
 /* accept */
 static na_return_t
-na_mpi_accept(na_class_t *na_class);
+na_mpi_accept(struct na_mpi_class *na_mpi_class);
 
 /* disconnect */
 static na_return_t
@@ -211,7 +213,7 @@ static na_return_t
 na_mpi_remote_list_disconnect(na_class_t *na_class);
 
 /* msg_unexpected_op_push */
-static na_return_t
+static void
 na_mpi_msg_unexpected_op_push(
     na_class_t *na_class, struct na_mpi_op_id *na_mpi_op_id);
 
@@ -238,10 +240,10 @@ na_mpi_finalize(na_class_t *na_class);
 
 /* op_create */
 static na_op_id_t *
-na_mpi_op_create(na_class_t *na_class);
+na_mpi_op_create(na_class_t *na_class, unsigned long flags);
 
 /* op_destroy */
-static na_return_t
+static void
 na_mpi_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
@@ -253,7 +255,7 @@ static na_return_t
 na_mpi_addr_self(na_class_t *na_class, na_addr_t *addr);
 
 /* addr_free */
-static na_return_t
+static void
 na_mpi_addr_free(na_class_t *na_class, na_addr_t addr);
 
 /* addr_cmp */
@@ -310,7 +312,7 @@ static na_return_t
 na_mpi_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
-static na_return_t
+static void
 na_mpi_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
 /* mem_handle serialization */
@@ -387,6 +389,7 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     na_mpi_initialize,                    /* initialize */
     na_mpi_finalize,                      /* finalize */
     NULL,                                 /* cleanup */
+    NULL,                                 /* has_opt_feature */
     NULL,                                 /* context_create */
     NULL,                                 /* context_destroy */
     na_mpi_op_create,                     /* op_create */
@@ -412,6 +415,7 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     NULL,                                 /* msg_init_unexpected */
     na_mpi_msg_send_unexpected,           /* msg_send_unexpected */
     na_mpi_msg_recv_unexpected,           /* msg_recv_unexpected */
+    NULL,                                 /* msg_multi_recv_unexpected */
     NULL,                                 /* msg_init_expected */
     na_mpi_msg_send_expected,             /* msg_send_expected */
     na_mpi_msg_recv_expected,             /* msg_recv_expected */
@@ -448,10 +452,9 @@ static HG_THREAD_RETURN_TYPE
 na_mpi_accept_service(void *args)
 {
     hg_thread_ret_t ret = 0;
-    na_class_t *na_class = (na_class_t *) args;
     na_return_t na_ret;
 
-    na_ret = na_mpi_accept(na_class);
+    na_ret = na_mpi_accept((struct na_mpi_class *) args);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not accept connection");
     }
@@ -461,17 +464,17 @@ na_mpi_accept_service(void *args)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_open_port(na_class_t *na_class)
+na_mpi_open_port(struct na_mpi_class *na_mpi_class)
 {
     char mpi_port_name[MPI_MAX_PORT_NAME];
     int my_rank;
     int mpi_ret;
     na_return_t ret = NA_SUCCESS;
 
-    memset(NA_MPI_CLASS(na_class)->port_name, '\0', MPI_MAX_PORT_NAME);
+    memset(na_mpi_class->port_name, '\0', MPI_MAX_PORT_NAME);
     memset(mpi_port_name, '\0', MPI_MAX_PORT_NAME);
 
-    MPI_Comm_rank(NA_MPI_CLASS(na_class)->intra_comm, &my_rank);
+    MPI_Comm_rank(na_mpi_class->intra_comm, &my_rank);
     if (my_rank == 0) {
         mpi_ret = MPI_Open_port(MPI_INFO_NULL, mpi_port_name);
         if (mpi_ret != MPI_SUCCESS) {
@@ -481,14 +484,14 @@ na_mpi_open_port(na_class_t *na_class)
         }
     }
     mpi_ret = MPI_Bcast(mpi_port_name, MPI_MAX_PORT_NAME, MPI_BYTE, 0,
-        NA_MPI_CLASS(na_class)->intra_comm);
+        na_mpi_class->intra_comm);
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Bcast() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
-    strcpy(NA_MPI_CLASS(na_class)->port_name, mpi_port_name);
+    strcpy(na_mpi_class->port_name, mpi_port_name);
 
 done:
     return ret;
@@ -540,7 +543,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_accept(na_class_t *na_class)
+na_mpi_accept(struct na_mpi_class *na_mpi_class)
 {
     MPI_Comm new_comm;
     MPI_Comm new_rma_comm;
@@ -548,29 +551,29 @@ na_mpi_accept(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    hg_thread_mutex_lock(&NA_MPI_CLASS(na_class)->accept_mutex);
+    hg_thread_mutex_lock(&na_mpi_class->accept_mutex);
 
-    if (NA_MPI_CLASS(na_class)->use_static_inter_comm) {
+    if (na_mpi_class->use_static_inter_comm) {
         int global_size, intra_size;
 
         MPI_Comm_size(MPI_COMM_WORLD, &global_size);
-        MPI_Comm_size(NA_MPI_CLASS(na_class)->intra_comm, &intra_size);
-        mpi_ret = MPI_Intercomm_create(NA_MPI_CLASS(na_class)->intra_comm, 0,
-            MPI_COMM_WORLD, global_size - (global_size - intra_size), 0,
-            &new_comm);
+        MPI_Comm_size(na_mpi_class->intra_comm, &intra_size);
+        mpi_ret =
+            MPI_Intercomm_create(na_mpi_class->intra_comm, 0, MPI_COMM_WORLD,
+                global_size - (global_size - intra_size), 0, &new_comm);
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Intercomm_create failed");
             ret = NA_PROTOCOL_ERROR;
-            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
+            hg_thread_mutex_unlock(&na_mpi_class->accept_mutex);
             goto done;
         }
     } else {
-        mpi_ret = MPI_Comm_accept(NA_MPI_CLASS(na_class)->port_name,
-            MPI_INFO_NULL, 0, NA_MPI_CLASS(na_class)->intra_comm, &new_comm);
+        mpi_ret = MPI_Comm_accept(na_mpi_class->port_name, MPI_INFO_NULL, 0,
+            na_mpi_class->intra_comm, &new_comm);
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("MPI_Comm_accept failed");
             ret = NA_PROTOCOL_ERROR;
-            hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
+            hg_thread_mutex_unlock(&na_mpi_class->accept_mutex);
             goto done;
         }
     }
@@ -581,14 +584,14 @@ na_mpi_accept(na_class_t *na_class)
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Comm_dup() failed");
         ret = NA_PROTOCOL_ERROR;
-        hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
+        hg_thread_mutex_unlock(&na_mpi_class->accept_mutex);
         goto done;
     }
 
-    NA_MPI_CLASS(na_class)->accepting = false;
-    hg_thread_cond_signal(&NA_MPI_CLASS(na_class)->accept_cond);
+    na_mpi_class->accepting = false;
+    hg_thread_cond_signal(&na_mpi_class->accept_cond);
 
-    hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->accept_mutex);
+    hg_thread_mutex_unlock(&na_mpi_class->accept_mutex);
 
     na_mpi_addr = (struct na_mpi_addr *) malloc(sizeof(struct na_mpi_addr));
     if (!na_mpi_addr) {
@@ -600,15 +603,13 @@ na_mpi_accept(na_class_t *na_class)
     na_mpi_addr->rma_comm = new_rma_comm;
     na_mpi_addr->rank = MPI_ANY_SOURCE;
     na_mpi_addr->unexpected = false;
-    na_mpi_addr->dynamic =
-        (bool) (!NA_MPI_CLASS(na_class)->use_static_inter_comm);
+    na_mpi_addr->dynamic = (bool) (!na_mpi_class->use_static_inter_comm);
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
 
     /* Add comms to list of connected remotes */
-    hg_thread_mutex_lock(&NA_MPI_CLASS(na_class)->remote_list_mutex);
-    HG_LIST_INSERT_HEAD(
-        &NA_MPI_CLASS(na_class)->remote_list, na_mpi_addr, entry);
-    hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->remote_list_mutex);
+    hg_thread_mutex_lock(&na_mpi_class->remote_list_mutex);
+    HG_LIST_INSERT_HEAD(&na_mpi_class->remote_list, na_mpi_addr, entry);
+    hg_thread_mutex_unlock(&na_mpi_class->remote_list_mutex);
 
 done:
     return ret;
@@ -669,20 +670,16 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_mpi_msg_unexpected_op_push(
     na_class_t *na_class, struct na_mpi_op_id *na_mpi_op_id)
 {
-    na_return_t ret = NA_SUCCESS;
-
     hg_thread_mutex_lock(&NA_MPI_CLASS(na_class)->unexpected_op_queue_mutex);
 
     HG_QUEUE_PUSH_TAIL(
         &NA_MPI_CLASS(na_class)->unexpected_op_queue, na_mpi_op_id, entry);
 
     hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->unexpected_op_queue_mutex);
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -843,6 +840,7 @@ static na_return_t
 na_mpi_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
+    struct na_mpi_class *na_mpi_class = NULL;
     int mpi_ext_initialized = 0;
     bool listening, use_static_inter_comm;
     int flags = (listen) ? MPI_INIT_SERVER : 0;
@@ -850,16 +848,24 @@ na_mpi_initialize(
     int *attr_val, attr_flag;
     na_return_t ret = NA_SUCCESS;
 
-    na_class->plugin_class = malloc(sizeof(struct na_mpi_class));
-    if (!na_class->plugin_class) {
+    na_mpi_class = (struct na_mpi_class *) calloc(1, sizeof(*na_mpi_class));
+    na_class->plugin_class = (void *) na_mpi_class;
+    if (!na_mpi_class) {
         NA_LOG_ERROR("Could not allocate NA private data class");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    NA_MPI_CLASS(na_class)->accept_thread = 0;
-    HG_LIST_INIT(&NA_MPI_CLASS(na_class)->remote_list);
-    HG_LIST_INIT(&NA_MPI_CLASS(na_class)->op_id_list);
-    HG_QUEUE_INIT(&NA_MPI_CLASS(na_class)->unexpected_op_queue);
+    na_mpi_class->accept_thread = 0;
+    HG_LIST_INIT(&na_mpi_class->remote_list);
+    HG_LIST_INIT(&na_mpi_class->op_id_list);
+    HG_QUEUE_INIT(&na_mpi_class->unexpected_op_queue);
+
+    /* Initialize mutex/cond */
+    hg_thread_mutex_init(&na_mpi_class->accept_mutex);
+    hg_thread_cond_init(&na_mpi_class->accept_cond);
+    hg_thread_mutex_init(&na_mpi_class->remote_list_mutex);
+    hg_thread_mutex_init(&na_mpi_class->op_id_list_mutex);
+    hg_thread_mutex_init(&na_mpi_class->unexpected_op_queue_mutex);
 
     /* Check flags */
     if (strcmp(na_info->protocol_name, "static") == 0)
@@ -878,17 +884,17 @@ na_mpi_initialize(
     }
 
     listening = (bool) (flags & MPI_INIT_SERVER);
-    NA_MPI_CLASS(na_class)->listening = listening;
+    na_mpi_class->listening = listening;
 
     use_static_inter_comm = (bool) (flags & MPI_INIT_STATIC);
-    NA_MPI_CLASS(na_class)->use_static_inter_comm = use_static_inter_comm;
+    na_mpi_class->use_static_inter_comm = use_static_inter_comm;
 
     /* Set msg size limits */
-    NA_MPI_CLASS(na_class)->unexpected_size_max =
+    na_mpi_class->unexpected_size_max =
         (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
             ? na_info->na_init_info->max_unexpected_size
             : NA_MPI_UNEXPECTED_SIZE;
-    NA_MPI_CLASS(na_class)->expected_size_max =
+    na_mpi_class->expected_size_max =
         (na_info->na_init_info && na_info->na_init_info->max_expected_size)
             ? na_info->na_init_info->max_expected_size
             : NA_MPI_EXPECTED_SIZE;
@@ -900,7 +906,7 @@ na_mpi_initialize(
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-    NA_MPI_CLASS(na_class)->mpi_ext_initialized = (bool) mpi_ext_initialized;
+    na_mpi_class->mpi_ext_initialized = (bool) mpi_ext_initialized;
 
     if (!mpi_ext_initialized) {
         int provided;
@@ -933,7 +939,7 @@ na_mpi_initialize(
                             ? na_mpi_init_comm_g
                             : MPI_COMM_WORLD;
 
-        mpi_ret = MPI_Comm_dup(comm, &NA_MPI_CLASS(na_class)->intra_comm);
+        mpi_ret = MPI_Comm_dup(comm, &na_mpi_class->intra_comm);
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("Could not duplicate communicator");
             ret = NA_PROTOCOL_ERROR;
@@ -948,8 +954,8 @@ na_mpi_initialize(
         color = (listening) ? 1 : 2;
 
         /* Assume that the application did not split MPI_COMM_WORLD already */
-        mpi_ret = MPI_Comm_split(MPI_COMM_WORLD, color, global_rank,
-            &NA_MPI_CLASS(na_class)->intra_comm);
+        mpi_ret = MPI_Comm_split(
+            MPI_COMM_WORLD, color, global_rank, &na_mpi_class->intra_comm);
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("Could not split communicator");
             ret = NA_PROTOCOL_ERROR;
@@ -957,21 +963,14 @@ na_mpi_initialize(
         }
     }
 
-    /* Initialize mutex/cond */
-    hg_thread_mutex_init(&NA_MPI_CLASS(na_class)->accept_mutex);
-    hg_thread_cond_init(&NA_MPI_CLASS(na_class)->accept_cond);
-    hg_thread_mutex_init(&NA_MPI_CLASS(na_class)->remote_list_mutex);
-    hg_thread_mutex_init(&NA_MPI_CLASS(na_class)->op_id_list_mutex);
-    hg_thread_mutex_init(&NA_MPI_CLASS(na_class)->unexpected_op_queue_mutex);
-
     /* Initialize atomic op */
-    hg_atomic_set32(&NA_MPI_CLASS(na_class)->rma_tag, NA_MPI_RMA_TAG);
+    hg_atomic_set32(&na_mpi_class->rma_tag, NA_MPI_RMA_TAG);
 
     /* If server opens a port */
     if (listening) {
-        NA_MPI_CLASS(na_class)->accepting = true;
+        na_mpi_class->accepting = true;
         if (!use_static_inter_comm &&
-            (ret = na_mpi_open_port(na_class)) != NA_SUCCESS) {
+            (ret = na_mpi_open_port(na_mpi_class)) != NA_SUCCESS) {
             NA_LOG_ERROR("Cannot open port");
             goto done;
         }
@@ -979,22 +978,23 @@ na_mpi_initialize(
         /* We need to create a thread here if we want to allow
          * connection / disconnection since MPI does not provide any
          * service for that and MPI_Comm_accept is blocking */
-        hg_thread_create(&NA_MPI_CLASS(na_class)->accept_thread,
-            &na_mpi_accept_service, (void *) na_class);
+        hg_thread_create(&na_mpi_class->accept_thread, &na_mpi_accept_service,
+            (void *) na_mpi_class);
     } else {
-        NA_MPI_CLASS(na_class)->accepting = false;
+        na_mpi_class->accepting = false;
     }
 
     /* MPI implementation typically provides a "max tag" far larger than
      * standard demands */
     MPI_Comm_get_attr(
-        NA_MPI_CLASS(na_class)->intra_comm, MPI_TAG_UB, &attr_val, &attr_flag);
+        na_mpi_class->intra_comm, MPI_TAG_UB, &attr_val, &attr_flag);
     if (attr_flag)
         MPI_MAX_TAG = *attr_val;
 
 done:
     if (ret != NA_SUCCESS) {
         na_mpi_finalize(na_class);
+        na_class->plugin_class = NULL;
     }
 
     return ret;
@@ -1075,7 +1075,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_op_id_t *
-na_mpi_op_create(na_class_t NA_UNUSED *na_class)
+na_mpi_op_create(na_class_t NA_UNUSED *na_class, unsigned long NA_UNUSED flags)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
 
@@ -1094,12 +1094,10 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     free((struct na_mpi_op_id *) op_id);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1232,17 +1230,10 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_mpi_addr_free(na_class_t *na_class, na_addr_t addr)
 {
     struct na_mpi_addr *na_mpi_addr = (struct na_mpi_addr *) addr;
-    na_return_t ret = NA_SUCCESS;
-
-    if (!na_mpi_addr) {
-        NA_LOG_ERROR("Already freed");
-        ret = NA_PROTOCOL_ERROR;
-        return ret;
-    }
 
     if (na_mpi_addr->self) {
         free(na_mpi_addr);
@@ -1260,13 +1251,8 @@ na_mpi_addr_free(na_class_t *na_class, na_addr_t addr)
         hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->remote_list_mutex);
 
         /* Free addr */
-        ret = na_mpi_disconnect(na_class, na_mpi_addr);
-        if (ret != NA_SUCCESS)
-            goto done;
+        (void) na_mpi_disconnect(na_class, na_mpi_addr);
     }
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1412,28 +1398,24 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Add op_id to queue of pending unexpected recv ops and make some progress
      * in case messages are already arrived */
-    ret = na_mpi_msg_unexpected_op_push(na_class, na_mpi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not push operation ID");
-        goto done;
-    }
+    na_mpi_msg_unexpected_op_push(na_class, na_mpi_op_id);
 
-    do {
-        ret = na_mpi_progress_unexpected(na_class, context, 0);
-        if (ret != NA_SUCCESS && ret != NA_TIMEOUT) {
-            NA_LOG_ERROR("Could not make unexpected progress");
-            goto done;
-        }
-    } while (ret == NA_SUCCESS);
-    /* No guarantee here that ours has completed even if progressed is true,
-     * we make progress here just in case we can complete the op at the same
-     * time */
-    ret = NA_SUCCESS;
+    // do {
+    //     ret = na_mpi_progress_unexpected(na_class, context, 0);
+    //     if (ret != NA_SUCCESS && ret != NA_TIMEOUT) {
+    //         NA_LOG_ERROR("Could not make unexpected progress");
+    //         goto done;
+    //     }
+    // } while (ret == NA_SUCCESS);
+    // /* No guarantee here that ours has completed even if progressed is true,
+    //  * we make progress here just in case we can complete the op at the same
+    //  * time */
+    // ret = NA_SUCCESS;
 
-done:
-    if (ret != NA_SUCCESS) {
-        hg_atomic_set32(&na_mpi_op_id->completed, 1);
-    }
+    // done:
+    //     if (ret != NA_SUCCESS) {
+    //         hg_atomic_set32(&na_mpi_op_id->completed, 1);
+    //     }
     return ret;
 }
 
@@ -1556,17 +1538,14 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_mpi_mem_handle_free(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
     struct na_mpi_mem_handle *mpi_mem_handle =
         (struct na_mpi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
 
     free(mpi_mem_handle);
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2018,7 +1997,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     }
 
     /* Allocate na_op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) na_mpi_op_create(na_class);
+    na_mpi_op_id = (struct na_mpi_op_id *) na_mpi_op_create(na_class, 0);
     if (!na_mpi_op_id) {
         NA_LOG_ERROR("Could not allocate NA MPI operation ID");
         ret = NA_NOMEM_ERROR;

@@ -53,6 +53,7 @@ struct na_test_info {
     bool force_register; /* Force registration each iteration */
     bool verify;         /* Verify data */
     bool millionbps;     /* OSU-style of output in Million Bytes/s */
+    bool multi_recv;     /* Use multi-recv */
 };
 
 /*****************/
