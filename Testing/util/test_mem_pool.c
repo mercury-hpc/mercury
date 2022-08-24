@@ -36,7 +36,7 @@ struct thread_args {
 
 static int
 hg_test_mem_pool_register(
-    const void *buf, size_t len, void **handle, void *arg);
+    const void *buf, size_t len, unsigned long flags, void **handle, void *arg);
 
 static int
 hg_test_mem_pool_deregister(void *handle, void *arg);
@@ -50,13 +50,15 @@ hg_test_mem_pool_alloc(struct hg_mem_pool *hg_mem_pool, int mr);
 
 /*---------------------------------------------------------------------------*/
 static int
-hg_test_mem_pool_register(const void *buf, size_t len, void **handle, void *arg)
+hg_test_mem_pool_register(
+    const void *buf, size_t len, unsigned long flags, void **handle, void *arg)
 {
     hg_atomic_int32_t *n_mr = (hg_atomic_int32_t *) arg;
     int *mr_id;
 
     (void) buf;
     (void) len;
+    (void) flags;
 
     mr_id = (int *) malloc(sizeof(int));
     if (mr_id == NULL)
@@ -142,7 +144,7 @@ main(void)
 
     /* Create memory pool without registration */
     thread_args.mem_pool = hg_mem_pool_create(
-        CHUNK_SIZE1, CHUNK_COUNT1, BLOCK_COUNT1, NULL, NULL, NULL);
+        CHUNK_SIZE1, CHUNK_COUNT1, BLOCK_COUNT1, NULL, 0, NULL, NULL);
     thread_args.mr = 0;
 
     for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
@@ -156,7 +158,7 @@ main(void)
     /* Create memory pool with registration */
     thread_args.n_threads = 0;
     thread_args.mem_pool = hg_mem_pool_create(CHUNK_SIZE1, CHUNK_COUNT1,
-        BLOCK_COUNT1, hg_test_mem_pool_register, hg_test_mem_pool_deregister,
+        BLOCK_COUNT1, hg_test_mem_pool_register, 0, hg_test_mem_pool_deregister,
         &thread_args.n_mr);
     if (thread_args.mem_pool == NULL) {
         ret = EXIT_FAILURE;

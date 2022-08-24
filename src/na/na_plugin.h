@@ -11,11 +11,8 @@
 #include "na.h"
 #include "na_error.h"
 
-#include "mercury_atomic_queue.h"
 #include "mercury_param.h"
 #include "mercury_queue.h"
-#include "mercury_thread_condition.h"
-#include "mercury_thread_mutex.h"
 
 /*************************************/
 /* Public Type and Struct Definition */

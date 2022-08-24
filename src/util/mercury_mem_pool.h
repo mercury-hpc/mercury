@@ -19,13 +19,14 @@
  *
  * \param buf [IN]              pointer to buffer
  * \param size [IN]             buffer size
+ * \param flags [IN]            optional flags
  * \param handle [OUT]          handle
  * \param arg [IN/OUT]          optional arguments
  *
  * \return HG_UTIL_SUCCESS if successful / error code otherwise
  */
-typedef int (*hg_mem_pool_register_func_t)(
-    const void *buf, size_t size, void **handle, void *arg);
+typedef int (*hg_mem_pool_register_func_t)(const void *buf, size_t size,
+    unsigned long flags, void **handle, void *arg);
 
 /**
  * Deregister memory block.
@@ -58,6 +59,7 @@ extern "C" {
  * \param chunk_count [IN]      number of chunks
  * \param block_count [IN]      number of blocks
  * \param register_func [IN]    pointer to register function
+ * \param flags [IN]            optional flags passed to register_func
  * \param deregister_func [IN]  pointer to deregister function
  * \param arg [IN/OUT]          optional arguments passed to register functions
  *
@@ -65,7 +67,7 @@ extern "C" {
  */
 HG_UTIL_PUBLIC struct hg_mem_pool *
 hg_mem_pool_create(size_t chunk_size, size_t chunk_count, size_t block_count,
-    hg_mem_pool_register_func_t register_func,
+    hg_mem_pool_register_func_t register_func, unsigned long flags,
     hg_mem_pool_deregister_func_t deregister_func, void *arg);
 
 /**

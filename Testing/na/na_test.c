@@ -101,6 +101,7 @@ na_test_usage(const char *execname)
     printf("    -w  --buf_count      Number of buffers used\n");
     printf("    -R, --force-register Force registration of buffers\n");
     printf("    -M, --millionbps     Output in Million B/s instead of MB/s\n");
+    printf("    -U, --multi-recv     Use multi-recv\n");
     printf("    -V, --verbose        Print verbose output\n");
 }
 
@@ -187,6 +188,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'M': /* OSU-style output Million Bytes/s */
                 na_test_info->millionbps = true;
+                break;
+            case 'U': /* multi-recv */
+                na_test_info->multi_recv = true;
                 break;
             default:
                 break;

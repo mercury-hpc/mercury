@@ -44,7 +44,8 @@ static int
 hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 
 static int
-hg_test_bulk_register(const void *buf, size_t size, void **handle, void *arg);
+hg_test_bulk_register(const void *buf, size_t size, unsigned long flags,
+    void **handle, void *arg);
 
 static int
 hg_test_bulk_deregister(void *handle, void *arg);
@@ -205,7 +206,8 @@ hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 
 /*---------------------------------------------------------------------------*/
 static int
-hg_test_bulk_register(const void *buf, size_t size, void **handle, void *arg)
+hg_test_bulk_register(
+    const void *buf, size_t size, unsigned long flags, void **handle, void *arg)
 {
     struct hg_test_info *hg_test_info = (struct hg_test_info *) arg;
     hg_bulk_t hg_bulk = HG_BULK_NULL;
@@ -218,6 +220,8 @@ hg_test_bulk_register(const void *buf, size_t size, void **handle, void *arg)
         char *buf;
     } safe_buf = {.const_buf = buf};
     size_t i;
+
+    (void) flags;
 
     /* Force buffer initialization for testing */
     for (i = 0; i < size; i++)
@@ -600,7 +604,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         /* Create bulk pool */
         hg_test_info->bulk_pool = hg_mem_pool_create(hg_test_info->buf_size_max,
             MAX(hg_test_info->thread_count, hg_test_info->handle_max), 2,
-            hg_test_bulk_register, hg_test_bulk_deregister,
+            hg_test_bulk_register, 0, hg_test_bulk_deregister,
             (void *) hg_test_info);
         HG_TEST_CHECK_ERROR(hg_test_info->bulk_pool == NULL, done, ret,
             HG_NOMEM, "Could not create bulk pool");

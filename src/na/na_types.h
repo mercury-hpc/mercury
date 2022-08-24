@@ -45,6 +45,9 @@ enum na_mem_type {
 
 /* Init info */
 struct na_init_info {
+    /* Requested API version. */
+    uint32_t api_version;
+
     /* Preferred IP subnet to use. */
     const char *ip_subnet;
 
@@ -124,12 +127,13 @@ typedef enum na_return { NA_RETURN_VALUES } na_return_t;
 
 /* Callback operation type */
 #define NA_CB_TYPES                                                            \
-    X(NA_CB_SEND_UNEXPECTED) /*!< unexpected send callback */                  \
-    X(NA_CB_RECV_UNEXPECTED) /*!< unexpected recv callback */                  \
-    X(NA_CB_SEND_EXPECTED)   /*!< expected send callback */                    \
-    X(NA_CB_RECV_EXPECTED)   /*!< expected recv callback */                    \
-    X(NA_CB_PUT)             /*!< put callback */                              \
-    X(NA_CB_GET)             /*!< get callback */                              \
+    X(NA_CB_SEND_UNEXPECTED)       /*!< unexpected send callback */            \
+    X(NA_CB_RECV_UNEXPECTED)       /*!< unexpected recv callback */            \
+    X(NA_CB_MULTI_RECV_UNEXPECTED) /*!< unexpected multi recv callback */      \
+    X(NA_CB_SEND_EXPECTED)         /*!< expected send callback */              \
+    X(NA_CB_RECV_EXPECTED)         /*!< expected recv callback */              \
+    X(NA_CB_PUT)                   /*!< put callback */                        \
+    X(NA_CB_GET)                   /*!< get callback */                        \
     X(NA_CB_MAX)
 
 #define X(a) a,
@@ -138,9 +142,17 @@ typedef enum na_cb_type { NA_CB_TYPES } na_cb_type_t;
 
 /* Callback info structs */
 struct na_cb_info_recv_unexpected {
-    size_t actual_buf_size;
-    na_addr_t source;
-    na_tag_t tag;
+    size_t actual_buf_size; /*!< received buffer size */
+    na_addr_t source;       /*!< source address */
+    na_tag_t tag;           /*!< received tag */
+};
+
+struct na_cb_info_multi_recv_unexpected {
+    size_t actual_buf_size; /*!< received buffer size */
+    na_addr_t source;       /*!< source address */
+    na_tag_t tag;           /*!< received tag */
+    void *actual_buf;       /*!< pointer to received data */
+    bool last;              /*!< last receive on this operation */
 };
 
 struct na_cb_info_recv_expected {
@@ -151,6 +163,7 @@ struct na_cb_info_recv_expected {
 struct na_cb_info {
     union { /* Union of callback info structures */
         struct na_cb_info_recv_unexpected recv_unexpected;
+        struct na_cb_info_multi_recv_unexpected multi_recv_unexpected;
         struct na_cb_info_recv_expected recv_expected;
     } info;
     void *arg;         /* User data */
@@ -159,15 +172,23 @@ struct na_cb_info {
 };
 
 /* Callback type */
-typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
+typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /*****************/
 /* Public Macros */
 /*****************/
 
+/* Versions */
+#define NA_VERSION(major, minor) (((major) << 16) | (minor))
+#define NA_MAJOR(version)        (version >> 16)
+#define NA_MINOR(version)        (version & 0xffff)
+
 /* Constant values */
 #define NA_ADDR_NULL       ((na_addr_t) 0)
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t) 0)
+
+/* Optional plugin dependent features that can be queried */
+#define NA_OPT_MULTI_RECV (2 << 1) /* multi-recv */
 
 /* Max timeout */
 #define NA_MAX_IDLE_TIME (3600 * 1000)
@@ -175,6 +196,16 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 /* Context ID max value
  * \remark This is not the user limit but only the limit imposed by the type */
 #define NA_CONTEXT_ID_MAX UINT8_MAX
+
+/* Memory allocation flags
+ * \remark Used for message buffer allocation. */
+#define NA_SEND       0x01
+#define NA_RECV       0x02
+#define NA_MULTI_RECV 0x04
+
+/* Op ID creation flags */
+#define NA_OP_SINGLE 0x00
+#define NA_OP_MULTI  0x01
 
 /* Tag max value
  * \remark This is not the user limit but only the limit imposed by the type */
@@ -202,9 +233,11 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_INIT_INFO_INITIALIZER                                               \
     (struct na_init_info)                                                      \
     {                                                                          \
+        .api_version = NA_VERSION(NA_VERSION_MAJOR, NA_VERSION_MINOR),         \
         .ip_subnet = NULL, .auth_key = NULL, .max_unexpected_size = 0,         \
-        .max_expected_size = 0, .progress_mode = 0, .max_contexts = 1,         \
-        .thread_mode = 0, .request_mem_device = false                          \
+        .max_expected_size = 0, .progress_mode = 0,                            \
+        .addr_format = NA_ADDR_UNSPEC, .max_contexts = 1, .thread_mode = 0,    \
+        .request_mem_device = false                                            \
     }
 
 #endif /* NA_TYPES_H */

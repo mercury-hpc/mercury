@@ -13,12 +13,14 @@
 #include "mercury_mem.h"
 #include "mercury_mem_pool.h"
 #include "mercury_queue.h"
+#include "mercury_thread_mutex.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_thread_spin.h"
 
 #include <ucp/api/ucp.h>
 
 #include <stdalign.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <netdb.h>
@@ -399,7 +401,8 @@ na_ucp_mem_free(ucp_context_h context, ucp_mem_h mem);
  * Register memory buffer.
  */
 static int
-na_ucp_mem_buf_register(const void *buf, size_t len, void **handle, void *arg);
+na_ucp_mem_buf_register(
+    const void *buf, size_t len, unsigned long flags, void **handle, void *arg);
 
 /**
  * Deregister memory buffer.
@@ -659,10 +662,10 @@ na_ucx_finalize(na_class_t *na_class);
 
 /* op_create */
 static na_op_id_t *
-na_ucx_op_create(na_class_t *na_class);
+na_ucx_op_create(na_class_t *na_class, unsigned long flags);
 
 /* op_destroy */
-static na_return_t
+static void
 na_ucx_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
@@ -670,7 +673,7 @@ static na_return_t
 na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p);
 
 /* addr_free */
-static NA_INLINE na_return_t
+static NA_INLINE void
 na_ucx_addr_free(na_class_t *na_class, na_addr_t addr);
 
 /* addr_self */
@@ -722,10 +725,11 @@ na_ucx_msg_get_max_tag(const na_class_t *na_class);
 
 /* msg_buf_alloc */
 static void *
-na_ucx_msg_buf_alloc(na_class_t *na_class, size_t size, void **plugin_data);
+na_ucx_msg_buf_alloc(
+    na_class_t *na_class, size_t size, unsigned long flags, void **plugin_data);
 
 /* msg_buf_free */
-static na_return_t
+static void
 na_ucx_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data);
 
 /* msg_send_unexpected */
@@ -759,7 +763,7 @@ static na_return_t
 na_ucx_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle_p);
 
-static na_return_t
+static void
 na_ucx_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
 static NA_INLINE size_t
@@ -826,6 +830,7 @@ const struct na_class_ops NA_PLUGIN_OPS(ucx) = {
     na_ucx_initialize,                    /* initialize */
     na_ucx_finalize,                      /* finalize */
     NULL,                                 /* cleanup */
+    NULL,                                 /* has_opt_feature */
     NULL,                                 /* context_create */
     NULL,                                 /* context_destroy */
     na_ucx_op_create,                     /* op_create */
@@ -851,6 +856,7 @@ const struct na_class_ops NA_PLUGIN_OPS(ucx) = {
     NULL,                                 /* msg_init_unexpected */
     na_ucx_msg_send_unexpected,           /* msg_send_unexpected */
     na_ucx_msg_recv_unexpected,           /* msg_recv_unexpected */
+    NULL,                                 /* msg_multi_recv_unexpected */
     NULL,                                 /* msg_init_expected */
     na_ucx_msg_send_expected,             /* msg_send_expected */
     na_ucx_msg_recv_expected,             /* msg_recv_expected */
@@ -1351,7 +1357,8 @@ error:
 #else
 /*---------------------------------------------------------------------------*/
 static int
-na_ucp_mem_buf_register(const void *buf, size_t len, void **handle, void *arg)
+na_ucp_mem_buf_register(const void *buf, size_t len,
+    unsigned long NA_UNUSED flags, void **handle, void *arg)
 {
     struct na_ucx_class *na_ucx_class = (struct na_ucx_class *) arg;
     union {
@@ -2685,7 +2692,7 @@ na_ucx_initialize(
     na_ucx_class->mem_pool = hg_mem_pool_create(
         MAX(na_ucx_class->unexpected_size_max, na_ucx_class->expected_size_max),
         NA_UCX_MEM_CHUNK_COUNT, NA_UCX_MEM_BLOCK_COUNT, na_ucp_mem_buf_register,
-        na_ucp_mem_buf_deregister, (void *) na_ucx_class);
+        0, na_ucp_mem_buf_deregister, (void *) na_ucx_class);
     NA_CHECK_SUBSYS_ERROR(cls, na_ucx_class->mem_pool == NULL, error, ret,
         NA_NOMEM,
         "Could not create memory pool with %d blocks of size %d x %zu bytes",
@@ -2749,7 +2756,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_op_id_t *
-na_ucx_op_create(na_class_t *na_class)
+na_ucx_op_create(na_class_t *na_class, unsigned long NA_UNUSED flags)
 {
     struct na_ucx_op_id *na_ucx_op_id = NULL;
 
@@ -2770,22 +2777,18 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_ucx_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_ucx_op_id *na_ucx_op_id = (struct na_ucx_op_id *) op_id;
-    na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_SUBSYS_ERROR(op,
-        !(hg_atomic_get32(&na_ucx_op_id->status) & NA_UCX_OP_COMPLETED), done,
-        ret, NA_BUSY, "Attempting to use OP ID that was not completed (%s)",
+    NA_CHECK_SUBSYS_WARNING(op,
+        !(hg_atomic_get32(&na_ucx_op_id->status) & NA_UCX_OP_COMPLETED),
+        "Attempting to use OP ID that was not completed (%s)",
         na_cb_type_to_string(na_ucx_op_id->completion_data.callback_info.type));
 
     hg_mem_header_free(NA_UCX_CLASS(na_class)->ucp_request_size,
         alignof(struct na_ucx_op_id), na_ucx_op_id);
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2860,12 +2863,10 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_return_t
+static NA_INLINE void
 na_ucx_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     na_ucx_addr_ref_decr((struct na_ucx_addr *) addr);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3057,7 +3058,8 @@ na_ucx_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 
 /*---------------------------------------------------------------------------*/
 static void *
-na_ucx_msg_buf_alloc(na_class_t *na_class, size_t size, void **plugin_data)
+na_ucx_msg_buf_alloc(na_class_t *na_class, size_t size,
+    unsigned long NA_UNUSED flags, void **plugin_data)
 {
     void *mem_ptr;
 
@@ -3078,23 +3080,16 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_ucx_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 {
-    na_return_t ret = NA_SUCCESS;
-
 #ifdef NA_UCX_HAS_MEM_POOL
     hg_mem_pool_free(NA_UCX_CLASS(na_class)->mem_pool, buf, plugin_data);
 #else
-    ret = na_ucp_mem_free(
+    (void) na_ucp_mem_free(
         NA_UCX_CLASS(na_class)->ucp_context, (ucp_mem_h) plugin_data);
-    NA_CHECK_SUBSYS_NA_ERROR(mem, done, ret, "Could not free memory");
     (void) buf;
-
-done:
 #endif
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3276,13 +3271,12 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_ucx_mem_handle_free(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ucx_mem_handle *na_ucx_mem_handle =
         (struct na_ucx_mem_handle *) mem_handle;
-    na_return_t ret;
 
     switch (hg_atomic_get32(&na_ucx_mem_handle->type)) {
         case NA_UCX_MEM_HANDLE_LOCAL:
@@ -3295,17 +3289,12 @@ na_ucx_mem_handle_free(
             free(na_ucx_mem_handle->rkey_buf);
             break;
         default:
-            NA_GOTO_SUBSYS_ERROR(
-                mem, error, ret, NA_INVALID_ARG, "Invalid memory handle type");
+            NA_LOG_SUBSYS_ERROR(mem, "Invalid memory handle type");
+            break;
     }
 
     hg_thread_mutex_destroy(&na_ucx_mem_handle->rkey_unpack_lock);
     free(na_ucx_mem_handle);
-
-    return NA_SUCCESS;
-
-error:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

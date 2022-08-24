@@ -353,12 +353,12 @@ static int psm_init_done = 0;
 /******************************************************************************
  * required forward declared prototypes
  */
-static na_return_t
-na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr);
+static void
+na_psm_addr_free(na_class_t *na_class, na_addr_t addr);
 static na_op_id_t *
-na_psm_op_create(na_class_t NA_UNUSED *na_class);
-static na_return_t
-na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id);
+na_psm_op_create(na_class_t *na_class, unsigned long flags);
+static void
+na_psm_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /******************************************************************************
  * helpful macros
@@ -1228,7 +1228,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
      * 'put' is more complicated... we need to create an internal
      * op_id to wait for the inititator to send us the data.
      */
-    pop = (struct na_psm_op_id *) na_psm_op_create((na_class_t *) pc);
+    pop = (struct na_psm_op_id *) na_psm_op_create((na_class_t *) pc, 0);
     if (!pop) {
         /* unlikely.. try sending an error */
         NA_LOG_ERROR("pop alloc failed");
@@ -1544,7 +1544,7 @@ na_psm_finalize(na_class_t *na_class)
  * most of this will get filled out later.
  */
 static na_op_id_t *
-na_psm_op_create(na_class_t NA_UNUSED *na_class)
+na_psm_op_create(na_class_t NA_UNUSED *na_class, unsigned long NA_UNUSED flags)
 {
     struct na_psm_op_id *pop;
 
@@ -1567,7 +1567,7 @@ na_psm_op_create(na_class_t NA_UNUSED *na_class)
 /*
  * op_destroy: drop reference, free if zero
  */
-static na_return_t
+static void
 na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_psm_op_id *pop = (struct na_psm_op_id *) op_id;
@@ -1580,7 +1580,6 @@ na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
     } else {
         free(pop); /* XXX:pool? */
     }
-    return NA_SUCCESS;
 }
 
 /*
@@ -1611,7 +1610,7 @@ na_psm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 /*
  * addr_free: drop reference on an address
  */
-static na_return_t
+static void
 na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
@@ -1627,8 +1626,6 @@ na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
     } else {
         /* last reference gone, but we keep naddr around */
     }
-
-    return NA_SUCCESS;
 }
 
 /*
@@ -1987,7 +1984,7 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
 /*
  * mem_handle_free: free a memory handle (may or may not be local).
  */
-static na_return_t
+static void
 na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_psm_class *pc;
@@ -2007,7 +2004,6 @@ na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
 
     NA_LOG_DEBUG("token=%" PRIx64 ", loc=%d", mh->token, mh->is_local);
     free(mh);
-    return NA_SUCCESS;
 }
 
 /*
@@ -2621,6 +2617,7 @@ const struct na_class_ops NA_PSM_PLUGIN_VARIABLE = {
     na_psm_initialize,                     /* initialize */
     na_psm_finalize,                       /* finalize */
     NULL,                                  /* cleanup */
+    NULL,                                  /* has_opt_feature */
     NULL,                                  /* context_create */
     NULL,                                  /* context_destroy */
     na_psm_op_create,                      /* op_create */
@@ -2646,6 +2643,7 @@ const struct na_class_ops NA_PSM_PLUGIN_VARIABLE = {
     na_psm_msg_init_unexpected,            /* msg_init_unexpected */
     na_psm_msg_send_unexpected,            /* msg_send_unexpected */
     na_psm_msg_recv_unexpected,            /* msg_recv_unexpected */
+    NULL,                                  /* msg_multi_recv_unexpected */
     NULL,                                  /* msg_init_expected */
     na_psm_msg_send_expected,              /* msg_send_expected */
     na_psm_msg_recv_expected,              /* msg_recv_expected */
