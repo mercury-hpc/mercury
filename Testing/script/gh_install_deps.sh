@@ -10,7 +10,7 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
 fi
 #OFI_PR=
-OFI_VERSION=1.15.2rc1
+OFI_VERSION=1.15.2
 
 # UCX
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
