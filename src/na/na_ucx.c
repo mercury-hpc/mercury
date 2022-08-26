@@ -2145,7 +2145,6 @@ na_ucx_addr_map_insert(struct na_ucx_class *na_ucx_class,
             na_ucx_addr->addr_key.addr, na_ucx_addr->addr_key.addrlen,
             na_ucx_class->origin_addr,
             na_ucp_ep_error_cb, (void *) na_ucx_addr, &na_ucx_addr->ucp_ep);
-	//NA_LOG_SUBSYS_ERROR(addr, "Client added ep: %lu", na_ucx_addr->ucp_ep);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "Could not connect UCP endpoint");
     }
