@@ -90,6 +90,7 @@
 #define NA_OFI_LOC_INFO   (1 << 6) /* supports locality info */
 #define NA_OFI_CONTEXT2   (1 << 7) /* requires FI_CONTEXT2 */
 #define NA_OFI_HMEM       (1 << 8) /* supports FI_HMEM */
+#define NA_OFI_DOM_SHARED (1 << 9) /* requires shared domain */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -126,7 +127,7 @@
       FI_PROGRESS_AUTO,                                                        \
       FI_PROTO_SOCK_TCP,                                                       \
       FI_SOURCE | FI_DIRECTED_RECV,                                            \
-      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_SEP       \
+      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_SEP | NA_OFI_DOM_SHARED \
     )                                                                          \
     X(NA_OFI_PROV_TCP,                                                         \
       "tcp;ofi_rxm",                                                           \
@@ -136,7 +137,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
       FI_SOURCE | FI_DIRECTED_RECV,                                            \
-      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG                    \
+      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG | NA_OFI_DOM_SHARED\
     )                                                                          \
     X(NA_OFI_PROV_PSM,                                                         \
       "psm",                                                                   \
@@ -573,7 +574,9 @@ struct na_ofi_map {
 
 /* Domain */
 struct na_ofi_domain {
-    struct na_ofi_map addr_map; /* Address map */
+    HG_LIST_ENTRY(na_ofi_domain) entry; /* Entry in domain list */
+    const struct na_ofi_fabric *fabric; /* Associated fabric */
+    struct na_ofi_map addr_map;         /* Address map */
 #if defined(NA_OFI_HAS_EXT_GNI_H)
     struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key */
 #elif defined(NA_OFI_HAS_EXT_CXI_H)
@@ -581,12 +584,15 @@ struct na_ofi_domain {
 #endif
     struct fid_domain *fi_domain;    /* Domain handle */
     struct fid_av *fi_av;            /* Address vector handle */
+    char *name;                      /* Domain name */
     size_t context_max;              /* Max contexts available */
     size_t eager_msg_size_max;       /* Max eager msg size */
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
     int64_t max_key;                 /* Max key if not FI_MR_PROV_KEY */
-    bool no_wait;                    /* Wait disabled on domain */
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered */
+    int32_t refcount;                /* Refcount of this domain */
+    bool no_wait;                    /* Wait disabled on domain */
+    bool shared;                     /* Domain may be shared between classes */
 } HG_LOCK_CAPABILITY("domain");
 
 /* Addr pool */
@@ -926,7 +932,7 @@ na_ofi_gni_get_domain_op_value(
  */
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, bool no_wait, struct fi_info *fi_info,
+    const char *auth_key, bool no_wait, bool shared, struct fi_info *fi_info,
     struct na_ofi_domain **na_ofi_domain_p);
 
 /**
@@ -1478,6 +1484,14 @@ static HG_LIST_HEAD(na_ofi_fabric)
 
 /* Fabric list lock */
 static hg_thread_mutex_t na_ofi_fabric_list_mutex_g =
+    HG_THREAD_MUTEX_INITIALIZER;
+
+/* Domain list */
+static HG_LIST_HEAD(na_ofi_domain)
+    na_ofi_domain_list_g = HG_LIST_HEAD_INITIALIZER(na_ofi_domain);
+
+/* Domain list lock */
+static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
     HG_THREAD_MUTEX_INITIALIZER;
 
 /*---------------------------------------------------------------------------*/
@@ -3341,7 +3355,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, bool no_wait, struct fi_info *fi_info,
+    const char *auth_key, bool no_wait, bool shared, struct fi_info *fi_info,
     struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
@@ -3351,11 +3365,32 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     na_return_t ret;
     int rc;
 
+    if (shared) {
+        hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
+        HG_LIST_FOREACH (na_ofi_domain, &na_ofi_domain_list_g, entry)
+            if ((na_ofi_fabric == na_ofi_domain->fabric) &&
+                (strcmp(domain_attr->name, na_ofi_domain->name) == 0))
+                break;
+        hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+
+        if (na_ofi_domain != NULL) {
+            NA_LOG_SUBSYS_DEBUG_EXT(cls, "using existing fi_domain", "%s",
+                fi_tostr(domain_attr, FI_TYPE_DOMAIN_ATTR));
+            na_ofi_domain->refcount++;
+            *na_ofi_domain_p = na_ofi_domain;
+            return NA_SUCCESS;
+        }
+    }
+
     na_ofi_domain = (struct na_ofi_domain *) malloc(sizeof(*na_ofi_domain));
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain == NULL, error, ret, NA_NOMEM,
         "Could not allocate na_ofi_domain");
     memset(na_ofi_domain, 0, sizeof(*na_ofi_domain));
     hg_atomic_init64(&na_ofi_domain->requested_key, 0);
+    na_ofi_domain->refcount = 1;
+    na_ofi_domain->shared = shared;
+    /* No need to take a refcount on fabric */
+    na_ofi_domain->fabric = na_ofi_fabric;
 
     HG_LOG_ADD_COUNTER32(
         na, &na_ofi_domain->mr_reg_count, "mr_reg_count", "MR reg count");
@@ -3364,6 +3399,11 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     rc = hg_thread_rwlock_init(&na_ofi_domain->addr_map.lock);
     NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM,
         "hg_thread_rwlock_init() failed");
+
+    /* Dup name */
+    na_ofi_domain->name = strdup(domain_attr->name);
+    NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain->name == NULL, error, ret,
+        NA_NOMEM, "Could not dup domain name");
 
 #if defined(NA_OFI_HAS_EXT_GNI_H)
     if (na_ofi_fabric->prov_type == NA_OFI_PROV_GNI && auth_key &&
@@ -3499,6 +3539,13 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL, error,
         ret, NA_NOMEM, "Could not allocate FI addr map");
 
+    if (na_ofi_domain->shared) {
+        /* Insert to global domain list if domain is shared between classes */
+        hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
+        HG_LIST_INSERT_HEAD(&na_ofi_domain_list_g, na_ofi_domain, entry);
+        hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+    }
+
     *na_ofi_domain_p = na_ofi_domain;
 
     return NA_SUCCESS;
@@ -3515,6 +3562,7 @@ error:
             hg_hash_table_free(na_ofi_domain->addr_map.fi_map);
 
         hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
+        free(na_ofi_domain->name);
         free(na_ofi_domain);
     }
 
@@ -3523,30 +3571,47 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
+na_ofi_domain_close(
+    struct na_ofi_domain *na_ofi_domain) HG_LOCK_NO_THREAD_SAFETY_ANALYSIS
 {
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     int rc;
 
     if (!na_ofi_domain)
-        goto out;
+        return NA_SUCCESS;
 
     NA_LOG_SUBSYS_DEBUG(cls, "Closing domain");
+
+    if (na_ofi_domain->shared) {
+        /* Remove from domain list */
+        hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
+        if (--na_ofi_domain->refcount > 0) {
+            hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+            return NA_SUCCESS;
+        }
+    }
+
+    NA_LOG_SUBSYS_DEBUG(cls, "Freeing domain");
 
     /* Close AV */
     if (na_ofi_domain->fi_av) {
         rc = fi_close(&na_ofi_domain->fi_av->fid);
-        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
-            "fi_close() AV failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
+            na_ofi_errno_to_na(-rc), "fi_close() AV failed, rc: %d (%s)", rc,
+            fi_strerror(-rc));
         na_ofi_domain->fi_av = NULL;
     }
 
     /* Close domain */
     if (na_ofi_domain->fi_domain) {
         rc = fi_close(&na_ofi_domain->fi_domain->fid);
-        NA_CHECK_SUBSYS_ERROR(cls, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_close() domain failed, rc: %d (%s)", rc, fi_strerror(-rc));
         na_ofi_domain->fi_domain = NULL;
+    }
+    if (na_ofi_domain->shared) {
+        HG_LIST_REMOVE(na_ofi_domain, entry);
+        hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     }
 
     if (na_ofi_domain->addr_map.key_map)
@@ -3556,9 +3621,17 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
 
     hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
 
+    free(na_ofi_domain->name);
     free(na_ofi_domain);
 
-out:
+    return NA_SUCCESS;
+
+error:
+    if (na_ofi_domain->shared) {
+        na_ofi_domain->refcount++;
+        hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+    }
+
     return ret;
 }
 
@@ -4001,8 +4074,9 @@ static void
 na_ofi_addr_release(struct na_ofi_addr *na_ofi_addr)
 {
     if (na_ofi_addr->addr_key.val) {
-        /* Removal is not needed when finalizing */
-        if (!na_ofi_addr->class->finalizing)
+        /* Removal is not needed when finalizing unless domain is shared */
+        if (!na_ofi_addr->class->finalizing ||
+            na_ofi_addr->class->domain->shared)
             na_ofi_addr_map_remove(
                 &na_ofi_addr->class->domain->addr_map, &na_ofi_addr->addr_key);
         na_ofi_addr->addr_key.val = 0;
@@ -5204,7 +5278,8 @@ na_ofi_initialize(
     }
 
     /* Thread mode */
-    info.thread_mode = (na_init_info.thread_mode & NA_THREAD_MODE_SINGLE)
+    info.thread_mode = ((na_init_info.thread_mode & NA_THREAD_MODE_SINGLE) &&
+                           !(na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED))
                            ? FI_THREAD_DOMAIN
                            : FI_THREAD_SAFE;
 
@@ -5250,7 +5325,8 @@ na_ofi_initialize(
     /* Open domain */
     no_wait = na_init_info.progress_mode & NA_NO_BLOCK;
     ret = na_ofi_domain_open(na_ofi_class->fabric, na_init_info.auth_key,
-        no_wait, na_ofi_class->fi_info, &na_ofi_class->domain);
+        no_wait, na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED,
+        na_ofi_class->fi_info, &na_ofi_class->domain);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
         "Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
         na_ofi_class->fi_info->domain_attr->name);
@@ -5353,7 +5429,8 @@ na_ofi_finalize(na_class_t *na_class)
     while (hg_hash_table_iter_has_more(&addr_table_iter)) {
         struct na_ofi_addr *na_ofi_addr =
             (struct na_ofi_addr *) hg_hash_table_iter_next(&addr_table_iter);
-        na_ofi_addr_ref_decr(na_ofi_addr);
+        if (na_ofi_addr->class == na_ofi_class)
+            na_ofi_addr_ref_decr(na_ofi_addr);
     }
 
     /* Free class */
