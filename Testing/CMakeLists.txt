@@ -104,6 +104,11 @@ if(NA_USE_PSM)
   mark_as_advanced(NA_PSM_TESTING_PROTOCOL)
 endif()
 
+if(NA_USE_PSM2)
+  set(NA_PSM2_TESTING_PROTOCOL "psm2" CACHE STRING "Protocol(s) used for testing (e.g., psm2).")
+  mark_as_advanced(NA_PSM2_TESTING_PROTOCOL)
+endif()
+
 # List of plugins that support forward to self
 # set(NA_TESTING_SELF "sm;ofi")
 
@@ -314,10 +319,14 @@ endfunction()
 function(add_mercury_test_comm_kill_server test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
+    set(protocols "${NA_${upper_comm}_TESTING_PROTOCOL}")
+    if (${comm} STREQUAL "ofi")
+      # Do not run test with sockets provider because of fi_av_remove() issue
+      list(REMOVE_ITEM protocols "sockets")
+    endif()
     # Forward to remote server
-    if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi") OR (${comm} STREQUAL "psm")))
-      add_mercury_test_comm(${test_name} ${comm}
-        "${NA_${upper_comm}_TESTING_PROTOCOL}"
+    if(protocols AND (NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi") OR (${comm} STREQUAL "psm"))))
+      add_mercury_test_comm(${test_name} ${comm} "${protocols}"
         "${NA_TESTING_NO_BLOCK}" false false true)
     endif()
   endforeach()
