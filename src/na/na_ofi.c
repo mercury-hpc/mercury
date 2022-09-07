@@ -3994,13 +3994,10 @@ na_ofi_get_uri(const struct na_ofi_fabric *na_ofi_fabric,
     NA_LOG_SUBSYS_DEBUG(addr, "fi_av_straddr() returned %s", fi_addr_str);
 
     /* Remove unnecessary "://" prefix from string if present */
-    if (strstr(fi_addr_str, "://")) {
-        strtok_r(fi_addr_str, ":", &fi_addr_str_ptr);
-        rc = strncmp(fi_addr_str_ptr, "//", 2);
-        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, out, ret, NA_PROTONOSUPPORT,
-            "Bad address string format");
-        fi_addr_str_ptr += 2;
-    } else
+    fi_addr_str_ptr = strstr(fi_addr_str, "://");
+    if (fi_addr_str_ptr != NULL)
+        fi_addr_str_ptr += 3;
+    else
         fi_addr_str_ptr = fi_addr_str;
 
     addr_strlen =
