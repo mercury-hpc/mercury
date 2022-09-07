@@ -2689,16 +2689,16 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
         &hg_core_handle->core_handle, &hg_core_handle->in_header, HG_ENCODE);
     HG_CHECK_HG_ERROR(error, ret, "Could not encode header");
 
-    /* If addr is self, forward locally, otherwise send the encoded buffer
-     * through NA and pre-post response */
-    ret = hg_core_handle->forward(hg_core_handle);
-    HG_CHECK_HG_ERROR(error, ret, "Could not forward buffer");
-
 #ifdef HG_HAS_DEBUG
     /* Increment counter */
     hg_atomic_incr64(
         HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_req_sent_count);
 #endif
+
+    /* If addr is self, forward locally, otherwise send the encoded buffer
+     * through NA and pre-post response */
+    ret = hg_core_handle->forward(hg_core_handle);
+    HG_CHECK_HG_ERROR(error, ret, "Could not forward buffer");
 
 done:
     return ret;
