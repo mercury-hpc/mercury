@@ -1,6 +1,8 @@
 #ifndef MERCURY_TEST_DRIVER_H
 #define MERCURY_TEST_DRIVER_H
 
+#include "mercury_test_driver_config.h"
+
 #include <mercury_sys/Process.h>
 #include <string>
 #include <vector>

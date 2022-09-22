@@ -1,22 +1,21 @@
 #include "mercury_test_driver.hxx"
-#include "mercury_test_config.h"
 
 #include <cstdio>
-#include <sstream>
-#include <iostream>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <sstream>
 
 #if !defined(_WIN32) || defined(__CYGWIN__)
-# include <unistd.h>
-# include <sys/wait.h>
+#    include <sys/wait.h>
+#    include <unistd.h>
 #endif
 
 #include <mercury_sys/SystemTools.hxx>
 
-using std::vector;
-using std::string;
 using std::cerr;
+using std::string;
+using std::vector;
 
 // The main function as this class should only be used by this program
 int
@@ -34,7 +33,8 @@ HGTestDriver::HGTestDriver()
     this->ServerArgStart = 0;
     this->ServerArgCount = 0;
     this->AllowErrorInOutput = false;
-    // try to make sure that this times out before dart so it can kill all the processes
+    // try to make sure that this times out before dart so it can kill all the
+    // processes
     this->TimeOut = DART_TESTING_TIMEOUT - 10.0;
     this->ServerExitTimeOut = 2; /* 2 seconds timeout for server to exit */
     this->TestServer = false;
@@ -43,9 +43,7 @@ HGTestDriver::HGTestDriver()
 }
 
 //----------------------------------------------------------------------------
-HGTestDriver::~HGTestDriver()
-{
-}
+HGTestDriver::~HGTestDriver() {}
 
 //----------------------------------------------------------------------------
 void
@@ -85,29 +83,29 @@ HGTestDriver::CollectConfiguredOptions()
 #endif
     int maxNumProc = 1;
 
-# ifdef MPIEXEC_MAX_NUMPROCS
+#ifdef MPIEXEC_MAX_NUMPROCS
     if (!this->TestSerial)
         maxNumProc = MPIEXEC_MAX_NUMPROCS;
-# endif
-# ifdef MPIEXEC_NUMPROC_FLAG
+#endif
+#ifdef MPIEXEC_NUMPROC_FLAG
     this->MPINumProcessFlag = MPIEXEC_NUMPROC_FLAG;
-# endif
-# ifdef MPIEXEC_PREFLAGS
+#endif
+#ifdef MPIEXEC_PREFLAGS
     this->SeparateArguments(MPIEXEC_PREFLAGS, this->MPIClientPreFlags);
-# endif
-# ifdef MPIEXEC_POSTFLAGS
+#endif
+#ifdef MPIEXEC_POSTFLAGS
     this->SeparateArguments(MPIEXEC_POSTFLAGS, this->MPIClientPostFlags);
-# endif
-# ifdef MPIEXEC_SERVER_PREFLAGS
+#endif
+#ifdef MPIEXEC_SERVER_PREFLAGS
     this->SeparateArguments(MPIEXEC_SERVER_PREFLAGS, this->MPIServerPreFlags);
 #else
     this->MPIServerPreFlags = this->MPIClientPreFlags;
-# endif
-# ifdef MPIEXEC_SERVER_POSTFLAGS
+#endif
+#ifdef MPIEXEC_SERVER_POSTFLAGS
     this->SeparateArguments(MPIEXEC_SERVER_POSTFLAGS, this->MPIServerPostFlags);
 #else
     this->MPIServerPostFlags = this->MPIClientPostFlags;
-# endif
+#endif
     std::stringstream ss;
     ss << maxNumProc;
     this->MPIServerNumProcessFlag = "1";
@@ -119,14 +117,13 @@ HGTestDriver::CollectConfiguredOptions()
 static string
 FixExecutablePath(const string &path)
 {
-#ifdef  CMAKE_INTDIR
-    string parent_dir =
-    mercury_sys::SystemTools::GetFilenamePath(path.c_str());
+#ifdef CMAKE_INTDIR
+    string parent_dir = mercury_sys::SystemTools::GetFilenamePath(path.c_str());
 
-    string filename =
-    mercury_sys::SystemTools::GetFilenameName(path);
+    string filename = mercury_sys::SystemTools::GetFilenameName(path);
 
-    if (!mercury_sys::SystemTools::StringEndsWith(parent_dir.c_str(), CMAKE_INTDIR)) {
+    if (!mercury_sys::SystemTools::StringEndsWith(
+            parent_dir.c_str(), CMAKE_INTDIR)) {
         parent_dir += "/" CMAKE_INTDIR;
     }
     return parent_dir + "/" + filename;
@@ -162,21 +159,23 @@ HGTestDriver::ProcessCommandLine(int argc, char *argv[])
         }
         if (strcmp(argv[i], "--timeout") == 0) {
             this->TimeOut = atoi(argv[i + 1]);
-            std::cerr << "The timeout was set to " << this->TimeOut << std::endl;
+            std::cerr << "The timeout was set to " << this->TimeOut
+                      << std::endl;
             ArgCountP = NULL;
             continue;
         }
         if (strncmp(argv[i], "--allow-errors", strlen("--allow-errors")) == 0) {
             this->AllowErrorInOutput = true;
-            std::cerr << "The allow errors in output flag was set to " <<
-                this->AllowErrorInOutput << std::endl;
+            std::cerr << "The allow errors in output flag was set to "
+                      << this->AllowErrorInOutput << std::endl;
             ArgCountP = NULL;
             continue;
         }
-        if (strncmp(argv[i], "--allow-server-errors", strlen("--allow-server-errors")) == 0) {
+        if (strncmp(argv[i], "--allow-server-errors",
+                strlen("--allow-server-errors")) == 0) {
             this->IgnoreServerResult = true;
-            std::cerr << "The allow server errors in output flag was set to " <<
-                this->IgnoreServerResult << std::endl;
+            std::cerr << "The allow server errors in output flag was set to "
+                      << this->IgnoreServerResult << std::endl;
             ArgCountP = NULL;
             continue;
         }
@@ -195,9 +194,9 @@ HGTestDriver::ProcessCommandLine(int argc, char *argv[])
 
 //----------------------------------------------------------------------------
 void
-HGTestDriver::CreateCommandLine(vector<const char*> &commandLine,
-    const char *cmd, int isServer, int isHelper, const char *numProc, int argStart,
-    int argCount, char *argv[])
+HGTestDriver::CreateCommandLine(vector<const char *> &commandLine,
+    const char *cmd, int isServer, int isHelper, const char *numProc,
+    int argStart, int argCount, char *argv[])
 {
     if (!isServer && this->ClientEnvVars.size()) {
         for (unsigned int i = 0; i < this->ClientEnvVars.size(); ++i)
@@ -227,8 +226,8 @@ HGTestDriver::CreateCommandLine(vector<const char*> &commandLine,
             commandLine.push_back(MPIClientPostFlags[i].c_str());
 
     // remaining flags for the test
-//    cerr << "Arg start is " << argStart << "\n";
-//    cerr << "Arg count is " << argCount << "\n";
+    //    cerr << "Arg start is " << argStart << "\n";
+    //    cerr << "Arg count is " << argCount << "\n";
     for (int ii = argStart; ii < argCount; ++ii) {
         commandLine.push_back(argv[ii]);
     }
@@ -250,10 +249,10 @@ HGTestDriver::StartServer(mercury_sysProcess *server, const char *name,
     int foundWaiting = 0;
     string output;
     while (!foundWaiting) {
-        int pipe = this->WaitForAndPrintLine(name, server, output, 100.0, out,
-            err, &foundWaiting);
-        if (pipe == mercury_sysProcess_Pipe_None
-            || pipe == mercury_sysProcess_Pipe_Timeout) {
+        int pipe = this->WaitForAndPrintLine(
+            name, server, output, 100.0, out, err, &foundWaiting);
+        if (pipe == mercury_sysProcess_Pipe_None ||
+            pipe == mercury_sysProcess_Pipe_Timeout) {
             break;
         }
     }
@@ -277,8 +276,8 @@ HGTestDriver::StartClient(mercury_sysProcess *client, const char *name)
     cerr << "HGTestDriver: starting process " << name << "\n";
     mercury_sysProcess_SetTimeout(client, this->TimeOut);
     mercury_sysProcess_Execute(client);
-    if (mercury_sysProcess_GetState(client)
-        == mercury_sysProcess_State_Executing) {
+    if (mercury_sysProcess_GetState(client) ==
+        mercury_sysProcess_State_Executing) {
         cerr << "HGTestDriver: " << name << " successfully started.\n";
         return 1;
     } else {
@@ -303,14 +302,14 @@ HGTestDriver::Stop(mercury_sysProcess *p, const char *name)
 int
 HGTestDriver::OutputStringHasError(const char *pname, string &output)
 {
-    const char* possibleMPIErrors[] = {"error", "Error", "Missing:",
-        "core dumped", "process in local group is dead", "Segmentation fault",
-        "erroneous", "ERROR:", "Error:",
-        "mpirun can *only* be used with MPI programs", "due to signal",
-        "failure", "abnormal termination", "failed", "FAILED", "Failed", 0};
+    const char *possibleMPIErrors[] = {"error", "Error",
+        "Missing:", "core dumped", "process in local group is dead",
+        "Segmentation fault", "erroneous",
+        "ERROR:", "Error:", "mpirun can *only* be used with MPI programs",
+        "due to signal", "failure", "abnormal termination", "failed", "FAILED",
+        "Failed", 0};
 
-    const char* nonErrors[] = {
-        "Memcheck, a memory error detector",  //valgrind
+    const char *nonErrors[] = {"Memcheck, a memory error detector", // valgrind
         0};
 
     if (this->AllowErrorInOutput)
@@ -330,15 +329,16 @@ HGTestDriver::OutputStringHasError(const char *pname, string &output)
                     if (it->find(nonErrors[j]) != it->npos) {
                         found = 0;
                         cerr << "Non error \"" << it->c_str()
-                            << "\" suppressed " << std::endl;
+                             << "\" suppressed " << std::endl;
                     }
                 }
                 if (found) {
-                    cerr
-                        << "HGTestDriver: ***** Test will fail, because the string: \""
-                        << possibleMPIErrors[i]
-                        << "\"\nHGTestDriver: ***** was found in the following output from the "
-                        << pname << ":\n\"" << it->c_str() << "\"\n";
+                    cerr << "HGTestDriver: ***** Test will fail, because the "
+                            "string: \""
+                         << possibleMPIErrors[i]
+                         << "\"\nHGTestDriver: ***** was found in the "
+                            "following output from the "
+                         << pname << ":\n\"" << it->c_str() << "\"\n";
                     return 1;
                 }
             }
@@ -348,33 +348,35 @@ HGTestDriver::OutputStringHasError(const char *pname, string &output)
 }
 
 //----------------------------------------------------------------------------
-#define HG_CLEAN_PROCESSES do {         \
-  mercury_sysProcess_Delete(client);    \
-  mercury_sysProcess_Delete(server);    \
-} while (0)
+#define HG_CLEAN_PROCESSES                                                     \
+    do {                                                                       \
+        mercury_sysProcess_Delete(client);                                     \
+        mercury_sysProcess_Delete(server);                                     \
+    } while (0)
 
-#define HG_TEST_EXECUTE_CMD(cmd) do {                           \
-    if (strlen(cmd) > 0) {                                      \
-        std::vector<std::string> commands =                     \
-            mercury_sys::SystemTools::SplitString(cmd, ';');    \
-        for (unsigned int cc = 0; cc < commands.size(); cc++) { \
-            std::string command = commands[cc];                 \
-            if (command.size() > 0) {                           \
-                std::cout << command.c_str() << std::endl;      \
-                system(command.c_str());                        \
-            }                                                   \
-        }                                                       \
-    }                                                           \
-} while (0)
+#define HG_TEST_EXECUTE_CMD(cmd)                                               \
+    do {                                                                       \
+        if (strlen(cmd) > 0) {                                                 \
+            std::vector<std::string> commands =                                \
+                mercury_sys::SystemTools::SplitString(cmd, ';');               \
+            for (unsigned int cc = 0; cc < commands.size(); cc++) {            \
+                std::string command = commands[cc];                            \
+                if (command.size() > 0) {                                      \
+                    std::cout << command.c_str() << std::endl;                 \
+                    system(command.c_str());                                   \
+                }                                                              \
+            }                                                                  \
+        }                                                                      \
+    } while (0)
 
 //----------------------------------------------------------------------------
 int
-HGTestDriver::Main(int argc, char* argv[])
+HGTestDriver::Main(int argc, char *argv[])
 {
-#ifdef HG_TEST_INIT_COMMAND
+#ifdef HG_TEST_DRIVER_INIT_COMMAND
     // run user-specified commands before initialization.
     // For example: "killall -9 rsh test;"
-    HG_TEST_EXECUTE_CMD(HG_TEST_INIT_COMMAND);
+    HG_TEST_EXECUTE_CMD(HG_TEST_DRIVER_INIT_COMMAND);
 #endif
 
     if (!this->ProcessCommandLine(argc, argv))
@@ -390,7 +392,7 @@ HGTestDriver::Main(int argc, char* argv[])
         if (!server) {
             HG_CLEAN_PROCESSES;
             cerr << "HGTestDriver: Cannot allocate mercury_sysProcess to "
-                "run the server.\n";
+                    "run the server.\n";
             return 1;
         }
     }
@@ -399,7 +401,7 @@ HGTestDriver::Main(int argc, char* argv[])
     if (!client) {
         HG_CLEAN_PROCESSES;
         cerr << "HGTestDriver: Cannot allocate mercury_sysProcess to "
-            "run the client.\n";
+                "run the client.\n";
         return 1;
     }
 
@@ -410,15 +412,15 @@ HGTestDriver::Main(int argc, char* argv[])
 
     vector<const char *> serverCommand;
     if (server) {
-        const char* serverExe = this->ServerExecutable.c_str();
+        const char *serverExe = this->ServerExecutable.c_str();
 
         this->CreateCommandLine(serverCommand, serverExe, 1, 0,
             this->MPIServerNumProcessFlag.c_str(), this->ServerArgStart,
             this->ServerArgCount, argv);
         this->ReportCommand(&serverCommand[0], "server");
         mercury_sysProcess_SetCommand(server, &serverCommand[0]);
-        mercury_sysProcess_SetWorkingDirectory(server,
-            this->GetDirectory(serverExe).c_str());
+        mercury_sysProcess_SetWorkingDirectory(
+            server, this->GetDirectory(serverExe).c_str());
     }
 
     // Construct the client process command line.
@@ -429,8 +431,8 @@ HGTestDriver::Main(int argc, char* argv[])
         this->ClientArgCount, argv);
     this->ReportCommand(&clientCommand[0], "client");
     mercury_sysProcess_SetCommand(client, &clientCommand[0]);
-    mercury_sysProcess_SetWorkingDirectory(client,
-        this->GetDirectory(clientExe).c_str());
+    mercury_sysProcess_SetWorkingDirectory(
+        client, this->GetDirectory(clientExe).c_str());
 
     // Start the server if there is one
     if (!this->StartServer(server, "server", ServerStdOut, ServerStdErr)) {
@@ -452,8 +454,8 @@ HGTestDriver::Main(int argc, char* argv[])
     string output;
     int mpiError = 0;
     while (clientPipe) {
-        clientPipe = this->WaitForAndPrintLine("client", client, output, 0.1,
-            ClientStdOut, ClientStdErr, 0);
+        clientPipe = this->WaitForAndPrintLine(
+            "client", client, output, 0.1, ClientStdOut, ClientStdErr, 0);
         if (!mpiError && this->OutputStringHasError("client", output)) {
             mpiError = 1;
         }
@@ -461,8 +463,8 @@ HGTestDriver::Main(int argc, char* argv[])
         // for this->ServerExitTimeOut, then we'll kill the servers, if needed.
         double timeout = (clientPipe) ? 0 : this->ServerExitTimeOut;
         output = "";
-        this->WaitForAndPrintLine("server", server, output, timeout,
-            ServerStdOut, ServerStdErr, 0);
+        this->WaitForAndPrintLine(
+            "server", server, output, timeout, ServerStdOut, ServerStdErr, 0);
         if (!mpiError && this->OutputStringHasError("server", output)) {
             mpiError = 1;
         }
@@ -477,8 +479,8 @@ HGTestDriver::Main(int argc, char* argv[])
     // the client crashed/exited before it attempted to connect to
     // the server.
     if (server) {
-#ifdef HG_TEST_SERVER_EXIT_COMMAND
-        HG_TEST_EXECUTE_CMD(HG_TEST_SERVER_EXIT_COMMAND);
+#ifdef HG_TEST_DRIVER_SERVER_EXIT_COMMAND
+        HG_TEST_EXECUTE_CMD(HG_TEST_DRIVER_SERVER_EXIT_COMMAND);
 #endif
         mercury_sysProcess_WaitForExit(server, &this->ServerExitTimeOut);
     }
@@ -500,9 +502,9 @@ HGTestDriver::Main(int argc, char* argv[])
         return serverResult;
 
     if (mpiError) {
-        cerr
-            << "HGTestDriver: Error string found in output, HGTestDriver returning "
-            << mpiError << "\n";
+        cerr << "HGTestDriver: Error string found in output, HGTestDriver "
+                "returning "
+             << mpiError << "\n";
         return mpiError;
     }
 
@@ -512,10 +514,10 @@ HGTestDriver::Main(int argc, char* argv[])
 
 //----------------------------------------------------------------------------
 void
-HGTestDriver::ReportCommand(const char * const *command, const char *name)
+HGTestDriver::ReportCommand(const char *const *command, const char *name)
 {
     cerr << "HGTestDriver: " << name << " command is:\n";
-    for (const char * const *c = command; *c; ++c)
+    for (const char *const *c = command; *c; ++c)
         cerr << " \"" << *c << "\"";
     cerr << "\n";
 }
@@ -528,65 +530,52 @@ HGTestDriver::ReportStatus(mercury_sysProcess *process, const char *name)
     switch (mercury_sysProcess_GetState(process)) {
         case mercury_sysProcess_State_Starting: {
             cerr << "HGTestDriver: Never started " << name << " process.\n";
-        }
-            break;
+        } break;
         case mercury_sysProcess_State_Error: {
-            cerr << "HGTestDriver: Error executing " << name << " process: "
-                << mercury_sysProcess_GetErrorString(process) << "\n";
-        }
-            break;
+            cerr << "HGTestDriver: Error executing " << name
+                 << " process: " << mercury_sysProcess_GetErrorString(process)
+                 << "\n";
+        } break;
         case mercury_sysProcess_State_Exception: {
             cerr << "HGTestDriver: " << name
-                << " process exited with an exception: ";
+                 << " process exited with an exception: ";
             switch (mercury_sysProcess_GetExitException(process)) {
                 case mercury_sysProcess_Exception_None: {
                     cerr << "None";
-                }
-                    break;
+                } break;
                 case mercury_sysProcess_Exception_Fault: {
                     cerr << "Segmentation fault";
-                }
-                    break;
+                } break;
                 case mercury_sysProcess_Exception_Illegal: {
                     cerr << "Illegal instruction";
-                }
-                    break;
+                } break;
                 case mercury_sysProcess_Exception_Interrupt: {
                     cerr << "Interrupted by user";
-                }
-                    break;
+                } break;
                 case mercury_sysProcess_Exception_Numerical: {
                     cerr << "Numerical exception";
-                }
-                    break;
+                } break;
                 case mercury_sysProcess_Exception_Other: {
                     cerr << "Unknown";
-                }
-                    break;
+                } break;
             }
             cerr << "\n";
-        }
-            break;
+        } break;
         case mercury_sysProcess_State_Executing: {
-            cerr << "HGTestDriver: Never terminated " << name
-                << " process.\n";
-        }
-            break;
+            cerr << "HGTestDriver: Never terminated " << name << " process.\n";
+        } break;
         case mercury_sysProcess_State_Exited: {
             result = mercury_sysProcess_GetExitValue(process);
             cerr << "HGTestDriver: " << name << " process exited with code "
-                << result << "\n";
-        }
-            break;
+                 << result << "\n";
+        } break;
         case mercury_sysProcess_State_Expired: {
             cerr << "HGTestDriver: killed " << name
-                << " process due to timeout.\n";
-        }
-            break;
+                 << " process due to timeout.\n";
+        } break;
         case mercury_sysProcess_State_Killed: {
             cerr << "HGTestDriver: killed " << name << " process.\n";
-        }
-            break;
+        } break;
     }
     return result;
 }
@@ -633,8 +622,8 @@ HGTestDriver::WaitForLine(mercury_sysProcess *process, string &line,
         // No newlines found.  Wait for more data from the process.
         int length;
         char *data;
-        int pipe = mercury_sysProcess_WaitForData(process, &data, &length,
-            &timeout);
+        int pipe =
+            mercury_sysProcess_WaitForData(process, &data, &length, &timeout);
         if (pipe == mercury_sysProcess_Pipe_Timeout) {
             // Timeout has been exceeded.
             return pipe;
@@ -686,10 +675,11 @@ HGTestDriver::WaitForAndPrintLine(const char *pname,
     vector<char> &out, vector<char> &err, int *foundWaiting)
 {
     int pipe = this->WaitForLine(process, line, timeout, out, err);
-    if (pipe == mercury_sysProcess_Pipe_STDOUT
-        || pipe == mercury_sysProcess_Pipe_STDERR) {
+    if (pipe == mercury_sysProcess_Pipe_STDOUT ||
+        pipe == mercury_sysProcess_Pipe_STDERR) {
         this->PrintLine(pname, line.c_str());
-        if (foundWaiting && (line.find(HG_TEST_SERVER_START_MSG) != line.npos))
+        if (foundWaiting &&
+            (line.find(HG_TEST_DRIVER_SERVER_START_MSG) != line.npos))
             *foundWaiting = 1;
     }
     return pipe;
