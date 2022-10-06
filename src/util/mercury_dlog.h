@@ -192,7 +192,7 @@ hg_dlog_mkcount64(struct hg_dlog *d, hg_atomic_int64_t **cptr, const char *name,
  *
  * \return 1 if added, 0 otherwise
  */
-static HG_UTIL_INLINE unsigned int
+HG_UTIL_PUBLIC unsigned int
 hg_dlog_addlog(struct hg_dlog *d, const char *file, unsigned int line,
     const char *func, const char *msg, const void *data);
 
@@ -256,36 +256,6 @@ hg_dlog_dump_counters(struct hg_dlog *d,
  */
 HG_UTIL_PUBLIC void
 hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock);
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE unsigned int
-hg_dlog_addlog(struct hg_dlog *d, const char *file, unsigned int line,
-    const char *func, const char *msg, const void *data)
-{
-    unsigned int rv = 0;
-    unsigned int idx;
-
-    hg_thread_mutex_lock(&d->dlock);
-    if (d->lestop)
-        goto done;
-    if (d->leloop == 0 && d->leadds >= d->lesize)
-        goto done;
-    idx = d->lefree;
-    d->lefree = (d->lefree + 1) % d->lesize;
-    if (d->leadds < d->lesize)
-        d->leadds++;
-    d->le[idx].file = file;
-    d->le[idx].line = line;
-    d->le[idx].func = func;
-    d->le[idx].msg = msg;
-    d->le[idx].data = data;
-    hg_time_get_current(&d->le[idx].time);
-    rv = 1;
-
-done:
-    hg_thread_mutex_unlock(&d->dlock);
-    return rv;
-}
 
 #ifdef __cplusplus
 }

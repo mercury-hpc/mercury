@@ -121,9 +121,9 @@ hg_time_to_ms(hg_time_t tv);
  * \param in1 [IN]              time structure
  * \param in2 [IN]              time structure
  *
- * \return 1 if in1 < in2, 0 otherwise
+ * \return true if in1 < in2, false otherwise
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE bool
 hg_time_less(hg_time_t in1, hg_time_t in2);
 
 /**
@@ -375,7 +375,7 @@ hg_time_from_ms(unsigned int ms)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE bool
 hg_time_less(hg_time_t in1, hg_time_t in2)
 {
     return ((in1.tv_sec < in2.tv_sec) || ((in1.tv_sec == in2.tv_sec) &&

@@ -138,6 +138,37 @@ hg_dlog_mkcount64(struct hg_dlog *d, hg_atomic_int64_t **cptr, const char *name,
 }
 
 /*---------------------------------------------------------------------------*/
+unsigned int
+hg_dlog_addlog(struct hg_dlog *d, const char *file, unsigned int line,
+    const char *func, const char *msg, const void *data)
+{
+    unsigned int rv = 0;
+    unsigned int idx;
+
+    hg_thread_mutex_lock(&d->dlock);
+    if (d->lestop)
+        goto done;
+    if (d->leloop == 0 && d->leadds >= d->lesize)
+        goto done;
+    idx = d->lefree;
+    d->lefree = (d->lefree + 1) % d->lesize;
+    if (d->leadds < d->lesize)
+        d->leadds++;
+    d->le[idx] = (struct hg_dlog_entry){.file = file,
+        .line = line,
+        .func = func,
+        .msg = msg,
+        .data = data,
+        .time = hg_time_from_ms(0)};
+    hg_time_get_current(&d->le[idx].time);
+    rv = 1;
+
+done:
+    hg_thread_mutex_unlock(&d->dlock);
+    return rv;
+}
+
+/*---------------------------------------------------------------------------*/
 void
 hg_dlog_setlogstop(struct hg_dlog *d, int stop)
 {
