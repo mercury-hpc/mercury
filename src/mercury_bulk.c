@@ -491,7 +491,7 @@ hg_bulk_na_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 /**
  * Transfer callback.
  */
-static int
+static void
 hg_bulk_transfer_cb(const struct na_cb_info *callback_info);
 
 /**
@@ -879,9 +879,7 @@ error:
             HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
                 "NA_Mem_deregister() failed (%s)", NA_Error_to_string(na_ret));
         }
-        na_ret = NA_Mem_handle_free(na_class, mem_handle);
-        HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
-            "NA_Mem_handle_free() failed (%s)", NA_Error_to_string(na_ret));
+        NA_Mem_handle_free(na_class, mem_handle);
     }
     return ret;
 }
@@ -929,9 +927,7 @@ error:
             HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
                 "NA_Mem_deregister() failed (%s)", NA_Error_to_string(na_ret));
         }
-        na_ret = NA_Mem_handle_free(na_class, mem_handle);
-        HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
-            "NA_Mem_handle_free() failed (%s)", NA_Error_to_string(na_ret));
+        NA_Mem_handle_free(na_class, mem_handle);
     }
     return ret;
 }
@@ -950,9 +946,7 @@ hg_bulk_deregister(
             "NA_Mem_deregister() failed (%s)", NA_Error_to_string(na_ret));
     }
 
-    na_ret = NA_Mem_handle_free(na_class, mem_handle);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
-        "NA_Mem_handle_free() failed (%s)", NA_Error_to_string(na_ret));
+    NA_Mem_handle_free(na_class, mem_handle);
 
 done:
     return ret;
@@ -1630,25 +1624,19 @@ hg_bulk_op_create(
 error:
     if (hg_bulk_op_id) {
         for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
-            na_return_t na_ret;
-
             if (hg_bulk_op_id->na_op_ids.s[i] == NULL)
                 continue;
 
-            na_ret = NA_Op_destroy(core_context->core_class->na_class,
+            NA_Op_destroy(core_context->core_class->na_class,
                 hg_bulk_op_id->na_op_ids.s[i]);
-            HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS, "NA_Op_destroy() failed");
         }
 #ifdef NA_HAS_SM
         for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
-            na_return_t na_ret;
-
             if (hg_bulk_op_id->na_sm_op_ids.s[i] == NULL)
                 continue;
 
-            na_ret = NA_Op_destroy(core_context->core_class->na_sm_class,
+            NA_Op_destroy(core_context->core_class->na_sm_class,
                 hg_bulk_op_id->na_sm_op_ids.s[i]);
-            HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS, "NA_Op_destroy() failed");
         }
 #endif
         free(hg_bulk_op_id);
@@ -1682,15 +1670,10 @@ hg_bulk_op_destroy(struct hg_bulk_op_id *hg_bulk_op_id)
 
         if (na_op_ids) {
             for (i = 0; i < hg_bulk_op_id->op_count; i++) {
-                na_return_t na_ret;
-
                 if (na_op_ids[i] == NULL)
                     continue;
 
-                na_ret = NA_Op_destroy(hg_bulk_op_id->na_class, na_op_ids[i]);
-                HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret,
-                    (hg_return_t) na_ret, "NA_Op_destroy() failed (%s)",
-                    NA_Error_to_string(na_ret));
+                NA_Op_destroy(hg_bulk_op_id->na_class, na_op_ids[i]);
             }
             free(na_op_ids);
             hg_bulk_op_id->na_op_ids.d = NULL;
@@ -1718,32 +1701,20 @@ hg_bulk_op_destroy(struct hg_bulk_op_id *hg_bulk_op_id)
         HG_LOG_DEBUG("Freeing bulk op ID (%p)", (void *) hg_bulk_op_id);
 
         for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
-            na_return_t na_ret;
-
             if (hg_bulk_op_id->na_op_ids.s[i] == NULL)
                 continue;
 
-            na_ret =
-                NA_Op_destroy(hg_bulk_op_id->core_context->core_class->na_class,
-                    hg_bulk_op_id->na_op_ids.s[i]);
-            HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret,
-                (hg_return_t) na_ret, "NA_Op_destroy() failed (%s)",
-                NA_Error_to_string(na_ret));
+            NA_Op_destroy(hg_bulk_op_id->core_context->core_class->na_class,
+                hg_bulk_op_id->na_op_ids.s[i]);
         }
 
 #ifdef NA_HAS_SM
         for (i = 0; i < HG_BULK_STATIC_MAX; i++) {
-            na_return_t na_ret;
-
             if (hg_bulk_op_id->na_sm_op_ids.s[i] == NULL)
                 continue;
 
-            na_ret = NA_Op_destroy(
-                hg_bulk_op_id->core_context->core_class->na_sm_class,
+            NA_Op_destroy(hg_bulk_op_id->core_context->core_class->na_sm_class,
                 hg_bulk_op_id->na_sm_op_ids.s[i]);
-            HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret,
-                (hg_return_t) na_ret, "NA_Op_destroy() failed (%s)",
-                NA_Error_to_string(na_ret));
         }
 #endif
 
@@ -2366,12 +2337,11 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static void
 hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
 {
     struct hg_bulk_op_id *hg_bulk_op_id =
         (struct hg_bulk_op_id *) callback_info->arg;
-    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_SUCCESS) {
         /* Nothing */
@@ -2402,8 +2372,6 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
             (hg_return_t) hg_atomic_get32(&hg_bulk_op_id->ret_status),
             HG_FALSE);
     }
-
-    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
