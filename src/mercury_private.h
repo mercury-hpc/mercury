@@ -43,6 +43,18 @@ struct hg_bulk_op_pool;
 /* Public Macros */
 /*****************/
 
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * \ptr:        the pointer to the member.
+ * \type:       the type of the container struct this is embedded in.
+ * \member:     the name of the member within the struct.
+ *
+ */
+#if !defined(container_of)
+#    define container_of(ptr, type, member)                                    \
+        ((type *) ((char *) ptr - offsetof(type, member)))
+#endif
+
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -74,7 +86,7 @@ hg_core_context_get_bulk_op_pool(struct hg_core_context *core_context);
  */
 HG_PRIVATE void
 hg_core_completion_add(struct hg_core_context *core_context,
-    struct hg_completion_entry *hg_completion_entry, hg_bool_t self_notify);
+    struct hg_completion_entry *hg_completion_entry, hg_bool_t loopback_notify);
 
 /**
  * Trigger callback from bulk op ID.

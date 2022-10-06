@@ -45,13 +45,6 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 /* Public Macros */
 /*****************/
 
-/* Encode/decode version number into uint32 */
-#define HG_GET_MAJOR(value) ((value >> 24) & 0xFF)
-#define HG_GET_MINOR(value) ((value >> 16) & 0xFF)
-#define HG_GET_PATCH(value) (value & 0xFFFF)
-#define HG_VERSION                                                             \
-    ((HG_VERSION_MAJOR << 24) | (HG_VERSION_MINOR << 16) | HG_VERSION_PATCH)
-
 /**
  * Operation flags.
  */

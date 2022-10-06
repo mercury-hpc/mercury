@@ -13,16 +13,19 @@
 
 #include <inttypes.h>
 
-/*****************/
-/* Public Macros */
-/*****************/
-
-#define HG_LOG_ERROR(...)   HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define HG_LOG_ERROR(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define HG_LOG_SUBSYS_ERROR(subsys, ...)                                       \
+    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_WARNING(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
+#define HG_LOG_SUBSYS_WARNING(subsys, ...)                                     \
+    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef HG_HAS_DEBUG
 #    define HG_LOG_DEBUG(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
+#    define HG_LOG_SUBSYS_DEBUG(subsys, ...)                                   \
+        HG_LOG_WRITE(subsys, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
-#    define HG_LOG_DEBUG(...) (void) 0
+#    define HG_LOG_DEBUG(...)        (void) 0
+#    define HG_LOG_SUBSYS_DEBUG(...) (void) 0
 #endif
 
 /* Branch predictor hints */
@@ -35,12 +38,15 @@
 #endif
 
 /* Error macros */
+
+/* HG_GOTO_DONE: goto label wrapper and set return value */
 #define HG_GOTO_DONE(label, ret, ret_val)                                      \
     do {                                                                       \
         ret = ret_val;                                                         \
         goto label;                                                            \
     } while (0)
 
+/* HG_GOTO_ERROR: goto label wrapper and set return value / log error */
 #define HG_GOTO_ERROR(label, ret, err_val, ...)                                \
     do {                                                                       \
         HG_LOG_ERROR(__VA_ARGS__);                                             \
@@ -48,7 +54,23 @@
         goto label;                                                            \
     } while (0)
 
-/* Check for hg_ret value and goto label */
+/* HG_GOTO_SUBSYS_ERROR: goto label wrapper and set return value / log subsys
+ * error */
+#define HG_GOTO_SUBSYS_ERROR(subsys, label, ret, err_val, ...)                 \
+    do {                                                                       \
+        HG_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                              \
+        ret = err_val;                                                         \
+        goto label;                                                            \
+    } while (0)
+
+/* HG_GOTO_SUBSYS_ERROR_NORET: goto label wrapper and log subsys error */
+#define HG_GOTO_SUBSYS_ERROR_NORET(subsys, label, ...)                         \
+    do {                                                                       \
+        HG_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                              \
+        goto label;                                                            \
+    } while (0)
+
+/* HG_CHECK_HG_ERROR: HG type error check */
 #define HG_CHECK_HG_ERROR(label, hg_ret, ...)                                  \
     do {                                                                       \
         if (unlikely(hg_ret != HG_SUCCESS)) {                                  \
@@ -57,7 +79,16 @@
         }                                                                      \
     } while (0)
 
-/* Check for cond, set ret to err_val and goto label */
+/* HG_CHECK_SUBSYS_HG_ERROR: subsys HG type error check */
+#define HG_CHECK_SUBSYS_HG_ERROR(subsys, label, hg_ret, ...)                   \
+    do {                                                                       \
+        if (unlikely(hg_ret != HG_SUCCESS)) {                                  \
+            HG_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* HG_CHECK_ERROR: error check on cond */
 #define HG_CHECK_ERROR(cond, label, ret, err_val, ...)                         \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
@@ -67,6 +98,17 @@
         }                                                                      \
     } while (0)
 
+/* HG_CHECK_SUBSYS_ERROR: subsys error check on cond */
+#define HG_CHECK_SUBSYS_ERROR(subsys, cond, label, ret, err_val, ...)          \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+            ret = err_val;                                                     \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* HG_CHECK_ERROR_NORET: error check / no return values */
 #define HG_CHECK_ERROR_NORET(cond, label, ...)                                 \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
@@ -75,6 +117,16 @@
         }                                                                      \
     } while (0)
 
+/* HG_CHECK_SUBSYS_ERROR_NORET: subsys error check / no return values */
+#define HG_CHECK_SUBSYS_ERROR_NORET(subsys, cond, label, ...)                  \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* HG_CHECK_ERROR_DONE: error check after clean up / done labels */
 #define HG_CHECK_ERROR_DONE(cond, ...)                                         \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
@@ -82,11 +134,27 @@
         }                                                                      \
     } while (0)
 
-/* Check for cond and print warning */
+/* HG_CHECK_SUBSYS_ERROR_DONE: subsys error check after clean up labels */
+#define HG_CHECK_SUBSYS_ERROR_DONE(subsys, cond, ...)                          \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+        }                                                                      \
+    } while (0)
+
+/* HG_CHECK_WARNING: warning check on cond */
 #define HG_CHECK_WARNING(cond, ...)                                            \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
             HG_LOG_WARNING(__VA_ARGS__);                                       \
+        }                                                                      \
+    } while (0)
+
+/* HG_CHECK_SUBSYS_WARNING: subsys warning check on cond */
+#define HG_CHECK_SUBSYS_WARNING(subsys, cond, ...)                             \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_LOG_SUBSYS_WARNING(subsys, __VA_ARGS__);                        \
         }                                                                      \
     } while (0)
 

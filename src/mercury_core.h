@@ -415,12 +415,13 @@ HG_Core_deregister(hg_core_class_t *hg_core_class, hg_id_t id);
  *
  * \param hg_core_class [IN]    pointer to HG core class
  * \param id [IN]               function ID
- * \param flag [OUT]            pointer to boolean
+ * \param flag_p [OUT]          pointer to boolean
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_registered(hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag);
+HG_Core_registered(
+    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag_p);
 
 /**
  * Register and associate user data to registered function. When
@@ -473,13 +474,13 @@ HG_Core_addr_lookup1(hg_core_context_t *context, hg_core_cb_t callback,
  *
  * \param hg_core_class [IN]    pointer to HG core class
  * \param name [IN]             lookup name
- * \param addr [OUT]            pointer to abstract address
+ * \param addr_p [OUT]          pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Core_addr_lookup2(
-    hg_core_class_t *hg_core_class, const char *name, hg_core_addr_t *addr);
+    hg_core_class_t *hg_core_class, const char *name, hg_core_addr_t *addr_p);
 
 /**
  * Free the addr from the list of peers.
@@ -530,12 +531,12 @@ HG_Core_addr_get_na_sm(hg_core_addr_t addr);
  * Access self address. Address must be freed with HG_Core_addr_free().
  *
  * \param hg_core_class [IN]    pointer to HG core class
- * \param addr [OUT]            pointer to abstract address
+ * \param addr_p [OUT]          pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr);
+HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr_p);
 
 /**
  * Duplicate an existing HG abstract address. The duplicated address can be
@@ -543,12 +544,12 @@ HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr);
  * address must be freed with HG_Core_addr_free().
  *
  * \param addr [IN]             abstract address
- * \param new_addr [OUT]        pointer to abstract address
+ * \param new_addr_p [OUT]      pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_dup(hg_core_addr_t addr, hg_core_addr_t *new_addr);
+HG_Core_addr_dup(hg_core_addr_t addr, hg_core_addr_t *new_addr_p);
 
 /**
  * Compare two addresses.
@@ -617,14 +618,14 @@ HG_Core_addr_serialize(
  * HG_Core_addr_free().
  *
  * \param hg_core_class [IN]    pointer to HG core class
- * \param addr [OUT]            pointer to abstract address
+ * \param addr_p [OUT]          pointer to abstract address
  * \param buf [IN]              pointer to buffer used for deserialization
  * \param buf_size [IN]         buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_addr_deserialize(hg_core_class_t *hg_core_class, hg_core_addr_t *addr,
+HG_Core_addr_deserialize(hg_core_class_t *hg_core_class, hg_core_addr_t *addr_p,
     const void *buf, hg_size_t buf_size);
 
 /**
@@ -636,13 +637,13 @@ HG_Core_addr_deserialize(hg_core_class_t *hg_core_class, hg_core_addr_t *addr,
  * \param context [IN]          pointer to HG core context
  * \param addr [IN]             target address
  * \param id [IN]               registered function ID
- * \param handle [OUT]          pointer to HG handle
+ * \param handle_p [OUT]        pointer to HG handle
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
-    hg_core_handle_t *handle);
+    hg_core_handle_t *handle_p);
 
 /**
  * Destroy HG handle. Decrement reference count, resources associated to the
@@ -898,6 +899,7 @@ struct hg_core_rpc_info {
     hg_core_rpc_cb_t rpc_cb;       /* RPC callback */
     void *data;                    /* User data */
     void (*free_callback)(void *); /* User data free callback */
+    hg_id_t id;                    /* RPC ID */
 };
 
 /* HG core handle */

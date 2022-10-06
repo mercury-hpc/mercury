@@ -31,6 +31,9 @@ typedef enum hg_checksum_level {
  * NB. should be initialized using HG_INIT_INFO_INITIALIZER
  */
 struct hg_init_info {
+    /* Requested API version. */
+    hg_uint32_t api_version;
+
     /* NA init info struct, see na_types.h for documentation */
     struct na_init_info na_init_info;
 
@@ -85,6 +88,10 @@ struct hg_init_info {
     /* (Debug) Print stats at exit.
      * Default is: false */
     hg_bool_t stats;
+
+    /* Disable use of multi_recv when available and post separate buffers.
+     * Default is: false */
+    hg_bool_t no_multi_recv;
 };
 
 /* Error return codes:
@@ -157,6 +164,11 @@ typedef enum {
 /* Public Macros */
 /*****************/
 
+/* Versions */
+#define HG_VERSION(major, minor) (((major) << 16) | (minor))
+#define HG_MAJOR(version)        (version >> 16)
+#define HG_MINOR(version)        (version & 0xffff)
+
 /* Max timeout */
 #define HG_MAX_IDLE_TIME (3600 * 1000)
 
@@ -165,9 +177,14 @@ typedef enum {
 
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
+    (struct hg_init_info)                                                      \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, NULL,                  \
-            HG_CHECKSUM_NONE, HG_FALSE, HG_FALSE, HG_FALSE                     \
+        .api_version = HG_VERSION(HG_VERSION_MAJOR, HG_VERSION_MINOR),         \
+        .na_init_info = NA_INIT_INFO_INITIALIZER, .na_class = NULL,            \
+        .request_post_init = 0, .request_post_incr = 0, .auto_sm = HG_FALSE,   \
+        .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
+        .no_bulk_eager = HG_FALSE, .no_loopback = HG_FALSE, .stats = HG_FALSE, \
+        .no_multi_recv = HG_FALSE                                              \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
