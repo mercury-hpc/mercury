@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
@@ -107,7 +107,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: true
@@ -121,7 +121,7 @@ jobs:
       - name: Restore cached compiler package dependencies
         id: cache-pkg-deps
         if: matrix.config.cc == 'icc'
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             /opt/intel/oneapi/compiler
@@ -135,7 +135,7 @@ jobs:
         run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh mpich
 
       - name: Restore cached dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cache-deps
         with:
           path: ${{ runner.temp }}/${{ env.INSTALL_DIR }}

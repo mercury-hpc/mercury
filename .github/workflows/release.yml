@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: true
 
@@ -19,6 +19,7 @@ jobs:
         id: get_version
         # Skip refs/tags/v
         run: echo ::set-output name=version::$(echo ${GITHUB_REF:11})
+        # TODO: https://github.blog/changelog/2022-10-11-github-actions-deprecating-save-state-and-set-output-commands/
 
       - name: Create Build Environment
         run: cmake -E make_directory ${{github.workspace}}/build
