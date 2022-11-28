@@ -23,6 +23,7 @@ thread_cb_incr(void *arg)
     return thread_ret;
 }
 
+#ifndef __SANITIZE_ADDRESS__
 static HG_THREAD_RETURN_TYPE
 thread_cb_sleep(void *arg)
 {
@@ -36,6 +37,7 @@ thread_cb_sleep(void *arg)
     hg_thread_exit(thread_ret);
     return thread_ret;
 }
+#endif
 
 static HG_THREAD_RETURN_TYPE
 thread_cb_key(void *arg)
@@ -96,9 +98,13 @@ main(int argc, char *argv[])
         goto done;
     }
 
+/* Disable when running with address sanitizer because of CI issue with gcc 11:
+ * AsanCheckFailed ../../../../src/libsanitizer/asan/asan_rtl.cpp:74 */
+#ifndef __SANITIZE_ADDRESS__
     hg_thread_create(&thread, thread_cb_sleep, NULL);
     hg_thread_cancel(thread);
     hg_thread_join(thread);
+#endif
 
     hg_thread_key_create(&thread_key);
     hg_thread_create(&thread, thread_cb_key, &thread_key);
