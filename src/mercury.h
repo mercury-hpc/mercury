@@ -38,14 +38,15 @@ extern "C" {
 /**
  * Get Mercury version number.
  *
- * \param major [OUT]           pointer to unsigned integer
- * \param minor [OUT]           pointer to unsigned integer
- * \param patch [OUT]           pointer to unsigned integer
+ * \param major_p [OUT]         pointer to unsigned integer
+ * \param minor_p [OUT]         pointer to unsigned integer
+ * \param patch_p [OUT]         pointer to unsigned integer
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
+HG_Version_get(
+    unsigned int *major_p, unsigned int *minor_p, unsigned int *patch_p);
 
 /**
  * Convert error return code to string (null terminated).
@@ -380,14 +381,14 @@ HG_Register_name(hg_class_t *hg_class, const char *func_name,
  *
  * \param hg_class [IN]         pointer to HG class
  * \param func_name [IN]        function name
- * \param id [OUT]              registered RPC ID
- * \param flag [OUT]            pointer to boolean
+ * \param id_p [OUT]            registered RPC ID
+ * \param flag_p [OUT]          pointer to boolean
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered_name(
-    hg_class_t *hg_class, const char *func_name, hg_id_t *id, hg_bool_t *flag);
+HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id_p,
+    hg_bool_t *flag_p);
 
 /**
  * Dynamically register an RPC ID as well as the RPC callback executed when the
@@ -424,12 +425,12 @@ HG_Deregister(hg_class_t *hg_class, hg_id_t id);
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               function ID
- * \param flag [OUT]            pointer to boolean
+ * \param flag_p [OUT]          pointer to boolean
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag);
+HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p);
 
 /**
  * Indicate whether HG_Register() has been called, and if so return pointers
@@ -437,15 +438,15 @@ HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag);
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               function ID
- * \param flag [OUT]            pointer to boolean
- * \param in_proc_cb [OUT]      pointer to input encoder cb
- * \param out_proc_cb [OUT]     pointer to output encoder cb
+ * \param flag_p [OUT]          pointer to boolean
+ * \param in_proc_cb_p [OUT]    pointer to input encoder cb
+ * \param out_proc_cb_p [OUT]   pointer to output encoder cb
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag,
-    hg_proc_cb_t *in_proc_cb, hg_proc_cb_t *out_proc_cb);
+HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p,
+    hg_proc_cb_t *in_proc_cb_p, hg_proc_cb_t *out_proc_cb_p);
 
 /**
  * Register and associate user data to registered function. When HG_Finalize()
@@ -499,14 +500,14 @@ HG_Registered_disable_response(
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               registered function ID
- * \param disabled [OUT]        boolean (HG_TRUE if disabled
+ * \param disabled_p [OUT]      boolean (HG_TRUE if disabled
  *                                       HG_FALSE if enabled)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Registered_disabled_response(
-    hg_class_t *hg_class, hg_id_t id, hg_bool_t *disabled);
+    hg_class_t *hg_class, hg_id_t id, hg_bool_t *disabled_p);
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
@@ -523,7 +524,7 @@ HG_Registered_disabled_response(
  */
 HG_PUBLIC hg_return_t
 HG_Addr_lookup1(hg_context_t *context, hg_cb_t callback, void *arg,
-    const char *name, hg_op_id_t *op_id);
+    const char *name, hg_op_id_t *op_id_p);
 
 /* This will map to HG_Addr_lookup2() in the future */
 #ifndef HG_Addr_lookup
@@ -538,12 +539,12 @@ HG_Addr_lookup1(hg_context_t *context, hg_cb_t callback, void *arg,
  *
  * \param hg_class [IN/OUT]     pointer to HG class
  * \param name [IN]             lookup name
- * \param addr [OUT]            pointer to abstract address
+ * \param addr_p [OUT]          pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_lookup2(hg_class_t *hg_class, const char *name, hg_addr_t *addr);
+HG_Addr_lookup2(hg_class_t *hg_class, const char *name, hg_addr_t *addr_p);
 
 /**
  * Free the addr.
@@ -574,12 +575,12 @@ HG_Addr_set_remove(hg_class_t *hg_class, hg_addr_t addr);
  * Access self address. Address must be freed with HG_Addr_free().
  *
  * \param hg_class [IN]         pointer to HG class
- * \param addr [OUT]            pointer to abstract address
+ * \param addr_p [OUT]            pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr);
+HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr_p);
 
 /**
  * Duplicate an existing HG abstract address. The duplicated address can be
@@ -588,12 +589,12 @@ HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr);
  *
  * \param hg_class [IN]         pointer to HG class
  * \param addr [IN]             abstract address
- * \param new_addr [OUT]        pointer to abstract address
+ * \param new_addr_p [OUT]      pointer to abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr);
+HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr_p);
 
 /**
  * Compare two addresses.
@@ -616,14 +617,14 @@ HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2);
  *
  * \param hg_class [IN]         pointer to HG class
  * \param buf [IN/OUT]          pointer to destination buffer
- * \param buf_size [IN/OUT]     pointer to buffer size
+ * \param buf_size_p [IN/OUT]   pointer to buffer size
  * \param addr [IN]             abstract address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Addr_to_string(
-    hg_class_t *hg_class, char *buf, hg_size_t *buf_size, hg_addr_t addr);
+    hg_class_t *hg_class, char *buf, hg_size_t *buf_size_p, hg_addr_t addr);
 
 /**
  * Initiate a new HG RPC using the specified function ID and the local/remote
@@ -634,13 +635,13 @@ HG_Addr_to_string(
  * \param context [IN]          pointer to HG context
  * \param addr [IN]             abstract network address of destination
  * \param id [IN]               registered function ID
- * \param handle [OUT]          pointer to HG handle
+ * \param handle_p [OUT]        pointer to HG handle
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Create(
-    hg_context_t *context, hg_addr_t addr, hg_id_t id, hg_handle_t *handle);
+    hg_context_t *context, hg_addr_t addr, hg_id_t id, hg_handle_t *handle_p);
 
 /**
  * Destroy HG handle. Decrement reference count, resources associated to the
@@ -796,13 +797,29 @@ HG_Free_output(hg_handle_t handle, void *out_struct);
  * \remark in_buf_size argument will be ignored if NULL
  *
  * \param handle [IN]           HG handle
- * \param in_buf [OUT]          pointer to input buffer
- * \param in_buf_size [OUT]     pointer to input buffer size
+ * \param in_buf_p [OUT]        pointer to input buffer
+ * \param in_buf_size_p [OUT]   pointer to input buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size);
+HG_Get_input_buf(hg_handle_t handle, void **in_buf_p, hg_size_t *in_buf_size_p);
+
+/**
+ * Release input buffer from handle so that it can be re-used early.
+ *
+ * \remark HG_Release_input_buf() should only be called when using
+ * HG_Get_input_buf(). When using HG_Get_input(), the input buffer will be
+ * internally released after HG_Get_input() has been called. Note also that
+ * if HG_Release_input_buf() is not called, the input buffer will later be
+ * released when calling HG_Destroy().
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Release_input_buf(hg_handle_t handle);
 
 /**
  * Get raw output buffer from handle that can be used for encoding and decoding
@@ -818,13 +835,14 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size);
  * \remark out_buf_size argument will be ignored if NULL
  *
  * \param handle [IN]           HG handle
- * \param out_buf [OUT]         pointer to output buffer
- * \param out_buf_size [OUT]    pointer to output buffer size
+ * \param out_buf_p [OUT]       pointer to output buffer
+ * \param out_buf_size_p [OUT]  pointer to output buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size);
+HG_Get_output_buf(
+    hg_handle_t handle, void **out_buf_p, hg_size_t *out_buf_size_p);
 
 /**
  * Get raw extra input buffer from handle that can be used for encoding and
@@ -836,14 +854,14 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size);
  * \remark in_buf_size argument will be ignored if NULL.
  *
  * \param handle [IN]           HG handle
- * \param in_buf [OUT]          pointer to input buffer
- * \param in_buf_size [OUT]     pointer to input buffer size
+ * \param in_buf_p [OUT]        pointer to input buffer
+ * \param in_buf_size_p [OUT]   pointer to input buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Get_input_extra_buf(
-    hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size);
+    hg_handle_t handle, void **in_buf_p, hg_size_t *in_buf_size_p);
 
 /**
  * Get raw extra output buffer from handle that can be used for encoding and
@@ -855,14 +873,14 @@ HG_Get_input_extra_buf(
  * \remark out_buf_size argument will be ignored if NULL.
  *
  * \param handle [IN]           HG handle
- * \param out_buf [OUT]         pointer to output buffer
- * \param out_buf_size [OUT]    pointer to output buffer size
+ * \param out_buf_p [OUT]       pointer to output buffer
+ * \param out_buf_size_p [OUT]  pointer to output buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Get_output_extra_buf(
-    hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size);
+    hg_handle_t handle, void **out_buf_p, hg_size_t *out_buf_size_p);
 
 /**
  * Set target context ID that will receive and process the RPC request
@@ -942,13 +960,13 @@ HG_Progress(hg_context_t *context, unsigned int timeout);
  * \param context [IN]          pointer to HG context
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
- * \param actual_count [IN]     actual number of callbacks triggered
+ * \param actual_count_p [OUT]  actual number of callbacks triggered
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Trigger(hg_context_t *context, unsigned int timeout, unsigned int max_count,
-    unsigned int *actual_count);
+    unsigned int *actual_count_p);
 
 /**
  * Cancel an ongoing operation.

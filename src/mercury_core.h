@@ -757,28 +757,41 @@ HG_Core_set_target_id(hg_core_handle_t handle, hg_uint8_t id);
  * parameters.
  *
  * \param handle [IN]           HG handle
- * \param in_buf [OUT]          pointer to input buffer
- * \param in_buf_size [OUT]     pointer to input buffer size
+ * \param in_buf_p [OUT]        pointer to input buffer
+ * \param in_buf_size_p [OUT]   pointer to input buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
 HG_Core_get_input(
-    hg_core_handle_t handle, void **in_buf, hg_size_t *in_buf_size);
+    hg_core_handle_t handle, void **in_buf_p, hg_size_t *in_buf_size_p);
+
+/**
+ * Release input buffer from handle so that it can be re-used early.
+ *
+ * \remark If HG_Core_release_input() is not called, the input buffer will
+ * later be released when calling HG_Core_destroy().
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_release_input(hg_core_handle_t handle);
 
 /**
  * Get output buffer from handle that can be used for serializing/deserializing
  * parameters.
  *
  * \param handle [IN]           HG handle
- * \param out_buf [OUT]         pointer to output buffer
- * \param out_buf_size [OUT]    pointer to output buffer size
+ * \param out_buf_p [OUT]       pointer to output buffer
+ * \param out_buf_size_p [OUT]  pointer to output buffer size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
 HG_Core_get_output(
-    hg_core_handle_t handle, void **out_buf, hg_size_t *out_buf_size);
+    hg_core_handle_t handle, void **out_buf_p, hg_size_t *out_buf_size_p);
 
 /**
  * Forward a call using an existing HG handle. Input and output buffers can be
@@ -840,13 +853,13 @@ HG_Core_progress(hg_core_context_t *context, unsigned int timeout);
  * \param context [IN]          pointer to HG core context
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
- * \param actual_count [IN]     actual number of callbacks triggered
+ * \param actual_count_p [OUT]  actual number of callbacks triggered
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Core_trigger(hg_core_context_t *context, unsigned int timeout,
-    unsigned int max_count, unsigned int *actual_count);
+    unsigned int max_count, unsigned int *actual_count_p);
 
 /**
  * Cancel an ongoing operation.
@@ -1109,14 +1122,17 @@ HG_Core_set_target_id(hg_core_handle_t handle, hg_uint8_t id)
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 HG_Core_get_input(
-    hg_core_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
+    hg_core_handle_t handle, void **in_buf_p, hg_size_t *in_buf_size_p)
 {
     hg_size_t header_offset =
         hg_core_header_request_get_size() + handle->na_in_header_offset;
 
+    if (handle->in_buf == NULL)
+        return HG_FAULT;
+
     /* Space must be left for request header */
-    *in_buf = (char *) handle->in_buf + header_offset;
-    *in_buf_size = handle->in_buf_size - header_offset;
+    *in_buf_p = (char *) handle->in_buf + header_offset;
+    *in_buf_size_p = handle->in_buf_size - header_offset;
 
     return HG_SUCCESS;
 }
@@ -1124,14 +1140,14 @@ HG_Core_get_input(
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 HG_Core_get_output(
-    hg_core_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
+    hg_core_handle_t handle, void **out_buf_p, hg_size_t *out_buf_size_p)
 {
     hg_size_t header_offset =
         hg_core_header_response_get_size() + handle->na_out_header_offset;
 
     /* Space must be left for response header */
-    *out_buf = (char *) handle->out_buf + header_offset;
-    *out_buf_size = handle->out_buf_size - header_offset;
+    *out_buf_p = (char *) handle->out_buf + header_offset;
+    *out_buf_size_p = handle->out_buf_size - header_offset;
 
     return HG_SUCCESS;
 }
