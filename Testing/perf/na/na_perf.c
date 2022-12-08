@@ -339,20 +339,20 @@ na_perf_cleanup(struct na_perf_info *info)
     if (info->msg_exp_buf != NULL)
         NA_Msg_buf_free(info->na_class, info->msg_exp_buf, info->msg_exp_data);
 
-    if (info->local_handle != NA_MEM_HANDLE_NULL) {
+    if (info->local_handle != NULL) {
         NA_Mem_deregister(info->na_class, info->local_handle);
         NA_Mem_handle_free(info->na_class, info->local_handle);
     }
-    if (info->verify_handle != NA_MEM_HANDLE_NULL) {
+    if (info->verify_handle != NULL) {
         NA_Mem_deregister(info->na_class, info->verify_handle);
         NA_Mem_handle_free(info->na_class, info->verify_handle);
     }
-    if (info->remote_handle != NA_MEM_HANDLE_NULL)
+    if (info->remote_handle != NULL)
         NA_Mem_handle_free(info->na_class, info->remote_handle);
     hg_mem_aligned_free(info->rma_buf);
     hg_mem_aligned_free(info->verify_buf);
 
-    if (info->target_addr != NA_ADDR_NULL)
+    if (info->target_addr != NULL)
         NA_Addr_free(info->na_class, info->target_addr);
 
     if (info->poll_fd > 0)
@@ -481,7 +481,7 @@ error:
 /*---------------------------------------------------------------------------*/
 na_return_t
 na_perf_mem_handle_send(
-    struct na_perf_info *info, na_addr_t src_addr, na_tag_t tag)
+    struct na_perf_info *info, na_addr_t *src_addr, na_tag_t tag)
 {
     na_return_t ret;
 

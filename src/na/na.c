@@ -563,7 +563,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
+NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
 {
     const char *short_name = NULL;
     na_return_t ret;
@@ -573,7 +573,7 @@ NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr_p)
     NA_CHECK_SUBSYS_ERROR(
         addr, name == NULL, error, ret, NA_INVALID_ARG, "Lookup name is NULL");
     NA_CHECK_SUBSYS_ERROR(addr, addr_p == NULL, error, ret, NA_INVALID_ARG,
-        "NULL pointer to na_addr_t");
+        "NULL pointer to NA addr");
 
     NA_CHECK_SUBSYS_ERROR(addr,
         na_class->ops == NULL || na_class->ops->addr_lookup == NULL, error, ret,
@@ -601,11 +601,11 @@ error:
 
 /*---------------------------------------------------------------------------*/
 void
-NA_Addr_free(na_class_t *na_class, na_addr_t addr)
+NA_Addr_free(na_class_t *na_class, na_addr_t *addr)
 {
     NA_CHECK_SUBSYS_ERROR_NORET(addr, na_class == NULL, error, "NULL NA class");
 
-    if (addr == NA_ADDR_NULL)
+    if (addr == NULL)
         return;
 
     NA_CHECK_SUBSYS_ERROR_NORET(addr,
@@ -622,14 +622,14 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_set_remove(na_class_t *na_class, na_addr_t addr)
+NA_Addr_set_remove(na_class_t *na_class, na_addr_t *addr)
 {
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(
         addr, na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
     NA_CHECK_SUBSYS_ERROR(addr, addr == NULL, error, ret, NA_INVALID_ARG,
-        "NULL pointer to na_addr_t");
+        "NULL pointer to NA addr");
 
     if (na_class->ops && na_class->ops->addr_set_remove) {
         ret = na_class->ops->addr_set_remove(na_class, addr);
@@ -645,14 +645,14 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_self(na_class_t *na_class, na_addr_t *addr_p)
+NA_Addr_self(na_class_t *na_class, na_addr_t **addr_p)
 {
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(
         addr, na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
     NA_CHECK_SUBSYS_ERROR(addr, addr_p == NULL, error, ret, NA_INVALID_ARG,
-        "NULL pointer to na_addr_t");
+        "NULL pointer to NA addr");
 
     NA_CHECK_SUBSYS_ERROR(addr,
         na_class->ops == NULL || na_class->ops->addr_self == NULL, error, ret,
@@ -672,14 +672,14 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr_p)
+NA_Addr_dup(na_class_t *na_class, na_addr_t *addr, na_addr_t **new_addr_p)
 {
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(
         addr, na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
     NA_CHECK_SUBSYS_ERROR(
-        addr, addr == NA_ADDR_NULL, error, ret, NA_INVALID_ARG, "NULL addr");
+        addr, addr == NULL, error, ret, NA_INVALID_ARG, "NULL addr");
     NA_CHECK_SUBSYS_ERROR(addr, new_addr_p == NULL, error, ret, NA_INVALID_ARG,
         "NULL pointer to NA addr");
 
@@ -702,16 +702,16 @@ error:
 
 /*---------------------------------------------------------------------------*/
 bool
-NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
+NA_Addr_cmp(na_class_t *na_class, na_addr_t *addr1, na_addr_t *addr2)
 {
     bool ret = false;
 
     NA_CHECK_SUBSYS_ERROR_NORET(addr, na_class == NULL, done, "NULL NA class");
 
-    if (addr1 == NA_ADDR_NULL && addr2 == NA_ADDR_NULL)
+    if (addr1 == NULL && addr2 == NULL)
         NA_GOTO_DONE(done, ret, true);
 
-    if (addr1 == NA_ADDR_NULL || addr2 == NA_ADDR_NULL)
+    if (addr1 == NULL || addr2 == NULL)
         NA_GOTO_DONE(done, ret, false);
 
     NA_CHECK_SUBSYS_ERROR_NORET(addr,
@@ -730,7 +730,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_to_string(
-    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr)
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t *addr)
 {
     char *buf_ptr = buf;
     size_t buf_size_used = 0, plugin_buf_size = 0;
@@ -742,7 +742,7 @@ NA_Addr_to_string(
     NA_CHECK_SUBSYS_ERROR(
         addr, buf_size == 0, error, ret, NA_INVALID_ARG, "NULL buffer size");
     NA_CHECK_SUBSYS_ERROR(
-        addr, addr == NA_ADDR_NULL, error, ret, NA_INVALID_ARG, "NULL addr");
+        addr, addr == NULL, error, ret, NA_INVALID_ARG, "NULL addr");
 
     NA_CHECK_SUBSYS_ERROR(addr,
         na_class->ops == NULL || na_class->ops->addr_to_string == NULL, error,
@@ -788,7 +788,7 @@ error:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_serialize(
-    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t addr)
+    na_class_t *na_class, void *buf, size_t buf_size, na_addr_t *addr)
 {
     na_return_t ret;
 
@@ -799,7 +799,7 @@ NA_Addr_serialize(
     NA_CHECK_SUBSYS_ERROR(
         addr, buf_size == 0, error, ret, NA_INVALID_ARG, "NULL buffer size");
     NA_CHECK_SUBSYS_ERROR(
-        addr, addr == NA_ADDR_NULL, error, ret, NA_INVALID_ARG, "NULL addr");
+        addr, addr == NULL, error, ret, NA_INVALID_ARG, "NULL addr");
 
     NA_CHECK_SUBSYS_ERROR(addr,
         na_class->ops == NULL || na_class->ops->addr_serialize == NULL, error,
@@ -821,7 +821,7 @@ error:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_deserialize(
-    na_class_t *na_class, na_addr_t *addr_p, const void *buf, size_t buf_size)
+    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size)
 {
     na_return_t ret;
 
@@ -974,7 +974,7 @@ error:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
-    unsigned long flags, na_mem_handle_t *mem_handle_p)
+    unsigned long flags, na_mem_handle_t **mem_handle_p)
 {
     na_return_t ret;
 
@@ -1007,7 +1007,7 @@ error:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
-    size_t segment_count, unsigned long flags, na_mem_handle_t *mem_handle_p)
+    size_t segment_count, unsigned long flags, na_mem_handle_t **mem_handle_p)
 {
     na_return_t ret;
 
@@ -1040,11 +1040,11 @@ error:
 
 /*---------------------------------------------------------------------------*/
 void
-NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
+NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t *mem_handle)
 {
     NA_CHECK_SUBSYS_ERROR_NORET(mem, na_class == NULL, error, "NULL NA class");
 
-    if (mem_handle == NA_MEM_HANDLE_NULL)
+    if (mem_handle == NULL)
         return;
 
     NA_CHECK_SUBSYS_ERROR_NORET(mem,
@@ -1061,15 +1061,15 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+NA_Mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     enum na_mem_type mem_type, uint64_t device)
 {
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(
         mem, na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, error, ret,
-        NA_INVALID_ARG, "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NULL, error, ret, NA_INVALID_ARG,
+        "NULL memory handle");
 
     /* Optional, silently returns */
     if (na_class->ops && na_class->ops->mem_register) {
@@ -1090,14 +1090,14 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
+NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
 {
     na_return_t ret;
 
     NA_CHECK_SUBSYS_ERROR(
         mem, na_class == NULL, error, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, error, ret,
-        NA_INVALID_ARG, "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NULL, error, ret, NA_INVALID_ARG,
+        "NULL memory handle");
 
     /* Optional, silently returns */
     if (na_class->ops && na_class->ops->mem_deregister) {
@@ -1118,7 +1118,7 @@ error:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
-    na_mem_handle_t mem_handle)
+    na_mem_handle_t *mem_handle)
 {
     na_return_t ret;
 
@@ -1128,8 +1128,8 @@ NA_Mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
         mem, buf == NULL, error, ret, NA_INVALID_ARG, "NULL buffer");
     NA_CHECK_SUBSYS_ERROR(
         mem, buf_size == 0, error, ret, NA_INVALID_ARG, "NULL buffer size");
-    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NA_MEM_HANDLE_NULL, error, ret,
-        NA_INVALID_ARG, "NULL memory handle");
+    NA_CHECK_SUBSYS_ERROR(mem, mem_handle == NULL, error, ret, NA_INVALID_ARG,
+        "NULL memory handle");
 
     NA_CHECK_SUBSYS_ERROR(mem,
         na_class->ops == NULL || na_class->ops->mem_handle_serialize == NULL,
@@ -1152,7 +1152,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
+NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t **mem_handle,
     const void *buf, size_t buf_size)
 {
     na_return_t ret;

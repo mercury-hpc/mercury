@@ -354,7 +354,7 @@ static int psm_init_done = 0;
  * required forward declared prototypes
  */
 static void
-na_psm_addr_free(na_class_t *na_class, na_addr_t addr);
+na_psm_addr_free(na_class_t *na_class, na_addr_t *addr);
 static na_op_id_t *
 na_psm_op_create(na_class_t *na_class, unsigned long flags);
 static void
@@ -621,7 +621,7 @@ na_psm_opid_setbusy(struct na_psm_class *pc, struct na_psm_op_id *pop, int v)
  */
 static na_return_t
 na_psm_msg_send(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, const void *buf, size_t buf_size, na_addr_t dest_addr,
+    void *arg, const void *buf, size_t buf_size, na_addr_t *dest_addr,
     uint64_t psmtag, na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
@@ -1025,7 +1025,7 @@ na_psm_progress_op(
 
             /* drop ref to initiator address and clear it */
             na_psm_addr_free(
-                (na_class_t *) pop->pcls, (na_addr_t) pop->initiator);
+                (na_class_t *) pop->pcls, (na_addr_t *) pop->initiator);
             pop->initiator = NULL;
 
             /* op_id is done!  it is internal, so no na_cb_completion_add() call
@@ -1219,7 +1219,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
         }
 
         /* drop address reference now that we've sent the data */
-        na_psm_addr_free((na_class_t *) pc, (na_addr_t) naddr);
+        na_psm_addr_free((na_class_t *) pc, (na_addr_t *) naddr);
 
         goto finish;
     }
@@ -1296,7 +1296,7 @@ send_error_now:
     }
 
     /* drop address reference now as well... */
-    na_psm_addr_free((na_class_t *) pc, (na_addr_t) naddr);
+    na_psm_addr_free((na_class_t *) pc, (na_addr_t *) naddr);
 
     /* fall through */
 
@@ -1586,7 +1586,7 @@ na_psm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
  * addr_lookup: look up an address string and return an address structure.
  */
 static na_return_t
-na_psm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
+na_psm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr)
 {
     struct na_psm_class *pc;
     int rc;
@@ -1611,7 +1611,7 @@ na_psm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
  * addr_free: drop reference on an address
  */
 static void
-na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
 
@@ -1632,7 +1632,7 @@ na_psm_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
  * addr_self: return our local address.
  */
 static na_return_t
-na_psm_addr_self(na_class_t *na_class, na_addr_t *addr)
+na_psm_addr_self(na_class_t *na_class, na_addr_t **addr)
 {
     struct na_psm_class *pc;
     pc = na_class->plugin_class;
@@ -1642,7 +1642,7 @@ na_psm_addr_self(na_class_t *na_class, na_addr_t *addr)
      * just bump the reference and return it.
      */
     hg_atomic_incr32(&pc->self.nrefs);
-    *addr = (na_addr_t) &pc->self;
+    *addr = (na_addr_t *) &pc->self;
     return NA_SUCCESS;
 }
 
@@ -1651,7 +1651,7 @@ na_psm_addr_self(na_class_t *na_class, na_addr_t *addr)
  */
 static na_return_t
 na_psm_addr_dup(
-    na_class_t NA_UNUSED *na_class, na_addr_t addr, na_addr_t *new_addr)
+    na_class_t NA_UNUSED *na_class, na_addr_t *addr, na_addr_t **new_addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
 
@@ -1660,7 +1660,7 @@ na_psm_addr_dup(
      * bump it and return naddr as the new_addr structure.
      */
     hg_atomic_incr32(&naddr->nrefs);
-    *new_addr = (na_addr_t) naddr;
+    *new_addr = (na_addr_t *) naddr;
     return NA_SUCCESS;
 }
 
@@ -1669,7 +1669,7 @@ na_psm_addr_dup(
  */
 static bool
 na_psm_addr_cmp(
-    na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
+    na_class_t NA_UNUSED *na_class, na_addr_t *addr1, na_addr_t *addr2)
 {
     struct na_psm_addr *naddr1 = (struct na_psm_addr *) addr1;
     struct na_psm_addr *naddr2 = (struct na_psm_addr *) addr2;
@@ -1682,7 +1682,7 @@ na_psm_addr_cmp(
  * is_self: is this address us?
  */
 static bool
-na_psm_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_psm_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
 
@@ -1693,8 +1693,8 @@ na_psm_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
  * addr_to_string: convert the address to a string (the epid)
  */
 static na_return_t
-na_psm_addr_to_string(
-    na_class_t NA_UNUSED *na_class, char *buf, size_t *buf_size, na_addr_t addr)
+na_psm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
+    size_t *buf_size, na_addr_t *addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
     char tmpbuf[32];
@@ -1721,7 +1721,7 @@ na_psm_addr_to_string(
  */
 static size_t
 na_psm_addr_get_serialize_size(
-    na_class_t NA_UNUSED *na_class, na_addr_t NA_UNUSED addr)
+    na_class_t NA_UNUSED *na_class, na_addr_t NA_UNUSED *addr)
 {
     return NA_PSM_ADDR_SERSIZE;
 }
@@ -1731,7 +1731,7 @@ na_psm_addr_get_serialize_size(
  */
 static na_return_t
 na_psm_addr_serialize(
-    na_class_t NA_UNUSED *na_class, void *buf, size_t buf_size, na_addr_t addr)
+    na_class_t NA_UNUSED *na_class, void *buf, size_t buf_size, na_addr_t *addr)
 {
     struct na_psm_addr *naddr = (struct na_psm_addr *) addr;
 
@@ -1750,7 +1750,7 @@ na_psm_addr_serialize(
  */
 static na_return_t
 na_psm_addr_deserialize(
-    na_class_t *na_class, na_addr_t *addr, const void *buf, size_t buf_size)
+    na_class_t *na_class, na_addr_t **addr, const void *buf, size_t buf_size)
 {
     uint64_t i64epid;
     na_return_t ret;
@@ -1848,8 +1848,8 @@ na_psm_msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size)
 static na_return_t
 na_psm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t *dest_addr,
+    uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
     uint64_t psmtag;
@@ -1896,8 +1896,8 @@ na_psm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_psm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t *dest_addr,
+    uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
     uint64_t psmtag;
@@ -1922,7 +1922,7 @@ na_psm_msg_send_expected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_psm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t source_addr,
+    void NA_UNUSED *plugin_data, na_addr_t *source_addr,
     uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_psm_addr *naddr;
@@ -1949,7 +1949,7 @@ na_psm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
  */
 static na_return_t
 na_psm_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
-    unsigned long flags, na_mem_handle_t *mem_handle)
+    unsigned long flags, na_mem_handle_t **mem_handle)
 {
     struct na_psm_class *pc;
     struct na_psm_local_mem_handle *lp;
@@ -1977,7 +1977,7 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
 
     NA_LOG_DEBUG("mh=%p (buf=%p,sz=%d,at=%lu,tok=%" PRIx64 ")", (void *) lp,
         buf, (int) buf_size, flags, lp->handle.token);
-    *mem_handle = (na_mem_handle_t) lp;
+    *mem_handle = (na_mem_handle_t *) lp;
     return NA_SUCCESS;
 }
 
@@ -1985,7 +1985,7 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
  * mem_handle_free: free a memory handle (may or may not be local).
  */
 static void
-na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t *mem_handle)
 {
     struct na_psm_class *pc;
     struct na_psm_mem_handle *mh;
@@ -2011,7 +2011,7 @@ na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
  */
 static size_t
 na_psm_mem_handle_get_serialize_size(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
+    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED *mem_handle)
 {
     struct na_psm_mem_handle dummy;
     return sizeof(dummy.token); /* we just send the token */
@@ -2022,7 +2022,7 @@ na_psm_mem_handle_get_serialize_size(
  */
 static na_return_t
 na_psm_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
-    size_t buf_size, na_mem_handle_t mem_handle)
+    size_t buf_size, na_mem_handle_t *mem_handle)
 {
     struct na_psm_mem_handle *mh;
     mh = (struct na_psm_mem_handle *) mem_handle;
@@ -2044,7 +2044,7 @@ na_psm_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
  */
 static na_return_t
 na_psm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t *mem_handle, const void *buf, size_t buf_size)
+    na_mem_handle_t **mem_handle, const void *buf, size_t buf_size)
 {
     struct na_psm_mem_handle *mh;
 
@@ -2062,7 +2062,7 @@ na_psm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     memcpy(&mh->token, buf, sizeof(mh->token));
 
     NA_LOG_DEBUG("rawtoken=%" PRIx64, mh->token);
-    *mem_handle = (na_mem_handle_t) mh;
+    *mem_handle = (na_mem_handle_t *) mh;
 
     return NA_SUCCESS;
 }
@@ -2078,9 +2078,10 @@ na_psm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
  */
 static na_return_t
 na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t NA_UNUSED remote_id,
+    na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
     struct na_psm_addr *naddr;
@@ -2256,9 +2257,10 @@ na_psm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
  */
 static na_return_t
 na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t NA_UNUSED remote_id,
+    na_op_id_t *op_id)
 {
     struct na_psm_class *pc;
     struct na_psm_addr *naddr;

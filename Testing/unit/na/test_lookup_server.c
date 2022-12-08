@@ -39,7 +39,7 @@ na_test_common_recv_cb(const struct na_cb_info *na_cb_info);
 
 static void
 na_test_common_process_recv(struct na_test_common_recv_info *recv_info,
-    void *actual_buf, size_t actual_buf_size, na_addr_t source, na_tag_t tag);
+    void *actual_buf, size_t actual_buf_size, na_addr_t *source, na_tag_t tag);
 
 /*******************/
 /* Local Variables */
@@ -148,7 +148,7 @@ na_test_common_recv_cb(const struct na_cb_info *na_cb_info)
 static void
 na_test_common_process_recv(struct na_test_common_recv_info *recv_info,
     void NA_UNUSED *actual_buf, size_t NA_UNUSED actual_buf_size,
-    na_addr_t source, na_tag_t tag)
+    na_addr_t *source, na_tag_t tag)
 {
     struct na_test_common_class_info *info = recv_info->info;
     na_return_t ret = NA_SUCCESS;

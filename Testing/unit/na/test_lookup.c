@@ -68,7 +68,7 @@ na_test_send_all(struct na_test_common_class_info *info, char **target_names,
 
     for (j = 0; j < loop; j++) {
         for (i = 0; i < target_name_count; i++) {
-            na_addr_t target_addr = NA_ADDR_NULL;
+            na_addr_t *target_addr = NULL;
 
             NA_TEST_LOG_DEBUG(
                 "(%d) Sending msg to %s", thread_id, target_names[i]);
@@ -110,7 +110,7 @@ na_test_finalize_all(struct na_test_common_class_info *info,
     int i;
 
     for (i = 0; i < target_name_count; i++) {
-        na_addr_t target_addr = NA_ADDR_NULL;
+        na_addr_t *target_addr = NULL;
 
         ret = NA_Addr_lookup(info->na_class, target_names[i], &target_addr);
         NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Addr_lookup() failed (%s)",

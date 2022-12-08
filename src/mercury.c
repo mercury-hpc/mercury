@@ -648,7 +648,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 #ifdef NA_HAS_SM
     /* Determine if we need special handling for SM */
     if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
-        NA_ADDR_NULL)
+        NULL)
         proc_flags |= HG_PROC_SM;
 #endif
 
@@ -713,7 +713,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 #ifdef NA_HAS_SM
         /* Determine if we need special handling for SM */
         if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
-            NA_ADDR_NULL)
+            NULL)
             proc_flags |= HG_PROC_SM;
 #endif
 

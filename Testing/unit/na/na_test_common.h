@@ -87,7 +87,7 @@ na_test_common_verify_data(
 
 na_return_t
 na_test_common_send_finalize(
-    struct na_test_common_class_info *info, na_addr_t target_addr);
+    struct na_test_common_class_info *info, na_addr_t *target_addr);
 
 #ifdef __cplusplus
 }
