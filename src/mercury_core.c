@@ -320,7 +320,7 @@ struct hg_core_private_handle {
     struct hg_core_header out_header;               /* Output header */
     na_class_t *na_class;                           /* NA class */
     na_context_t *na_context;                       /* NA context */
-    na_addr_t na_addr;                              /* NA addr */
+    na_addr_t *na_addr;                             /* NA addr */
     hg_core_cb_t request_callback;                  /* Request callback */
     void *request_arg;              /* Request callback arguments */
     hg_core_cb_t response_callback; /* Response callback */
@@ -703,7 +703,7 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle);
  */
 static hg_return_t
 hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
-    struct hg_core_private_addr *hg_core_addr, na_addr_t na_addr, hg_id_t id);
+    struct hg_core_private_addr *hg_core_addr, na_addr_t *na_addr, hg_id_t id);
 
 /**
  * Post handle and add it to pending list.
@@ -2464,7 +2464,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
 {
     struct hg_core_private_addr *hg_core_addr = NULL;
     na_class_t **na_class_p = NULL;
-    na_addr_t *na_addr_p = NULL;
+    na_addr_t **na_addr_p = NULL;
     size_t *na_addr_serialize_size_p = NULL;
     na_return_t na_ret;
     const char *name_str = NULL;
@@ -2561,9 +2561,9 @@ hg_core_addr_create(struct hg_core_private_class *hg_core_class,
         "Could not allocate HG core addr");
 
     hg_core_addr->core_addr.core_class = (hg_core_class_t *) hg_core_class;
-    hg_core_addr->core_addr.na_addr = NA_ADDR_NULL;
+    hg_core_addr->core_addr.na_addr = NULL;
 #ifdef NA_HAS_SM
-    hg_core_addr->core_addr.na_sm_addr = NA_ADDR_NULL;
+    hg_core_addr->core_addr.na_sm_addr = NULL;
 #endif
     hg_core_addr->core_addr.is_self = HG_FALSE;
 
@@ -2610,19 +2610,19 @@ static void
 hg_core_addr_free_na(struct hg_core_private_addr *hg_core_addr)
 {
     /* Free NA address */
-    if (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_addr != NULL) {
         NA_Addr_free(hg_core_addr->core_addr.core_class->na_class,
             hg_core_addr->core_addr.na_addr);
-        hg_core_addr->core_addr.na_addr = NA_ADDR_NULL;
+        hg_core_addr->core_addr.na_addr = NULL;
         hg_core_addr->na_addr_serialize_size = 0;
     }
 
 #ifdef NA_HAS_SM
     /* Free NA SM address */
-    if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_sm_addr != NULL) {
         NA_Addr_free(hg_core_addr->core_addr.core_class->na_sm_class,
             hg_core_addr->core_addr.na_sm_addr);
-        hg_core_addr->core_addr.na_sm_addr = NA_ADDR_NULL;
+        hg_core_addr->core_addr.na_sm_addr = NULL;
         hg_core_addr->na_sm_addr_serialize_size = 0;
     }
 #endif
@@ -2634,7 +2634,7 @@ hg_core_addr_set_remove(struct hg_core_private_addr *hg_core_addr)
 {
     hg_return_t ret;
 
-    if (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_addr != NULL) {
         na_return_t na_ret =
             NA_Addr_set_remove(hg_core_addr->core_addr.core_class->na_class,
                 hg_core_addr->core_addr.na_addr);
@@ -2644,7 +2644,7 @@ hg_core_addr_set_remove(struct hg_core_private_addr *hg_core_addr)
     }
 
 #ifdef NA_HAS_SM
-    if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_sm_addr != NULL) {
         na_return_t na_ret =
             NA_Addr_set_remove(hg_core_addr->core_addr.core_class->na_sm_class,
                 hg_core_addr->core_addr.na_sm_addr);
@@ -2725,7 +2725,7 @@ hg_core_addr_dup(struct hg_core_private_addr *hg_core_addr,
     HG_CHECK_SUBSYS_HG_ERROR(addr, error, ret, "Could not create HG core addr");
     hg_new_addr->core_addr.is_self = hg_core_addr->core_addr.is_self;
 
-    if (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_addr != NULL) {
         na_return_t na_ret = NA_Addr_dup(
             hg_core_addr->core_addr.core_class->na_class,
             hg_core_addr->core_addr.na_addr, &hg_new_addr->core_addr.na_addr);
@@ -2739,7 +2739,7 @@ hg_core_addr_dup(struct hg_core_private_addr *hg_core_addr,
     }
 
 #ifdef NA_HAS_SM
-    if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_sm_addr != NULL) {
         na_return_t na_ret =
             NA_Addr_dup(hg_core_addr->core_addr.core_class->na_sm_class,
                 hg_core_addr->core_addr.na_sm_addr,
@@ -2802,7 +2802,7 @@ hg_core_addr_to_string(
     char *buf, hg_size_t *buf_size, struct hg_core_private_addr *hg_core_addr)
 {
     na_class_t *na_class = hg_core_addr->core_addr.core_class->na_class;
-    na_addr_t na_addr = hg_core_addr->core_addr.na_addr;
+    na_addr_t *na_addr = hg_core_addr->core_addr.na_addr;
     char *buf_ptr = buf;
     size_t new_buf_size = 0, buf_size_used = 0;
     hg_return_t ret;
@@ -2812,8 +2812,8 @@ hg_core_addr_to_string(
 
 #ifdef NA_HAS_SM
     /* When we have local and remote addresses */
-    if ((hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) &&
-        (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL)) {
+    if ((hg_core_addr->core_addr.na_sm_addr != NULL) &&
+        (hg_core_addr->core_addr.na_addr != NULL)) {
         char addr_str[HG_CORE_ADDR_MAX_SIZE];
         char uuid_str[NA_SM_HOST_ID_LEN + 1];
         int desc_len;
@@ -2852,7 +2852,7 @@ hg_core_addr_to_string(
         buf_size_used += new_buf_size;
         if (*buf_size > new_buf_size)
             new_buf_size = *buf_size - new_buf_size;
-    } else if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
+    } else if (hg_core_addr->core_addr.na_sm_addr != NULL) {
         na_class = hg_core_addr->core_addr.core_class->na_sm_class;
         na_addr = hg_core_addr->core_addr.na_sm_addr;
     }
@@ -2879,7 +2879,7 @@ hg_core_addr_get_serialize_size(
 {
     hg_size_t ret = sizeof(size_t);
 
-    if (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_addr != NULL) {
         if (hg_core_addr->na_addr_serialize_size == 0) {
             /* Cache serialize size */
             hg_core_addr->na_addr_serialize_size = NA_Addr_get_serialize_size(
@@ -2893,8 +2893,7 @@ hg_core_addr_get_serialize_size(
 #ifdef NA_HAS_SM
     ret += sizeof(size_t);
 
-    if ((flags & HG_CORE_SM) &&
-        hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
+    if ((flags & HG_CORE_SM) && hg_core_addr->core_addr.na_sm_addr != NULL) {
         if (hg_core_addr->na_sm_addr_serialize_size == 0) {
             /* Cache serialize size */
             hg_core_addr->na_sm_addr_serialize_size =
@@ -2922,7 +2921,7 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
     hg_size_t buf_size_left = buf_size;
     hg_return_t ret;
 
-    if (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL) {
+    if (hg_core_addr->core_addr.na_addr != NULL) {
         na_return_t na_ret;
 
         HG_CORE_ENCODE(addr, error, ret, buf_ptr, buf_size_left,
@@ -2944,8 +2943,7 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
     }
 
 #ifdef NA_HAS_SM
-    if ((flags & HG_CORE_SM) &&
-        hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
+    if ((flags & HG_CORE_SM) && hg_core_addr->core_addr.na_sm_addr != NULL) {
         na_return_t na_ret;
 
         HG_CORE_ENCODE(addr, error, ret, buf_ptr, buf_size_left,
@@ -3462,7 +3460,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
-    struct hg_core_private_addr *hg_core_addr, na_addr_t na_addr, hg_id_t id)
+    struct hg_core_private_addr *hg_core_addr, na_addr_t *na_addr, hg_id_t id)
 {
     struct hg_core_private_class *hg_core_class =
         HG_CORE_HANDLE_CLASS(hg_core_handle);
@@ -5953,7 +5951,7 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
         (struct hg_core_private_addr *) addr;
     na_class_t *na_class;
     na_context_t *na_context;
-    na_addr_t na_addr = NA_ADDR_NULL;
+    na_addr_t *na_addr = NULL;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(rpc, context == NULL, error, ret, HG_INVALID_ARG,
@@ -5968,7 +5966,7 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     /* Determine which NA class/context to use */
 #ifdef NA_HAS_SM
     if (hg_core_addr && !hg_core_addr->core_addr.is_self &&
-        (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL)) {
+        (hg_core_addr->core_addr.na_sm_addr != NULL)) {
         HG_LOG_SUBSYS_DEBUG(rpc, "Using NA SM class for this handle");
         na_class = context->core_class->na_sm_class;
         na_context = context->na_sm_context;
@@ -6041,7 +6039,7 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         (struct hg_core_private_addr *) addr;
     na_class_t *na_class;
     na_context_t *na_context;
-    na_addr_t na_addr = NA_ADDR_NULL;
+    na_addr_t *na_addr = NULL;
     hg_return_t ret;
     int32_t status;
 
@@ -6062,7 +6060,7 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
     /* Determine which NA class/context to use */
 #ifdef NA_HAS_SM
     if (hg_core_addr && !hg_core_addr->core_addr.is_self &&
-        (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL)) {
+        (hg_core_addr->core_addr.na_sm_addr != NULL)) {
         HG_LOG_SUBSYS_DEBUG(
             rpc, "Using NA SM class for this handle (%p)", (void *) handle);
 

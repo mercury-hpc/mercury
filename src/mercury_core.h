@@ -510,9 +510,9 @@ HG_Core_addr_set_remove(hg_core_addr_t addr);
  *
  * \param addr [IN]             abstract address
  *
- * \return abstract NA addr or NA_ADDR_NULL if not a valid HG address
+ * \return abstract NA addr or NULL if not a valid HG address
  */
-static HG_INLINE na_addr_t
+static HG_INLINE na_addr_t *
 HG_Core_addr_get_na(hg_core_addr_t addr);
 
 #ifdef NA_HAS_SM
@@ -521,9 +521,9 @@ HG_Core_addr_get_na(hg_core_addr_t addr);
  *
  * \param addr [IN]             abstract address
  *
- * \return abstract NA addr or NA_ADDR_NULL if not a valid HG address
+ * \return abstract NA addr or NULL if not a valid HG address
  */
-static HG_INLINE na_addr_t
+static HG_INLINE na_addr_t *
 HG_Core_addr_get_na_sm(hg_core_addr_t addr);
 #endif
 
@@ -900,9 +900,9 @@ struct hg_core_context {
 /* HG core addr */
 struct hg_core_addr {
     struct hg_core_class *core_class; /* HG core class */
-    na_addr_t na_addr;                /* NA address */
+    na_addr_t *na_addr;               /* NA address */
 #ifdef NA_HAS_SM
-    na_addr_t na_sm_addr; /* NA SM address */
+    na_addr_t *na_sm_addr; /* NA SM address */
 #endif
     hg_bool_t is_self; /* Self address */
 };
@@ -1056,7 +1056,7 @@ HG_Core_context_get_data(const hg_core_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE na_addr_t
+static HG_INLINE na_addr_t *
 HG_Core_addr_get_na(hg_core_addr_t addr)
 {
     return addr->na_addr;
@@ -1064,7 +1064,7 @@ HG_Core_addr_get_na(hg_core_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_SM
-static HG_INLINE na_addr_t
+static HG_INLINE na_addr_t *
 HG_Core_addr_get_na_sm(hg_core_addr_t addr)
 {
     return addr->na_sm_addr;

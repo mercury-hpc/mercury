@@ -42,7 +42,7 @@ na_perf_multi_recv_cb(const struct na_cb_info *na_cb_info);
 
 static void
 na_perf_process_recv(struct na_perf_recv_info *recv_info, void *actual_buf,
-    size_t actual_buf_size, na_addr_t source, na_tag_t tag);
+    size_t actual_buf_size, na_addr_t *source, na_tag_t tag);
 
 /*******************/
 /* Local Variables */
@@ -131,7 +131,7 @@ na_perf_multi_recv_cb(const struct na_cb_info *na_cb_info)
 /*---------------------------------------------------------------------------*/
 static void
 na_perf_process_recv(struct na_perf_recv_info *recv_info,
-    void NA_UNUSED *actual_buf, size_t actual_buf_size, na_addr_t source,
+    void NA_UNUSED *actual_buf, size_t actual_buf_size, na_addr_t *source,
     na_tag_t tag)
 {
     struct na_perf_info *info = recv_info->info;

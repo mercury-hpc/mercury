@@ -454,7 +454,7 @@ na_test_self_addr_publish(na_class_t *na_class, bool append)
 {
     char addr_string[NA_TEST_MAX_ADDR_NAME];
     size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
-    na_addr_t self_addr = NA_ADDR_NULL;
+    na_addr_t *self_addr = NULL;
     na_return_t ret;
 
     ret = NA_Addr_self(na_class, &self_addr);
@@ -466,7 +466,7 @@ na_test_self_addr_publish(na_class_t *na_class, bool append)
         error, ret, "NA_Addr_to_string() failed (%s)", NA_Error_to_string(ret));
 
     NA_Addr_free(na_class, self_addr);
-    self_addr = NA_ADDR_NULL;
+    self_addr = NULL;
 
     ret = na_test_set_config(addr_string, append);
     NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_set_config() failed (%s)",
@@ -475,7 +475,7 @@ na_test_self_addr_publish(na_class_t *na_class, bool append)
     return NA_SUCCESS;
 
 error:
-    if (self_addr != NA_ADDR_NULL)
+    if (self_addr != NULL)
         (void) NA_Addr_free(na_class, self_addr);
 
     return ret;

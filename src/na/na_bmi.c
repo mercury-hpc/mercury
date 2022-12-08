@@ -323,32 +323,32 @@ na_bmi_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
-na_bmi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr);
+na_bmi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr);
 
 /* addr_free */
 static void
-na_bmi_addr_free(na_class_t *na_class, na_addr_t addr);
+na_bmi_addr_free(na_class_t *na_class, na_addr_t *addr);
 
 /* addr_self */
 static na_return_t
-na_bmi_addr_self(na_class_t *na_class, na_addr_t *addr);
+na_bmi_addr_self(na_class_t *na_class, na_addr_t **addr);
 
 /* addr_dup */
 static na_return_t
-na_bmi_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
+na_bmi_addr_dup(na_class_t *na_class, na_addr_t *addr, na_addr_t **new_addr);
 
 /* addr_cmp */
 static bool
-na_bmi_addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
+na_bmi_addr_cmp(na_class_t *na_class, na_addr_t *addr1, na_addr_t *addr2);
 
 /* addr_is_self */
 static bool
-na_bmi_addr_is_self(na_class_t *na_class, na_addr_t addr);
+na_bmi_addr_is_self(na_class_t *na_class, na_addr_t *addr);
 
 /* addr_to_string */
 static na_return_t
 na_bmi_addr_to_string(
-    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr);
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t *addr);
 
 /* msg_get_max_unexpected_size */
 static size_t
@@ -366,7 +366,7 @@ na_bmi_msg_get_max_tag(const na_class_t *na_class);
 static na_return_t
 na_bmi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
+    void *plugin_data, na_addr_t *dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_unexpected */
@@ -379,52 +379,54 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
+    void *plugin_data, na_addr_t *dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
-    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
+    na_addr_t *source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
 
 /* mem_handle_create */
 static na_return_t
 na_bmi_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
-    unsigned long flags, na_mem_handle_t *mem_handle);
+    unsigned long flags, na_mem_handle_t **mem_handle);
 
 /* mem_handle_free */
 static void
-na_bmi_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
+na_bmi_mem_handle_free(na_class_t *na_class, na_mem_handle_t *mem_handle);
 
 /* mem_handle_get_serialize_size */
 static size_t
 na_bmi_mem_handle_get_serialize_size(
-    na_class_t *na_class, na_mem_handle_t mem_handle);
+    na_class_t *na_class, na_mem_handle_t *mem_handle);
 
 /* mem_handle_serialize */
 static na_return_t
 na_bmi_mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
-    na_mem_handle_t mem_handle);
+    na_mem_handle_t *mem_handle);
 
 /* mem_handle_deserialize */
 static na_return_t
-na_bmi_mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-    const void *buf, size_t buf_size);
+na_bmi_mem_handle_deserialize(na_class_t *na_class,
+    na_mem_handle_t **mem_handle, const void *buf, size_t buf_size);
 
 /* put */
 static na_return_t
 na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t remote_id,
+    na_op_id_t *op_id);
 
 /* get */
 static na_return_t
 na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t remote_id,
+    na_op_id_t *op_id);
 
 /* progress */
 static na_return_t
@@ -1059,7 +1061,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
             if (callback_info->ret != NA_SUCCESS) {
                 /* In case of cancellation where no recv'd data */
                 callback_info->info.recv_unexpected.actual_buf_size = 0;
-                callback_info->info.recv_unexpected.source = NA_ADDR_NULL;
+                callback_info->info.recv_unexpected.source = NULL;
                 callback_info->info.recv_unexpected.tag = 0;
             } else {
                 /* Increment addr ref count */
@@ -1069,7 +1071,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                 callback_info->info.recv_unexpected.actual_buf_size =
                     (size_t) na_bmi_op_id->info.msg.actual_buf_size;
                 callback_info->info.recv_unexpected.source =
-                    (na_addr_t) na_bmi_op_id->na_bmi_addr;
+                    (na_addr_t *) na_bmi_op_id->na_bmi_addr;
                 callback_info->info.recv_unexpected.tag =
                     (na_tag_t) na_bmi_op_id->info.msg.tag;
             }
@@ -1109,7 +1111,7 @@ na_bmi_release(void *arg)
 
     if (na_bmi_op_id->na_bmi_addr) {
         na_bmi_addr_free(
-            na_bmi_op_id->na_class, (na_addr_t) na_bmi_op_id->na_bmi_addr);
+            na_bmi_op_id->na_class, (na_addr_t *) na_bmi_op_id->na_bmi_addr);
         na_bmi_op_id->na_bmi_addr = NULL;
     }
 }
@@ -1508,7 +1510,7 @@ na_bmi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
+na_bmi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
     BMI_addr_t bmi_addr;
@@ -1537,7 +1539,7 @@ na_bmi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     } else
         NA_LOG_DEBUG("Address was found (key=%ld)", (long int) bmi_addr);
 
-    *addr = (na_addr_t) na_bmi_addr;
+    *addr = (na_addr_t *) na_bmi_addr;
 
 done:
     return ret;
@@ -1545,14 +1547,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_self(na_class_t *na_class, na_addr_t *addr)
+na_bmi_addr_self(na_class_t *na_class, na_addr_t **addr)
 {
     struct na_bmi_addr *na_bmi_addr = NA_BMI_CLASS(na_class)->src_addr;
 
     /* Increment refcount */
     hg_atomic_incr32(&na_bmi_addr->ref_count);
 
-    *addr = (na_addr_t) na_bmi_addr;
+    *addr = (na_addr_t *) na_bmi_addr;
 
     return NA_SUCCESS;
 }
@@ -1560,21 +1562,21 @@ na_bmi_addr_self(na_class_t *na_class, na_addr_t *addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_addr_dup(
-    na_class_t NA_UNUSED *na_class, na_addr_t addr, na_addr_t *new_addr)
+    na_class_t NA_UNUSED *na_class, na_addr_t *addr, na_addr_t **new_addr)
 {
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
 
     /* Increment refcount */
     hg_atomic_incr32(&na_bmi_addr->ref_count);
 
-    *new_addr = (na_addr_t) na_bmi_addr;
+    *new_addr = (na_addr_t *) na_bmi_addr;
 
     return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-na_bmi_addr_free(na_class_t *na_class, na_addr_t addr)
+na_bmi_addr_free(na_class_t *na_class, na_addr_t *addr)
 {
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
 
@@ -1594,7 +1596,7 @@ na_bmi_addr_free(na_class_t *na_class, na_addr_t addr)
 /*---------------------------------------------------------------------------*/
 static bool
 na_bmi_addr_cmp(
-    na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
+    na_class_t NA_UNUSED *na_class, na_addr_t *addr1, na_addr_t *addr2)
 {
     return (((struct na_bmi_addr *) addr1)->bmi_addr ==
             ((struct na_bmi_addr *) addr2)->bmi_addr);
@@ -1602,7 +1604,7 @@ na_bmi_addr_cmp(
 
 /*---------------------------------------------------------------------------*/
 static bool
-na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
 {
     return ((struct na_bmi_addr *) addr)->self;
 }
@@ -1610,7 +1612,7 @@ na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_addr_to_string(
-    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr)
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t *addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
     char full_rev_addr[NA_BMI_ADDR_NAME_MAX + 3] = {'\0'};
@@ -1680,8 +1682,8 @@ na_bmi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_bmi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t *dest_addr,
+    uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) dest_addr;
@@ -1808,8 +1810,8 @@ done:
 static na_return_t
 na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t *dest_addr,
+    uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) dest_addr;
@@ -1866,7 +1868,7 @@ error:
 static na_return_t
 na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t source_addr,
+    void NA_UNUSED *plugin_data, na_addr_t *source_addr,
     uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
@@ -1921,7 +1923,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
-    size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
+    size_t buf_size, unsigned long flags, na_mem_handle_t **mem_handle)
 {
     struct na_bmi_mem_handle *na_bmi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1936,7 +1938,7 @@ na_bmi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_bmi_mem_handle->len = (bmi_size_t) buf_size;
     na_bmi_mem_handle->flags = flags & 0xff;
 
-    *mem_handle = (na_mem_handle_t) na_bmi_mem_handle;
+    *mem_handle = (na_mem_handle_t *) na_bmi_mem_handle;
 
 done:
     return ret;
@@ -1945,7 +1947,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static void
 na_bmi_mem_handle_free(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
+    na_class_t NA_UNUSED *na_class, na_mem_handle_t *mem_handle)
 {
     free((struct na_bmi_mem_handle *) mem_handle);
 }
@@ -1953,7 +1955,7 @@ na_bmi_mem_handle_free(
 /*---------------------------------------------------------------------------*/
 static size_t
 na_bmi_mem_handle_get_serialize_size(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
+    na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED *mem_handle)
 {
     return sizeof(struct na_bmi_mem_handle);
 }
@@ -1961,7 +1963,7 @@ na_bmi_mem_handle_get_serialize_size(
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
-    size_t buf_size, na_mem_handle_t mem_handle)
+    size_t buf_size, na_mem_handle_t *mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1979,7 +1981,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t *mem_handle, const void *buf, size_t buf_size)
+    na_mem_handle_t **mem_handle, const void *buf, size_t buf_size)
 {
     struct na_bmi_mem_handle *na_bmi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1995,7 +1997,7 @@ na_bmi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     /* Copy struct */
     memcpy(na_bmi_mem_handle, buf, sizeof(struct na_bmi_mem_handle));
 
-    *mem_handle = (na_mem_handle_t) na_bmi_mem_handle;
+    *mem_handle = (na_mem_handle_t *) na_bmi_mem_handle;
 
 done:
     return ret;
@@ -2004,9 +2006,10 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t NA_UNUSED remote_id,
+    na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_mem_handle *na_bmi_mem_handle_local =
@@ -2135,9 +2138,10 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t NA_UNUSED remote_id,
+    na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_mem_handle *na_bmi_mem_handle_local =

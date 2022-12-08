@@ -18,12 +18,12 @@
 
 typedef struct na_class na_class_t;     /* Opaque NA class */
 typedef struct na_context na_context_t; /* Opaque NA execution context */
-typedef struct na_addr *na_addr_t;      /* Abstract NA address */
+typedef struct na_addr na_addr_t;       /* Opaque NA address */
 typedef uint32_t na_tag_t;              /* Tag */
 typedef struct na_op_id na_op_id_t;     /* Opaque operation id */
 
-typedef struct na_mem_handle *na_mem_handle_t; /* Abstract memory handle */
-typedef uint64_t na_offset_t;                  /* Offset */
+typedef struct na_mem_handle na_mem_handle_t; /* Opaque memory handle */
+typedef uint64_t na_offset_t;                 /* Offset */
 
 /* Address format */
 enum na_addr_format {
@@ -143,13 +143,13 @@ typedef enum na_cb_type { NA_CB_TYPES } na_cb_type_t;
 /* Callback info structs */
 struct na_cb_info_recv_unexpected {
     size_t actual_buf_size; /*!< received buffer size */
-    na_addr_t source;       /*!< source address */
+    na_addr_t *source;      /*!< source address */
     na_tag_t tag;           /*!< received tag */
 };
 
 struct na_cb_info_multi_recv_unexpected {
     size_t actual_buf_size; /*!< received buffer size */
-    na_addr_t source;       /*!< source address */
+    na_addr_t *source;      /*!< source address */
     na_tag_t tag;           /*!< received tag */
     void *actual_buf;       /*!< pointer to received data */
     bool last;              /*!< last receive on this operation */
@@ -182,10 +182,6 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_VERSION(major, minor) (((major) << 16) | (minor))
 #define NA_MAJOR(version)        (version >> 16)
 #define NA_MINOR(version)        (version & 0xffff)
-
-/* Constant values */
-#define NA_ADDR_NULL       ((na_addr_t) 0)
-#define NA_MEM_HANDLE_NULL ((na_mem_handle_t) 0)
 
 /* Optional plugin dependent features that can be queried */
 #define NA_OPT_MULTI_RECV (2 << 1) /* multi-recv */

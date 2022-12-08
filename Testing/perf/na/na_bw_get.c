@@ -92,7 +92,7 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
         if (info->na_test_info.force_register) {
             NA_Mem_deregister(info->na_class, info->local_handle);
             NA_Mem_handle_free(info->na_class, info->local_handle);
-            info->local_handle = NA_MEM_HANDLE_NULL;
+            info->local_handle = NULL;
         }
     }
 

@@ -28,7 +28,7 @@ struct na_perf_info {
     na_context_t *context;             /* NA context */
     hg_poll_set_t *poll_set;           /* Poll set */
     hg_request_class_t *request_class; /* Request class */
-    na_addr_t target_addr;             /* Target address */
+    na_addr_t *target_addr;            /* Target address */
     void *msg_unexp_buf;               /* Expected msg buffer */
     void *msg_exp_buf;                 /* Unexpected msg buffer */
     void *msg_unexp_data;              /* Plugin data */
@@ -37,9 +37,9 @@ struct na_perf_info {
     na_op_id_t *msg_exp_op_id;         /* Msg expected op ID */
     void *rma_buf;                     /* RMA buffer */
     void *verify_buf;                  /* Verify buffer */
-    na_mem_handle_t local_handle;      /* Local handle */
-    na_mem_handle_t remote_handle;     /* Remote handle */
-    na_mem_handle_t verify_handle;     /* Local handle to verify buffer */
+    na_mem_handle_t *local_handle;     /* Local handle */
+    na_mem_handle_t *remote_handle;    /* Remote handle */
+    na_mem_handle_t *verify_handle;    /* Local handle to verify buffer */
     na_op_id_t **rma_op_ids;           /* RMA op IDs */
     size_t msg_unexp_header_size;      /* Header size */
     size_t msg_exp_header_size;        /* Header size */
@@ -116,7 +116,7 @@ na_perf_verify_data(const void *buf, size_t buf_size, size_t header_size);
 
 na_return_t
 na_perf_mem_handle_send(
-    struct na_perf_info *info, na_addr_t src_addr, na_tag_t tag);
+    struct na_perf_info *info, na_addr_t *src_addr, na_tag_t tag);
 
 na_return_t
 na_perf_mem_handle_recv(struct na_perf_info *info, na_tag_t tag);

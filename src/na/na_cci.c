@@ -215,31 +215,31 @@ na_cci_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
-na_cci_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr);
+na_cci_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr);
 
 /* addr_self */
 static na_return_t
-na_cci_addr_self(na_class_t *na_class, na_addr_t *addr);
+na_cci_addr_self(na_class_t *na_class, na_addr_t **addr);
 
 static void
 addr_decref(na_cci_addr_t *na_cci_addr);
 
 /* addr_dup */
 static na_return_t
-na_cci_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
+na_cci_addr_dup(na_class_t *na_class, na_addr_t *addr, na_addr_t **new_addr);
 
 /* addr_free */
 static void
-na_cci_addr_free(na_class_t *na_class, na_addr_t addr);
+na_cci_addr_free(na_class_t *na_class, na_addr_t *addr);
 
 /* addr_is_self */
 static bool
-na_cci_addr_is_self(na_class_t *na_class, na_addr_t addr);
+na_cci_addr_is_self(na_class_t *na_class, na_addr_t *addr);
 
 /* addr_to_string */
 static na_return_t
 na_cci_addr_to_string(
-    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t addr);
+    na_class_t *na_class, char *buf, size_t *buf_size, na_addr_t *addr);
 
 /* msg_get_max */
 static size_t
@@ -255,7 +255,7 @@ na_cci_msg_get_max_tag(const na_class_t *na_class);
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
+    void *plugin_data, na_addr_t *dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_unexpected */
@@ -268,14 +268,14 @@ na_cci_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_cci_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void *plugin_data, na_addr_t dest_addr, uint8_t dest_id, na_tag_t tag,
+    void *plugin_data, na_addr_t *dest_addr, uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_cci_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, size_t buf_size, void *plugin_data,
-    na_addr_t source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
+    na_addr_t *source_addr, uint8_t source_id, na_tag_t tag, na_op_id_t *op_id);
 
 static na_return_t
 na_cci_msg_unexpected_push(
@@ -294,44 +294,46 @@ na_cci_msg_unexpected_op_pop(na_class_t *na_class);
 /* mem_handle */
 static na_return_t
 na_cci_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
-    unsigned long flags, na_mem_handle_t *mem_handle);
+    unsigned long flags, na_mem_handle_t **mem_handle);
 
 static void
-na_cci_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
+na_cci_mem_handle_free(na_class_t *na_class, na_mem_handle_t *mem_handle);
 
 static na_return_t
-na_cci_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+na_cci_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     enum na_mem_type mem_type, uint64_t device);
 
 static na_return_t
-na_cci_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
+na_cci_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle);
 
 /* mem_handle serialization */
 static size_t
 na_cci_mem_handle_get_serialize_size(
-    na_class_t *na_class, na_mem_handle_t mem_handle);
+    na_class_t *na_class, na_mem_handle_t *mem_handle);
 
 static na_return_t
 na_cci_mem_handle_serialize(na_class_t *na_class, void *buf, size_t buf_size,
-    na_mem_handle_t mem_handle);
+    na_mem_handle_t *mem_handle);
 
 static na_return_t
-na_cci_mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-    const void *buf, size_t buf_size);
+na_cci_mem_handle_deserialize(na_class_t *na_class,
+    na_mem_handle_t **mem_handle, const void *buf, size_t buf_size);
 
 /* put */
 static na_return_t
 na_cci_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t remote_id,
+    na_op_id_t *op_id);
 
 /* get */
 static na_return_t
 na_cci_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t remote_id, na_op_id_t *op_id);
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t remote_id,
+    na_op_id_t *op_id);
 
 /* poll_get_fd */
 static int
@@ -770,7 +772,7 @@ na_cci_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
+na_cci_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr)
 {
     cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     char *uri = NA_CCI_CLASS(na_class)->uri;
@@ -810,7 +812,7 @@ na_cci_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
         goto out;
     }
 
-    *addr = (na_addr_t) na_cci_addr;
+    *addr = (na_addr_t *) na_cci_addr;
 
 out:
     if (ret != NA_SUCCESS) {
@@ -821,7 +823,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_addr_self(na_class_t *na_class, na_addr_t *addr)
+na_cci_addr_self(na_class_t *na_class, na_addr_t **addr)
 {
     na_cci_addr_t *na_cci_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -839,7 +841,7 @@ na_cci_addr_self(na_class_t *na_class, na_addr_t *addr)
     na_cci_addr->self = true;
     hg_atomic_set32(&na_cci_addr->refcnt, 1);
 
-    *addr = (na_addr_t) na_cci_addr;
+    *addr = (na_addr_t *) na_cci_addr;
 
 out:
     if (ret != NA_SUCCESS) {
@@ -882,7 +884,7 @@ addr_decref(na_cci_addr_t *na_cci_addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_addr_dup(
-    na_class_t NA_UNUSED *na_class, na_addr_t addr, na_addr_t *new_addr)
+    na_class_t NA_UNUSED *na_class, na_addr_t *addr, na_addr_t **new_addr)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) addr;
     addr_addref(na_cci_addr); /* for na_cci_addr_free() */
@@ -893,7 +895,7 @@ na_cci_addr_dup(
 
 /*---------------------------------------------------------------------------*/
 static void
-na_cci_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_cci_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) addr;
 
@@ -902,7 +904,7 @@ na_cci_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static bool
-na_cci_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_cci_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) addr;
 
@@ -911,8 +913,8 @@ na_cci_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_addr_to_string(
-    na_class_t NA_UNUSED *na_class, char *buf, size_t *buf_size, na_addr_t addr)
+na_cci_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
+    size_t *buf_size, na_addr_t *addr)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) addr;
     size_t string_len;
@@ -967,8 +969,8 @@ na_cci_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t *dest_addr,
+    uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest_addr;
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) op_id;
@@ -1169,8 +1171,8 @@ na_cci_msg_unexpected_op_pop(na_class_t *na_class)
 static na_return_t
 na_cci_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest_addr, uint8_t NA_UNUSED dest_id,
-    na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t *dest_addr,
+    uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest_addr;
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) op_id;
@@ -1225,7 +1227,7 @@ out:
 static na_return_t
 na_cci_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t source_addr,
+    void NA_UNUSED *plugin_data, na_addr_t *source_addr,
     uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
 {
     cci_size_t cci_buf_size = (cci_size_t) buf_size;
@@ -1297,7 +1299,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
-    size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
+    size_t buf_size, unsigned long flags, na_mem_handle_t **mem_handle)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1315,7 +1317,7 @@ na_cci_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_cci_mem_handle->size = (cci_size_t) buf_size;
     na_cci_mem_handle->attr = (uint8_t) flags;
 
-    *mem_handle = (na_mem_handle_t) na_cci_mem_handle;
+    *mem_handle = (na_mem_handle_t *) na_cci_mem_handle;
 
 out:
     return ret;
@@ -1324,7 +1326,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static void
 na_cci_mem_handle_free(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
+    na_class_t NA_UNUSED *na_class, na_mem_handle_t *mem_handle)
 {
     na_cci_mem_handle_t *cci_mem_handle = (na_cci_mem_handle_t *) mem_handle;
 
@@ -1333,7 +1335,7 @@ na_cci_mem_handle_free(
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle,
+na_cci_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     enum na_mem_type NA_UNUSED mem_type, uint64_t NA_UNUSED device)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = (na_cci_mem_handle_t *) mem_handle;
@@ -1374,7 +1376,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_cci_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = (na_cci_mem_handle_t *) mem_handle;
     cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
@@ -1400,7 +1402,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static size_t
 na_cci_mem_handle_get_serialize_size(
-    na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
+    na_class_t NA_UNUSED *na_class, na_mem_handle_t *mem_handle)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = (na_cci_mem_handle_t *) mem_handle;
 
@@ -1411,7 +1413,7 @@ na_cci_mem_handle_get_serialize_size(
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
-    size_t buf_size, na_mem_handle_t mem_handle)
+    size_t buf_size, na_mem_handle_t *mem_handle)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = (na_cci_mem_handle_t *) mem_handle;
     na_return_t ret = NA_SUCCESS;
@@ -1436,7 +1438,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t *mem_handle, const void *buf, size_t buf_size)
+    na_mem_handle_t **mem_handle, const void *buf, size_t buf_size)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1461,7 +1463,7 @@ na_cci_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     /* Copy struct */
     memcpy((void *) &na_cci_mem_handle->h, buf, len);
 
-    *mem_handle = (na_mem_handle_t) na_cci_mem_handle;
+    *mem_handle = (na_mem_handle_t *) na_cci_mem_handle;
 
 out:
     return ret;
@@ -1470,9 +1472,10 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t NA_UNUSED remote_id,
+    na_op_id_t *op_id)
 {
     na_cci_mem_handle_t *cci_local_mem_handle =
         (na_cci_mem_handle_t *) local_mem_handle;
@@ -1536,9 +1539,10 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset, size_t length,
-    na_addr_t remote_addr, uint8_t NA_UNUSED remote_id, na_op_id_t *op_id)
+    void *arg, na_mem_handle_t *local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t *remote_mem_handle, na_offset_t remote_offset,
+    size_t length, na_addr_t *remote_addr, uint8_t NA_UNUSED remote_id,
+    na_op_id_t *op_id)
 {
     na_cci_mem_handle_t *cci_local_mem_handle =
         (na_cci_mem_handle_t *) local_mem_handle;
@@ -1952,7 +1956,7 @@ na_cci_complete(
             callback_info->info.recv_unexpected.actual_buf_size =
                 (size_t) na_cci_op_id->info.recv_unexpected.actual_size;
             callback_info->info.recv_unexpected.source =
-                (na_addr_t) na_cci_op_id->info.recv_unexpected.na_cci_addr;
+                (na_addr_t *) na_cci_op_id->info.recv_unexpected.na_cci_addr;
             callback_info->info.recv_unexpected.tag =
                 (na_tag_t) na_cci_op_id->info.recv_unexpected.tag;
         } break;
