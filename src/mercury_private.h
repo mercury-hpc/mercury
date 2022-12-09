@@ -99,12 +99,12 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id);
  */
 HG_PRIVATE hg_return_t
 hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
-    struct hg_bulk_op_pool **hg_bulk_op_pool_ptr);
+    struct hg_bulk_op_pool **hg_bulk_op_pool_p);
 
 /**
  * Destroy pool of bulk op IDs.
  */
-HG_PRIVATE hg_return_t
+HG_PRIVATE void
 hg_bulk_op_pool_destroy(struct hg_bulk_op_pool *hg_bulk_op_pool);
 
 #ifdef __cplusplus

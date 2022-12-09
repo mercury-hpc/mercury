@@ -204,12 +204,12 @@ extern "C" {
  * \param hash [IN]             hash method used for computing checksum
  *                              (if NULL, checksum is not computed)
  *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
- * \param proc [OUT]            pointer to abstract processor object
+ * \param proc_p [OUT]          pointer to abstract processor object
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc);
+hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc_p);
 
 /**
  * Create a new encoding/decoding processor.
@@ -222,13 +222,13 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc);
  * \param hash [IN]             hash method used for computing checksum
  *                              (if NULL, checksum is not computed)
  *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
- * \param proc [OUT]            pointer to abstract processor object
+ * \param proc_p [OUT]          pointer to abstract processor object
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 hg_proc_create_set(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
-    hg_proc_op_t op, hg_proc_hash_t hash, hg_proc_t *proc);
+    hg_proc_op_t op, hg_proc_hash_t hash, hg_proc_t *proc_p);
 
 /**
  * Free the processor.
