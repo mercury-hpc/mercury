@@ -1598,9 +1598,7 @@ hg_core_context_destroy(struct hg_core_private_context *context)
 
     /* Destroy pool of bulk op IDs */
     if (context->hg_bulk_op_pool != NULL) {
-        ret = hg_bulk_op_pool_destroy(context->hg_bulk_op_pool);
-        HG_CHECK_SUBSYS_HG_ERROR(
-            ctx, error, ret, "Could not destroy bulk op pool");
+        hg_bulk_op_pool_destroy(context->hg_bulk_op_pool);
         context->hg_bulk_op_pool = NULL;
     }
 
