@@ -184,7 +184,7 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_MINOR(version)        (version & 0xffff)
 
 /* Optional plugin dependent features that can be queried */
-#define NA_OPT_MULTI_RECV (2 << 1) /* multi-recv */
+#define NA_OPT_MULTI_RECV (1 << 0) /* multi-recv */
 
 /* Max timeout */
 #define NA_MAX_IDLE_TIME (3600 * 1000)
@@ -195,9 +195,10 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /* Memory allocation flags
  * \remark Used for message buffer allocation. */
-#define NA_SEND       0x01
-#define NA_RECV       0x02
-#define NA_MULTI_RECV 0x04
+#define NA_SEND       (1 << 0)
+#define NA_RECV       (1 << 1)
+#define NA_MULTI_RECV (1 << 2)
+#define NA_ALLOC_MAX  (1 << 3) /* Maximum flag value */
 
 /* Op ID creation flags */
 #define NA_OP_SINGLE 0x00

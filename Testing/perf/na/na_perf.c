@@ -203,7 +203,13 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
 
     /* Prepare Msg buffers */
     if (multi_recv) {
-        info->msg_unexp_size_max *= 16;
+        size_t hugepage_size = (size_t) hg_mem_get_hugepage_size();
+
+        /* Try to use hugepages */
+        if (hugepage_size > 0)
+            info->msg_unexp_size_max = hugepage_size;
+        else
+            info->msg_unexp_size_max *= 16;
         info->msg_unexp_buf = NA_Msg_buf_alloc(info->na_class,
             info->msg_unexp_size_max, NA_MULTI_RECV, &info->msg_unexp_data);
         NA_TEST_CHECK_ERROR(info->msg_unexp_buf == NULL, error, ret, NA_NOMEM,

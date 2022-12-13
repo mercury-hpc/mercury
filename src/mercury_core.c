@@ -42,8 +42,8 @@
 #define HG_CORE_ATOMIC_QUEUE_SIZE (1024)
 
 /* Pre-posted requests and op IDs */
-#define HG_CORE_POST_INIT          (256)
-#define HG_CORE_POST_INCR          (256)
+#define HG_CORE_POST_INIT          (512)
+#define HG_CORE_POST_INCR          (512)
 #define HG_CORE_BULK_OP_INIT_COUNT (256)
 
 /* Number of multi-recv buffer pre-posted */

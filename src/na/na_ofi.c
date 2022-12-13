@@ -250,6 +250,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_MEM_CHUNK_COUNT (256)
 #define NA_OFI_MEM_BLOCK_COUNT (2)
 
+/* Allocation using hugepages */
+#define NA_OFI_ALLOC_HUGE (NA_ALLOC_MAX)
+
 /* Unexpected size */
 #define NA_OFI_MSG_SIZE       (4096)
 #define NA_OFI_TAG_MASK       ((uint64_t) 0x0FFFFFFFF)
@@ -436,6 +439,7 @@ struct na_ofi_addr {
 
 /* Message buffer info */
 struct na_ofi_msg_buf_handle {
+    size_t alloc_size;    /* Buf alloc size */
     unsigned long flags;  /* Buf alloc flags */
     struct fid_mr *fi_mr; /* FI MR handle    */
 };
@@ -1067,16 +1071,16 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr);
 /**
  * Allocate memory for transfers.
  */
-static NA_INLINE void *
+static void *
 na_ofi_mem_alloc(struct na_ofi_class *na_ofi_class, size_t size,
-    unsigned long flags, struct fid_mr **mr_hdl_p);
+    unsigned long *flags_p, size_t *alloc_size_p, struct fid_mr **mr_hdl_p);
 
 /**
  * Free memory.
  */
-static NA_INLINE void
-na_ofi_mem_free(
-    struct na_ofi_class *na_ofi_class, void *mem_ptr, struct fid_mr *mr_hdl);
+static void
+na_ofi_mem_free(struct na_ofi_class *na_ofi_class, void *mem_ptr,
+    size_t alloc_size, unsigned long flags, struct fid_mr *mr_hdl);
 
 /**
  * Register memory buffer.
@@ -4360,38 +4364,70 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr)
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void *
 na_ofi_mem_alloc(struct na_ofi_class *na_ofi_class, size_t size,
-    unsigned long flags, struct fid_mr **mr_hdl_p)
+    unsigned long *flags_p, size_t *alloc_size_p, struct fid_mr **mr_hdl_p)
 {
-    size_t page_size = (size_t) hg_mem_get_page_size();
+    size_t page_size = (size_t) hg_mem_get_hugepage_size();
     void *mem_ptr = NULL;
+    size_t alloc_size = 0;
     int rc;
 
+    if (page_size > 0 && size >= page_size) {
+        /* Allocate a multiple of page size (TODO use extra space) */
+        alloc_size = ((size % page_size) == 0)
+                         ? size
+                         : ((size / page_size) + 1) * page_size;
+
+        mem_ptr = hg_mem_huge_alloc(alloc_size);
+    }
+
     /* Allocate backend buffer */
-    mem_ptr = hg_mem_aligned_alloc(page_size, size);
-    NA_CHECK_SUBSYS_ERROR_NORET(
-        mem, mem_ptr == NULL, out, "Could not allocate %d bytes", (int) size);
-    memset(mem_ptr, 0, size);
+    if (mem_ptr != NULL) {
+        NA_LOG_SUBSYS_DEBUG(mem,
+            "Allocated %zu bytes using hugepages at address %p", alloc_size,
+            mem_ptr);
+        *flags_p |= NA_OFI_ALLOC_HUGE;
+    } else {
+        page_size = (size_t) hg_mem_get_page_size();
+        alloc_size = size;
+
+        mem_ptr = hg_mem_aligned_alloc(page_size, size);
+        NA_CHECK_SUBSYS_ERROR_NORET(mem, mem_ptr == NULL, error,
+            "Could not allocate %d bytes", (int) size);
+
+        NA_LOG_SUBSYS_DEBUG(mem,
+            "Allocated %zu bytes using aligned alloc at address %p", alloc_size,
+            mem_ptr);
+    }
+    memset(mem_ptr, 0, alloc_size);
 
     /* Register buffer */
-    rc = na_ofi_mem_buf_register(mem_ptr, (size_t) size, flags,
+    rc = na_ofi_mem_buf_register(mem_ptr, alloc_size, *flags_p,
         (void **) mr_hdl_p, (void *) na_ofi_class);
     NA_CHECK_SUBSYS_ERROR_NORET(
-        mem, rc != 0, error, "Could not register buffer");
+        mem, rc != 0, error_free, "Could not register buffer");
 
-out:
+    *alloc_size_p = alloc_size;
+
     return mem_ptr;
 
+error_free:
+    NA_LOG_SUBSYS_DEBUG(mem, "Freeing memory at address %p", mem_ptr);
+    if (*flags_p & NA_OFI_ALLOC_HUGE) {
+        (void) hg_mem_huge_free(mem_ptr, alloc_size);
+    } else
+        hg_mem_aligned_free(mem_ptr);
 error:
-    hg_mem_aligned_free(mem_ptr);
     return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE void
-na_ofi_mem_free(
-    struct na_ofi_class *na_ofi_class, void *mem_ptr, struct fid_mr *mr_hdl)
+static void
+na_ofi_mem_free(struct na_ofi_class *na_ofi_class, void *mem_ptr,
+    size_t alloc_size, unsigned long flags, struct fid_mr *mr_hdl)
 {
     int rc;
+
+    NA_LOG_SUBSYS_DEBUG(mem, "Freeing memory at address %p", mem_ptr);
 
     /* Release MR handle is there was any */
     rc = na_ofi_mem_buf_deregister((void *) mr_hdl, (void *) na_ofi_class);
@@ -4399,7 +4435,10 @@ na_ofi_mem_free(
         mem, rc != 0, out, "Could not deregister buffer");
 
 out:
-    hg_mem_aligned_free(mem_ptr);
+    if (flags & NA_OFI_ALLOC_HUGE) {
+        (void) hg_mem_huge_free(mem_ptr, alloc_size);
+    } else
+        hg_mem_aligned_free(mem_ptr);
     return;
 }
 
@@ -6489,8 +6528,8 @@ na_ofi_msg_buf_alloc(
 
     /* Multi-recv buffers do not need to use the memory pool */
     if (flags & NA_MULTI_RECV) {
-        mem_ptr =
-            na_ofi_mem_alloc(na_ofi_class, size, flags, &msg_buf_handle->fi_mr);
+        mem_ptr = na_ofi_mem_alloc(na_ofi_class, size, &msg_buf_handle->flags,
+            &msg_buf_handle->alloc_size, &msg_buf_handle->fi_mr);
         NA_CHECK_SUBSYS_ERROR_NORET(mem, mem_ptr == NULL, error,
             "Could not allocate %d bytes", (int) size);
     } else {
@@ -6503,9 +6542,10 @@ na_ofi_msg_buf_alloc(
             hg_mem_pool_alloc(mem_pool, size, (void **) &msg_buf_handle->fi_mr);
         NA_CHECK_SUBSYS_ERROR_NORET(
             mem, mem_ptr == NULL, error, "Could not allocate buffer from pool");
+        msg_buf_handle->alloc_size = size;
 #else
-        mem_ptr =
-            na_ofi_mem_alloc(na_ofi_class, size, flags, &msg_buf_handle->fi_mr);
+        mem_ptr = na_ofi_mem_alloc(na_ofi_class, size, &msg_buf_handle->flags,
+            &msg_buf_handle->alloc_size, &msg_buf_handle->fi_mr);
         NA_CHECK_SUBSYS_ERROR_NORET(mem, mem_ptr == NULL, error,
             "Could not allocate %d bytes", (int) size);
 #endif
@@ -6528,7 +6568,8 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
         (struct na_ofi_msg_buf_handle *) plugin_data;
 
     if (msg_buf_handle->flags & NA_MULTI_RECV) {
-        na_ofi_mem_free(na_ofi_class, buf, msg_buf_handle->fi_mr);
+        na_ofi_mem_free(na_ofi_class, buf, msg_buf_handle->alloc_size,
+            msg_buf_handle->flags, msg_buf_handle->fi_mr);
     } else {
 #ifdef NA_OFI_HAS_MEM_POOL
         struct hg_mem_pool *mem_pool = (msg_buf_handle->flags & NA_SEND)
@@ -6537,7 +6578,8 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 
         hg_mem_pool_free(mem_pool, buf, (void *) msg_buf_handle->fi_mr);
 #else
-        na_ofi_mem_free(na_ofi_class, buf, msg_buf_handle->fi_mr);
+        na_ofi_mem_free(na_ofi_class, buf, msg_buf_handle->alloc_size,
+            msg_buf_handle->flags, msg_buf_handle->fi_mr);
 #endif
     }
     free(msg_buf_handle);
