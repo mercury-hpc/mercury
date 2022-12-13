@@ -32,10 +32,18 @@ extern "C" {
 /**
  * Get system default page size.
  *
- * \return page size on success or negative on failure
+ * \return page size on success or 0 on failure
  */
 HG_UTIL_PUBLIC long
 hg_mem_get_page_size(void);
+
+/**
+ * Get system default hugepage size.
+ *
+ * \return hugepage size on success or 0 on failure
+ */
+HG_UTIL_PUBLIC long
+hg_mem_get_hugepage_size(void);
 
 /**
  * Allocate size bytes and return a pointer to the allocated memory.
@@ -57,6 +65,26 @@ hg_mem_aligned_alloc(size_t alignment, size_t size);
  */
 HG_UTIL_PUBLIC void
 hg_mem_aligned_free(void *mem_ptr);
+
+/**
+ * Allocate size bytes using huge pages and return a pointer to the allocated
+ * memory.
+ *
+ * \param size [IN]             total requested size
+ *
+ * \return a pointer to the allocated memory, or NULL in case of failure
+ */
+HG_UTIL_PUBLIC void *
+hg_mem_huge_alloc(size_t size);
+
+/**
+ * Free memory allocated from hg_mem_huge_alloc().
+ *
+ * \param mem_ptr [IN]          pointer to allocated memory
+ * \param size [IN]             allocated size
+ */
+HG_UTIL_PUBLIC int
+hg_mem_huge_free(void *mem_ptr, size_t size);
 
 /**
  * Allocate a buffer with a `size`-bytes, `alignment`-aligned payload
