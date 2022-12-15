@@ -57,7 +57,7 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
             struct hg_perf_bulk_info in_struct = {
                 .comm_rank =
                     (uint32_t) hg_test_info->na_test_info.mpi_comm_rank,
-                .handle_id = (uint32_t) i,
+                .handle_id = (uint32_t) (j / info->target_addr_max),
                 .size = (uint32_t) buf_size};
 
             ret = HG_Forward(

@@ -48,7 +48,7 @@ static int
 hg_perf_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 
 static hg_return_t
-hg_perf_class_init(const struct hg_test_info *hg_test_info,
+hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
     struct hg_perf_class_info *info, hg_class_t *hg_class, bool listen);
 
 static void
@@ -137,7 +137,7 @@ hg_return_t
 hg_perf_init(int argc, char *argv[], bool listen, struct hg_perf_info *info)
 {
     hg_return_t ret;
-    size_t i;
+    int i;
 
     /* Initialize the interface */
     memset(info, 0, sizeof(*info));
@@ -153,8 +153,8 @@ hg_perf_init(int argc, char *argv[], bool listen, struct hg_perf_info *info)
     HG_TEST_CHECK_ERROR(info->class_info == NULL, error, ret, HG_NOMEM,
         "Could not allocate class infos");
 
-    for (i = 0; i < info->class_max; i++) {
-        ret = hg_perf_class_init(&info->hg_test_info, &info->class_info[i],
+    for (i = 0; i < (int) info->class_max; i++) {
+        ret = hg_perf_class_init(&info->hg_test_info, i, &info->class_info[i],
             info->hg_test_info.hg_classes[i], listen);
         HG_TEST_CHECK_HG_ERROR(error, ret, "Could not initialize class info");
     }
@@ -182,12 +182,13 @@ hg_perf_cleanup(struct hg_perf_info *info)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_perf_class_init(const struct hg_test_info *hg_test_info,
+hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
     struct hg_perf_class_info *info, hg_class_t *hg_class, bool listen)
 {
     hg_return_t ret;
     unsigned int i;
 
+    info->class_id = class_id;
     info->hg_class = hg_class;
     info->verify = hg_test_info->na_test_info.verify;
     info->bidir = hg_test_info->bidirectional;
@@ -458,8 +459,8 @@ hg_perf_set_handles(struct hg_perf_class_info *info, enum hg_perf_rpc_id rpc_id)
     size_t i;
 
     for (i = 0; i < info->handle_max; i++) {
-        ret = HG_Reset(info->handles[i], HG_Get_info(info->handles[i])->addr,
-            (hg_id_t) rpc_id);
+        ret = HG_Reset(info->handles[i],
+            info->target_addrs[i % info->target_addr_max], (hg_id_t) rpc_id);
         HG_TEST_CHECK_HG_ERROR(
             error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
     }
@@ -560,7 +561,7 @@ hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
         struct hg_perf_bulk_init_info bulk_info = {
             .bulk = info->local_bulk_handles[i],
             .bulk_op = bulk_op,
-            .handle_id = (uint32_t) i,
+            .handle_id = (uint32_t) (i / info->target_addr_max),
             .bulk_count = (uint32_t) info->bulk_count,
             .size_max = (uint32_t) info->buf_size_max,
             .handle_max = (uint32_t) info->handle_max,
