@@ -56,6 +56,7 @@ struct hg_perf_class_info {
     hg_bulk_t *local_bulk_handles;
     hg_bulk_t *remote_bulk_handles;
     hg_request_t *request; /* Request */
+    int class_id;
     bool done;
     bool verify;
     bool bidir;
