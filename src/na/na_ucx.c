@@ -266,6 +266,12 @@ enum na_ucp_type { NA_UCP_CONFIG, NA_UCP_CONTEXT, NA_UCP_WORKER };
 /*---------------------------------------------------------------------------*/
 
 /**
+ * Convert UCX status to NA return values.
+ */
+static na_return_t
+na_ucs_status_to_na(ucs_status_t status);
+
+/**
  * Print debug info.
  */
 #ifdef NA_HAS_DEBUG
@@ -891,6 +897,97 @@ static const char *ucs_thread_mode_names[UCS_THREAD_MODE_LAST] = {
 #endif
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_ucs_status_to_na(ucs_status_t status)
+{
+    na_return_t ret;
+
+    switch (status) {
+        case UCS_OK:
+        case UCS_INPROGRESS:
+            ret = NA_SUCCESS;
+            break;
+
+        case UCS_ERR_NO_ELEM:
+            ret = NA_NOENTRY;
+            break;
+
+        case UCS_ERR_NO_PROGRESS:
+            ret = NA_AGAIN;
+            break;
+
+        case UCS_ERR_NO_MEMORY:
+            ret = NA_NOMEM;
+            break;
+
+        case UCS_ERR_BUSY:
+            ret = NA_BUSY;
+            break;
+
+        case UCS_ERR_ALREADY_EXISTS:
+            ret = NA_EXIST;
+            break;
+
+        case UCS_ERR_NO_RESOURCE:
+        case UCS_ERR_NO_DEVICE:
+            ret = NA_NODEV;
+            break;
+
+        case UCS_ERR_INVALID_PARAM:
+            ret = NA_INVALID_ARG;
+            break;
+
+        case UCS_ERR_BUFFER_TOO_SMALL:
+        case UCS_ERR_EXCEEDS_LIMIT:
+        case UCS_ERR_OUT_OF_RANGE:
+            ret = NA_OVERFLOW;
+            break;
+
+        case UCS_ERR_MESSAGE_TRUNCATED:
+            ret = NA_MSGSIZE;
+            break;
+
+        case UCS_ERR_NOT_IMPLEMENTED:
+            ret = NA_PROTONOSUPPORT;
+            break;
+
+        case UCS_ERR_UNSUPPORTED:
+            ret = NA_OPNOTSUPPORTED;
+            break;
+
+        case UCS_ERR_INVALID_ADDR:
+            ret = NA_ADDRNOTAVAIL;
+            break;
+
+        case UCS_ERR_SOME_CONNECTS_FAILED:
+        case UCS_ERR_UNREACHABLE:
+        case UCS_ERR_CONNECTION_RESET:
+        case UCS_ERR_NOT_CONNECTED:
+        case UCS_ERR_REJECTED:
+            ret = NA_HOSTUNREACH;
+            break;
+
+        case UCS_ERR_TIMED_OUT:
+        case UCS_ERR_ENDPOINT_TIMEOUT:
+            ret = NA_TIMEOUT;
+            break;
+
+        case UCS_ERR_CANCELED:
+            ret = NA_CANCELED;
+            break;
+
+        case UCS_ERR_NO_MESSAGE:
+        case UCS_ERR_IO_ERROR:
+        case UCS_ERR_SHMEM_SEGMENT:
+        default:
+            ret = NA_PROTOCOL_ERROR;
+            break;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_DEBUG
 static char *
 na_ucp_tostr(void *data, enum na_ucp_type datatype)
@@ -937,19 +1034,29 @@ na_ucp_config_init(
 
     /* Read UCP configuration */
     status = ucp_config_read(NULL, NULL, &config);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_config_read() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_config_read() failed (%s)",
+        ucs_status_string(status));
 
     /* Set user-requested transport */
     status = ucp_config_modify(config, "TLS", tls);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_config_modify() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_config_modify() failed (%s)",
+        ucs_status_string(status));
+
+    /* Disable backtrace by default */
+    if (getenv("UCX_HANDLE_ERRORS") == NULL) {
+        status = ucp_config_modify(config, "HANDLE_ERRORS", "none");
+        NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+            na_ucs_status_to_na(status), "ucp_config_modify() failed (%s)",
+            ucs_status_string(status));
+    }
 
     /* Set network devices to use */
     if (net_devices) {
         status = ucp_config_modify(config, "NET_DEVICES", net_devices);
         NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
-            NA_PROTOCOL_ERROR, "ucp_config_modify() failed (%s)",
+            na_ucs_status_to_na(status), "ucp_config_modify() failed (%s)",
             ucs_status_string(status));
     } else
         NA_LOG_SUBSYS_DEBUG(
@@ -1005,8 +1112,9 @@ na_ucp_context_create(const ucp_config_t *config, bool no_wait,
 
     /* Create UCP context */
     status = ucp_init(&context_params, config, &context);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_init() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_init() failed (%s)",
+        ucs_status_string(status));
 
     /* Print context info */
     NA_LOG_SUBSYS_DEBUG_EXT(
@@ -1014,22 +1122,23 @@ na_ucp_context_create(const ucp_config_t *config, bool no_wait,
 
     /* Query context to ensure we got what we asked for */
     status = ucp_context_query(context, &context_attrs);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_context_query() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_context_query() failed (%s)",
+        ucs_status_string(status));
 
     /* Check that expected fields are present */
     NA_CHECK_SUBSYS_ERROR(cls,
         (context_attrs.field_mask & UCP_ATTR_FIELD_REQUEST_SIZE) == 0, error,
-        ret, NA_PROTOCOL_ERROR, "context attributes contain no request size");
+        ret, NA_PROTONOSUPPORT, "context attributes contain no request size");
     NA_CHECK_SUBSYS_ERROR(cls,
         (context_attrs.field_mask & UCP_ATTR_FIELD_THREAD_MODE) == 0, error,
-        ret, NA_PROTOCOL_ERROR, "context attributes contain no thread mode");
+        ret, NA_PROTONOSUPPORT, "context attributes contain no thread mode");
 
     /* Do not continue if thread mode is less than expected */
     NA_CHECK_SUBSYS_ERROR(cls,
         thread_mode != UCS_THREAD_MODE_SINGLE &&
             context_attrs.thread_mode < thread_mode,
-        error, ret, NA_PROTOCOL_ERROR, "Context thread mode is: %s",
+        error, ret, NA_PROTONOSUPPORT, "Context thread mode is: %s",
         ucs_thread_mode_names[context_attrs.thread_mode]);
 
     NA_LOG_SUBSYS_DEBUG(
@@ -1068,8 +1177,9 @@ na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
 
     /* Create UCP worker */
     status = ucp_worker_create(context, &worker_params, &worker);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_worker_create() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_worker_create() failed (%s)",
+        ucs_status_string(status));
 
     /* Print worker info */
     NA_LOG_SUBSYS_DEBUG_EXT(
@@ -1077,8 +1187,9 @@ na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
 
     /* Query worker attributes */
     status = ucp_worker_query(worker, &worker_attrs);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_worker_query() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_worker_query() failed (%s)",
+        ucs_status_string(status));
 
     /* Check max AM header size */
     NA_CHECK_SUBSYS_ERROR(cls,
@@ -1129,8 +1240,9 @@ na_ucp_worker_get_address(
     na_return_t ret = NA_SUCCESS;
 
     status = ucp_worker_get_address(worker, addr_p, addr_len_p);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, done, ret, NA_PROTOCOL_ERROR,
-        "ucp_worker_get_address() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, done, ret,
+        na_ucs_status_to_na(status), "ucp_worker_get_address() failed (%s)",
+        ucs_status_string(status));
 
 done:
     return ret;
@@ -1154,7 +1266,8 @@ na_ucp_set_am_handler(
     param.arg = arg;
 
     status = ucp_worker_set_am_recv_handler(worker, &param);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, done, ret, NA_PROTOCOL_ERROR,
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, done, ret,
+        na_ucs_status_to_na(status),
         "ucp_worker_set_am_recv_handler() failed (%s)",
         ucs_status_string(status));
 
@@ -1182,13 +1295,15 @@ na_ucp_listener_create(ucp_worker_h worker, const struct sockaddr *addr,
 
     /* Create listener on worker */
     status = ucp_listener_create(worker, &listener_params, &listener);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_listener_create() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_listener_create() failed (%s)",
+        ucs_status_string(status));
 
     /* Check sockaddr */
     status = ucp_listener_query(listener, &listener_attrs);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_listener_query() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_listener_query() failed (%s)",
+        ucs_status_string(status));
 
     NA_CHECK_SUBSYS_ERROR(cls,
         (listener_attrs.field_mask & UCP_LISTENER_ATTR_FIELD_SOCKADDR) == 0,
@@ -1346,8 +1461,9 @@ na_ucp_mem_free(ucp_context_h context, ucp_mem_h mem)
     na_return_t ret;
 
     status = ucp_mem_unmap(context, mem);
-    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_mem_unmap() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_mem_unmap() failed (%s)",
+        ucs_status_string(status));
 
     return NA_SUCCESS;
 
@@ -1427,8 +1543,9 @@ na_ucp_ep_create(ucp_worker_h worker, ucp_ep_params_t *ep_params,
     ep_params->err_handler.arg = err_handler_arg;
 
     status = ucp_ep_create(worker, ep_params, &ep);
-    NA_CHECK_SUBSYS_ERROR(addr, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_ep_create() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(addr, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_ep_create() failed (%s)",
+        ucs_status_string(status));
 
     *ep_p = ep;
 
@@ -1479,7 +1596,8 @@ na_ucp_am_send(ucp_ep_h ep, const void *buf, size_t buf_size,
         na_ucp_am_send_cb(request, UCS_OK, NULL);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, UCS_PTR_IS_ERR(status_ptr), error, ret,
-            NA_PROTOCOL_ERROR, "ucp_am_send_nbx() failed (%s)",
+            na_ucs_status_to_na(UCS_PTR_STATUS(status_ptr)),
+            "ucp_am_send_nbx() failed (%s)",
             ucs_status_string(UCS_PTR_STATUS(status_ptr)));
 
     NA_LOG_SUBSYS_DEBUG(msg, "ucp_am_send_nbx() was posted");
@@ -1504,7 +1622,7 @@ na_ucp_am_send_cb(void *request, ucs_status_t status, void NA_UNUSED *user_data)
     if (status == UCS_ERR_CANCELED)
         NA_GOTO_DONE(done, cb_ret, NA_CANCELED);
     else
-        NA_GOTO_SUBSYS_ERROR(msg, done, cb_ret, NA_PROTOCOL_ERROR,
+        NA_GOTO_SUBSYS_ERROR(msg, done, cb_ret, na_ucs_status_to_na(status),
             "ucp_am_send_nbx() failed (%s)", ucs_status_string(status));
 
 done:
@@ -1668,7 +1786,8 @@ na_ucp_msg_send(
         na_ucp_msg_send_cb(request, UCS_OK, NULL);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, UCS_PTR_IS_ERR(status_ptr), error, ret,
-            NA_PROTOCOL_ERROR, "ucp_tag_send_nbx() failed (%s)",
+            na_ucs_status_to_na(UCS_PTR_STATUS(status_ptr)),
+            "ucp_tag_send_nbx() failed (%s)",
             ucs_status_string(UCS_PTR_STATUS(status_ptr)));
 
     NA_LOG_SUBSYS_DEBUG(msg, "ucp_tag_send_nbx() was posted");
@@ -1694,7 +1813,7 @@ na_ucp_msg_send_cb(
     if (status == UCS_ERR_CANCELED)
         NA_GOTO_DONE(done, cb_ret, NA_CANCELED);
     else
-        NA_GOTO_SUBSYS_ERROR(msg, done, cb_ret, NA_PROTOCOL_ERROR,
+        NA_GOTO_SUBSYS_ERROR(msg, done, cb_ret, na_ucs_status_to_na(status),
             "ucp_tag_send_nbx() failed (%s)", ucs_status_string(status));
 
 done:
@@ -1729,7 +1848,8 @@ na_ucp_msg_recv(ucp_worker_h worker, void *buf, size_t buf_size, ucp_tag_t tag,
         na_ucp_msg_recv_cb(request, UCS_OK, &tag_recv_info, NULL);
     } else
         NA_CHECK_SUBSYS_ERROR(msg, UCS_PTR_IS_ERR(status_ptr), error, ret,
-            NA_PROTOCOL_ERROR, "ucp_tag_recv_nbx() failed (%s)",
+            na_ucs_status_to_na(UCS_PTR_STATUS(status_ptr)),
+            "ucp_tag_recv_nbx() failed (%s)",
             ucs_status_string(UCS_PTR_STATUS(status_ptr)));
 
     NA_LOG_SUBSYS_DEBUG(msg, "ucp_tag_recv_nbx() was posted");
@@ -1760,7 +1880,7 @@ na_ucp_msg_recv_cb(void *request, ucs_status_t status,
     else if (status == UCS_ERR_CANCELED)
         NA_GOTO_DONE(done, cb_ret, NA_CANCELED);
     else
-        NA_GOTO_SUBSYS_ERROR(msg, done, cb_ret, NA_PROTOCOL_ERROR,
+        NA_GOTO_SUBSYS_ERROR(msg, done, cb_ret, na_ucs_status_to_na(status),
             "ucp_tag_recv_nbx() failed (%s)", ucs_status_string(status));
 
     NA_CHECK_SUBSYS_ERROR(msg,
@@ -1804,7 +1924,8 @@ na_ucp_put(ucp_ep_h ep, void *buf, size_t buf_size, uint64_t remote_addr,
         na_ucp_rma_cb(request, UCS_OK, NULL);
     } else
         NA_CHECK_SUBSYS_ERROR(rma, UCS_PTR_IS_ERR(status_ptr), error, ret,
-            NA_PROTOCOL_ERROR, "ucp_put_nbx() failed (%s)",
+            na_ucs_status_to_na(UCS_PTR_STATUS(status_ptr)),
+            "ucp_put_nbx() failed (%s)",
             ucs_status_string(UCS_PTR_STATUS(status_ptr)));
 
     NA_LOG_SUBSYS_DEBUG(rma, "ucp_put_nbx() was posted");
@@ -1836,7 +1957,8 @@ na_ucp_get(ucp_ep_h ep, void *buf, size_t buf_size, uint64_t remote_addr,
         na_ucp_rma_cb(request, UCS_OK, NULL);
     } else
         NA_CHECK_SUBSYS_ERROR(rma, UCS_PTR_IS_ERR(status_ptr), error, ret,
-            NA_PROTOCOL_ERROR, "ucp_get_nbx() failed (%s)",
+            na_ucs_status_to_na(UCS_PTR_STATUS(status_ptr)),
+            "ucp_get_nbx() failed (%s)",
             ucs_status_string(UCS_PTR_STATUS(status_ptr)));
 
     NA_LOG_SUBSYS_DEBUG(rma, "ucp_get_nbx() was posted");
@@ -1862,7 +1984,7 @@ na_ucp_rma_cb(void *request, ucs_status_t status, void NA_UNUSED *user_data)
     if (status == UCS_ERR_CANCELED)
         NA_GOTO_DONE(done, cb_ret, NA_CANCELED);
     else
-        NA_GOTO_SUBSYS_ERROR(rma, done, cb_ret, NA_PROTOCOL_ERROR,
+        NA_GOTO_SUBSYS_ERROR(rma, done, cb_ret, na_ucs_status_to_na(status),
             "na_ucp_rma_cb() failed (%s)", ucs_status_string(status));
 
 done:
@@ -2437,7 +2559,7 @@ na_ucx_rma_key_resolve(ucp_ep_h ep, struct na_ucx_mem_handle *na_ucx_mem_handle,
             ucs_status_t status = ucp_ep_rkey_unpack(ep,
                 na_ucx_mem_handle->rkey_buf, &na_ucx_mem_handle->ucp_mr.rkey);
             NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret,
-                NA_PROTOCOL_ERROR, "ucp_ep_rkey_unpack() failed (%s)",
+                na_ucs_status_to_na(status), "ucp_ep_rkey_unpack() failed (%s)",
                 ucs_status_string(status));
             /* Handle is now unpacked */
             hg_atomic_set32(
@@ -2580,8 +2702,9 @@ na_ucx_initialize(
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucp_lib_attrs.field_mask = UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL;
     status = ucp_lib_query(&ucp_lib_attrs);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_context_query: %s", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_context_query: %s",
+        ucs_status_string(status));
     NA_CHECK_SUBSYS_ERROR(cls,
         (ucp_lib_attrs.field_mask & UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL) == 0,
         error, ret, NA_PROTONOSUPPORT,
@@ -2810,7 +2933,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
         strncmp(name, "all", strlen("all")) &&
             strncmp(name, na_ucx_class->protocol_name,
                 strlen(na_ucx_class->protocol_name)),
-        error, ret, NA_PROTOCOL_ERROR,
+        error, ret, NA_PROTONOSUPPORT,
         "Protocol not supported by this class (%s)",
         na_ucx_class->protocol_name);
 
@@ -3372,16 +3495,18 @@ na_ucx_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     /* Register memory */
     status = ucp_mem_map(NA_UCX_CLASS(na_class)->ucp_context, &mem_map_params,
         &na_ucx_mem_handle->ucp_mr.mem);
-    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_mem_map() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_mem_map() failed (%s)",
+        ucs_status_string(status));
 
     /* Keep a copy of the rkey to share with the remote */
     /* TODO that could have been a good candidate for publish */
     status = ucp_rkey_pack(NA_UCX_CLASS(na_class)->ucp_context,
         na_ucx_mem_handle->ucp_mr.mem, &na_ucx_mem_handle->rkey_buf,
         &rkey_buf_size);
-    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_rkey_pack() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_rkey_pack() failed (%s)",
+        ucs_status_string(status));
     na_ucx_mem_handle->desc.rkey_buf_size = (uint64_t) rkey_buf_size;
 
     return NA_SUCCESS;
@@ -3407,8 +3532,9 @@ na_ucx_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
     /* Deregister memory */
     status = ucp_mem_unmap(
         NA_UCX_CLASS(na_class)->ucp_context, na_ucx_mem_handle->ucp_mr.mem);
-    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret, NA_PROTOCOL_ERROR,
-        "ucp_mem_unmap() failed (%s)", ucs_status_string(status));
+    NA_CHECK_SUBSYS_ERROR(mem, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_mem_unmap() failed (%s)",
+        ucs_status_string(status));
     na_ucx_mem_handle->ucp_mr.mem = NULL;
 
     /* TODO that could have been a good candidate for unpublish */
