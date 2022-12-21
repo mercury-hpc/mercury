@@ -364,9 +364,9 @@ na_ucp_accept(ucp_worker_h worker, ucp_conn_request_h conn_request,
  * Establish connection.
  */
 static na_return_t
-na_ucp_connect(ucp_worker_h worker, const struct sockaddr *addr,
-    socklen_t addrlen, ucp_err_handler_cb_t err_handler_cb,
-    void *err_handler_arg, ucp_ep_h *ep_p);
+na_ucp_connect(ucp_worker_h worker, const struct sockaddr *src_addr,
+    const struct sockaddr *dst_addr, socklen_t addrlen,
+    ucp_err_handler_cb_t err_handler_cb, void *err_handler_arg, ucp_ep_h *ep_p);
 
 /**
  * Create endpoint to worker using worker address (unconnected).
@@ -1357,8 +1357,6 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
     NA_CHECK_SUBSYS_ERROR_NORET(addr, na_ucx_addr != NULL, error,
         "An entry is already present for this address");
 
-    NA_UCX_PRINT_ADDR_KEY_INFO("Inserting new address", &addr_key);
-
     /* Insert new entry and create new address */
     na_ret = na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
         &addr_key, conn_request, &na_ucx_addr);
@@ -1385,15 +1383,25 @@ na_ucp_accept(ucp_worker_h worker, ucp_conn_request_h conn_request,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucp_connect(ucp_worker_h worker, const struct sockaddr *addr,
-    socklen_t addrlen, ucp_err_handler_cb_t err_handler_cb,
-    void *err_handler_arg, ucp_ep_h *ep_p)
+na_ucp_connect(ucp_worker_h worker, const struct sockaddr *src_addr,
+    const struct sockaddr *dst_addr, socklen_t addrlen,
+    ucp_err_handler_cb_t err_handler_cb, void *err_handler_arg, ucp_ep_h *ep_p)
 {
     ucp_ep_params_t ep_params = {
         .field_mask = UCP_EP_PARAM_FIELD_FLAGS | UCP_EP_PARAM_FIELD_SOCK_ADDR,
         .flags = UCP_EP_PARAMS_FLAGS_CLIENT_SERVER,
-        .sockaddr = (ucs_sock_addr_t){.addr = addr, .addrlen = addrlen},
+        .sockaddr = (ucs_sock_addr_t){.addr = dst_addr, .addrlen = addrlen},
         .conn_request = NULL};
+
+#ifdef NA_UCX_HAS_FIELD_LOCAL_SOCK_ADDR
+    if (src_addr != NULL) {
+        ep_params.field_mask |= UCP_EP_PARAM_FIELD_LOCAL_SOCK_ADDR;
+        ep_params.local_sockaddr.addr = src_addr;
+        ep_params.local_sockaddr.addrlen = addrlen;
+    }
+#else
+    (void) src_addr;
+#endif
 
     return na_ucp_ep_create(
         worker, &ep_params, err_handler_cb, err_handler_arg, ep_p);
@@ -2231,8 +2239,9 @@ na_ucx_addr_map_insert(struct na_ucx_class *na_ucx_class,
     } else {
         /* Create new endpoint */
         ret = na_ucp_connect(na_ucx_class->ucp_worker,
-            na_ucx_addr->addr_key.addr, na_ucx_addr->addr_key.addrlen,
-            na_ucp_ep_error_cb, (void *) na_ucx_addr, &na_ucx_addr->ucp_ep);
+            na_ucx_class->self_addr->addr_key.addr, na_ucx_addr->addr_key.addr,
+            na_ucx_addr->addr_key.addrlen, na_ucp_ep_error_cb,
+            (void *) na_ucx_addr, &na_ucx_addr->ucp_ep);
         NA_CHECK_SUBSYS_NA_ERROR(
             addr, error, ret, "Could not connect UCP endpoint");
     }
@@ -2435,6 +2444,10 @@ na_ucx_addr_create(struct na_ucx_class *na_ucx_class, ucs_sock_addr_t *addr_key,
 {
     struct na_ucx_addr *na_ucx_addr;
     na_return_t ret;
+
+    if (addr_key != NULL) {
+        NA_UCX_PRINT_ADDR_KEY_INFO("Creating new address", addr_key);
+    }
 
 #ifdef NA_UCX_HAS_ADDR_POOL
     na_ucx_addr = na_ucx_addr_pool_get(na_ucx_class);
@@ -2661,8 +2674,8 @@ na_ucx_initialize(
     ucp_lib_attr_t ucp_lib_attrs;
 #endif
     char *net_device = NULL;
-    struct sockaddr *listen_sockaddr = NULL;
-    socklen_t listen_addrlen = 0;
+    struct sockaddr *src_sockaddr = NULL;
+    socklen_t src_addrlen = 0;
     struct sockaddr_storage ucp_listener_ss_addr;
     ucs_sock_addr_t addr_key = {.addr = NULL, .addrlen = 0};
     ucp_config_t *config;
@@ -2677,6 +2690,7 @@ na_ucx_initialize(
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucs_status_t status;
 #endif
+    bool multi_dev = false;
 
     if (na_info->na_init_info != NULL) {
         /* Progress mode */
@@ -2725,9 +2739,13 @@ na_ucx_initialize(
         (na_info->na_init_info && na_info->na_init_info->ip_subnet)
             ? na_info->na_init_info->ip_subnet
             : NULL,
-        &net_device, (listen) ? &listen_sockaddr : NULL, &listen_addrlen);
+        &net_device, &src_sockaddr, &src_addrlen);
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "na_ucx_parse_hostname_info() failed");
+
+    /* Multi-rail */
+    if (net_device != NULL && strstr(net_device, ","))
+        multi_dev = true;
 
     /* Create new UCX class */
     na_ucx_class = na_ucx_class_alloc();
@@ -2778,8 +2796,8 @@ na_ucx_initialize(
 
     /* Create listener if we're listening */
     if (listen) {
-        ret = na_ucp_listener_create(na_ucx_class->ucp_worker, listen_sockaddr,
-            listen_addrlen, (void *) na_ucx_class, &na_ucx_class->ucp_listener,
+        ret = na_ucp_listener_create(na_ucx_class->ucp_worker, src_sockaddr,
+            src_addrlen, (void *) na_ucx_class, &na_ucx_class->ucp_listener,
             &ucp_listener_ss_addr);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not create UCX listener");
@@ -2787,11 +2805,9 @@ na_ucx_initialize(
         addr_key = (ucs_sock_addr_t){
             .addr = (const struct sockaddr *) &ucp_listener_ss_addr,
             .addrlen = sizeof(ucp_listener_ss_addr)};
-
-        /* No longer needed */
-        free(listen_sockaddr);
-        listen_sockaddr = NULL;
-    }
+    } else if (!multi_dev)
+        addr_key =
+            (ucs_sock_addr_t){.addr = src_sockaddr, .addrlen = src_addrlen};
 
 #ifdef NA_UCX_HAS_ADDR_POOL
     /* Create pool of addresses */
@@ -2827,11 +2843,14 @@ na_ucx_initialize(
 
     na_class->plugin_class = (void *) na_ucx_class;
 
+    /* No longer needed */
+    free(src_sockaddr);
+
     return NA_SUCCESS;
 
 error:
     free(net_device);
-    free(listen_sockaddr);
+    free(src_sockaddr);
     if (na_ucx_class)
         na_ucx_class_free(na_ucx_class);
 

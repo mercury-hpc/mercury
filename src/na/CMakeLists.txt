@@ -63,6 +63,7 @@ set(NA_BUILD_INCLUDE_DEPENDENCIES
 include(CheckIncludeFiles)
 include(CheckSymbolExists)
 include(CheckVariableExists)
+include(CheckCSourceCompiles)
 
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
@@ -200,6 +201,17 @@ if(NA_USE_UCX)
   check_symbol_exists(ucp_lib_query ucp/api/ucp.h NA_UCX_HAS_LIB_QUERY)
   # Detect whether UCX has thread mode names
   check_variable_exists(ucs_thread_mode_names NA_UCX_HAS_THREAD_MODE_NAMES)
+  # Detect UCP_EP_PARAM_FIELD_LOCAL_SOCK_ADDR
+  check_c_source_compiles(
+    "
+    #include <ucp/api/ucp.h>
+    int main(void) {
+      (void) UCP_EP_PARAM_FIELD_LOCAL_SOCK_ADDR;
+      return 0;
+    }
+    "
+    NA_UCX_HAS_FIELD_LOCAL_SOCK_ADDR
+  )
 
   unset(CMAKE_REQUIRED_INCLUDES)
   unset(CMAKE_REQUIRED_LIBRARIES)
