@@ -101,6 +101,7 @@
 #cmakedefine NA_HAS_UCX
 #cmakedefine NA_UCX_HAS_LIB_QUERY
 #cmakedefine NA_UCX_HAS_THREAD_MODE_NAMES
+#cmakedefine NA_UCX_HAS_FIELD_LOCAL_SOCK_ADDR
 
 /* PSM */
 #cmakedefine NA_HAS_PSM
