@@ -15,6 +15,11 @@
 /* Local Macros */
 /****************/
 
+#ifdef _WIN32
+#    undef strdup
+#    define strdup _strdup
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/

@@ -24,7 +24,7 @@ main(void)
 
     ptr = hg_mem_aligned_alloc(page_size, page_size * 4);
     if (ptr == NULL) {
-        fprintf(stderr, "Error: could not allocate %ld bytes\n", page_size * 4);
+        fprintf(stderr, "Error: could not allocate %zu bytes\n", page_size * 4);
         goto error;
     }
     hg_mem_aligned_free(ptr);

@@ -13,6 +13,10 @@
 
 #include <inttypes.h>
 
+/* Default log outlet */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(hg);
+
+/* Base log macros */
 #define HG_LOG_ERROR(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_SUBSYS_ERROR(subsys, ...)                                       \
     HG_LOG_WRITE(subsys, HG_LOG_LEVEL_ERROR, __VA_ARGS__)

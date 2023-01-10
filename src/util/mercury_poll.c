@@ -125,7 +125,9 @@ int
 hg_poll_destroy(hg_poll_set_t *poll_set)
 {
     int ret = HG_UTIL_SUCCESS;
+#ifndef _WIN32
     int rc;
+#endif
 
     if (!poll_set)
         goto done;
@@ -197,6 +199,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, struct hg_poll_event *event)
 
 #if defined(_WIN32)
     /* TODO */
+    HG_UTIL_GOTO_ERROR(done, ret, HG_UTIL_FAIL, "Not implemented");
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
     /* Translate flags */
     if (event->events & HG_POLLIN)
@@ -293,6 +296,7 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
 
 #if defined(_WIN32)
     /* TODO */
+    HG_UTIL_GOTO_ERROR(done, ret, HG_UTIL_FAIL, "Not implemented");
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
     rc = epoll_ctl(poll_set->fd, EPOLL_CTL_DEL, fd, NULL);
     HG_UTIL_CHECK_ERROR(rc != 0, done, ret, HG_UTIL_FAIL,
@@ -348,7 +352,8 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     int ret = HG_UTIL_SUCCESS;
 
 #if defined(_WIN32)
-
+    HG_UTIL_GOTO_ERROR(done, ret, HG_UTIL_FAIL, "Not implemented");
+    (void) i;
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
     nfds = epoll_wait(
         poll_set->fd, poll_set->events, max_poll_events, (int) timeout);

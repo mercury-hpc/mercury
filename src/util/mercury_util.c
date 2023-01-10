@@ -26,7 +26,7 @@
 /*******************/
 
 /* Default error log mask */
-HG_LOG_SUBSYS_DECL_REGISTER(HG_UTIL_SUBSYS_NAME, hg);
+HG_LOG_SUBSYS_DECL_REGISTER(HG_UTIL_SUBSYS_NAME, HG_LOG_OUTLET_ROOT_NAME);
 
 /*---------------------------------------------------------------------------*/
 void

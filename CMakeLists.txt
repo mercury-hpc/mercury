@@ -223,6 +223,10 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
       INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
   )
 
+  if(MSVC)
+    target_compile_definitions(${libtarget} PRIVATE -D_CRT_SECURE_NO_WARNINGS)
+  endif()
+
   #----- Use MSVC Naming conventions for Shared Libraries
   if(MINGW AND ${libtype} MATCHES "SHARED")
     set_target_properties(${libtarget}

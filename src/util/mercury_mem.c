@@ -29,7 +29,7 @@ long
 hg_mem_get_page_size(void)
 {
     static hg_atomic_int64_t atomic_page_size = HG_ATOMIC_VAR_INIT(0);
-    long page_size = hg_atomic_get64(&atomic_page_size);
+    long page_size = (long) hg_atomic_get64(&atomic_page_size);
 
     if (page_size != 0)
         return page_size;
@@ -56,7 +56,7 @@ hg_mem_get_hugepage_size(void)
     size_t len = 0;
 #endif
     static hg_atomic_int64_t atomic_page_size = HG_ATOMIC_VAR_INIT(0);
-    long page_size = hg_atomic_get64(&atomic_page_size);
+    long page_size = (long) hg_atomic_get64(&atomic_page_size);
 
     if (page_size != 0)
         return page_size;

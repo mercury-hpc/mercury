@@ -153,12 +153,18 @@ if(NA_USE_OFI)
   endif()
   set(NA_INT_INCLUDE_DEPENDENCIES
     ${NA_INT_INCLUDE_DEPENDENCIES}
-    ${OFI_INCLUDE_DIR}
+    ${OFI_INCLUDE_DIRS}
   )
   set(NA_EXT_LIB_DEPENDENCIES
     ${NA_EXT_LIB_DEPENDENCIES}
     ${OFI_LIBRARIES}
   )
+  if(WIN32)
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ws2_32
+    )
+  endif()
   option(NA_OFI_USE_HWLOC "Use hwloc to retrieve NIC information and select domain to use." OFF)
   if(NA_OFI_USE_HWLOC)
     find_package(HWLOC REQUIRED)
@@ -330,9 +336,15 @@ configure_file(
 #------------------------------------------------------------------------------
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_loc.c
 )
+
+if(NOT WIN32)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_loc.c
+  )
+endif()
 
 if(NA_HAS_BMI)
   set(NA_SRCS
@@ -418,10 +430,16 @@ endif()
 #------------------------------------------------------------------------------
 set(NA_PRIVATE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_loc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
 )
+
+if(NOT WIN32)
+  set(NA_PRIVATE_HEADERS
+    ${NA_PRIVATE_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_loc.h
+  )
+endif()
 
 #----------------------------------------------------------------------------
 # Libraries

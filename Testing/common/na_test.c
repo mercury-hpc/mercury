@@ -37,6 +37,11 @@
 /****************/
 #define HG_TEST_CONFIG_FILE_NAME "/port.cfg"
 
+#ifdef _WIN32
+#    undef strdup
+#    define strdup _strdup
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -73,7 +78,12 @@ extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
 /* Default log outlets */
-HG_LOG_SUBSYS_DECL_REGISTER(na_test, hg);
+#ifdef _WIN32
+HG_LOG_OUTLET_DECL(na_test) = HG_LOG_OUTLET_INITIALIZER(
+    na_test, HG_LOG_PASS, NULL, NULL);
+#else
+HG_LOG_SUBSYS_DECL_REGISTER(na_test, HG_LOG_OUTLET_ROOT_NAME);
+#endif
 
 /*---------------------------------------------------------------------------*/
 void

@@ -15,7 +15,9 @@
 #ifdef _WIN32
 #    define _WINSOCKAPI_
 #    include <windows.h>
-#    define HG_THREAD_MUTEX_INITIALIZER NULL
+/* clang-format off */
+#    define HG_THREAD_MUTEX_INITIALIZER {NULL}
+/* clang-format on */
 typedef CRITICAL_SECTION hg_thread_mutex_t;
 #else
 #    include <pthread.h>
