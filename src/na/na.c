@@ -122,16 +122,21 @@ static const char *const na_return_name_g[] = {NA_RETURN_VALUES};
 static const char *const na_cb_type_name_g[] = {NA_CB_TYPES};
 #undef X
 
+/* Default log outlets */
+#ifdef _WIN32
+HG_LOG_OUTLET_DECL(NA_SUBSYS_NAME) = HG_LOG_OUTLET_INITIALIZER(
+    NA_SUBSYS_NAME, HG_LOG_PASS, NULL, NULL);
+#else
 /* NA_LOG_DEBUG_LESIZE: default number of debug log entries. */
-#define NA_LOG_DEBUG_LESIZE (256)
+#    define NA_LOG_DEBUG_LESIZE (256)
 
 /* Declare debug log for na */
 static HG_LOG_DEBUG_DECL_LE(NA_SUBSYS_NAME, NA_LOG_DEBUG_LESIZE);
 static HG_LOG_DEBUG_DECL_DLOG(NA_SUBSYS_NAME) = HG_LOG_DLOG_INITIALIZER(
     NA_SUBSYS_NAME, NA_LOG_DEBUG_LESIZE);
 
-/* Default log outlets */
-HG_LOG_SUBSYS_DLOG_DECL_REGISTER(NA_SUBSYS_NAME, hg);
+HG_LOG_SUBSYS_DLOG_DECL_REGISTER(NA_SUBSYS_NAME, HG_LOG_OUTLET_ROOT_NAME);
+#endif
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(fatal, NA_SUBSYS_NAME, HG_LOG_ON);
 
 /* Specific log outlets */

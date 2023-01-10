@@ -35,7 +35,7 @@ hg_perf_loop(struct hg_perf_class_info *info);
 static HG_THREAD_RETURN_TYPE
 hg_perf_loop_thread(void *arg)
 {
-    HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
+    hg_thread_ret_t tret = (hg_thread_ret_t) 0;
     hg_return_t hg_ret;
 
     hg_ret = hg_perf_loop((struct hg_perf_class_info *) arg);

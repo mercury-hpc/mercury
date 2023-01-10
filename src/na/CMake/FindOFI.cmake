@@ -27,6 +27,9 @@ endif()
 
 
 set(OFI_INCLUDE_DIRS ${OFI_INCLUDE_DIR})
+if(WIN32)
+  set(OFI_INCLUDE_DIRS ${OFI_INCLUDE_DIR}/windows ${OFI_INCLUDE_DIRS})
+endif()
 set(OFI_LIBRARIES ${OFI_LIBRARY})
 
 include(FindPackageHandleStandardArgs)

@@ -15,20 +15,9 @@
 /*************************************/
 
 /* Type definitions */
-#ifdef _WIN32
-typedef signed __int64 hg_int64_t;
-typedef signed __int32 hg_int32_t;
-typedef signed __int16 hg_int16_t;
-typedef signed __int8 hg_int8_t;
-typedef unsigned __int64 hg_uint64_t;
-typedef unsigned __int32 hg_uint32_t;
-typedef unsigned __int16 hg_uint16_t;
-typedef unsigned __int8 hg_uint8_t;
-/* Limits on Integer Constants */
-#    define UINT64_MAX _UI64_MAX
-#else
-#    include <stddef.h>
-#    include <stdint.h>
+#include <stddef.h>
+#include <stdint.h>
+
 typedef int64_t hg_int64_t;
 typedef int32_t hg_int32_t;
 typedef int16_t hg_int16_t;
@@ -37,7 +26,7 @@ typedef uint64_t hg_uint64_t;
 typedef uint32_t hg_uint32_t;
 typedef uint16_t hg_uint16_t;
 typedef uint8_t hg_uint8_t;
-#endif
+
 typedef hg_uint64_t hg_ptr_t;
 typedef hg_uint8_t hg_bool_t;
 

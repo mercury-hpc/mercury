@@ -210,6 +210,14 @@ static const char *const hg_return_name[] = {HG_RETURN_VALUES};
 #undef X
 
 /* Specific log outlets */
+#ifdef _WIN32
+HG_LOG_OUTLET_DECL(HG_SUBSYS_NAME) = HG_LOG_OUTLET_INITIALIZER(
+    HG_SUBSYS_NAME, HG_LOG_PASS, NULL, NULL);
+#else
+HG_LOG_SUBSYS_DECL_REGISTER(HG_SUBSYS_NAME, HG_LOG_OUTLET_ROOT_NAME);
+#endif
+
+/* Specific log outlets */
 static HG_LOG_SUBSYS_DECL_REGISTER(cls, HG_SUBSYS_NAME);
 static HG_LOG_SUBSYS_DECL_REGISTER(ctx, HG_SUBSYS_NAME);
 static HG_LOG_SUBSYS_DECL_REGISTER(addr, HG_SUBSYS_NAME);

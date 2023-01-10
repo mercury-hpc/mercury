@@ -37,6 +37,7 @@ hg_test_rpc_lookup(hg_class_t *hg_class, const char *target_name);
 static HG_THREAD_RETURN_TYPE
 hg_test_lookup_thread(void *arg)
 {
+    hg_thread_ret_t tret = (hg_thread_ret_t) 0;
     struct hg_test_thread_args *hg_test_thread_args =
         (struct hg_test_thread_args *) arg;
     struct hg_unit_info *info = hg_test_thread_args->info;
@@ -60,7 +61,7 @@ hg_test_lookup_thread(void *arg)
     HG_TEST_CHECK_ERROR_NORET(hg_ret != HG_SUCCESS, done, "lookup test failed");
 
 done:
-    return NULL;
+    return tret;
 }
 
 /*---------------------------------------------------------------------------*/

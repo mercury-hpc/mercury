@@ -44,7 +44,7 @@ hg_test_progress_thread(void *arg)
     hg_context_t *context = (hg_context_t *) arg;
     struct hg_test_context_info *hg_test_context_info =
         (struct hg_test_context_info *) HG_Context_get_data(context);
-    HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
+    hg_thread_ret_t tret = (hg_thread_ret_t) 0;
     hg_return_t ret = HG_SUCCESS;
 
     do {
@@ -54,7 +54,7 @@ hg_test_progress_thread(void *arg)
         ret = HG_Progress(context, HG_TEST_PROGRESS_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
     HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, tret,
-        (HG_THREAD_RETURN_TYPE) 0, "HG_Progress() failed (%s)",
+        (hg_thread_ret_t) 0, "HG_Progress() failed (%s)",
         HG_Error_to_string(ret));
 
 done:
@@ -71,7 +71,7 @@ hg_test_progress_work(void *arg)
     hg_context_t *context = worker->context;
     struct hg_test_context_info *hg_test_context_info =
         (struct hg_test_context_info *) HG_Context_get_data(context);
-    HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
+    hg_thread_ret_t tret = (hg_thread_ret_t) 0;
     hg_return_t ret = HG_SUCCESS;
 
     do {
@@ -81,7 +81,7 @@ hg_test_progress_work(void *arg)
             ret = HG_Trigger(context, 0, 1, &actual_count);
         } while ((ret == HG_SUCCESS) && actual_count);
         HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, tret,
-            (HG_THREAD_RETURN_TYPE) 0, "HG_Trigger() failed (%s)",
+            (hg_thread_ret_t) 0, "HG_Trigger() failed (%s)",
             HG_Error_to_string(ret));
 
         if (hg_atomic_get32(&hg_test_context_info->finalizing)) {
@@ -97,7 +97,7 @@ hg_test_progress_work(void *arg)
         ret = HG_Progress(context, HG_TEST_TRIGGER_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
     HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, tret,
-        (HG_THREAD_RETURN_TYPE) 0, "HG_Progress() failed (%s)",
+        (hg_thread_ret_t) 0, "HG_Progress() failed (%s)",
         HG_Error_to_string(ret));
 
 done:

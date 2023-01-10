@@ -11,6 +11,10 @@
 #include "mercury_proc.h"
 #include "mercury_proc_bulk.h"
 
+#ifndef _WIN32
+#    include <sys/uio.h>
+#endif
+
 /****************/
 /* Local Macros */
 /****************/
@@ -36,6 +40,13 @@
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
+
+#ifdef _WIN32
+struct iovec {
+    void *iov_base; /* Pointer to data.  */
+    size_t iov_len; /* Length of data.  */
+};
+#endif
 
 /********************/
 /* Local Prototypes */

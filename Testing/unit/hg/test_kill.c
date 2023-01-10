@@ -7,7 +7,11 @@
 
 #include "mercury_unit.h"
 
-#include <unistd.h>
+#ifdef _WIN32
+#    include <Windows.h>
+#else
+#    include <unistd.h>
+#endif
 
 /****************/
 /* Local Macros */
@@ -122,7 +126,11 @@ main(int argc, char *argv[])
     }
 
     /* Sleep for 1s to let the server exit */
+#ifdef _WIN32
+    Sleep(1000);
+#else
     sleep(1);
+#endif
 
     /* After that point, we need to silence errors */
     HG_Set_log_level("none");

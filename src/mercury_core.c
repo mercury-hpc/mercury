@@ -175,7 +175,7 @@ struct hg_core_private_class {
     struct hg_core_map rpc_map;               /* RPC Map */
     struct hg_core_more_data_cb more_data_cb; /* More data callbacks */
     na_tag_t request_max_tag;                 /* Max value for tag */
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     struct hg_core_counters counters; /* Diag counters */
 #endif
     hg_atomic_int32_t n_contexts;  /* Total number of contexts */
@@ -375,7 +375,7 @@ struct hg_core_op_id {
 /**
  * Init counters.
  */
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
 static void
 hg_core_counters_init(struct hg_core_counters *hg_core_counters);
 #endif
@@ -958,16 +958,20 @@ static const struct hg_core_ops hg_core_ops_self_g = {
     .respond = hg_core_respond_self,
     .no_respond = hg_core_no_respond_self};
 
+/* Default log outlets */
+#ifdef _WIN32
+static HG_LOG_SUBSYS_DECL_REGISTER(HG_CORE_SUBSYS_NAME, hg);
+#else
 /* HG_LOG_DEBUG_LESIZE: default number of debug log entries. */
-#define HG_LOG_DEBUG_LESIZE (256)
+#    define HG_LOG_DEBUG_LESIZE (256)
 
 /* Declare debug log for hg */
 static HG_LOG_DEBUG_DECL_LE(HG_CORE_SUBSYS_NAME, HG_LOG_DEBUG_LESIZE);
 static HG_LOG_DEBUG_DECL_DLOG(HG_CORE_SUBSYS_NAME) = HG_LOG_DLOG_INITIALIZER(
     HG_CORE_SUBSYS_NAME, HG_LOG_DEBUG_LESIZE);
 
-/* Default log outlets */
 static HG_LOG_SUBSYS_DLOG_DECL_REGISTER(HG_CORE_SUBSYS_NAME, hg);
+#endif
 static HG_LOG_SUBSYS_DECL_STATE_REGISTER(fatal, HG_CORE_SUBSYS_NAME, HG_LOG_ON);
 
 /* Specific log outlets */
@@ -985,14 +989,16 @@ static HG_LOG_SUBSYS_DECL_STATE_REGISTER(
     poll_loop, HG_CORE_SUBSYS_NAME, HG_LOG_OFF);
 static HG_LOG_SUBSYS_DECL_STATE_REGISTER(perf, HG_CORE_SUBSYS_NAME, HG_LOG_OFF);
 
+#ifndef _WIN32
 /* Declare debug log for stats */
 static HG_LOG_DEBUG_DECL_LE(diag, HG_LOG_DEBUG_LESIZE);
 static HG_LOG_DEBUG_DECL_DLOG(diag) = HG_LOG_DLOG_INITIALIZER(
     diag, HG_LOG_DEBUG_LESIZE);
-static HG_LOG_SUBSYS_DLOG_DECL_REGISTER(diag, hg);
+static HG_LOG_SUBSYS_DLOG_DECL_REGISTER(diag, HG_CORE_SUBSYS_NAME);
+#endif
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
 static void
 hg_core_counters_init(struct hg_core_counters *hg_core_counters)
 {
@@ -1166,7 +1172,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_core_class->init_info.listen = na_listen;
 
     /* Stats / counters */
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     hg_core_counters_init(&hg_core_class->counters);
 #endif
 
@@ -3765,7 +3771,7 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
         &hg_core_handle->core_handle, &hg_core_handle->in_header, HG_ENCODE);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not encode header");
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     /* Increment counter */
     hg_atomic_incr64(
         HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_req_sent_count);
@@ -3927,7 +3933,7 @@ hg_core_respond(struct hg_core_private_handle *hg_core_handle,
     ret = hg_core_handle->ops.respond(hg_core_handle);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not respond");
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     /* Increment counter */
     hg_atomic_incr64(
         HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_resp_sent_count);
@@ -4342,7 +4348,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
         HG_CORE_HANDLE_CLASS(hg_core_handle);
     hg_return_t ret;
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     /* Increment counter */
     hg_atomic_incr64(hg_core_class->counters.rpc_req_recv_count);
 #endif
@@ -4383,7 +4389,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
         /* Increment number of expected operations */
         hg_core_handle->op_expected_count++;
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
         /* Increment counter */
         hg_atomic_incr64(hg_core_class->counters.rpc_req_extra_count);
 #endif
@@ -4489,7 +4495,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
         HG_CORE_HANDLE_CLASS(hg_core_handle);
     hg_return_t ret;
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     /* Increment counter */
     hg_atomic_incr64(hg_core_class->counters.rpc_resp_recv_count);
 #endif
@@ -4523,7 +4529,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
         /* Increment number of expected operations */
         hg_core_handle->op_expected_count++;
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
         /* Increment counter */
         hg_atomic_incr64(hg_core_class->counters.rpc_resp_extra_count);
 #endif
@@ -4823,7 +4829,7 @@ hg_core_completion_add(struct hg_core_context *core_context,
     struct hg_core_completion_queue *backfill_queue = &context->backfill_queue;
     int rc;
 
-#ifdef HG_HAS_DEBUG
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
     /* Increment counter */
     if (hg_completion_entry->op_type == HG_BULK)
         hg_atomic_incr64(HG_CORE_CONTEXT_CLASS(context)->counters.bulk_count);

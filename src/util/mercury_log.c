@@ -26,6 +26,10 @@
 /* Destructor (used to finalize log outlets) */
 #define HG_UTIL_DESTRUCTOR HG_ATTR_DESTRUCTOR
 
+/* Name of the root log outlet */
+#define HG_LOG_STRINGIFY(x)            HG_UTIL_STRINGIFY(x)
+#define HG_LOG_OUTLET_ROOT_NAME_STRING HG_LOG_STRINGIFY(HG_LOG_OUTLET_ROOT_NAME)
+
 /* Max number of subsystems that can be tracked */
 #define HG_LOG_SUBSYS_MAX (16)
 
@@ -48,6 +52,13 @@
 #    define HG_LOG_CYAN    "36m"
 #endif
 
+#ifdef _WIN32
+#    define strtok_r strtok_s
+#    undef strdup
+#    define strdup     _strdup
+#    define strcasecmp _stricmp
+#endif
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -61,12 +72,12 @@ static void
 hg_log_finalize(void) HG_UTIL_DESTRUCTOR;
 
 /* Init log level */
-static void
+static bool
 hg_log_init_level(void);
 
 /* Init log subsys */
 static void
-hg_log_init_subsys(void);
+hg_log_init_subsys(bool level_set);
 
 /* Reset all log levels */
 static void
@@ -93,7 +104,8 @@ hg_log_outlet_update_all(void);
 /*******************/
 
 /* Default log outlet */
-HG_LOG_OUTLET_DECL(hg) = HG_LOG_OUTLET_INITIALIZER(hg, HG_LOG_OFF, NULL, NULL);
+HG_LOG_OUTLET_DECL(HG_LOG_OUTLET_ROOT_NAME) = HG_LOG_OUTLET_INITIALIZER(
+    HG_LOG_OUTLET_ROOT_NAME, HG_LOG_OFF, NULL, NULL);
 
 /* List of all registered outlets */
 static HG_QUEUE_HEAD(hg_log_outlet)
@@ -120,7 +132,11 @@ static const char *const hg_log_level_alt_name_g[] = {HG_LOG_LEVELS};
 #undef X
 
 /* Standard log streams */
-#define X(a, b, c, d) d,
+#ifdef _WIN32
+#    define X(a, b, c, d) NULL,
+#else
+#    define X(a, b, c, d) d,
+#endif
 static FILE **const hg_log_std_streams_g[] = {HG_LOG_LEVELS};
 #undef X
 static FILE *hg_log_streams_g[HG_LOG_LEVEL_MAX] = {NULL};
@@ -140,11 +156,12 @@ static bool hg_log_init_g = false;
 static void
 hg_log_init(void)
 {
-    hg_log_init_level();
-    hg_log_init_subsys();
+    bool level_set = hg_log_init_level();
+
+    hg_log_init_subsys(level_set);
 
     /* Register top outlet */
-    hg_log_outlet_register(&HG_LOG_OUTLET(hg));
+    hg_log_outlet_register(&HG_LOG_OUTLET(HG_LOG_OUTLET_ROOT_NAME));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -155,26 +172,32 @@ hg_log_finalize(void)
 }
 
 /*---------------------------------------------------------------------------*/
-static void
+static bool
 hg_log_init_level(void)
 {
     const char *log_level = getenv("HG_LOG_LEVEL");
 
     /* Override default log level */
     if (log_level == NULL)
-        return;
+        return false;
 
     hg_log_set_level(hg_log_name_to_level(log_level));
+
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_log_init_subsys(void)
+hg_log_init_subsys(bool level_set)
 {
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
 
-    if (log_subsys == NULL)
-        return;
+    if (log_subsys == NULL) {
+        if (!level_set)
+            return;
+        else
+            log_subsys = HG_LOG_OUTLET_ROOT_NAME_STRING;
+    }
 
     // fprintf(stderr, "subsys: %s\n", log_subsys);
     hg_log_set_subsys(log_subsys);
@@ -415,9 +438,12 @@ hg_log_set_stream_debug(FILE *stream)
 FILE *
 hg_log_get_stream_debug(void)
 {
-    return hg_log_streams_g[HG_LOG_LEVEL_DEBUG]
-               ? hg_log_streams_g[HG_LOG_LEVEL_DEBUG]
-               : *hg_log_std_streams_g[HG_LOG_LEVEL_DEBUG];
+    if (hg_log_streams_g[HG_LOG_LEVEL_DEBUG])
+        return hg_log_streams_g[HG_LOG_LEVEL_DEBUG];
+    else if (hg_log_std_streams_g[HG_LOG_LEVEL_DEBUG])
+        return *hg_log_std_streams_g[HG_LOG_LEVEL_DEBUG];
+    else
+        return stdout;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -431,9 +457,12 @@ hg_log_set_stream_warning(FILE *stream)
 FILE *
 hg_log_get_stream_warning(void)
 {
-    return hg_log_streams_g[HG_LOG_LEVEL_WARNING]
-               ? hg_log_streams_g[HG_LOG_LEVEL_WARNING]
-               : *hg_log_std_streams_g[HG_LOG_LEVEL_WARNING];
+    if (hg_log_streams_g[HG_LOG_LEVEL_WARNING])
+        return hg_log_streams_g[HG_LOG_LEVEL_WARNING];
+    else if (hg_log_std_streams_g[HG_LOG_LEVEL_WARNING])
+        return *hg_log_std_streams_g[HG_LOG_LEVEL_WARNING];
+    else
+        return stderr;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -447,9 +476,12 @@ hg_log_set_stream_error(FILE *stream)
 FILE *
 hg_log_get_stream_error(void)
 {
-    return hg_log_streams_g[HG_LOG_LEVEL_ERROR]
-               ? hg_log_streams_g[HG_LOG_LEVEL_ERROR]
-               : *hg_log_std_streams_g[HG_LOG_LEVEL_ERROR];
+    if (hg_log_streams_g[HG_LOG_LEVEL_ERROR])
+        return hg_log_streams_g[HG_LOG_LEVEL_ERROR];
+    else if (hg_log_std_streams_g[HG_LOG_LEVEL_ERROR])
+        return *hg_log_std_streams_g[HG_LOG_LEVEL_ERROR];
+    else
+        return stderr;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -472,6 +504,7 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
         hg_log_outlet->debug_log = hg_log_outlet->parent->debug_log;
 
     HG_QUEUE_PUSH_TAIL(&hg_log_outlets_g, hg_log_outlet, entry);
+    hg_log_outlet->registered = true;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -494,8 +527,12 @@ hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
 
     hg_time_get_current(&tv);
     level_name = hg_log_level_name_g[log_level];
-    stream = hg_log_streams_g[log_level] ? hg_log_streams_g[log_level]
-                                         : *hg_log_std_streams_g[log_level];
+    if (hg_log_streams_g[log_level])
+        stream = hg_log_streams_g[log_level];
+    else if (hg_log_std_streams_g[log_level])
+        stream = *hg_log_std_streams_g[log_level];
+    else
+        stream = (log_level > HG_LOG_LEVEL_ERROR) ? stdout : stderr;
 #ifdef HG_UTIL_HAS_LOG_COLOR
     color = hg_log_colors_g[log_level];
 #endif

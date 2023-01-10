@@ -8,8 +8,10 @@
 #define _GNU_SOURCE
 #include "na_plugin.h"
 
-#include "na_ip.h"
-#include "na_loc.h"
+#ifndef _WIN32
+#    include "na_ip.h"
+#    include "na_loc.h"
+#endif
 
 #include "mercury_hash_string.h"
 #include "mercury_hash_table.h"
@@ -37,14 +39,20 @@
 #    include <rdma/fi_cxi_ext.h>
 #endif
 
+#ifdef _WIN32
+#    include <WS2tcpip.h>
+#    include <WinSock2.h>
+#    include <Windows.h>
+#else
+#    include <netdb.h>
+#    include <sys/socket.h>
+#    include <sys/uio.h> /* for struct iovec */
+#    include <unistd.h>
+#endif
 #include <ctype.h>
-#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/uio.h> /* for struct iovec */
-#include <unistd.h>
 
 /****************/
 /* Local Macros */
@@ -216,7 +224,7 @@ static enum fi_progress const na_ofi_prov_progress[] = {NA_OFI_PROV_TYPES};
 static int const na_ofi_prov_ep_proto[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) h,
-static unsigned long const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
+static uint64_t const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
 #undef X
 #define X(a, b, c, d, e, f, g, h, i) i,
 static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
@@ -334,9 +342,19 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
         hg_atomic_set32(&_op->status, NA_OFI_OP_COMPLETED);                    \
     } while (0)
 
+#ifdef _WIN32
+#    define strtok_r strtok_s
+#    undef strdup
+#    define strdup _strdup
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
+
+#ifdef _WIN32
+typedef USHORT in_port_t;
+#endif
 
 /* IB address */
 struct na_ofi_sockaddr_ib {
@@ -1745,8 +1763,10 @@ na_ofi_errno_to_na(int rc)
         case FI_ECONNABORTED:
         case FI_ECONNREFUSED:
         case FI_ECONNRESET:
+#ifndef _WIN32
         case FI_ESHUTDOWN:
         case FI_EHOSTDOWN:
+#endif
         case FI_EHOSTUNREACH:
             ret = NA_HOSTUNREACH;
             break;
@@ -3063,7 +3083,9 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             struct sockaddr *sa = NULL;
             char **ifa_name_p = NULL;
             socklen_t salen = 0;
+#ifndef _WIN32
             na_return_t na_ret;
+#endif
 
             ret = na_ofi_parse_sin_info(
                 hostname_info, &hostname, &port, &domain_name);
@@ -3098,6 +3120,7 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
                 (na_ofi_prov_flags[prov_type] & NA_OFI_DOM_IFACE))
                 ifa_name_p = &domain_name;
 
+#ifndef _WIN32
             na_ret = na_ip_check_interface(hostname, port,
                 (addr_format == FI_SOCKADDR_IN6) ? AF_INET6 : AF_INET,
                 ifa_name_p, &sa, &salen);
@@ -3112,6 +3135,7 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
                 NA_CHECK_SUBSYS_ERROR(cls, domain_name == NULL, out, ret,
                     NA_NOMEM, "strdup() of hostname failed");
             }
+#endif
 
             /* Pass src addr information to avoid name resolution */
             *src_addr_p = (void *) sa;
@@ -3418,6 +3442,7 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
     na_return_t ret;
     int rc;
 
+#ifndef _WIN32
     /**
      * Look for existing fabrics. A fabric domain represents a collection of
      * hardware and software resources that access a single physical or virtual
@@ -3438,6 +3463,7 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
         return NA_SUCCESS;
     }
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+#endif
 
     na_ofi_fabric = (struct na_ofi_fabric *) calloc(1, sizeof(*na_ofi_fabric));
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_fabric == NULL, error, ret, NA_NOMEM,
@@ -3463,10 +3489,12 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
     NA_LOG_SUBSYS_DEBUG_EXT(
         cls, "fi_fabric opened", "%s", fi_tostr(attr, FI_TYPE_FABRIC_ATTR));
 
+#ifndef _WIN32
     /* Insert to global fabric list */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
     HG_LIST_INSERT_HEAD(&na_ofi_fabric_list_g, na_ofi_fabric, entry);
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+#endif
 
     *na_ofi_fabric_p = na_ofi_fabric;
 
@@ -3493,12 +3521,14 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
 
     NA_LOG_SUBSYS_DEBUG(cls, "Closing fabric");
 
+#ifndef _WIN32
     /* Remove from fabric list */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
     if (--na_ofi_fabric->refcount > 0) {
         hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
         return NA_SUCCESS;
     }
+#endif
 
     NA_LOG_SUBSYS_DEBUG(cls, "Freeing fabric");
 
@@ -3509,8 +3539,10 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
             "fi_close() fabric failed, rc: %d (%s)", rc, fi_strerror(-rc));
         na_ofi_fabric->fi_fabric = NULL;
     }
+#ifndef _WIN32
     HG_LIST_REMOVE(na_ofi_fabric, entry);
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+#endif
 
     free(na_ofi_fabric->name);
     free(na_ofi_fabric->prov_name);
@@ -3519,8 +3551,10 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
     return NA_SUCCESS;
 
 error:
+#ifndef _WIN32
     na_ofi_fabric->refcount++;
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
+#endif
 
     return ret;
 }
@@ -3655,6 +3689,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     na_return_t ret;
     int rc;
 
+#ifndef _WIN32
     if (shared) {
         hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
         HG_LIST_FOREACH (na_ofi_domain, &na_ofi_domain_list_g, entry)
@@ -3672,6 +3707,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         }
         hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     }
+#endif
 
     na_ofi_domain = (struct na_ofi_domain *) calloc(1, sizeof(*na_ofi_domain));
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain == NULL, error, ret, NA_NOMEM,
@@ -3682,8 +3718,10 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     /* No need to take a refcount on fabric */
     na_ofi_domain->fabric = na_ofi_fabric;
 
+#ifndef _WIN32
     HG_LOG_ADD_COUNTER32(
         na, &na_ofi_domain->mr_reg_count, "mr_reg_count", "MR reg count");
+#endif
 
     /* Init rw lock */
     rc = hg_thread_rwlock_init(&na_ofi_domain->addr_map.lock);
@@ -3813,12 +3851,14 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL, error,
         ret, NA_NOMEM, "Could not allocate FI addr map");
 
+#ifndef _WIN32
     if (na_ofi_domain->shared) {
         /* Insert to global domain list if domain is shared between classes */
         hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
         HG_LIST_INSERT_HEAD(&na_ofi_domain_list_g, na_ofi_domain, entry);
         hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     }
+#endif
 
     *na_ofi_domain_p = na_ofi_domain;
 
@@ -3856,6 +3896,7 @@ na_ofi_domain_close(
 
     NA_LOG_SUBSYS_DEBUG(cls, "Closing domain");
 
+#ifndef _WIN32
     if (na_ofi_domain->shared) {
         /* Remove from domain list */
         hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
@@ -3864,6 +3905,7 @@ na_ofi_domain_close(
             return NA_SUCCESS;
         }
     }
+#endif
 
     NA_LOG_SUBSYS_DEBUG(cls, "Freeing domain");
 
@@ -3883,10 +3925,12 @@ na_ofi_domain_close(
             "fi_close() domain failed, rc: %d (%s)", rc, fi_strerror(-rc));
         na_ofi_domain->fi_domain = NULL;
     }
+#ifndef _WIN32
     if (na_ofi_domain->shared) {
         HG_LIST_REMOVE(na_ofi_domain, entry);
         hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     }
+#endif
 
     if (na_ofi_domain->addr_map.key_map)
         hg_hash_table_free(na_ofi_domain->addr_map.key_map);
@@ -3901,10 +3945,12 @@ na_ofi_domain_close(
     return NA_SUCCESS;
 
 error:
+#ifndef _WIN32
     if (na_ofi_domain->shared) {
         na_ofi_domain->refcount++;
         hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     }
+#endif
 
     return ret;
 }

@@ -13,7 +13,11 @@
 #    include <mercury_test_drc.h>
 #endif
 
-#include <unistd.h>
+#ifdef _WIN32
+#    include <Windows.h>
+#else
+#    include <unistd.h>
+#endif
 
 /****************/
 /* Local Macros */
@@ -47,7 +51,12 @@ extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
 /* Default log outlets */
-HG_LOG_SUBSYS_DECL_REGISTER(hg_test, hg);
+#ifdef _WIN32
+HG_LOG_OUTLET_DECL(hg_test) = HG_LOG_OUTLET_INITIALIZER(
+    hg_test, HG_LOG_PASS, NULL, NULL);
+#else
+HG_LOG_SUBSYS_DECL_REGISTER(hg_test, HG_LOG_OUTLET_ROOT_NAME);
+#endif
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -110,8 +119,12 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     /* Set defaults */
     if (hg_test_info->thread_count == 0) {
+#ifdef _WIN32
+        long int cpu_count = 2;
+#else
         /* Try to guess */
         long int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
+#endif
 
         hg_test_info->thread_count = (cpu_count > 0)
                                          ? (unsigned int) cpu_count

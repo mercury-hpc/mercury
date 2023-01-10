@@ -49,7 +49,7 @@ na_test_common_process_recv(struct na_test_common_recv_info *recv_info,
 static HG_THREAD_RETURN_TYPE
 na_test_common_loop_thread(void *arg)
 {
-    HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
+    hg_thread_ret_t tret = (hg_thread_ret_t) 0;
     na_return_t na_ret;
 
     na_ret = na_test_common_loop((struct na_test_common_class_info *) arg);

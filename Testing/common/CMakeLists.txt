@@ -139,6 +139,9 @@ target_include_directories(na_test_common
 target_link_libraries(na_test_common na
   ${NA_TEST_COMMON_EXT_LIB_DEPENDENCIES}
 )
+if(MSVC)
+  target_compile_definitions(na_test_common PRIVATE -D_CRT_SECURE_NO_WARNINGS)
+endif()
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na_test_common)
 endif()
@@ -155,6 +158,9 @@ target_include_directories(mercury_test_common
 target_link_libraries(mercury_test_common mercury na_test_common
   ${MERCURY_TEST_COMMON_EXT_LIB_DEPENDENCIES}
 )
+if(MSVC)
+  target_compile_definitions(mercury_test_common PRIVATE -D_CRT_SECURE_NO_WARNINGS)
+endif()
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test_common)
 endif()
