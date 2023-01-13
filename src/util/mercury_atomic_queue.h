@@ -50,6 +50,8 @@
 #        define cpu_spinwait _mm_pause
 #    elif defined(__arm__)
 #        define cpu_spinwait() __asm__ __volatile__("yield")
+#    elif defined(__aarch64__)
+#        define cpu_spinwait() __asm__ __volatile__("isb")
 #    else
 #        warning "Processor yield is not supported on this architecture."
 #        define cpu_spinwait(x)
