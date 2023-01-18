@@ -1064,6 +1064,14 @@ na_ucp_config_init(
             ucs_status_string(status));
     }
 
+    /* Reuse addr for tcp by default */
+    if (getenv("UCX_CM_REUSEADDR") == NULL) {
+        status = ucp_config_modify(config, "CM_REUSEADDR", "y");
+        NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+            na_ucs_status_to_na(status), "ucp_config_modify() failed (%s)",
+            ucs_status_string(status));
+    }
+
     /* Set network devices to use */
     if (net_devices) {
         status = ucp_config_modify(config, "NET_DEVICES", net_devices);
