@@ -647,6 +647,14 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
     hg_size_t buf_size);
 
 /**
+ * Determine which NA component should be used.
+ */
+static hg_return_t
+hg_core_resolve_na(struct hg_core_private_context *context,
+    struct hg_core_private_addr *hg_core_addr, na_class_t **na_class_p,
+    na_context_t **na_context_p, na_addr_t **na_addr_p);
+
+/**
  * Create handle.
  */
 static hg_return_t
@@ -3042,6 +3050,53 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
+hg_core_resolve_na(struct hg_core_private_context *context,
+    struct hg_core_private_addr *hg_core_addr, na_class_t **na_class_p,
+    na_context_t **na_context_p, na_addr_t **na_addr_p)
+{
+    hg_return_t ret;
+
+    /* Determine which NA class/context to use */
+    if (hg_core_addr != NULL) {
+        HG_CHECK_SUBSYS_ERROR(addr,
+            hg_core_addr->core_addr.core_class !=
+                context->core_context.core_class,
+            error, ret, HG_INVALID_ARG,
+            "Address and context passed belong to different classes");
+
+#ifdef NA_HAS_SM
+        if (!hg_core_addr->core_addr.is_self &&
+            (hg_core_addr->core_addr.na_sm_addr != NULL)) {
+            HG_LOG_SUBSYS_DEBUG(rpc, "Using NA SM class");
+            *na_class_p = context->core_context.core_class->na_sm_class;
+            *na_context_p = context->core_context.na_sm_context;
+            *na_addr_p = hg_core_addr->core_addr.na_sm_addr;
+        } else {
+#endif
+            /* Default */
+            HG_LOG_SUBSYS_DEBUG(rpc, "Using default NA class");
+            *na_class_p = context->core_context.core_class->na_class;
+            *na_context_p = context->core_context.na_context;
+            *na_addr_p = hg_core_addr->core_addr.na_addr;
+#ifdef NA_HAS_SM
+        }
+#endif
+    } else {
+        /* Default */
+        HG_LOG_SUBSYS_DEBUG(rpc, "Using default NA class");
+        *na_class_p = context->core_context.core_class->na_class;
+        *na_context_p = context->core_context.na_context;
+        *na_addr_p = NULL;
+    }
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
 hg_core_create(struct hg_core_private_context *context, na_class_t *na_class,
     na_context_t *na_context, unsigned long flags,
     struct hg_core_private_handle **hg_core_handle_p)
@@ -3462,18 +3517,16 @@ hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
 {
     struct hg_core_private_class *hg_core_class =
         HG_CORE_HANDLE_CLASS(hg_core_handle);
+    struct hg_core_info *info = &hg_core_handle->core_handle.info;
     hg_return_t ret;
 
     /* We allow for NULL addr to be passed at creation time, this allows
      * for pool of handles to be created and later re-used after a call to
      * HG_Core_reset() */
-    if (hg_core_addr && (hg_core_handle->core_handle.info.addr !=
-                            (hg_core_addr_t) hg_core_addr)) {
-        if (hg_core_handle->core_handle.info.addr != HG_CORE_ADDR_NULL) {
-            hg_core_addr_free((struct hg_core_private_addr *)
-                                  hg_core_handle->core_handle.info.addr);
-        }
-        hg_core_handle->core_handle.info.addr = (hg_core_addr_t) hg_core_addr;
+    if (hg_core_addr && (info->addr != (hg_core_addr_t) hg_core_addr)) {
+        if (info->addr != HG_CORE_ADDR_NULL)
+            hg_core_addr_free((struct hg_core_private_addr *) info->addr);
+        info->addr = (hg_core_addr_t) hg_core_addr;
         hg_atomic_incr32(&hg_core_addr->ref_count);
 
         /* Set NA addr to use */
@@ -3487,7 +3540,7 @@ hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
     }
 
     /* We also allow for NULL RPC id to be passed (same reason as above) */
-    if (id && hg_core_handle->core_handle.info.id != id) {
+    if (id && info->id != id) {
         struct hg_core_rpc_info *hg_core_rpc_info;
 
         /* Retrieve ID function from function map */
@@ -3495,7 +3548,7 @@ hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
         HG_CHECK_SUBSYS_ERROR(rpc, hg_core_rpc_info == NULL, error, ret,
             HG_NOENTRY, "Could not find RPC ID (%" PRIu64 ") in RPC map", id);
 
-        hg_core_handle->core_handle.info.id = id;
+        info->id = id;
 
         /* Cache RPC info */
         hg_core_handle->core_handle.rpc_info = hg_core_rpc_info;
@@ -5945,11 +5998,9 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     hg_core_handle_t *handle_p)
 {
     struct hg_core_private_handle *hg_core_handle = NULL;
-    struct hg_core_private_addr *hg_core_addr =
-        (struct hg_core_private_addr *) addr;
     na_class_t *na_class;
     na_context_t *na_context;
-    na_addr_t *na_addr = NULL;
+    na_addr_t *na_addr;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(rpc, context == NULL, error, ret, HG_INVALID_ARG,
@@ -5962,25 +6013,10 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
         (void *) addr);
 
     /* Determine which NA class/context to use */
-#ifdef NA_HAS_SM
-    if (hg_core_addr && !hg_core_addr->core_addr.is_self &&
-        (hg_core_addr->core_addr.na_sm_addr != NULL)) {
-        HG_LOG_SUBSYS_DEBUG(rpc, "Using NA SM class for this handle");
-        na_class = context->core_class->na_sm_class;
-        na_context = context->na_sm_context;
-        na_addr = hg_core_addr->core_addr.na_sm_addr;
-    } else {
-#endif
-        HG_LOG_SUBSYS_DEBUG(rpc, "Using default NA class for this handle");
-
-        /* Default */
-        na_class = context->core_class->na_class;
-        na_context = context->na_context;
-        if (hg_core_addr)
-            na_addr = hg_core_addr->core_addr.na_addr;
-#ifdef NA_HAS_SM
-    }
-#endif
+    ret = hg_core_resolve_na((struct hg_core_private_context *) context,
+        (struct hg_core_private_addr *) addr, &na_class, &na_context, &na_addr);
+    HG_CHECK_SUBSYS_HG_ERROR(
+        rpc, error, ret, "Could not resolve NA components");
 
     /* Create new handle */
     ret = hg_core_create((struct hg_core_private_context *) context, na_class,
@@ -5989,7 +6025,8 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
         rpc, error, ret, "Could not create HG core handle");
 
     /* Set addr / RPC ID */
-    ret = hg_core_set_rpc(hg_core_handle, hg_core_addr, na_addr, id);
+    ret = hg_core_set_rpc(
+        hg_core_handle, (struct hg_core_private_addr *) addr, na_addr, id);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret,
         "Could not set new RPC info to handle %p", (void *) hg_core_handle);
 
@@ -6033,11 +6070,9 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
-    struct hg_core_private_addr *hg_core_addr =
-        (struct hg_core_private_addr *) addr;
     na_class_t *na_class;
     na_context_t *na_context;
-    na_addr_t *na_addr = NULL;
+    na_addr_t *na_addr;
     hg_return_t ret;
     int32_t status;
 
@@ -6056,27 +6091,10 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         (void *) handle, id, (void *) addr);
 
     /* Determine which NA class/context to use */
-#ifdef NA_HAS_SM
-    if (hg_core_addr && !hg_core_addr->core_addr.is_self &&
-        (hg_core_addr->core_addr.na_sm_addr != NULL)) {
-        HG_LOG_SUBSYS_DEBUG(
-            rpc, "Using NA SM class for this handle (%p)", (void *) handle);
-
-        na_class = hg_core_handle->core_handle.info.core_class->na_sm_class;
-        na_context = hg_core_handle->core_handle.info.context->na_sm_context;
-        na_addr = hg_core_addr->core_addr.na_sm_addr;
-    } else {
-#endif
-        HG_LOG_SUBSYS_DEBUG(rpc, "Using default NA class for this handle (%p)",
-            (void *) handle);
-        /* Default */
-        na_class = hg_core_handle->core_handle.info.core_class->na_class;
-        na_context = hg_core_handle->core_handle.info.context->na_context;
-        if (hg_core_addr)
-            na_addr = hg_core_addr->core_addr.na_addr;
-#ifdef NA_HAS_SM
-    }
-#endif
+    ret = hg_core_resolve_na(HG_CORE_HANDLE_CONTEXT(hg_core_handle),
+        (struct hg_core_private_addr *) addr, &na_class, &na_context, &na_addr);
+    HG_CHECK_SUBSYS_HG_ERROR(
+        rpc, error, ret, "Could not resolve NA components");
 
     /* In that case, we must free and re-allocate NA resources */
     if (na_class != hg_core_handle->na_class) {
@@ -6095,7 +6113,8 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
     hg_core_reset(hg_core_handle);
 
     /* Set addr / RPC ID */
-    ret = hg_core_set_rpc(hg_core_handle, hg_core_addr, na_addr, id);
+    ret = hg_core_set_rpc(
+        hg_core_handle, (struct hg_core_private_addr *) addr, na_addr, id);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret,
         "Could not set new RPC info to handle %p", (void *) hg_core_handle);
 

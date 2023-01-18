@@ -1932,6 +1932,19 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
         hg_core_context_get_bulk_op_pool(core_context);
     hg_return_t ret;
 
+    HG_CHECK_SUBSYS_ERROR(bulk,
+        origin_addr->core_class != core_context->core_class, error, ret,
+        HG_INVALID_ARG,
+        "Context and address passed belong to different classes");
+    HG_CHECK_SUBSYS_ERROR(bulk,
+        hg_bulk_origin->core_class != core_context->core_class, error, ret,
+        HG_INVALID_ARG,
+        "Context and origin handle passed belong to different classes");
+    HG_CHECK_SUBSYS_ERROR(bulk,
+        hg_bulk_local->core_class != core_context->core_class, error, ret,
+        HG_INVALID_ARG,
+        "Context and local handle passed belong to different classes");
+
     /* Get a new OP ID from context */
     if (hg_bulk_op_pool) {
         ret = hg_bulk_op_pool_get(hg_bulk_op_pool, &hg_bulk_op_id);
@@ -2801,6 +2814,10 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         "Address information embedded into origin_handle, use "
         "HG_Bulk_bind_transfer() instead");
 
+    /* Origin addr check */
+    HG_CHECK_SUBSYS_ERROR(bulk, origin_addr == HG_ADDR_NULL, error, ret,
+        HG_INVALID_ARG, "NULL origin addr");
+
     /* Local handle sanity checks */
     HG_CHECK_SUBSYS_ERROR(bulk, hg_bulk_local == NULL, error, ret,
         HG_INVALID_ARG, "NULL origin handle passed");
@@ -2918,6 +2935,10 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
         error, ret, HG_INVALID_ARG,
         "Address information embedded into origin_handle, use "
         "HG_Bulk_bind_transfer() instead");
+
+    /* Origin addr check */
+    HG_CHECK_SUBSYS_ERROR(bulk, origin_addr == HG_ADDR_NULL, error, ret,
+        HG_INVALID_ARG, "NULL origin addr");
 
     /* Local handle sanity checks */
     HG_CHECK_SUBSYS_ERROR(bulk, hg_bulk_local == NULL, error, ret,
