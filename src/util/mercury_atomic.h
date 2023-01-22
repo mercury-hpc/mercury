@@ -45,7 +45,12 @@ using std::memory_order_acq_rel;
 using std::memory_order_acquire;
 using std::memory_order_release;
 #    endif
-#    define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
+#    if (__STDC_VERSION__ >= 201710L ||                                        \
+         (defined(__cplusplus) && __cplusplus >= 202002L))
+#        define HG_ATOMIC_VAR_INIT(x) (x)
+#    else
+#        define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
+#    endif
 #elif defined(__APPLE__)
 #    include <libkern/OSAtomic.h>
 typedef struct {
