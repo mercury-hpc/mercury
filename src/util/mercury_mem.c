@@ -7,6 +7,7 @@
 
 #include "mercury_mem.h"
 
+#include "mercury_atomic.h"
 #include "mercury_util_error.h"
 
 #ifdef _WIN32
@@ -27,7 +28,8 @@
 long
 hg_mem_get_page_size(void)
 {
-    static long page_size = 0;
+    static hg_atomic_int64_t atomic_page_size = HG_ATOMIC_VAR_INIT(0);
+    long page_size = hg_atomic_get64(&atomic_page_size);
 
     if (page_size != 0)
         return page_size;
@@ -40,6 +42,7 @@ hg_mem_get_page_size(void)
     page_size = sysconf(_SC_PAGE_SIZE);
 #endif
 
+    hg_atomic_set64(&atomic_page_size, page_size);
     return page_size;
 }
 
@@ -52,7 +55,8 @@ hg_mem_get_hugepage_size(void)
     char *line = NULL;
     size_t len = 0;
 #endif
-    static long page_size = 0;
+    static hg_atomic_int64_t atomic_page_size = HG_ATOMIC_VAR_INIT(0);
+    long page_size = hg_atomic_get64(&atomic_page_size);
 
     if (page_size != 0)
         return page_size;
@@ -72,6 +76,7 @@ hg_mem_get_hugepage_size(void)
     page_size *= 1024;
 #endif
 
+    hg_atomic_set64(&atomic_page_size, page_size);
     return page_size;
 
 error:
