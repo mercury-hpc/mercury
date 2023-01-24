@@ -40,6 +40,12 @@
 /* Test options */
 #cmakedefine HG_TEST_TEMP_DIRECTORY "@HG_TEST_TEMP_DIRECTORY@"
 
+/* Timeout (in seconds) */
+#cmakedefine HG_TEST_TIMEOUT (@DART_TESTING_TIMEOUT@ / 2)
+#ifndef HG_TEST_TIMEOUT
+#    define HG_TEST_TIMEOUT 240
+#endif
+
 /* Number of threads */
 #define HG_TEST_NUM_THREADS_DEFAULT (8)
 
