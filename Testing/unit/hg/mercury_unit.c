@@ -21,6 +21,9 @@
 /* Wait max 5s */
 #define HG_TEST_TIMEOUT_MAX (5000)
 
+/* Max handle default */
+#define HG_TEST_HANDLE_MAX (32)
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -362,6 +365,8 @@ hg_unit_init(int argc, char *argv[], bool listen, struct hg_unit_info *info)
     }
 
     if (!listen) {
+        unsigned int i;
+
         if (info->hg_test_info.na_test_info.self_send) {
             /* Self addr is target */
             ret = HG_Addr_self(info->hg_class, &info->target_addr);
@@ -375,11 +380,33 @@ hg_unit_init(int argc, char *argv[], bool listen, struct hg_unit_info *info)
             HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Addr_lookup() failed (%s)",
                 HG_Error_to_string(ret));
         }
+
+        /* Create handles */
+        info->handle_max = info->hg_test_info.handle_max;
+        if (info->handle_max == 0)
+            info->handle_max = HG_TEST_HANDLE_MAX;
+
+        info->handles = malloc(info->handle_max * sizeof(hg_handle_t));
+        HG_TEST_CHECK_ERROR(info->handles == NULL, error, ret, HG_NOMEM,
+            "Could not allocate array of %zu handles", info->handle_max);
+
+        for (i = 0; i < info->handle_max; i++) {
+            ret = HG_Create(
+                info->context, info->target_addr, 0, &info->handles[i]);
+            HG_TEST_CHECK_HG_ERROR(
+                error, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
+        }
+
+        info->request = hg_request_create(info->request_class);
+        HG_TEST_CHECK_ERROR(info->request == NULL, error, ret, HG_NOMEM,
+            "hg_request_create() failed");
     }
 
     return HG_SUCCESS;
 
 error:
+    hg_unit_cleanup(info);
+
     return ret;
 }
 
@@ -403,6 +430,14 @@ hg_unit_cleanup(struct hg_unit_info *info)
 
     NA_Test_barrier(&info->hg_test_info.na_test_info);
 
+    if (info->handles != NULL) {
+        size_t i;
+        for (i = 0; i < info->handle_max; i++)
+            HG_Destroy(info->handles[i]);
+
+        free(info->handles);
+    }
+
     /* Free target addr */
     if (info->target_addr != HG_ADDR_NULL) {
         ret = HG_Addr_free(info->hg_class, info->target_addr);
@@ -411,7 +446,9 @@ hg_unit_cleanup(struct hg_unit_info *info)
         info->target_addr = HG_ADDR_NULL;
     }
 
-    /* Finalize request class */
+    if (info->request != NULL)
+        hg_request_destroy(info->request);
+
     if (info->request_class) {
         hg_request_finalize(info->request_class, NULL);
         info->request_class = NULL;

@@ -29,8 +29,11 @@ struct hg_unit_info {
     hg_context_t **secondary_contexts;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
+    hg_handle_t *handles;
     hg_thread_pool_t *thread_pool;
-    hg_size_t buf_size_max;
+    size_t handle_max;
+    size_t buf_size_max;
+    hg_request_t *request;
 };
 
 struct hg_test_context_info {
