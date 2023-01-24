@@ -58,18 +58,24 @@ typedef hg_uint8_t hg_bool_t;
 
 #include <mercury_compiler_attributes.h>
 
-/* Inline macro */
+/* Unused return values */
+#define HG_WARN_UNUSED_RESULT HG_ATTR_WARN_UNUSED_RESULT
+
+/* Unused variables */
+#define HG_UNUSED HG_ATTR_UNUSED
+
+/* Packed */
+#define HG_PACKED(x) HG_ATTR_PACKED(x)
+
+/* Fallthrough */
+#define HG_FALLTHROUGH HG_ATTR_FALLTHROUGH
+
+/* Inline */
 #ifdef _WIN32
 #    define HG_INLINE __inline
 #else
 #    define HG_INLINE __inline__
 #endif
-
-/* Packed */
-#define HG_PACKED(x) HG_ATTR_PACKED(x)
-
-/* Fallthrough macro */
-#define HG_FALLTHROUGH HG_ATTR_FALLTHROUGH
 
 /* Shared libraries */
 #cmakedefine HG_BUILD_SHARED_LIBS
@@ -86,10 +92,15 @@ typedef hg_uint8_t hg_bool_t;
 #endif
 
 /* Build Options */
-#cmakedefine HG_HAS_BOOST
-#cmakedefine HG_HAS_CHECKSUMS
-#cmakedefine HG_HAS_XDR
-
 #cmakedefine HG_HAS_DEBUG
+
+/* Boost */
+#cmakedefine HG_HAS_BOOST
+
+/* Checksums */
+#cmakedefine HG_HAS_CHECKSUMS
+
+/* XDR */
+#cmakedefine HG_HAS_XDR
 
 #endif /* MERCURY_CONFIG_H */
