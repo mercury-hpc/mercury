@@ -334,13 +334,14 @@ struct hg_core_private_handle {
     na_op_id_t *na_recv_op_id;      /* Operation ID for recv */
     na_op_id_t *na_ack_op_id;       /* Operation ID for ack */
     struct hg_core_multi_recv_op *multi_recv_op; /* Multi-recv operation */
-    size_t in_buf_used;              /* Amount of input buffer used */
-    size_t out_buf_used;             /* Amount of output buffer used */
-    na_tag_t tag;                    /* Tag used for request and response */
-    hg_atomic_int32_t ref_count;     /* Reference count */
-    hg_atomic_int32_t status;        /* Handle status */
-    hg_atomic_int32_t ret_status;    /* Handle return status */
-    unsigned int op_completed_count; /* Completed operation count */
+    size_t in_buf_used;                 /* Amount of input buffer used */
+    size_t out_buf_used;                /* Amount of output buffer used */
+    na_tag_t tag;                       /* Tag used for request and response */
+    hg_atomic_int32_t ref_count;        /* Reference count */
+    hg_atomic_int32_t no_response_done; /* Reference count to reach for done */
+    hg_atomic_int32_t status;           /* Handle status */
+    hg_atomic_int32_t ret_status;       /* Handle return status */
+    unsigned int op_completed_count;    /* Completed operation count */
     unsigned int
         op_expected_count;     /* Expected operation count for completion */
     hg_core_op_type_t op_type; /* Core operation type */
@@ -975,6 +976,9 @@ static HG_LOG_SUBSYS_DECL_REGISTER(ctx, HG_CORE_SUBSYS_NAME);
 static HG_LOG_SUBSYS_DECL_REGISTER(addr, HG_CORE_SUBSYS_NAME);
 static HG_LOG_SUBSYS_DECL_REGISTER(rpc, HG_CORE_SUBSYS_NAME);
 static HG_LOG_SUBSYS_DECL_REGISTER(poll, HG_CORE_SUBSYS_NAME);
+
+/* Off by default because of potientally excessive logs */
+static HG_LOG_SUBSYS_DECL_REGISTER(rpc_ref, HG_CORE_SUBSYS_NAME);
 
 /* Off by default because of potientally excessive logs */
 static HG_LOG_SUBSYS_DECL_STATE_REGISTER(
@@ -3139,12 +3143,37 @@ error:
 static hg_return_t
 hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
 {
+    int32_t ref_count;
     hg_return_t ret;
 
     if (hg_core_handle == NULL)
         return HG_SUCCESS;
 
-    if (hg_atomic_decr32(&hg_core_handle->ref_count))
+    /* This will push the RPC handle back to completion queue when no
+     * response is sent and we are sending to ourselves. This ensures that
+     * there is no race between the callback execution and the RPC
+     * completion. */
+    if (hg_core_handle->is_self && hg_core_handle->no_response &&
+        hg_atomic_get32(&hg_core_handle->no_response_done) > 0 &&
+        hg_atomic_cas32(&hg_core_handle->no_response_done,
+            hg_atomic_get32(&hg_core_handle->ref_count), 0)) {
+        /* Safe as the decremented refcount will always be > 0 */
+        ref_count = hg_atomic_decr32(&hg_core_handle->ref_count);
+        HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count decr to %" PRId32,
+            (void *) hg_core_handle, ref_count);
+
+        ret = hg_core_handle->ops.no_respond(hg_core_handle);
+        HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not complete handle");
+
+        return HG_SUCCESS;
+    }
+
+    /* Standard destroy refcount decrement */
+    ref_count = hg_atomic_decr32(&hg_core_handle->ref_count);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count decr to %" PRId32,
+        (void *) hg_core_handle, ref_count);
+
+    if (ref_count > 0)
         return HG_SUCCESS; /* Cannot free yet */
 
     /* Re-use handle if we were listening, otherwise destroy it */
@@ -3235,6 +3264,8 @@ hg_core_alloc(struct hg_core_private_context *context,
 
     /* Set refcount to 1 */
     hg_atomic_init32(&hg_core_handle->ref_count, 1);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count set to %" PRId32,
+        (void *) hg_core_handle, 1);
 
     /* Increment N handles from HG context */
     hg_atomic_incr32(&context->n_handles);
@@ -3457,6 +3488,8 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle)
     /* Also reset additional handle parameters */
     hg_atomic_set32(&hg_core_handle->ref_count, 1);
     hg_core_handle->core_handle.rpc_info = NULL;
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count set to %" PRId32,
+        (void *) hg_core_handle, 1);
 
     /* Reset status */
     hg_atomic_set32(&hg_core_handle->status, 0);
@@ -3669,6 +3702,7 @@ static hg_return_t
 hg_core_forward(struct hg_core_private_handle *hg_core_handle,
     hg_core_cb_t callback, void *arg, hg_uint8_t flags, hg_size_t payload_size)
 {
+    int32_t HG_DEBUG_LOG_USED ref_count;
     int32_t status;
     hg_size_t header_size;
     hg_return_t ret = HG_SUCCESS;
@@ -3680,7 +3714,9 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
 
     /* Increment ref_count on handle to allow for destroy to be
      * pre-emptively called */
-    hg_atomic_incr32(&hg_core_handle->ref_count);
+    ref_count = hg_atomic_incr32(&hg_core_handle->ref_count);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count incr to %" PRId32,
+        (void *) hg_core_handle, ref_count);
 
     /* Reset op counts */
     hg_core_handle->op_expected_count = 1; /* Default (no response) */
@@ -4620,6 +4656,7 @@ hg_core_self_cb(const struct hg_core_cb_info *callback_info)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) callback_info->info.respond.handle;
+    int32_t HG_DEBUG_LOG_USED ref_count;
     hg_return_t ret;
 
     /* Increment number of expected operations */
@@ -4641,7 +4678,9 @@ hg_core_self_cb(const struct hg_core_cb_info *callback_info)
     hg_core_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Increment refcount and push handle back to completion queue */
-    hg_atomic_incr32(&hg_core_handle->ref_count);
+    ref_count = hg_atomic_incr32(&hg_core_handle->ref_count);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count incr to %" PRId32,
+        (void *) hg_core_handle, ref_count);
 
     /* Process output */
     ret = hg_core_process_output(hg_core_handle, hg_core_more_data_complete);
@@ -4695,6 +4734,7 @@ static hg_return_t
 hg_core_process(struct hg_core_private_handle *hg_core_handle)
 {
     struct hg_core_rpc_info *hg_core_rpc_info;
+    int32_t HG_DEBUG_LOG_USED ref_count;
     hg_return_t ret;
 
     /* Retrieve exe function from function map */
@@ -4720,7 +4760,9 @@ hg_core_process(struct hg_core_private_handle *hg_core_handle)
     /* Increment ref count here so that a call to HG_Destroy in user's RPC
      * callback does not free the handle but only schedules its completion
      */
-    hg_atomic_incr32(&hg_core_handle->ref_count);
+    ref_count = hg_atomic_incr32(&hg_core_handle->ref_count);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count incr to %" PRId32,
+        (void *) hg_core_handle, ref_count);
 
     /* Execute RPC callback */
     ret = hg_core_rpc_info->rpc_cb((hg_core_handle_t) hg_core_handle);
@@ -5242,6 +5284,7 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
     hg_atomic_and32(&hg_core_handle->status, ~HG_CORE_OP_QUEUED);
 
     if (hg_core_handle->op_type == HG_CORE_PROCESS) {
+        int32_t HG_DEBUG_LOG_USED ref_count;
 
         /* Simply exit if error occurred */
         if (hg_core_handle->ret != HG_SUCCESS)
@@ -5249,7 +5292,15 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
 
         /* Take another reference to make sure the handle only gets freed
          * after the response is sent */
-        hg_atomic_incr32(&hg_core_handle->ref_count);
+        ref_count = hg_atomic_incr32(&hg_core_handle->ref_count);
+        HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count incr to %" PRId32,
+            (void *) hg_core_handle, ref_count);
+
+        /* Save ref_count, when sending to self and no response is being sent,
+         * we can only use that refcount to determine that the RPC callback has
+         * been fully executed. */
+        if (hg_core_handle->is_self && hg_core_handle->no_response)
+            hg_atomic_set32(&hg_core_handle->no_response_done, ref_count);
 
         /* Run RPC callback */
         ret = hg_core_process(hg_core_handle);
@@ -5265,7 +5316,7 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
         }
 
         /* No response callback */
-        if (hg_core_handle->no_response) {
+        if (hg_core_handle->no_response && !hg_core_handle->is_self) {
             ret = hg_core_handle->ops.no_respond(hg_core_handle);
             HG_CHECK_SUBSYS_HG_ERROR(
                 rpc, done, ret, "Could not complete handle");
@@ -6128,12 +6179,16 @@ error:
 hg_return_t
 HG_Core_ref_incr(hg_core_handle_t handle)
 {
+    int32_t HG_DEBUG_LOG_USED ref_count;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(rpc, handle == HG_CORE_HANDLE_NULL, error, ret,
         HG_INVALID_ARG, "NULL HG core handle");
 
-    hg_atomic_incr32(&((struct hg_core_private_handle *) handle)->ref_count);
+    ref_count = hg_atomic_incr32(
+        &((struct hg_core_private_handle *) handle)->ref_count);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count incr to %" PRId32,
+        (void *) handle, ref_count);
 
     return HG_SUCCESS;
 

@@ -43,6 +43,12 @@ struct hg_bulk_op_pool;
 /* Public Macros */
 /*****************/
 
+#ifdef HG_HAS_DEBUG
+#    define HG_DEBUG_LOG_USED
+#else
+#    define HG_DEBUG_LOG_USED HG_UNUSED
+#endif
+
 /**
  * container_of - cast a member of a structure out to the containing structure
  * \ptr:        the pointer to the member.
