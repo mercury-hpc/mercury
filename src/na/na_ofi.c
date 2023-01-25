@@ -4404,11 +4404,13 @@ static NA_INLINE void *
 na_ofi_mem_alloc(struct na_ofi_class *na_ofi_class, size_t size,
     unsigned long *flags_p, size_t *alloc_size_p, struct fid_mr **mr_hdl_p)
 {
-    size_t page_size = (size_t) hg_mem_get_hugepage_size();
+    size_t page_size;
     void *mem_ptr = NULL;
     size_t alloc_size = 0;
     int rc;
 
+#if !defined(_WIN32) && !defined(__APPLE__)
+    page_size = (size_t) hg_mem_get_hugepage_size();
     if (page_size > 0 && size >= page_size) {
         /* Allocate a multiple of page size (TODO use extra space) */
         alloc_size = ((size % page_size) == 0)
@@ -4425,6 +4427,7 @@ na_ofi_mem_alloc(struct na_ofi_class *na_ofi_class, size_t size,
             mem_ptr);
         *flags_p |= NA_OFI_ALLOC_HUGE;
     } else {
+#endif
         page_size = (size_t) hg_mem_get_page_size();
         alloc_size = size;
 
@@ -4435,7 +4438,9 @@ na_ofi_mem_alloc(struct na_ofi_class *na_ofi_class, size_t size,
         NA_LOG_SUBSYS_DEBUG(mem,
             "Allocated %zu bytes using aligned alloc at address %p", alloc_size,
             mem_ptr);
+#if !defined(_WIN32) && !defined(__APPLE__)
     }
+#endif
     memset(mem_ptr, 0, alloc_size);
 
     /* Register buffer */
