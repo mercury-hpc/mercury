@@ -45,6 +45,7 @@ struct hg_private_class {
     void *handle_create_arg;                           /* handle_create arg */
     hg_checksum_level_t checksum_level;                /* Checksum level */
     hg_bool_t bulk_eager;                              /* Eager bulk proc */
+    hg_bool_t release_input_early;                     /* Release input early */
 };
 
 /* Info for function map */
@@ -540,7 +541,8 @@ hg_get_struct(struct hg_private_handle *hg_handle,
 #endif
 
 #ifndef HG_HAS_XDR
-    if (op == HG_INPUT) {
+    if (HG_HANDLE_CLASS(&hg_handle->handle)->release_input_early &&
+        op == HG_INPUT) {
         /* Now that the parameters have been decoded, release the buffer so it
          * can be re-used while the RPC is being executed. */
         ret = HG_Core_release_input(hg_handle->handle.core_handle);
@@ -1057,6 +1059,10 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
         "Option checksum_level requires CMake option MERCURY_USE_CHECKSUMS to "
         "be turned ON.");
 #endif
+
+    /* Release input early */
+    hg_class->release_input_early =
+        (hg_init_info) ? hg_init_info->release_input_early : HG_FALSE;
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt(na_info_string, na_listen, hg_init_info);

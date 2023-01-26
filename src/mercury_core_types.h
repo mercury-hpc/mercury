@@ -92,6 +92,12 @@ struct hg_init_info {
     /* Disable use of multi_recv when available and post separate buffers.
      * Default is: false */
     hg_bool_t no_multi_recv;
+
+    /* Release input buffers as early as possible (usually after HG_Get_input())
+     * as opposed to releasing them after a call to handle destroy. This may be
+     * beneficial in cases where the RPC execution time is longer than usual.
+     * Default is: false */
+    hg_bool_t release_input_early;
 };
 
 /* Error return codes:
@@ -184,7 +190,7 @@ typedef enum {
         .request_post_init = 0, .request_post_incr = 0, .auto_sm = HG_FALSE,   \
         .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
         .no_bulk_eager = HG_FALSE, .no_loopback = HG_FALSE, .stats = HG_FALSE, \
-        .no_multi_recv = HG_FALSE                                              \
+        .no_multi_recv = HG_FALSE, .release_input_early = HG_FALSE             \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
