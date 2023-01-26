@@ -732,6 +732,10 @@ HG_Get_data(hg_handle_t handle);
  *   - HG_Core_get_input()
  *   - Call hg_proc to deserialize parameters
  *
+ * \remark The input buffer may be released automatically after that call if the
+ * release_input_early init info parameter has been set when initializing the
+ * HG class.
+ *
  * \param handle [IN]           HG handle
  * \param in_struct [IN/OUT]    pointer to input structure
  *
@@ -808,9 +812,9 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf_p, hg_size_t *in_buf_size_p);
 /**
  * Release input buffer from handle so that it can be re-used early.
  *
- * \remark HG_Release_input_buf() should only be called when using
- * HG_Get_input_buf(). When using HG_Get_input(), the input buffer will be
- * internally released after HG_Get_input() has been called. Note also that
+ * \remark HG_Release_input_buf() may only be called when using
+ * HG_Get_input_buf(). When using HG_Get_input(), the input buffer may
+ * internally be released after HG_Get_input() is called. Note also that
  * if HG_Release_input_buf() is not called, the input buffer will later be
  * released when calling HG_Destroy().
  *
