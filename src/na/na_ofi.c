@@ -2886,6 +2886,7 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 cleanup:
     free(hints->fabric_attr->prov_name);
     hints->fabric_attr->prov_name = NULL;
+    hints->src_addr = NULL;
     fi_freeinfo(hints);
 
 out:
@@ -2987,9 +2988,6 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
     *fi_info_p = fi_dupinfo(prov);
     NA_CHECK_SUBSYS_ERROR(cls, *fi_info_p == NULL, error, ret, NA_NOMEM,
         "Could not duplicate fi_info");
-
-    /* Give ownshership of src_addr to FI info */
-    info->src_addr = NULL;
 
     fi_freeinfo(providers);
 
