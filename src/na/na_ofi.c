@@ -591,20 +591,44 @@ struct na_ofi_map {
     hg_hash_table_t *fi_map;  /* Secondary */
 };
 
+#ifndef NA_OFI_HAS_EXT_GNI_H
+/* GNI Authorization Key */
+struct fi_gni_raw_auth_key {
+    uint32_t protection_key;
+};
+
+struct fi_gni_auth_key {
+    uint32_t type;
+    union {
+        struct fi_gni_raw_auth_key raw;
+    };
+};
+#endif
+
+#ifndef NA_OFI_HAS_EXT_CXI_H
+/* CXI Authorization Key */
+struct cxi_auth_key {
+    uint32_t svc_id;
+    uint16_t vni;
+};
+#endif
+
+/* Authorization Key */
+union na_ofi_auth_key {
+    struct fi_gni_auth_key gni_auth_key; /* GNI auth key */
+    struct cxi_auth_key cxi_auth_key;    /* CXI auth key */
+};
+
 /* Domain */
 struct na_ofi_domain {
     HG_LIST_ENTRY(na_ofi_domain) entry; /* Entry in domain list */
     const struct na_ofi_fabric *fabric; /* Associated fabric */
     struct na_ofi_map addr_map;         /* Address map */
-#if defined(NA_OFI_HAS_EXT_GNI_H)
-    struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key */
-#elif defined(NA_OFI_HAS_EXT_CXI_H)
-    struct cxi_auth_key cxi_auth_key; /* CXI auth key */
-#endif
-    struct fid_domain *fi_domain;    /* Domain handle */
-    struct fid_av *fi_av;            /* Address vector handle */
-    char *name;                      /* Domain name */
-    size_t context_max;              /* Max contexts available */
+    union na_ofi_auth_key auth_key;     /* Auth key */
+    struct fid_domain *fi_domain;       /* Domain handle */
+    struct fid_av *fi_av;               /* Address vector handle */
+    char *name;                         /* Domain name */
+    size_t context_max;                 /* Max contexts available */
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
     int64_t max_key;                 /* Max key if not FI_MR_PROV_KEY */
     uint64_t max_tag;                /* Max tag from CQ data size */
@@ -950,6 +974,27 @@ static na_return_t
 na_ofi_gni_get_domain_op_value(
     struct na_ofi_domain *na_ofi_domain, int op, void *value);
 #endif
+
+/**
+ * Parse auth key.
+ */
+static na_return_t
+na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
+    union na_ofi_auth_key *auth_key, size_t *auth_key_size_p);
+
+/**
+ * Parse GNI auth key.
+ */
+static na_return_t
+na_ofi_parse_gni_auth_key(
+    const char *str, struct fi_gni_auth_key *auth_key, size_t *auth_key_size_p);
+
+/**
+ * Parse CXI auth key.
+ */
+static na_return_t
+na_ofi_parse_cxi_auth_key(
+    const char *str, struct cxi_auth_key *auth_key, size_t *auth_key_size_p);
 
 /**
  * Open domain.
@@ -3528,6 +3573,77 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
+    union na_ofi_auth_key *auth_key, size_t *auth_key_size_p)
+{
+    switch (prov_type) {
+        case NA_OFI_PROV_GNI:
+            return na_ofi_parse_gni_auth_key(
+                str, &auth_key->gni_auth_key, auth_key_size_p);
+        case NA_OFI_PROV_CXI:
+            return na_ofi_parse_cxi_auth_key(
+                str, &auth_key->cxi_auth_key, auth_key_size_p);
+        case NA_OFI_PROV_NULL:
+        case NA_OFI_PROV_SOCKETS:
+        case NA_OFI_PROV_TCP:
+        case NA_OFI_PROV_PSM2:
+        case NA_OFI_PROV_OPX:
+        case NA_OFI_PROV_VERBS:
+        default:
+            NA_LOG_SUBSYS_ERROR(
+                fatal, "Unsupported auth key for this provider: %d", prov_type);
+            return NA_PROTONOSUPPORT;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_parse_gni_auth_key(
+    const char *str, struct fi_gni_auth_key *auth_key, size_t *auth_key_size_p)
+{
+    na_return_t ret;
+    int rc;
+
+    /* GNIX_AKT_RAW is 0 */
+    memset(auth_key, 0, sizeof(*auth_key));
+
+    rc = sscanf(str, "%" SCNu32, &auth_key->raw.protection_key);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Invalid GNI auth_key string (%s)", str);
+
+    *auth_key_size_p = sizeof(*auth_key);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_parse_cxi_auth_key(
+    const char *str, struct cxi_auth_key *auth_key, size_t *auth_key_size_p)
+{
+    na_return_t ret;
+    int rc;
+
+    memset(auth_key, 0, sizeof(*auth_key));
+
+    /* Keep CXI auth key using the following format svc_id:vni */
+    rc = sscanf(str, "%" SCNu32 ":%" SCNu16, &auth_key->svc_id, &auth_key->vni);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 2, error, ret, NA_PROTONOSUPPORT,
+        "Invalid CXI auth key string (%s), format is \"svc_id:vni\"", str);
+
+    *auth_key_size_p = sizeof(*auth_key);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     const char *auth_key, bool no_wait, bool shared, struct fi_info *fi_info,
     struct na_ofi_domain **na_ofi_domain_p)
@@ -3579,31 +3695,14 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain->name == NULL, error, ret,
         NA_NOMEM, "Could not dup domain name");
 
-#if defined(NA_OFI_HAS_EXT_GNI_H)
-    if (na_ofi_fabric->prov_type == NA_OFI_PROV_GNI && auth_key &&
-        auth_key[0] != '\0') {
-        na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
-        na_ofi_domain->fi_gni_auth_key.raw.protection_key =
-            (uint32_t) strtoul(auth_key, NULL, 10);
+    /* Auth key */
+    if (auth_key && auth_key[0] != '\0') {
+        ret = na_ofi_parse_auth_key(auth_key, na_ofi_fabric->prov_type,
+            &na_ofi_domain->auth_key, &domain_attr->auth_key_size);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse auth key");
 
-        domain_attr->auth_key = (void *) &na_ofi_domain->fi_gni_auth_key;
-        domain_attr->auth_key_size = sizeof(na_ofi_domain->fi_gni_auth_key);
+        domain_attr->auth_key = (void *) &na_ofi_domain->auth_key;
     }
-#elif defined(NA_OFI_HAS_EXT_CXI_H)
-    /* Keep CXI auth key using the following format svc_id:vni */
-    if (na_ofi_fabric->prov_type == NA_OFI_PROV_CXI && auth_key) {
-        rc = sscanf(auth_key, "%" SCNu32 ":%" SCNu16,
-            &na_ofi_domain->cxi_auth_key.svc_id,
-            &na_ofi_domain->cxi_auth_key.vni);
-        NA_CHECK_SUBSYS_ERROR(cls, rc != 2, error, ret, NA_PROTONOSUPPORT,
-            "Could not retrieve CXI auth key, format is \"svc_id:vni\"");
-
-        domain_attr->auth_key = (void *) &na_ofi_domain->cxi_auth_key;
-        domain_attr->auth_key_size = sizeof(na_ofi_domain->cxi_auth_key);
-    }
-#else
-    (void) auth_key;
-#endif
 
     /* Force manual progress if no wait set or do not support
      * FI_WAIT_FD/FI_WAIT_SET. */
