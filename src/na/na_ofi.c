@@ -166,8 +166,8 @@
       FI_ADDR_OPX,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_OPX,                                                            \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
-      NA_OFI_SEP | NA_OFI_CONTEXT2                                             \
+      FI_SOURCE | FI_SOURCE_ERR,                                               \
+      NA_OFI_SIGNAL | NA_OFI_SEP | NA_OFI_CONTEXT2                             \
     )                                                                          \
     X(NA_OFI_PROV_VERBS,                                                       \
       "verbs;ofi_rxm",                                                         \
@@ -379,16 +379,31 @@ struct na_ofi_psm2_addr {
 };
 
 /* OPX address */
-NA_PACKED(union na_ofi_opx_addr {
+typedef uint32_t na_ofi_opx_uid_t;
+
+NA_PACKED(union na_ofi_opx_uid {
+    na_ofi_opx_uid_t fi;
+    NA_PACKED(struct {
+        uint16_t endpoint_id;
+        uint16_t lid;
+    });
+});
+
+NA_PACKED(union na_ofi_opx_address {
     uint64_t raw;
     NA_PACKED(struct {
         uint8_t hfi1_rx;
         uint8_t hfi1_unit;
         uint8_t reliability_rx;
-        uint16_t endpoint_id;
-        uint16_t lid;
+        union na_ofi_opx_uid uid;
         uint8_t rx_index;
     });
+});
+
+NA_PACKED(struct na_ofi_opx_addr {
+    union na_ofi_opx_address addr;
+    uint32_t key;
+    uint32_t key_inst;
 });
 
 /* GNI address */
@@ -434,7 +449,7 @@ union na_ofi_raw_addr {
     struct na_ofi_sockaddr_ib sib;
     struct na_ofi_psm_addr psm;
     struct na_ofi_psm2_addr psm2;
-    union na_ofi_opx_addr opx;
+    struct na_ofi_opx_addr opx;
     struct na_ofi_gni_addr gni;
     union na_ofi_cxi_addr cxi;
     struct na_ofi_str_addr str;
@@ -771,7 +786,7 @@ na_ofi_str_to_psm(const char *str, struct na_ofi_psm_addr *psm_addr);
 static na_return_t
 na_ofi_str_to_psm2(const char *str, struct na_ofi_psm2_addr *psm2_addr);
 static na_return_t
-na_ofi_str_to_opx(const char *str, union na_ofi_opx_addr *opx_addr);
+na_ofi_str_to_opx(const char *str, struct na_ofi_opx_addr *opx_addr);
 static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr);
 static na_return_t
@@ -795,7 +810,7 @@ na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr);
 static NA_INLINE uint64_t
-na_ofi_opx_to_key(const union na_ofi_opx_addr *addr);
+na_ofi_opx_to_key(const struct na_ofi_opx_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
 static NA_INLINE uint64_t
@@ -945,6 +960,13 @@ na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
 static na_return_t
 na_ofi_parse_cxi_info(
     const char *hostname_info, char **node_p, char **service_p);
+
+/**
+ * Parse OPX address.
+ */
+static na_return_t
+na_ofi_parse_opx_info(
+    const uint8_t hfi_interface, int port, struct na_ofi_opx_addr **addr);
 
 /**
  * Allocate new OFI class.
@@ -1834,7 +1856,7 @@ na_ofi_prov_addr_size(int addr_format)
         case FI_ADDR_PSMX2:
             return sizeof(struct na_ofi_psm2_addr);
         case FI_ADDR_OPX:
-            return sizeof(union na_ofi_opx_addr);
+            return sizeof(struct na_ofi_opx_addr);
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
@@ -2084,23 +2106,30 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_str_to_opx(const char *str, union na_ofi_opx_addr *opx_addr)
+na_ofi_str_to_opx(const char *str, struct na_ofi_opx_addr *opx_addr)
 {
     uint8_t rx_index, hfi1_rx, hfi1_unit, reliability_rx;
     uint16_t lid, endpoint_id;
+    uint32_t key = 0, key_inst = 0;
     na_return_t ret;
     int rc;
 
-    rc = sscanf(str, "%*[^:]://%04hx.%04hx.%02hhx.%02hhx.%02hhx.%02hhx", &lid,
-        &endpoint_id, &rx_index, &hfi1_rx, &hfi1_unit, &reliability_rx);
-    NA_CHECK_SUBSYS_ERROR(addr, rc != 6, error, ret, NA_PROTONOSUPPORT,
-        "Could not convert addr string to OPX addr format");
-    *opx_addr = (union na_ofi_opx_addr){.lid = lid,
-        .endpoint_id = endpoint_id,
-        .rx_index = rx_index,
-        .hfi1_rx = hfi1_rx,
-        .hfi1_unit = hfi1_unit,
-        .reliability_rx = reliability_rx};
+    /* Format - FI_ADDRESS.inst.:key(a.k.a - OFI_PORT) */
+    rc = sscanf(str,
+        "%*[^:]://%04hx.%04hx.%02hhx.%02hhx.%02hhx.%02hhx.%04x:%" SCNu32, &lid,
+        &endpoint_id, &rx_index, &hfi1_rx, &hfi1_unit, &reliability_rx,
+        &key_inst, &key);
+    NA_CHECK_SUBSYS_ERROR(addr, (rc != 6 && rc != 8), error, ret,
+        NA_PROTONOSUPPORT, "Could not convert addr string to OPX addr format");
+
+    *opx_addr = (struct na_ofi_opx_addr){.addr.uid.lid = lid,
+        .addr.uid.endpoint_id = endpoint_id,
+        .addr.rx_index = rx_index,
+        .addr.hfi1_rx = hfi1_rx,
+        .addr.hfi1_unit = hfi1_unit,
+        .addr.reliability_rx = reliability_rx,
+        .key = key,
+        .key_inst = key_inst};
 
     return NA_SUCCESS;
 
@@ -2251,9 +2280,20 @@ na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE uint64_t
-na_ofi_opx_to_key(const union na_ofi_opx_addr *addr)
+na_ofi_opx_to_key(const struct na_ofi_opx_addr *addr)
 {
-    return addr->raw;
+    uint64_t key;
+    char opx_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
+
+    /* Format - FI_ADDRESS.inst:key(a.k.a - OFI_PORT) */
+    snprintf(opx_addr_str, sizeof(opx_addr_str),
+        "%04x.%04x.%02x.%02x.%02x.%02x.%04x:%" PRIu32, addr->addr.uid.lid,
+        addr->addr.uid.endpoint_id, addr->addr.rx_index, addr->addr.hfi1_rx,
+        addr->addr.hfi1_unit, addr->addr.reliability_rx, addr->key_inst,
+        addr->key);
+    key = (uint64_t) hg_hash_string(opx_addr_str);
+
+    return key;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2309,7 +2349,7 @@ na_ofi_raw_addr_serialize_size(int addr_format)
         case FI_ADDR_PSMX2:
             return sizeof(struct na_ofi_psm2_addr);
         case FI_ADDR_OPX:
-            return sizeof(union na_ofi_opx_addr);
+            return sizeof(struct na_ofi_opx_addr);
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
@@ -2379,7 +2419,7 @@ na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
             break;
         case FI_ADDR_OPX:
             NA_CHECK_SUBSYS_ERROR(addr,
-                buf_size < sizeof(union na_ofi_opx_addr), error, ret,
+                buf_size < sizeof(struct na_ofi_opx_addr), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(buf, &addr->opx, sizeof(addr->opx));
@@ -2475,7 +2515,7 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
             break;
         case FI_ADDR_OPX:
             NA_CHECK_SUBSYS_ERROR(addr,
-                buf_size < sizeof(union na_ofi_opx_addr), error, ret,
+                buf_size < sizeof(struct na_ofi_opx_addr), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(&addr->opx, buf, sizeof(addr->opx));
@@ -3144,7 +3184,6 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
         }
         case FI_ADDR_PSMX:
         case FI_ADDR_PSMX2:
-        case FI_ADDR_OPX:
         case FI_ADDR_GNI:
         case FI_ADDR_STR:
             /* Nothing to do */
@@ -3170,6 +3209,52 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             }
             break;
 
+        case FI_ADDR_OPX: {
+            char *resolve_name = NULL;
+            unsigned int hfi_interface = 0;
+            int port = -1;
+
+            hostname = strdup(hostname_info);
+            NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, out, ret, NA_NOMEM,
+                "strdup() of hostname failed");
+
+            /* Extract hostname */
+            if (strstr(hostname, ":")) {
+                char *hostname_str = NULL;
+
+                strtok_r(hostname, ":", &hostname_str);
+                hfi_interface = (unsigned int) strtoul(hostname_str, NULL, 10);
+
+                strtok_r(hostname_str, ":", &hostname_str);
+                if (strlen(hostname_str)) {
+                    port = (int) strtoul(hostname_str, NULL, 10);
+                }
+            }
+
+            /* Extract domain (if specified) */
+            if (strstr(hostname, "/")) {
+                strtok_r(hostname, "/", &resolve_name);
+            } else {
+                resolve_name = hostname;
+            }
+
+            /* Get hostname/port info if available */
+            if (resolve_name) {
+                struct na_ofi_opx_addr *na_ofi_opx_addr;
+                /* Port is HFI interface card ID */
+                ret = na_ofi_parse_opx_info(
+                    (uint8_t) hfi_interface, port, &na_ofi_opx_addr);
+                NA_CHECK_SUBSYS_ERROR(cls,
+                    ret != NA_SUCCESS || !na_ofi_opx_addr, out, ret,
+                    NA_ADDRNOTAVAIL,
+                    "Could not convert device port to NA OPX address");
+
+                /* Pass src addr information to avoid name resolution */
+                *src_addr_p = (void *) na_ofi_opx_addr;
+                *src_addrlen_p = sizeof(*na_ofi_opx_addr);
+            }
+            break;
+        }
         default:
             NA_LOG_SUBSYS_ERROR(
                 fatal, "Unsupported address format: %d", addr_format);
@@ -3298,6 +3383,37 @@ na_ofi_parse_cxi_info(
 
 error:
     free(node);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_return_t
+na_ofi_parse_opx_info(
+    const uint8_t hfi_interface, int port, struct na_ofi_opx_addr **addr)
+{
+    struct na_ofi_opx_addr *opx_addr;
+    na_return_t ret = NA_SUCCESS;
+
+    opx_addr = calloc(1, sizeof(*opx_addr));
+    NA_CHECK_SUBSYS_ERROR(addr, opx_addr == NULL, error, ret, NA_NOMEM,
+        "Could not allocate na ofi opx address");
+
+    memset(opx_addr, 0, sizeof(*opx_addr));
+    opx_addr->addr.hfi1_unit = hfi_interface;
+
+    /* Need to use the uuid field of the address, because key
+     * requires 4 bytes
+     */
+    opx_addr->addr.uid.fi = (na_ofi_opx_uid_t) port;
+
+    *addr = opx_addr;
+
+    return ret;
+
+error:
+    if (opx_addr)
+        free(opx_addr);
+
     return ret;
 }
 
@@ -4327,19 +4443,27 @@ na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class)
 
     /* Make sure expected addr format len is same as OFI addr len. In the case
      * of FI_ADDR_STR, just make sure we do not exceed the max string length */
-    if (addr_format == FI_ADDR_STR)
+    if (addr_format == FI_ADDR_STR) {
         NA_CHECK_SUBSYS_ERROR(addr,
             addrlen < na_ofi_class->fi_info->src_addrlen, error, ret,
             NA_PROTONOSUPPORT,
             "Address lengths do not match (expected %zu, got %zu)", addrlen,
             na_ofi_class->fi_info->src_addrlen);
-    else
+    } else if (addr_format == FI_ADDR_OPX) {
+        NA_CHECK_SUBSYS_ERROR(addr,
+            (addrlen != sizeof(struct na_ofi_opx_addr) &&
+                addrlen != sizeof(union na_ofi_opx_address)),
+            error, ret, NA_PROTONOSUPPORT,
+            "Address lengths do not match (expected %zu/%zu, got %zu)",
+            sizeof(union na_ofi_opx_address), sizeof(struct na_ofi_opx_addr),
+            na_ofi_class->fi_info->src_addrlen);
+    } else {
         NA_CHECK_SUBSYS_ERROR(addr,
             addrlen != na_ofi_class->fi_info->src_addrlen, error, ret,
             NA_PROTONOSUPPORT,
             "Address lengths do not match (expected %zu, got %zu)", addrlen,
             na_ofi_class->fi_info->src_addrlen);
-
+    }
     /* Retrieve endpoint addr */
     rc = fi_getname(
         &na_ofi_class->endpoint->fi_ep->fid, &addr_key.addr, &addrlen);
@@ -6849,6 +6973,10 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
         .tag = (uint64_t) tag | NA_OFI_UNEXPECTED_TAG};
 
+    /* OPX requires context2 to pass persistent address down to provider */
+    if (na_ofi_addr->class->fi_info->addr_format == FI_ADDR_OPX)
+        na_ofi_op_id->fi_ctx[0].internal[0] = &na_ofi_addr->addr_key.addr.opx;
+
     ret = na_ofi_class->msg_send_unexpected(
         na_ofi_context->fi_tx, &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
     if (ret != NA_SUCCESS) {
@@ -7022,6 +7150,10 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
             fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS),
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
         .tag = tag};
+
+    /* OPX requires context2 to pass persistent address down to provider */
+    if (na_ofi_addr->class->fi_info->addr_format == FI_ADDR_OPX)
+        na_ofi_op_id->fi_ctx[0].internal[0] = &na_ofi_addr->addr_key.addr.opx;
 
     ret = na_ofi_tag_send(
         na_ofi_context->fi_tx, &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
