@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BMI_VERSION=master
+BMI_VERSION=2.8.1
 #MPI_VERSION=3.4.1
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
   OFI_CFLAGS="-O1 -g -fsanitize=thread"
@@ -42,8 +42,8 @@ if [[ ${CC} == 'icc' ]]; then
 fi
 
 # BMI
-cd $HOME && wget --no-check-certificate http://xgitlab.cels.anl.gov/sds/bmi/-/archive/${BMI_VERSION}/bmi-${BMI_VERSION}.tar.bz2;
-tar -xjf bmi-${BMI_VERSION}.tar.bz2;
+cd $HOME && wget --no-check-certificate https://github.com/radix-io/bmi/archive/refs/tags/v${BMI_VERSION}.tar.gz -O bmi-${BMI_VERSION}.tar.gz;
+tar -xzf bmi-${BMI_VERSION}.tar.gz;
 cd bmi-${BMI_VERSION} && ./prepare && ./configure --enable-shared --disable-static --enable-bmi-only --prefix=$PREFIX && make -j2 -s && make install;
 
 # MPI
