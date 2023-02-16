@@ -210,6 +210,7 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_byteswap.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_compiler_attributes.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dl.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dlog.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
