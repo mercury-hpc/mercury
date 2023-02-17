@@ -6652,7 +6652,8 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
 
     /* Check provider from name */
     NA_CHECK_SUBSYS_ERROR(fatal,
-        na_ofi_addr_prov(name) != NA_OFI_CLASS(na_class)->fabric->prov_type,
+        NA_OFI_CLASS(na_class)->fabric->prov_type != NA_OFI_PROV_TCP &&
+            na_ofi_addr_prov(name) != NA_OFI_CLASS(na_class)->fabric->prov_type,
         error, ret, NA_INVALID_ARG, "Unrecognized provider type found from: %s",
         name);
 
