@@ -138,8 +138,7 @@ function(add_mercury_test_comm_scalable test_name comm protocols progress_modes 
   foreach(protocol ${protocols})
     foreach(busy ${progress_modes})
       # Restrict to OFI for now
-      if(${comm} STREQUAL "ofi" AND
-        (NOT ((${protocol} STREQUAL "tcp") OR (${protocol} STREQUAL "verbs"))))
+      if(${comm} STREQUAL "ofi" AND ${protocol} STREQUAL "sockets")
           add_mercury_test(${test_name}
             ${comm} ${protocol} ${busy} ${serial} false true false)
       endif()

@@ -37,7 +37,7 @@ extern "C" {
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_PRIVATE na_return_t
+NA_PLUGIN_VISIBILITY na_return_t
 na_ip_parse_subnet(const char *spec, uint32_t *net_p, uint32_t *netmask_p);
 
 /**
@@ -49,7 +49,7 @@ na_ip_parse_subnet(const char *spec, uint32_t *net_p, uint32_t *netmask_p);
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_PRIVATE na_return_t
+NA_PLUGIN_VISIBILITY na_return_t
 na_ip_pref_addr(uint32_t net, uint32_t netmask, char *outstr);
 
 /**
@@ -66,7 +66,7 @@ na_ip_pref_addr(uint32_t net, uint32_t netmask, char *outstr);
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_PRIVATE na_return_t
+NA_PLUGIN_VISIBILITY na_return_t
 na_ip_check_interface(const char *name, uint16_t port, int family,
     char **ifa_name_p, struct sockaddr **sa_p, socklen_t *salen_p);
 

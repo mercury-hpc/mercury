@@ -134,8 +134,12 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 exit(1);
             case 'c': /* Comm */
                 /* Prevent from overriding comm */
-                if (!na_test_info->comm)
-                    na_test_info->comm = strdup(na_test_opt_arg_g);
+                if (!na_test_info->comm) {
+                    if (strcmp(na_test_opt_arg_g, "sm") == 0)
+                        na_test_info->comm = strdup("na");
+                    else
+                        na_test_info->comm = strdup(na_test_opt_arg_g);
+                }
                 break;
             case 'd': /* Domain */
                 na_test_info->domain = strdup(na_test_opt_arg_g);

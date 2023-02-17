@@ -35,7 +35,7 @@ extern "C" {
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_PRIVATE na_return_t
+NA_PLUGIN_VISIBILITY na_return_t
 na_loc_info_init(struct na_loc_info **na_loc_info_p);
 
 /**
@@ -43,7 +43,7 @@ na_loc_info_init(struct na_loc_info **na_loc_info_p);
  *
  * \param na_loc_info [IN/OUT]  pointer to loc info
  */
-NA_PRIVATE void
+NA_PLUGIN_VISIBILITY void
 na_loc_info_destroy(struct na_loc_info *na_loc_info);
 
 /**
@@ -57,7 +57,7 @@ na_loc_info_destroy(struct na_loc_info *na_loc_info);
  *
  * \return true if they share the same cpu set, false otherwise
  */
-NA_PRIVATE bool
+NA_PLUGIN_VISIBILITY bool
 na_loc_check_pcidev(const struct na_loc_info *na_loc_info,
     unsigned int domain_id, unsigned int bus_id, unsigned int device_id,
     unsigned int function_id);

@@ -10,6 +10,14 @@
 #include "mercury_atomic_queue.h"
 #include "mercury_mem.h"
 #include "mercury_thread_spin.h"
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+#    include "mercury_dl.h"
+#    ifdef _WIN32
+#        include <Windows.h>
+#    else
+#        include <dirent.h>
+#    endif
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,9 +42,24 @@
 
 #define NA_ATOMIC_QUEUE_SIZE 1024 /* TODO make it configurable */
 
+/* Dynamic plugins */
+#define NA_PLUGIN_PREFIX   "libna_plugin_"
+#define NA_PLUGIN_SCN_NAME "libna_plugin_%16[^_]"
+#define NA_PLUGIN_PATH_MAX (1024)
+#define NA_PLUGIN_NAME_MAX (16)
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
+
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+/* Plugin entries */
+struct na_plugin_entry {
+    char *path;
+    HG_DL_HANDLE dl_handle;
+    const struct na_class_ops *ops;
+};
+#endif
 
 /* Private class */
 struct na_private_class {
@@ -80,17 +103,57 @@ na_info_parse(
 static void
 na_info_free(struct na_info *na_info);
 
+/* Attempt to find a suitable static plugin */
+static na_return_t
+na_plugin_static_check(const char *class_name, const char *protocol_name,
+    const struct na_class_ops **ops_p);
+
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+/* Attempt to find a suitable dynamic plugin */
+static na_return_t
+na_plugin_dynamic_check(const char *class_name, const char *protocol_name,
+    const struct na_class_ops **ops_p);
+
+/* Scan a given path and return a list of plugins */
+static na_return_t
+na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p);
+
+#    ifndef _WIN32
+/* Filter plugin path names */
+static int
+na_plugin_filter(const struct dirent *entry);
+#    endif
+
+/* Close all opened plugins */
+static void
+na_plugin_close_all(struct na_plugin_entry *entries);
+
+/* Open plugin in a given path */
+static na_return_t
+na_plugin_open(
+    const char *path, const char *file, struct na_plugin_entry *entry);
+
+/* Close plugin entry */
+static void
+na_plugin_close(struct na_plugin_entry *entry);
+#endif /* NA_HAS_DYNAMIC_PLUGINS */
+
 /*******************/
 /* Local Variables */
 /*******************/
 
-/* NA plugin class table */
-static const struct na_class_ops *const na_class_table_g[] = {
+/* Static plugin ops table */
+static const struct na_class_ops *const na_plugin_static_g[] = {
 #ifdef NA_HAS_SM
     &NA_PLUGIN_OPS(sm), /* Keep NA SM first for protocol selection */
 #endif
-#ifdef NA_HAS_OFI
+#ifndef NA_HAS_DYNAMIC_PLUGINS
+#    ifdef NA_HAS_OFI
     &NA_PLUGIN_OPS(ofi),
+#    endif
+#    ifdef NA_HAS_UCX
+    &NA_PLUGIN_OPS(ucx),
+#    endif
 #endif
 #ifdef NA_HAS_BMI
     &NA_PLUGIN_OPS(bmi),
@@ -101,9 +164,6 @@ static const struct na_class_ops *const na_class_table_g[] = {
 #ifdef NA_HAS_CCI
     &NA_PLUGIN_OPS(cci),
 #endif
-#ifdef NA_HAS_UCX
-    &NA_PLUGIN_OPS(ucx),
-#endif
 #ifdef NA_HAS_PSM
     &NA_PLUGIN_OPS(psm),
 #endif
@@ -111,6 +171,11 @@ static const struct na_class_ops *const na_class_table_g[] = {
     &NA_PLUGIN_OPS(psm2),
 #endif
     NULL};
+
+/* Dynamic plugin ops table */
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+static struct na_plugin_entry *na_plugin_dynamic_g = NULL;
+#endif
 
 /* Return code string table */
 #define X(a) #a,
@@ -153,6 +218,41 @@ HG_LOG_SUBSYS_DECL_REGISTER(poll, NA_SUBSYS_NAME);
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(poll_loop, NA_SUBSYS_NAME, HG_LOG_OFF);
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(ip, NA_SUBSYS_NAME, HG_LOG_OFF);
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(perf, NA_SUBSYS_NAME, HG_LOG_OFF);
+
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+/* Initialize list of plugins etc */
+static void
+na_initialize(void) HG_ATTR_CONSTRUCTOR;
+
+/* Free list of plugins etc */
+static void
+na_finalize(void) HG_ATTR_DESTRUCTOR;
+#endif
+
+/*---------------------------------------------------------------------------*/
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+static void
+na_initialize(void)
+{
+    const char *plugin_path = getenv("NA_PLUGIN_PATH");
+    na_return_t ret;
+
+    if (plugin_path == NULL)
+        plugin_path = NA_DEFAULT_PLUGIN_PATH;
+
+    ret = na_plugin_scan_path(plugin_path, &na_plugin_dynamic_g);
+    NA_CHECK_SUBSYS_WARNING(fatal, ret != NA_SUCCESS,
+        "No plugin found in path (%s), consider setting NA_PLUGIN_PATH.",
+        plugin_path);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_finalize(void)
+{
+    na_plugin_close_all(na_plugin_dynamic_g);
+}
+#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -249,6 +349,248 @@ na_info_free(struct na_info *na_info)
 }
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_plugin_static_check(const char *class_name, const char *protocol_name,
+    const struct na_class_ops **ops_p)
+{
+    const struct na_class_ops *ops = NULL;
+    na_return_t ret;
+    int i;
+
+    for (i = 0, ops = na_plugin_static_g[0]; ops != NULL;
+         i++, ops = na_plugin_static_g[i]) {
+        NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
+            NA_PROTONOSUPPORT, "class name is not defined");
+        NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
+            NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
+
+        /* Skip check protocol if class name does not match */
+        if ((class_name != NULL) && (strcmp(ops->class_name, class_name) != 0))
+            continue;
+
+        /* Check that protocol is supported, if no class name specified, take
+         * the first plugin that supports the protocol */
+        if (ops->check_protocol(protocol_name))
+            break;
+        else
+            NA_CHECK_SUBSYS_ERROR(fatal, class_name != NULL, error, ret,
+                NA_PROTONOSUPPORT,
+                "Specified class name \"%s\" does not support requested "
+                "protocol",
+                class_name);
+    }
+    *ops_p = ops;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+static na_return_t
+na_plugin_dynamic_check(const char *class_name, const char *protocol_name,
+    const struct na_class_ops **ops_p)
+{
+    const struct na_class_ops *ops = NULL;
+    na_return_t ret;
+    unsigned int i;
+
+    NA_CHECK_SUBSYS_ERROR(cls, na_plugin_dynamic_g == NULL, error, ret,
+        NA_NOENTRY, "No dynamic plugins were found");
+
+    for (i = 0, ops = na_plugin_dynamic_g[0].ops; ops != NULL;
+         i++, ops = na_plugin_dynamic_g[i].ops) {
+        NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
+            NA_PROTONOSUPPORT, "class name is not defined");
+        NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
+            NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
+
+        /* Skip check protocol if class name does not match */
+        if ((class_name != NULL) && (strcmp(ops->class_name, class_name) != 0))
+            continue;
+
+        /* Check that protocol is supported, if no class name specified, take
+         * the first plugin that supports the protocol */
+        if (ops->check_protocol(protocol_name))
+            break;
+        else
+            NA_CHECK_SUBSYS_ERROR(fatal, class_name != NULL, error, ret,
+                NA_PROTONOSUPPORT,
+                "Specified class name \"%s\" does not support requested "
+                "protocol",
+                class_name);
+    }
+
+    *ops_p = ops;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+#    ifdef _WIN32
+static na_return_t
+na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
+{
+    na_return_t ret;
+
+    (void) path;
+    (void) entries_p;
+    NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTOCOL_ERROR, "Not implemented");
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+#    else
+static na_return_t
+na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
+{
+    struct dirent **plugin_list;
+    struct na_plugin_entry *entries = NULL;
+    na_return_t ret;
+    int n, n_entries = 0;
+
+    n = scandir(path, &plugin_list, na_plugin_filter, alphasort);
+    NA_CHECK_SUBSYS_ERROR(
+        cls, n < 0, error, ret, NA_FAULT, "scandir(%s) failed", path);
+
+    entries =
+        (struct na_plugin_entry *) calloc((size_t) n + 1, sizeof(*entries));
+    NA_CHECK_SUBSYS_ERROR(cls, entries == NULL, error, ret, NA_NOMEM,
+        "Could not allocate %d plugin entries", n);
+    n_entries = n;
+
+    while (n--) {
+        ret = na_plugin_open(path, plugin_list[n]->d_name, &entries[n]);
+        free(plugin_list[n]);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open plugin (%s)",
+            plugin_list[n]->d_name);
+    }
+
+    free(plugin_list);
+
+    *entries_p = entries;
+
+    return NA_SUCCESS;
+
+error:
+    if (n > 0) {
+        if (entries != NULL) {
+            int i;
+
+            /* close entry */
+            for (i = n + 1; i < n_entries; i++)
+                na_plugin_close(&entries[i]);
+            free(entries);
+        }
+
+        while (n--)
+            free(plugin_list[n]);
+        free(plugin_list);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_plugin_filter(const struct dirent *entry)
+{
+    return !strncmp(entry->d_name, NA_PLUGIN_PREFIX, strlen(NA_PLUGIN_PREFIX));
+}
+#    endif
+
+/*---------------------------------------------------------------------------*/
+static void
+na_plugin_close_all(struct na_plugin_entry *entries)
+{
+    struct na_plugin_entry *entry = NULL;
+    int i;
+
+    if (entries == NULL)
+        return;
+
+    for (i = 0, entry = &entries[0]; entry->ops != NULL;
+         i++, entry = &entries[i])
+        na_plugin_close(entry);
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_plugin_open(
+    const char *path, const char *file, struct na_plugin_entry *entry)
+{
+    char full_path[NA_PLUGIN_PATH_MAX + 1];
+    char plugin_name[NA_PLUGIN_NAME_MAX + 1];
+    char plugin_ops_name[NA_PLUGIN_NAME_MAX * 2 + 1];
+    na_return_t ret;
+    int rc;
+
+    /* Generate full path to open plugin */
+    rc = snprintf(full_path, sizeof(full_path), "%s/%s", path, file);
+    NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > (int) sizeof(full_path), error,
+        ret, NA_OVERFLOW,
+        "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
+        sizeof(full_path));
+
+    /* Keep a copy of path for debug purposes */
+    entry->path = strdup(full_path);
+    NA_CHECK_SUBSYS_ERROR(cls, entry->path == NULL, error, ret, NA_NOMEM,
+        "Could not dup %s", full_path);
+
+    /* Open plugin */
+    NA_LOG_SUBSYS_DEBUG(cls, "Opening plugin %s", entry->path);
+    entry->dl_handle = hg_dl_open(entry->path);
+    NA_CHECK_SUBSYS_ERROR(cls, entry->dl_handle == NULL, error, ret, NA_NOENTRY,
+        "Could not open lib %s", entry->path);
+
+    /* Retrieve plugin name from file name */
+    rc = sscanf(file, NA_PLUGIN_SCN_NAME, plugin_name);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Could not find plugin name (%s)", file);
+
+    /* Generate plugin ops symbol name */
+    rc = snprintf(plugin_ops_name, sizeof(plugin_ops_name), "na_%s_class_ops_g",
+        plugin_name);
+    NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > (int) sizeof(plugin_ops_name),
+        error, ret, NA_OVERFLOW,
+        "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
+        sizeof(plugin_ops_name));
+
+    /* Get plugin ops */
+    entry->ops = (const struct na_class_ops *) hg_dl_sym(
+        entry->dl_handle, plugin_ops_name);
+    NA_CHECK_SUBSYS_ERROR(cls, entry->ops == NULL, error, ret, NA_NOENTRY,
+        "Could not find symbol %s", plugin_ops_name);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_plugin_close(struct na_plugin_entry *entry)
+{
+    if (entry->path) {
+        NA_LOG_SUBSYS_DEBUG(cls, "Closing plugin %s", entry->path);
+        free(entry->path);
+    }
+    if (entry->dl_handle != NULL)
+        (void) hg_dl_close(entry->dl_handle);
+    entry->ops = NULL;
+}
+#endif /* NA_HAS_DYNAMIC_PLUGINS */
+
+/*---------------------------------------------------------------------------*/
 void
 NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 {
@@ -277,7 +619,6 @@ NA_Initialize_opt(const char *info_string, bool listen,
     struct na_info *na_info = NULL;
     const struct na_class_ops *ops = NULL;
     na_return_t ret;
-    int i;
 
     NA_CHECK_SUBSYS_ERROR(cls, info_string == NULL, error, ret, NA_INVALID_ARG,
         "NULL info string");
@@ -298,30 +639,23 @@ NA_Initialize_opt(const char *info_string, bool listen,
     NA_LOG_SUBSYS_DEBUG(cls, "Class: %s, Protocol: %s, Hostname: %s",
         class_name, na_info->protocol_name, na_info->host_name);
 
-    for (i = 0, ops = na_class_table_g[0]; ops != NULL;
-         i++, ops = na_class_table_g[i]) {
-        NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
-            NA_PROTONOSUPPORT, "class name is not defined");
-        NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
-            NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
+    /* Check list of static plugins */
+    ret = na_plugin_static_check(class_name, na_info->protocol_name, &ops);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not check static plugins");
 
-        /* Skip check protocol if class name does not match */
-        if ((class_name != NULL) && (strcmp(ops->class_name, class_name) != 0))
-            continue;
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+    if (ops == NULL) {
+        /* Check list of dynamic plugins */
+        ret = na_plugin_dynamic_check(class_name, na_info->protocol_name, &ops);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not check dynamic plugins");
+#endif
 
-        /* Check that protocol is supported, if no class name specified, take
-         * the first plugin that supports the protocol */
-        if (ops->check_protocol(na_info->protocol_name))
-            break;
-        else
-            NA_CHECK_SUBSYS_ERROR(fatal, class_name != NULL, error, ret,
-                NA_PROTONOSUPPORT,
-                "Specified class name \"%s\" does not support requested "
-                "protocol",
-                class_name);
+        NA_CHECK_SUBSYS_ERROR(fatal, ops == NULL, error, ret, NA_PROTONOSUPPORT,
+            "No suitable plugin found that matches %s", info_string);
+#ifdef NA_HAS_DYNAMIC_PLUGINS
     }
-    NA_CHECK_SUBSYS_ERROR(fatal, ops == NULL, error, ret, NA_PROTONOSUPPORT,
-        "No suitable plugin found that matches %s", info_string);
+#endif
 
     na_private_class->na_class.protocol_name = strdup(na_info->protocol_name);
     NA_CHECK_SUBSYS_ERROR(cls, na_private_class->na_class.protocol_name == NULL,
@@ -390,8 +724,8 @@ NA_Cleanup(void)
     const struct na_class_ops *ops = NULL;
     int i;
 
-    for (i = 0, ops = na_class_table_g[0]; ops != NULL;
-         i++, ops = na_class_table_g[i])
+    for (i = 0, ops = na_plugin_static_g[0]; ops != NULL;
+         i++, ops = na_plugin_static_g[i])
         if (ops->cleanup)
             ops->cleanup();
 }
@@ -1000,7 +1334,8 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     NA_CHECK_SUBSYS_NA_ERROR(mem, error, ret, "Could not create memory handle");
 
     NA_LOG_SUBSYS_DEBUG(mem,
-        "Created new mem handle (%p), buf (%p), buf_size (%zu), flags (%lu)",
+        "Created new mem handle (%p), buf (%p), buf_size (%zu), flags "
+        "(%lu)",
         (void *) *mem_handle_p, buf, buf_size, flags);
 
     return NA_SUCCESS;
@@ -1286,8 +1621,8 @@ NA_Trigger(
         /* Execute plugin callback (free resources etc) first since actual
          * callback will notify user that operation has completed.
          * NB. If the NA operation ID is reused by the plugin for another
-         * operation we must be careful that resources are released BEFORE that
-         * operation ID gets re-used.
+         * operation we must be careful that resources are released BEFORE
+         * that operation ID gets re-used.
          */
         if (completion_data.plugin_callback)
             completion_data.plugin_callback(

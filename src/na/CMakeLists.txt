@@ -65,6 +65,16 @@ include(CheckSymbolExists)
 include(CheckVariableExists)
 include(CheckCSourceCompiles)
 
+# Dynamically loaded plugins
+if(BUILD_SHARED_LIBS)
+  option(NA_USE_DYNAMIC_PLUGINS "Build as dynamically loadable plugins." OFF)
+  if(NA_USE_DYNAMIC_PLUGINS)
+    set(NA_HAS_DYNAMIC_PLUGINS 1)
+    set(NA_DEFAULT_PLUGIN_PATH ${NA_INSTALL_LIB_DIR} CACHE PATH "Default path used to install and load plugins.")
+    mark_as_advanced(NA_DEFAULT_PLUGIN_PATH)
+  endif()
+endif()
+
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
@@ -151,17 +161,17 @@ if(NA_USE_OFI)
     endif()
     mark_as_advanced(NA_OFI_GNI_USE_UDREG)
   endif()
-  set(NA_INT_INCLUDE_DEPENDENCIES
-    ${NA_INT_INCLUDE_DEPENDENCIES}
+  set(NA_OFI_INT_INCLUDE_DEPENDENCIES
+    ${NA_OFI_INT_INCLUDE_DEPENDENCIES}
     ${OFI_INCLUDE_DIRS}
   )
-  set(NA_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
+  set(NA_OFI_EXT_LIB_DEPENDENCIES
+    ${NA_OFI_EXT_LIB_DEPENDENCIES}
     ${OFI_LIBRARIES}
   )
   if(WIN32)
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
+    set(NA_OFI_EXT_LIB_DEPENDENCIES
+      ${NA_OFI_EXT_LIB_DEPENDENCIES}
       ws2_32
     )
   endif()
@@ -169,16 +179,31 @@ if(NA_USE_OFI)
   if(NA_OFI_USE_HWLOC)
     find_package(HWLOC REQUIRED)
     set(NA_HAS_HWLOC 1)
-    set(NA_INT_INCLUDE_DEPENDENCIES
-      ${NA_INT_INCLUDE_DEPENDENCIES}
+    set(NA_OFI_INT_INCLUDE_DEPENDENCIES
+      ${NA_OFI_INT_INCLUDE_DEPENDENCIES}
       ${HWLOC_INCLUDE_DIR}
     )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
+    set(NA_OFI_EXT_LIB_DEPENDENCIES
+      ${NA_OFI_EXT_LIB_DEPENDENCIES}
       ${HWLOC_LIBRARIES}
     )
   endif()
   mark_as_advanced(NA_OFI_USE_HWLOC)
+  if(NA_USE_DYNAMIC_PLUGINS)
+    set(NA_DYNAMIC_PLUGINS
+      ${NA_DYNAMIC_PLUGINS}
+      ofi
+    )
+  else()
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${NA_OFI_INT_INCLUDE_DEPENDENCIES}
+    )
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${NA_OFI_EXT_LIB_DEPENDENCIES}
+    )
+  endif()
 endif()
 
 # UCX
@@ -188,12 +213,12 @@ if(NA_USE_UCX)
   message(STATUS "UCX include directory: ${UCX_INCLUDE_DIR}")
   set(NA_PLUGINS ${NA_PLUGINS} ucx)
   set(NA_HAS_UCX 1)
-  set(NA_INT_INCLUDE_DEPENDENCIES
-    ${NA_INT_INCLUDE_DEPENDENCIES}
+  set(NA_UCX_INT_INCLUDE_DEPENDENCIES
+    ${NA_UCX_INT_INCLUDE_DEPENDENCIES}
     ${UCX_INCLUDE_DIR}
   )
-  set(NA_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
+  set(NA_UCX_EXT_LIB_DEPENDENCIES
+    ${NA_UCX_EXT_LIB_DEPENDENCIES}
     ${UCX_LIBRARIES}
   )
   # Additional cmake testing
@@ -223,6 +248,21 @@ if(NA_USE_UCX)
   unset(CMAKE_REQUIRED_LIBRARIES)
   if(CMAKE_BUILD_TYPE MATCHES "Tsan")
     unset(CMAKE_REQUIRED_FLAGS)
+  endif()
+  if(NA_USE_DYNAMIC_PLUGINS)
+    set(NA_DYNAMIC_PLUGINS
+      ${NA_DYNAMIC_PLUGINS}
+      ucx
+    )
+  else()
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${NA_UCX_INT_INCLUDE_DEPENDENCIES}
+    )
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${NA_UCX_EXT_LIB_DEPENDENCIES}
+    )
   endif()
 endif()
 
@@ -260,7 +300,7 @@ if(NA_USE_SM)
       endif()
     endif()
     if(NA_SM_HAS_CMA OR APPLE)
-      set(NA_PLUGINS ${NA_PLUGINS} na)
+      set(NA_PLUGINS ${NA_PLUGINS} sm)
       set(NA_HAS_SM 1)
       set(NA_SM_SHM_PREFIX "na_sm" CACHE STRING
         "Prefix to use for SHM file name.")
@@ -346,61 +386,17 @@ if(NOT WIN32)
   )
 endif()
 
-if(NA_HAS_BMI)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_bmi.c
-  )
-endif()
-
-if(NA_HAS_MPI)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.c
-  )
-endif()
-
-if(NA_HAS_CCI)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_cci.c
-  )
-endif()
-
-if(NA_USE_OFI)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_ofi.c
-  )
-endif()
-
-if(NA_USE_UCX)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_ucx.c
-  )
-endif()
-
-if(NA_HAS_SM)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.c
-  )
-endif()
-
-if(NA_HAS_PSM)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_psm.c
-  )
-endif()
-
-if(NA_HAS_PSM2)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_psm2.c
-  )
-endif()
+# Plugins must define a na_<plugin_name>.c file and set NA_HAS_<plugin_name>
+foreach(plugin ${NA_PLUGINS})
+  string(TOUPPER ${plugin} PLUGIN)
+  list(FIND NA_DYNAMIC_PLUGINS ${plugin} _plugin_is_dynamic)
+  if(NOT ${_plugin_is_dynamic} EQUAL -1)
+    set(NA_${PLUGIN}_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/na_${plugin}.c)
+  else()
+    set(NA_SRCS ${NA_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/na_${plugin}.c)
+  endif()
+  unset(_plugin_is_dynamic)
+endforeach()
 
 #------------------------------------------------------------------------------
 # Specify project public header files to be installed
@@ -478,6 +474,25 @@ set_target_properties(na PROPERTIES
   PUBLIC_HEADER "${NA_PUBLIC_HEADERS}"
 )
 
+# Plugins
+foreach(plugin ${NA_DYNAMIC_PLUGINS})
+  STRING(TOUPPER ${plugin} PLUGIN)
+  add_library(na_plugin_${plugin} MODULE ${NA_${PLUGIN}_SRCS})
+  target_include_directories(na_plugin_${plugin}
+    PUBLIC  "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
+            $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
+  )
+  target_include_directories(na_plugin_${plugin}
+  SYSTEM PUBLIC  ${NA_${PLUGIN}_EXT_INCLUDE_DEPENDENCIES}
+          PRIVATE ${NA_${PLUGIN}_INT_INCLUDE_DEPENDENCIES}
+  )
+  target_link_libraries(na_plugin_${plugin} na ${NA_${PLUGIN}_EXT_LIB_DEPENDENCIES})
+  mercury_set_lib_options(na_plugin_${plugin} "na_plugin_${plugin}" MODULE ${PROJECT_NAME})
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(na_{plugin})
+  endif()
+endforeach()
+
 #---------------------------------------------------------------------------
 # Add Target(s) to CMake Install
 #---------------------------------------------------------------------------
@@ -491,6 +506,19 @@ install(
   PUBLIC_HEADER DESTINATION ${NA_INSTALL_INCLUDE_DIR}
   RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
 )
+
+foreach(plugin ${NA_DYNAMIC_PLUGINS})
+  install(
+    TARGETS
+      na_plugin_${plugin}
+    EXPORT
+      ${NA_EXPORTED_TARGETS}
+    LIBRARY DESTINATION ${NA_INSTALL_LIB_DIR}
+    ARCHIVE DESTINATION ${NA_INSTALL_LIB_DIR}
+    PUBLIC_HEADER DESTINATION ${NA_INSTALL_INCLUDE_DIR}
+    RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
+  )
+endforeach()
 
 #------------------------------------------------------------------------------
 # Set variables for parent scope

@@ -15,23 +15,23 @@
 #include <inttypes.h>
 
 /* Default log outlet */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(na);
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(na);
 
 /* Fatal log outlet always 'on' by default */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(fatal);
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(fatal);
 
 /* Specific outlets */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(cls);       /* Class */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(ctx);       /* Context */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(op);        /* Operations */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(addr);      /* Addresses */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(msg);       /* Messages */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(mem);       /* Memory */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(rma);       /* RMA */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(poll);      /* Progress */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(poll_loop); /* Progress loop */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(ip);        /* IP res */
-extern NA_PRIVATE HG_LOG_OUTLET_DECL(perf);      /* Perf related log */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(cls);       /* Class */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(ctx);       /* Context */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(op);        /* Operations */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(addr);      /* Addresses */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(msg);       /* Messages */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(mem);       /* Memory */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(rma);       /* RMA */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(poll);      /* Progress */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(poll_loop); /* Progress loop */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(ip);        /* IP res */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(perf); /* Perf related log */
 
 /* Base log macros */
 #define NA_LOG_ERROR(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)

@@ -120,7 +120,7 @@ extern "C" {
  *
  * \return String
  */
-NA_PRIVATE const char *
+NA_PLUGIN_VISIBILITY const char *
 na_cb_type_to_string(na_cb_type_t cb_type) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -130,7 +130,7 @@ na_cb_type_to_string(na_cb_type_t cb_type) NA_WARN_UNUSED_RESULT;
  * \param na_cb_completion_data [IN]    pointer to completion data
  *
  */
-NA_PRIVATE void
+NA_PLUGIN_VISIBILITY void
 na_cb_completion_add(
     na_context_t *context, struct na_cb_completion_data *na_cb_completion_data);
 
@@ -138,8 +138,17 @@ na_cb_completion_add(
 /* Public Variables */
 /*********************/
 
+/* SM and MPI must remain in the library as they provide their own APIs */
 #ifdef NA_HAS_SM
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(sm);
+#endif
+#ifndef NA_HAS_DYNAMIC_PLUGINS
+#    ifdef NA_HAS_OFI
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ofi);
+#    endif
+#    ifdef NA_HAS_UCX
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ucx);
+#    endif
 #endif
 #ifdef NA_HAS_BMI
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(bmi);
@@ -149,12 +158,6 @@ extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(mpi);
 #endif
 #ifdef NA_HAS_CCI
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(cci);
-#endif
-#ifdef NA_HAS_OFI
-extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ofi);
-#endif
-#ifdef NA_HAS_UCX
-extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ucx);
 #endif
 #ifdef NA_HAS_PSM
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(psm);
