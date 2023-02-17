@@ -15,9 +15,9 @@
 /*************************************/
 
 /* Type definitions */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 /*****************/
 /* Public Macros */
@@ -67,6 +67,17 @@
 #    define NA_PUBLIC
 #    define NA_PRIVATE
 #endif
+
+/* Dynamically loaded plugins */
+#cmakedefine NA_HAS_DYNAMIC_PLUGINS
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+#    define NA_PLUGIN            HG_ATTR_ABI_EXPORT /* plugins always export */
+#    define NA_PLUGIN_VISIBILITY NA_PUBLIC
+#else
+#    define NA_PLUGIN
+#    define NA_PLUGIN_VISIBILITY NA_PRIVATE
+#endif
+#cmakedefine NA_DEFAULT_PLUGIN_PATH "@NA_DEFAULT_PLUGIN_PATH@"
 
 /* Build Options */
 #cmakedefine NA_HAS_DEBUG

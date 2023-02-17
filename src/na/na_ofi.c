@@ -1633,7 +1633,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 /* Local Variables */
 /*******************/
 
-const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
+NA_PLUGIN const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
     "ofi",                                 /* name */
     na_ofi_check_protocol,                 /* check_protocol */
     na_ofi_initialize,                     /* initialize */
@@ -2121,8 +2121,8 @@ na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr)
     memset(gni_addr, 0, sizeof(*gni_addr));
 
     rc = sscanf(str,
-        "%*[^:]://%04u:0x%08" PRIx32 ":0x%08" PRIx32 ":%02u:0x%06" PRIx32
-        ":0x%08" PRIx32 ":%02u",
+        "%*[^:]://%04u:0x%08" SCNx32 ":0x%08" SCNx32 ":%02u:0x%06" SCNx32
+        ":0x%08" SCNx32 ":%02u",
         &version, &device_addr, &cdm_id, &name_type, &cm_nic_cdm_id, &cookie,
         &rx_ctx_cnt);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 7, error, ret, NA_PROTONOSUPPORT,
