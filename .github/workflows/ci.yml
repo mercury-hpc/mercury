@@ -136,6 +136,10 @@ jobs:
         if: matrix.config.cc == 'icc' && steps.cache-pkg-deps.outputs.cache-hit != 'true'
         run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh $ICC_COMPONENTS
 
+      - name: Install pkg-config
+        if: runner.os == 'macOS'
+        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh pkg-config
+
       - name: Install MPI package dependencies
         run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh mpich
 
