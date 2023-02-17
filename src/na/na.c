@@ -44,7 +44,7 @@
 
 /* Dynamic plugins */
 #define NA_PLUGIN_PREFIX   "libna_plugin_"
-#define NA_PLUGIN_SCN_NAME "libna_plugin_%16[^_]"
+#define NA_PLUGIN_SCN_NAME "libna_plugin_%16[^_.]"
 #define NA_PLUGIN_PATH_MAX (1024)
 #define NA_PLUGIN_NAME_MAX (16)
 
