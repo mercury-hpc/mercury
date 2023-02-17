@@ -86,6 +86,12 @@
 #    define FI_PROTO_CXI (FI_PROTO_OPX + 1)
 #endif
 
+/* Fallback for undefined XNET values */
+#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
+    FI_VERSION(1, 17))
+#    define FI_PROTO_XNET -3
+#endif
+
 /* Default basic bits */
 #define NA_OFI_MR_BASIC_REQ (FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY)
 
@@ -140,8 +146,18 @@
       NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SEP | NA_OFI_DOM_SHARED       \
     )                                                                          \
     X(NA_OFI_PROV_TCP,                                                         \
-      "tcp;ofi_rxm",                                                           \
       "tcp",                                                                   \
+      "tcp_exp",                                                               \
+      FI_SOCKADDR_IN,                                                          \
+      FI_SOCKADDR_IN,                                                          \
+      FI_PROGRESS_MANUAL,                                                      \
+      FI_PROTO_XNET,                                                           \
+      FI_SOURCE | FI_MULTI_RECV,                                               \
+      NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD                                        \
+    )                                                                          \
+    X(NA_OFI_PROV_TCP_RXM,                                                     \
+      "tcp;ofi_rxm",                                                           \
+      "",                                                                      \
       FI_SOCKADDR_IN,                                                          \
       FI_SOCKADDR_IN,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
@@ -1811,6 +1827,12 @@ static NA_INLINE enum na_ofi_prov_type
 na_ofi_prov_name_to_type(const char *prov_name)
 {
     enum na_ofi_prov_type i = 0;
+
+#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
+    FI_VERSION(1, 18))
+    if (strcmp(prov_name, "tcp") == 0)
+        prov_name = "tcp;ofi_rxm";
+#endif
 
     while (strcmp(na_ofi_prov_name[i], prov_name) &&
            strcmp(na_ofi_prov_alt_name[i], prov_name) && i != NA_OFI_PROV_MAX) {
@@ -3736,6 +3758,7 @@ na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
         case NA_OFI_PROV_NULL:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
+        case NA_OFI_PROV_TCP_RXM:
         case NA_OFI_PROV_PSM2:
         case NA_OFI_PROV_OPX:
         case NA_OFI_PROV_VERBS:
@@ -6115,7 +6138,8 @@ na_ofi_check_protocol(const char *protocol_name)
 
 /* Only the sockets provider is currently supported on macOS */
 #ifdef __APPLE__
-    NA_CHECK_SUBSYS_ERROR(fatal, type == NA_OFI_PROV_TCP, out, accept, false,
+    NA_CHECK_SUBSYS_ERROR(fatal, type != NA_OFI_PROV_SOCKETS, out, accept,
+        false,
         "Protocol \"tcp\" not supported on macOS, please use \"sockets\" "
         "instead");
 #endif
@@ -6974,7 +6998,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         .tag = (uint64_t) tag | NA_OFI_UNEXPECTED_TAG};
 
     /* OPX requires context2 to pass persistent address down to provider */
-    if (na_ofi_addr->class->fi_info->addr_format == FI_ADDR_OPX)
+    if ((int) na_ofi_class->fi_info->addr_format == FI_ADDR_OPX)
         na_ofi_op_id->fi_ctx[0].internal[0] = &na_ofi_addr->addr_key.addr.opx;
 
     ret = na_ofi_class->msg_send_unexpected(
@@ -7152,7 +7176,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         .tag = tag};
 
     /* OPX requires context2 to pass persistent address down to provider */
-    if (na_ofi_addr->class->fi_info->addr_format == FI_ADDR_OPX)
+    if ((int) na_ofi_class->fi_info->addr_format == FI_ADDR_OPX)
         na_ofi_op_id->fi_ctx[0].internal[0] = &na_ofi_addr->addr_key.addr.opx;
 
     ret = na_ofi_tag_send(
