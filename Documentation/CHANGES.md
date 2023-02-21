@@ -4,115 +4,113 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## New features
 
-- __[NA OFI]__
-    - Choose addr format dynamically based on user preferences
-    - Add support for IPv6
-    - Add support for `FI_SOCKADDR_IB`
-    - Add support for `FI_ADDR_STR` and shm provider
-    - Add support for `FI_ADDR_OPX` and opx provider
-    - Add support for HPE `cxi` provider,
-      init info format for `cxi` is:
-        - `NIC:PID` (both or only one may be passed), NIC is `cxi[0-9]`, PID is `[0-510]`
-    - Use `hwloc` to select interface to use if NIC information is available
-      (only supported by `cxi` at the moment)
-    - Support device memory types and `FI_HMEM` for `verbs` and `cxi` providers
-    - Add support for `FI_THREAD_DOMAIN`
-        - Passing `NA_THREAD_MODE_SINGLE` will relax default `FI_THREAD_SAFE`
-        thread mode and use `FI_THREAD_DOMAIN` instead.
-    - Update min required version to libfabric 1.9
-    - Improve debug output to print verbose FI info of selected provider
-- __[NA UCX]__
-    - Use active messaging `UCP_FEATURE_AM` for unexpected messages (only), this
-      allows for removal of address resolution and retry on first message to
-      exchange connection IDs
-    - Turn on mempool by default
-    - Support device memory types
-    - Bump min required version to 1.10
-- __[NA PSM]__
-    - Add mercury NA plugin for the qlogic/intel PSM interface
-        - Also support PSM2 (Intel OmniPath) through the PSM NA plugin
-- __[NA SM]__
-    - Add support for 0-size messages
-- __[NA]__
-    - Add `na_addr_format` init info
-    - Add `request_mem_device` init info when GPU support is requested
-    - Update `NA_Mem_register()` API call to support memory types (e.g., CUDA, ROCm, ZE) and devices IDs
-    - Add `na_loc` module for `hwloc` detection
-    - Remove `na_uint`, `na_int`, `na_bool_t` and `na_size_t` types
-    - Use separate versioning for library and update to v3.0.0
-- __[NA IP]__
-    - Refactor `na_ip_check_interface()` to only use `getaddrinfo()` and `getifaddrs()`
-    - Add family argument to force detection of IPv4/IPv6 addresses
-    - Add ip debug log
-- __[NA Test]__
-    - Introduce new perf tests to measure msg latency, put / get bandwidth. These
-    benchmarks produce results that are comparable with OSU benchmarks.
-- __[HG util]__
-    - Add `mercury_byteswap.h` for `bswap` macros
-    - Add `mercury_inet.h` for `htonll` and `ntohll` routine
-    - Add `mercury_param.h` to use `sys/param.h` or `MIN/MAX` macros etc
-    - Add alternative log names: `err`, `warn`, `trace`, `dbg`
-    - Use separate versioning for library and update to v3.0.0
-- __[HG bulk]__
-    - Add support for memory attributes through a new `HG_Bulk_create_attr()` routine (support CUDA, ROCm, ZE)
 - __[HG]__
-    - Remove `MERCURY_ENABLE_STATS` CMake option and use `'diag'` log subsys instead
-        - Modify behavior of `stats` field to turn on diagnostics
-        - Refactor existing counters (used only if debug is on)
-    - Add checksum levels that can be manually controlled at runtime (disabled by default, `HG_CHECKSUM_NONE` level)
-    - Update to mchecksum v2.0
-    - Add `HG_Set_log_func()` and `HG_Set_log_stream()` to control log output
+    - Add support for multi-recv operations (OFI plugin only)
+        - Currently disable multi-recv when auto SM is on
+        - Posted recv operations are in that case decoupled from pool of RPC handles
+        - Add `release_input_early` init info flag to attempt to release input buffers early once input is decoded
+        - Add `HG_Release_input_buf()` to manually release input buffer.
+        - Add also `no_multi_recv` init info option to force disabling multi-recv
+    - Make use of subsys logs (`cls`, `ctx`, `addr`, `rpc`, `poll`) to control log output
+    - Add init info struct versioning
+- __[HG bulk]__
+    - Update to new logging system through `bulk` subsys log.
+- __[HG proc]__
+    - Update to new logging system through `proc` subsys log.
+- __[HG Test]__
+    - Refactor tests to separate perf tests from unit tests
+    - Add NA/HG test common library
+    - Add `hg_rate` / `hg_bw_write` and `hg_bw_read` perf tests
+    - Install perf tests if `BUILD_TESTING` is `ON`
+- __[NA]__
+    - Add support for multi-recv operations
+        - Add `NA_Msg_multi_recv_unexpected()` and `na_cb_info_multi_recv_unexpected` cb info
+        - Add `flags` parameter to `NA_Op_create()` and `NA_Msg_buf_alloc()`
+        - Add `NA_Has_opt_feature()` to query multi recv capability
+    - Remove int return type from NA callbacks and return void
+    - Remove unused `timeout` parameter from `NA_Trigger()`
+    - `NA_Addr_free()` / `NA_Mem_handle_free()` and `NA_Op_destroy()` now return void
+    - `na_mem_handle_t` and `na_addr_t` types to no longer include pointer type
+    - Add `NA_PLUGIN_PATH` env variable to optionally control plugin loading path
+    - Add `NA_DEFAULT_PLUGIN_PATH` CMake option to control default plugin path (default is lib install path)
+    - Add `NA_USE_DYNAMIC_PLUGINS` CMake option (OFF by default)
+    - Bump NA library version to 4.0.0
+- __[NA OFI]__
+    - Add support for multi-recv operations and use `FI_MSG`
+    - Allocate multi-recv buffers using hugepages when available
+    - Switch to using `fi_senddata()` with immediate data for unexpected msgs
+        - `NA_OFI_UNEXPECTED_TAG_MSG` can be set to switch back to former behavior that uses tagged messages instead
+    - Remove support for deprecated `psm` provider
+    - Control CQ interrupt signaling with `FI_AFFINITY` (only used if thread is bound to a single CPU ID)
+    - Enable `cxi` provider to use `FI_WAIT_FD`
+    - Add `NA_OFI_OP_RETRY_TIMEOUT` and `NA_OFI_OP_RETRY_PERIOD`
+        - Once `NA_OFI_OP_RETRY_TIMEOUT` milliseconds elapse, retry is stopped and operation is aborted (default is 120000ms)
+        - When `NA_OFI_OP_RETRY_PERIOD` is set, operations are retried only every `NA_OFI_OP_RETRY_PERIOD` milliseconds (default is 0)
+    - Add support for `tcp` with and without `ofi_rxm`
+        - `tcp` defaults to `tcp;ofi_rxm` for libfabric < 1.18
+    - Enable plugin to be built as a dynamic plugin
+- __[NA UCX]__
+    - Attempt to disable UCX backtrace if `UCX_HANDLE_ERRORS` is not set
+    - Add support for `UCP_EP_PARAM_FIELD_LOCAL_SOCK_ADDR`
+        - With UCX >= 1.13 local src address information can now be specified on client to use specific interface and port
+    - Set `CM_REUSEADDR` by default to enable reuse of existing listener addr after a listener exits abnormally
+    - Attempt to reconnect EP if disconnected
+        - This concerns cases where a peer would have reappeared after a previous disconnection
+    - Enable plugin to be built as a dynamic plugin
+- __[NA Test]__
+    - Update NA test perf to use multi-recv feature
+    - Update perf test to use hugepages
+    - Add support for multi-targets and add lookup test
+    - Install perf tests if `BUILD_TESTING` is `ON`
+- __[HG util]__
+    - Change return type of `hg_time_less()` to be `bool`
+    - Add support for hugepage allocations
+    - Use `isb` for `cpu_spinwait` on `aarch64`
+    - Add `mercury_dl` to support dynamically loaded modules
+    - Bump HG util version to 4.0.0
 
 ## Bug fixes
 
-- __[NA OFI]__
-    - Switch `tcp` provider to `FI_PROGRESS_MANUAL`
-    - Prevent empty authorization keys from being passed
-    - Check max MR key used when `FI_MR_PROV_KEY` is not set
-    - New implementation of address management
-        - Fix duplicate addresses on multithreaded lookups
-        - Redefine address keys and raw addresses to prevent allocations
-        - Use FI addr map to lookup by FI addr
-        - Improve serialization and deserialization of addresses
-    - Fix provider table and use EP proto
-    - Refactor and clean up plugin initialization 
-        - Clean up ip and domain checking
-        - Ensure interface name is not used as domain name for verbs etc
-        - Use NA IP module and add missing `NA_OFI_VERIFY_PROV_DOM` for `tcp` provider
-        - Rework handling of `fi_info` to open fabric/domain/endpoint
-        - Separate fabric from domain and keep single domain per NA class
-        - Refactor handling of scalable vs standard endpoints
-    - Improve handling of retries after `FI_EAGAIN` return code
-        - Abort retried ops after default 90s timeout
-        - Abort ops to a target being retried after first `NA_HOSTUNREACH` error in CQ
-- __[NA UCX]__
-    - Fix potential error not returned correctly on `conn_insert()`
-    - Fix potential double free of worker_addr
-    - Remove use of unified mode
-    - Ensure address key is correctly reset
-    - Fix hostname / net device parsing to allow for multiple net devices
-- __[HG util]__
-    - Make sure we round up ms time conversion, this ensures that small timeouts
-    do not result in busy spin.
-    - Use sched_yield() instead of deprecated pthread_yield()
-    - Fix `'none'` log level not recognized
-    - Fix external logging facility
-    - Let mercury log print counters on exit when debug outlet is on
-- __[HG proc]__
-    - Prevent call to `save_ptr()/restore_ptr()` during `HG_FREE`
-- __[HG Bulk]__
-    - Remove some `NA_CANCELED` event warnings.
 - __[HG]__
-    - Properly handle error when overflow bulk transfer is interrupted. Previously the RPC callback was triggered regarldless, potentially causing issues.
-- __[CMake]__
-    - Correctly set INSTALL_RPATH for target libraries
-    - Split `mercury.pc` pkg config file into multiple `.pc` files for
-    `mercury_util` and `na` to prevent from overlinking against those libraries
-    when using pkg config.
+    - Clean up and refactoring fixes
+    - Fix race condition in `hg_core_forward` with debug enabled
+    - Simplify RPC map and fix hashing for RPC IDs larger than 32-bit integer
+    - Refactor context pools and cleanup
+    - Fix potential leak on ack buffer
+    - Ensure list of created RPC handles is empty before closing context
+    - Bump pre-allocated requests to 512 to make use of 2M hugepages
+    - Add extra error checking to prevent class mismatch
+    - Fix potential race when sending one-way RPCs to ourself
+- __[HG Bulk]__
+    - Add extra error checking to prevent class mismatch
+- __[HG Test]__
+    - Refactor `test_rpc` to correctly handle timeout return values
+- __[NA OFI]__
+    - Force `sockets` provider to use shared domains
+        - This prevents a performance regression when multiple classes are being used (`FI_THREAD_DOMAIN` is therefore disabled for this provider)
+    - Refactor unexpected and expected sends, retry of OFI operations, handling of RMA operations
+    - Always include `FI_DIRECTED_RECV` in primary caps
+    - Remove `NA_OFI_SOURCE_MSG` flag that was matching `FI_SOURCE_ERR`
+    - Fix potential refcount race when sharing domains
+    - Check domain's optimal MR count if non-zero
+    - Fix potential double free of src_addr info
+    - Refactor auth key parsing code to build without extension headers
+    - Merge latest changes required for `opx` provider enablement
+- __[NA SM]__
+    -  Fix handling of 0-size messages when no receive has been posted
+- __[NA UCX]__
+    - Fix handling of UCS return types to match NA types
+- __[NA BMI]__
+    - Clean up and fix some coverity warnings
+- __[NA MPI]__
+    - Clean up and fix some coverity warnings
+- __[HG util]__
+    - Clean up logging and set log root to `hg_all`
+        - `hg_all` subsys can now be set to turn on logging in all subsystems
+    - Set log subsys to `hg_all` if log level env is set
+    - Fixes to support WIN32 builds
 
 ## :warning: Known Issues
 
 - __[NA OFI]__
     - [tcp/verbs;ofi_rxm] Using more than 256 peers requires `FI_UNIVERSE_SIZE` to be set.
-- __[NA UCX]__
-    - `NA_Addr_to_string()` cannot be used on non-listening processes to convert a self-address to a string.
