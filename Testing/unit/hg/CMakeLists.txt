@@ -13,19 +13,25 @@ set(NA_TESTING_NO_BLOCK "true;false")
 #------------------------------------------------------------------------------
 # Set up test macros
 #------------------------------------------------------------------------------
-
-add_library(mercury_unit OBJECT mercury_unit.c mercury_rpc_cb.c)
-target_link_libraries(mercury_unit mercury_test_common)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(mercury_unit)
+if(${CMAKE_VERSION} VERSION_GREATER 3.12)
+  add_library(mercury_unit OBJECT mercury_unit.c mercury_rpc_cb.c)
+  target_link_libraries(mercury_unit mercury_test_common)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(mercury_unit)
+  endif()
 endif()
 
 #
 # hg prefix is added to executable
 #
 function(build_mercury_test test_name)
-  add_executable(hg_test_${test_name} test_${test_name}.c)
-  target_link_libraries(hg_test_${test_name} mercury_unit)
+  if(${CMAKE_VERSION} VERSION_GREATER 3.12)
+    add_executable(hg_test_${test_name} test_${test_name}.c)
+    target_link_libraries(hg_test_${test_name} mercury_unit)
+  else()
+    add_executable(hg_test_${test_name} test_${test_name}.c mercury_unit.c mercury_rpc_cb.c)
+    target_link_libraries(hg_test_${test_name} mercury_test_common)
+  endif()
   if(MERCURY_ENABLE_COVERAGE)
     set_coverage_flags(hg_test_${test_name})
   endif()

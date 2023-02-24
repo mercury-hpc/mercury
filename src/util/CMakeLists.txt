@@ -70,6 +70,12 @@ check_c_source_compiles(
   HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
 )
 
+# DL
+set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
+  ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
+  ${CMAKE_DL_LIBS}
+)
+
 # Threads
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -318,9 +324,13 @@ if(NOT WIN32)
     else()
       # lib_name is /path/to/lib so get library path and name
       get_filename_component(lib_path ${lib_dep} PATH)
+      if(lib_path)
+        set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST
+            ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path})
+      endif()
       string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
       set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST
-          ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
+          ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST} -l${lib_name})
     endif()
   endforeach()
   if(MERCURY_UTIL_EXT_LIB_DEPENDENCIES_LIST)
