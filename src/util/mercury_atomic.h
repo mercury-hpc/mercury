@@ -19,9 +19,6 @@ typedef struct {
 typedef struct {
     volatile LONGLONG value;
 } hg_atomic_int64_t;
-/* clang-format off */
-#    define HG_ATOMIC_VAR_INIT(x) {(x)}
-/* clang-format on */
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
 #    ifndef __cplusplus
 #        include <stdatomic.h>
@@ -45,12 +42,6 @@ using std::memory_order_acq_rel;
 using std::memory_order_acquire;
 using std::memory_order_release;
 #    endif
-#    if (__STDC_VERSION__ >= 201710L ||                                        \
-         (defined(__cplusplus) && __cplusplus >= 202002L))
-#        define HG_ATOMIC_VAR_INIT(x) (x)
-#    else
-#        define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
-#    endif
 #elif defined(__APPLE__)
 #    include <libkern/OSAtomic.h>
 typedef struct {
@@ -59,9 +50,6 @@ typedef struct {
 typedef struct {
     volatile int64_t value;
 } hg_atomic_int64_t;
-/* clang-format off */
-#    define HG_ATOMIC_VAR_INIT(x) {(x)}
-/* clang-format on */
 #else /* GCC 4.7 */
 #    if !defined(__GNUC__) || ((__GNUC__ < 4) && (__GNUC_MINOR__ < 7))
 #        error "GCC version >= 4.7 required to support built-in atomics."
@@ -69,7 +57,6 @@ typedef struct {
 /* builtins do not require volatile */
 typedef int32_t hg_atomic_int32_t;
 typedef int64_t hg_atomic_int64_t;
-#    define HG_ATOMIC_VAR_INIT(x) (x)
 #endif
 
 #ifdef __cplusplus
