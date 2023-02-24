@@ -555,9 +555,13 @@ if(NOT WIN32)
     else()
       # lib_name is /path/to/lib so get library path and name
       get_filename_component(lib_path ${lib_dep} PATH)
+      if(lib_path)
+        set(NA_EXT_LIB_DEPENDENCIES_LIST
+            ${NA_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path})
+      endif()
       string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
       set(NA_EXT_LIB_DEPENDENCIES_LIST
-          ${NA_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
+          ${NA_EXT_LIB_DEPENDENCIES_LIST} -l${lib_name})
     endif()
   endforeach()
   if(NA_EXT_LIB_DEPENDENCIES_LIST)

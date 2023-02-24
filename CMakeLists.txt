@@ -124,7 +124,7 @@ endif()
 #------------------------------------------------------------------------------
 # Disallow in-source build
 #------------------------------------------------------------------------------
-if("${MERCURY_SOURCE_DIR}" STREQUAL "${MERCURY_BINARY_DIR}")
+if(NOT CMAKE_IN_SOURCE_BUILD AND "${MERCURY_SOURCE_DIR}" STREQUAL "${MERCURY_BINARY_DIR}")
   message(FATAL_ERROR
     "Mercury requires an out of source Build. "
     "Please create a separate binary directory and run CMake there.")
@@ -182,8 +182,25 @@ else()
 endif()
 
 #-------------------------------------------------------------------------------
+if(${CMAKE_VERSION} VERSION_GREATER 3.14)
+  include(CheckPIESupported)
+  check_pie_supported(OUTPUT_VARIABLE output LANGUAGES C)
+  if(BUILD_SHARED_LIBS AND NOT CMAKE_C_LINK_PIE_SUPPORTED)
+    message(WARNING "PIE is not supported at link time: ${output}.\n"
+                    "PIE link options will not be passed to linker.")
+  endif()
+endif()
+
+function(mercury_set_exe_options exetarget var_prefix)
+  set_target_properties(${exetarget} PROPERTIES
+      POSITION_INDEPENDENT_CODE  ${BUILD_SHARED_LIBS}
+      INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
+  )
+endfunction()
+
+#-------------------------------------------------------------------------------
 function(mercury_set_lib_options libtarget libname libtype var_prefix)
-  if(${libtype} MATCHES "SHARED")
+  if(${libtype} MATCHES "SHARED" OR ${libtype} MATCHES "MODULE")
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_D")
@@ -191,8 +208,6 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_debug")
     endif()
-    set(LIB_VERSION ${${var_prefix}_VERSION}.${${var_prefix}_VERSION_PATCH})
-    set(API_VERSION ${${var_prefix}_VERSION_MAJOR})
   else()
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "lib${libname}")
@@ -218,8 +233,8 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
       OUTPUT_NAME_ASAN           ${LIB_DEBUG_NAME}
       OUTPUT_NAME_TSAN           ${LIB_DEBUG_NAME}
       OUTPUT_NAME_UBSAN          ${LIB_DEBUG_NAME}
-      VERSION                    ${LIB_VERSION}
-      SOVERSION                  ${API_VERSION}
+      VERSION                    ${${var_prefix}_VERSION}.${${var_prefix}_VERSION_PATCH}
+      SOVERSION                  ${${var_prefix}_VERSION_MAJOR}
       INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
   )
 

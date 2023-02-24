@@ -43,6 +43,13 @@ if(NA_USE_PSM2)
 endif()
 
 #------------------------------------------------------------------------------
+# Options
+#------------------------------------------------------------------------------
+option(BUILD_TESTING_UNIT "Build unit tests." ON)
+option(BUILD_TESTING_PERF "Build performance tests." ON)
+mark_as_advanced(BUILD_TESTING_UNIT BUILD_TESTING_PERF)
+
+#------------------------------------------------------------------------------
 # Common libraries
 #------------------------------------------------------------------------------
 add_subdirectory(common)
@@ -50,14 +57,20 @@ add_subdirectory(common)
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
-add_subdirectory(driver)
+if(BUILD_TESTING_UNIT)
+  add_subdirectory(driver)
+endif()
 
 #------------------------------------------------------------------------------
 # Unit tests
 #------------------------------------------------------------------------------
-add_subdirectory(unit)
+if(BUILD_TESTING_UNIT)
+  add_subdirectory(unit)
+endif()
 
 #------------------------------------------------------------------------------
 # Perf tests
 #------------------------------------------------------------------------------
-add_subdirectory(perf)
+if(BUILD_TESTING_PERF)
+  add_subdirectory(perf)
+endif()

@@ -9,19 +9,25 @@ endif(WIN32)
 #------------------------------------------------------------------------------
 # Set up test macros
 #------------------------------------------------------------------------------
-
-add_library(na_test_common_lookup OBJECT na_test_common.c)
-target_link_libraries(na_test_common_lookup na_test_common)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(na_test_common_lookup)
+if(${CMAKE_VERSION} VERSION_GREATER 3.12)
+  add_library(na_test_common_lookup OBJECT na_test_common.c)
+  target_link_libraries(na_test_common_lookup na_test_common)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(na_test_common_lookup)
+  endif()
 endif()
 
 #
 # na prefix is added to executable
 #
 function(build_na_test_lookup test_name)
-  add_executable(na_test_${test_name} test_${test_name}.c)
-  target_link_libraries(na_test_${test_name} na_test_common_lookup)
+  if(${CMAKE_VERSION} VERSION_GREATER 3.12)
+    add_executable(na_test_${test_name} test_${test_name}.c)
+    target_link_libraries(na_test_${test_name} na_test_common_lookup)
+  else()
+    add_executable(na_test_${test_name} test_${test_name}.c na_test_common.c)
+    target_link_libraries(na_test_${test_name} na_test_common)
+  endif()
   if(MERCURY_ENABLE_COVERAGE)
     set_coverage_flags(na_test_${test_name})
   endif()
