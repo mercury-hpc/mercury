@@ -233,10 +233,15 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
       OUTPUT_NAME_ASAN           ${LIB_DEBUG_NAME}
       OUTPUT_NAME_TSAN           ${LIB_DEBUG_NAME}
       OUTPUT_NAME_UBSAN          ${LIB_DEBUG_NAME}
-      VERSION                    ${${var_prefix}_VERSION}.${${var_prefix}_VERSION_PATCH}
-      SOVERSION                  ${${var_prefix}_VERSION_MAJOR}
-      INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
   )
+  if(${libtype} MATCHES "SHARED")
+    set_target_properties(${libtarget}
+        PROPERTIES
+        INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
+        VERSION                    ${${var_prefix}_VERSION}.${${var_prefix}_VERSION_PATCH}
+        SOVERSION                  ${${var_prefix}_VERSION_MAJOR}
+    )
+  endif()
 
   if(MSVC)
     target_compile_definitions(${libtarget} PRIVATE -D_CRT_SECURE_NO_WARNINGS)
