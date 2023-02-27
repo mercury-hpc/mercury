@@ -1135,9 +1135,20 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_hash_table_register_free_functions(
         hg_core_class->rpc_map.map, NULL, hg_core_map_value_free);
 
-    /* Get init info and overwrite defaults */
-    if (hg_init_info_p)
+    /* Ensure init info is API compatible */
+    if (hg_init_info_p) {
+        HG_CHECK_SUBSYS_ERROR(fatal,
+            (hg_init_info_p->api_version != 0) &&
+                (HG_MAJOR(hg_init_info_p->api_version) != HG_VERSION_MAJOR),
+            error, ret, HG_PROTONOSUPPORT,
+            "API version mismatch, expected %d, got %d", HG_VERSION_MAJOR,
+            HG_MAJOR(hg_init_info_p->api_version));
+        HG_CHECK_SUBSYS_WARNING(cls, hg_init_info_p->api_version == 0,
+            "API version field of init info is not set, assuming latest");
+
+        /* Get init info and overwrite defaults */
         hg_init_info = *hg_init_info_p;
+    }
 
     /* request_post_incr is used only if request_post_init is non-zero */
     if (hg_init_info.request_post_init == 0) {

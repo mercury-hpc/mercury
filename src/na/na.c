@@ -631,9 +631,20 @@ NA_Initialize_opt(const char *info_string, bool listen,
     ret = na_info_parse(info_string, &class_name, &na_info);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse host string");
 
-    na_info->na_init_info = na_init_info;
-    if (na_init_info)
+    /* Ensure init info is API compatible */
+    if (na_init_info) {
+        NA_CHECK_SUBSYS_ERROR(fatal,
+            (na_init_info->api_version != 0) &&
+                (NA_MAJOR(na_init_info->api_version) != NA_VERSION_MAJOR),
+            error, ret, NA_PROTONOSUPPORT,
+            "API version mismatch, expected %d, got %d", NA_VERSION_MAJOR,
+            NA_MAJOR(na_init_info->api_version));
+        NA_CHECK_SUBSYS_WARNING(cls, na_init_info->api_version == 0,
+            "API version field of init info is not set, assuming latest");
+
+        na_info->na_init_info = na_init_info;
         na_private_class->na_class.progress_mode = na_init_info->progress_mode;
+    }
 
     /* Print debug info */
     NA_LOG_SUBSYS_DEBUG(cls, "Class: %s, Protocol: %s, Hostname: %s",
