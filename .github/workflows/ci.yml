@@ -80,19 +80,28 @@ jobs:
             }
         build_type: [Debug, RelWithDebInfo, Release]
         libs: [shared]
+        plugins: [static_plugins]
         include:
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Debug
             libs: static
+            plugins: static_plugins
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Asan
             libs: shared
+            plugins: static_plugins
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Tsan
             libs: shared
+            plugins: static_plugins
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Ubsan
             libs: shared
+            plugins: static_plugins
+          - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
+            build_type: RelWithDebInfo
+            libs: shared
+            plugins: dynamic_plugins
 
     runs-on: ${{ matrix.config.os }}
 
@@ -100,6 +109,7 @@ jobs:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
       MERCURY_BUILD_CONFIGURATION: ${{ matrix.build_type }}
       MERCURY_LIBS: ${{ matrix.libs }}
+      MERCURY_PLUGINS: ${{ matrix.plugins }}
       CC: ${{ matrix.config.cc }}
       CXX: ${{ matrix.config.cxx }}
       INSTALL_DIR: install
