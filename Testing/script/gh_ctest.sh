@@ -30,6 +30,12 @@ else
   BUILD_SHARED=TRUE
 fi
 
+if [[ ${MERCURY_PLUGINS} == 'dynamic_plugins' ]]; then
+  BUILD_DYNAMIC_PLUGINS=TRUE
+else
+  BUILD_DYNAMIC_PLUGINS=FALSE
+fi
+
 # Source intel env when using icc
 if [[ ${CC} == 'icc' ]]; then
   ICC_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/compiler/ | grep -v latest | sort | tail -1)
@@ -49,6 +55,7 @@ $CTEST -VV --output-on-failure                        \
   -Ddashboard_full=FALSE -Ddashboard_do_${STEP}=TRUE  \
   -Ddashboard_model=${DASHBOARD_MODEL}                \
   -Dbuild_shared_libs=${BUILD_SHARED}                 \
+  -Dbuild_dynamic_plugins=${BUILD_DYNAMIC_PLUGINS}    \
   -Ddashboard_do_submit=${DASHBOARD_SUBMIT}           \
   -Ddashboard_allow_errors=TRUE                       \
   -S $CTEST_SCRIPT

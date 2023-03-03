@@ -117,6 +117,11 @@ if(NOT DEFINED build_shared_libs)
 endif()
 set(CTEST_CMAKE_GENERATOR "Unix Makefiles")
 
+# Build dynamic plugins
+if(NOT DEFINED build_dynamic_plugins)
+  set(build_dynamic_plugins OFF)
+endif()
+
 # Optional coverage options
 if(MERCURY_DO_COVERAGE)
   message("Enabling coverage")
@@ -253,6 +258,8 @@ MERCURY_ENABLE_DEBUG:BOOL=${enable_debug}
 MERCURY_USE_BOOST_PP:BOOL=OFF
 MERCURY_USE_CHECKSUMS:BOOL=${USE_CHECKSUMS}
 MERCURY_USE_XDR:BOOL=OFF
+NA_USE_DYNAMIC_PLUGINS:BOOL=${build_dynamic_plugins}
+NA_DEFAULT_PLUGIN_PATH:PATH=${CTEST_BINARY_DIRECTORY}/bin
 NA_USE_BMI:BOOL=${USE_BMI}
 BMI_INCLUDE_DIR:PATH=$ENV{DEPS_PREFIX}/include
 BMI_LIBRARY:FILEPATH=$ENV{DEPS_PREFIX}/lib/libbmi.${SOEXT}
