@@ -127,51 +127,63 @@
 
 /* Log macro */
 #ifdef _WIN32
-#    define HG_LOG_WRITE(name, log_level, ...)                                 \
+#    define HG_LOG_WRITE_FUNC(                                                 \
+        name, log_level, module, file, line, func, no_return, ...)             \
         do {                                                                   \
             if (!HG_LOG_OUTLET(name).registered)                               \
                 hg_log_outlet_register(&HG_LOG_OUTLET(name));                  \
             if (HG_LOG_OUTLET(name).level >= log_level)                        \
-                hg_log_write(&HG_LOG_OUTLET(name), log_level, __FILE__,        \
-                    __LINE__, __func__, __VA_ARGS__);                          \
+                hg_log_write(&HG_LOG_OUTLET(name), log_level, module, file,    \
+                    line, func, no_return, __VA_ARGS__);                       \
         } while (0)
 
-#    define HG_LOG_WRITE_DEBUG_EXT(name, header, ...)                          \
+#    define HG_LOG_WRITE_FUNC_DEBUG_EXT(                                       \
+        name, header, module, file, line, func, ...)                           \
         do {                                                                   \
             if (!HG_LOG_OUTLET(name).registered)                               \
                 hg_log_outlet_register(&HG_LOG_OUTLET(name));                  \
             if (HG_LOG_OUTLET(name).level == HG_LOG_LEVEL_DEBUG) {             \
                 hg_log_func_t log_func = hg_log_get_func();                    \
-                hg_log_write(&HG_LOG_OUTLET(name), HG_LOG_LEVEL_DEBUG,         \
-                    __FILE__, __LINE__, __func__, header);                     \
+                hg_log_write(&HG_LOG_OUTLET(name), HG_LOG_LEVEL_DEBUG, module, \
+                    file, line, func, no_return, header);                      \
                 log_func(hg_log_get_stream_debug(), __VA_ARGS__);              \
                 log_func(hg_log_get_stream_debug(), "---\n");                  \
             }                                                                  \
         } while (0)
 #else
-#    define HG_LOG_WRITE(name, log_level, ...)                                 \
+#    define HG_LOG_WRITE_FUNC(                                                 \
+        name, log_level, module, file, line, func, no_return, ...)             \
         do {                                                                   \
             if (log_level == HG_LOG_LEVEL_DEBUG &&                             \
                 HG_LOG_OUTLET(name).level >= HG_LOG_LEVEL_MIN_DEBUG &&         \
                 HG_LOG_OUTLET(name).debug_log)                                 \
-                hg_dlog_addlog(HG_LOG_OUTLET(name).debug_log, __FILE__,        \
-                    __LINE__, __func__, NULL, NULL);                           \
+                hg_dlog_addlog(HG_LOG_OUTLET(name).debug_log, file, line,      \
+                    func, NULL, NULL);                                         \
             if (HG_LOG_OUTLET(name).level >= log_level)                        \
-                hg_log_write(&HG_LOG_OUTLET(name), log_level, __FILE__,        \
-                    __LINE__, __func__, __VA_ARGS__);                          \
+                hg_log_write(&HG_LOG_OUTLET(name), log_level, module, file,    \
+                    line, func, no_return, __VA_ARGS__);                       \
         } while (0)
 
-#    define HG_LOG_WRITE_DEBUG_EXT(name, header, ...)                          \
+#    define HG_LOG_WRITE_FUNC_DEBUG_EXT(                                       \
+        name, header, module, file, line, func, no_return, ...)                \
         do {                                                                   \
             if (HG_LOG_OUTLET(name).level == HG_LOG_LEVEL_DEBUG) {             \
                 hg_log_func_t log_func = hg_log_get_func();                    \
-                hg_log_write(&HG_LOG_OUTLET(name), HG_LOG_LEVEL_DEBUG,         \
-                    __FILE__, __LINE__, __func__, header);                     \
+                hg_log_write(&HG_LOG_OUTLET(name), HG_LOG_LEVEL_DEBUG, module, \
+                    file, line, func, no_return, header);                      \
                 log_func(hg_log_get_stream_debug(), __VA_ARGS__);              \
                 log_func(hg_log_get_stream_debug(), "---\n");                  \
             }                                                                  \
         } while (0)
 #endif
+
+#define HG_LOG_WRITE(name, log_level, ...)                                     \
+    HG_LOG_WRITE_FUNC(name, log_level, NULL, __FILE__, __LINE__, __func__,     \
+        false, __VA_ARGS__)
+
+#define HG_LOG_WRITE_DEBUG_EXT(name, header, ...)                              \
+    HG_LOG_WRITE_FUNC_DEBUG_EXT(                                               \
+        name, header, NULL, __FILE__, __LINE__, __func__, false, __VA_ARGS__)
 
 /**
  * Additional macros for debug log support.
@@ -378,15 +390,17 @@ hg_log_outlet_register(struct hg_log_outlet *outlet);
  *
  * \param outlet [IN]           log outlet
  * \param log_level [IN]        log level
+ * \param module [IN]           optional module name
  * \param file [IN]             file name
  * \param line [IN]             line number
  * \param func [IN]             function name
+ * \param no_return [IN]        prevent line return
  * \param format [IN]           string format
  */
 HG_UTIL_PUBLIC void
-hg_log_write(struct hg_log_outlet *outlet, enum hg_log_level log_level,
-    const char *file, unsigned int line, const char *func, const char *format,
-    ...) HG_UTIL_PRINTF(6, 7);
+hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
+    const char *module, const char *file, unsigned int line, const char *func,
+    bool no_return, const char *format, ...) HG_UTIL_PRINTF(8, 9);
 
 /*********************/
 /* Public Variables */

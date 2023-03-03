@@ -510,8 +510,8 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 /*---------------------------------------------------------------------------*/
 void
 hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
-    const char *file, unsigned int line, const char *func, const char *format,
-    ...)
+    const char *module, const char *file, unsigned int line, const char *func,
+    bool no_return, const char *format, ...)
 {
     char buf[HG_LOG_BUF_MAX];
     FILE *stream = NULL;
@@ -544,21 +544,23 @@ hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
 #ifdef HG_UTIL_HAS_LOG_COLOR
     /* Print using logging function */
     hg_log_func_g(stream,
-        "# %s%s[%lf] %s%s%s->%s%s: %s%s[%s]%s%s %s:%d %s\n"
-        "## %s%s%s()%s: %s%s%s%s\n",
+        "# %s%s[%lf] %s%s%s->%s%s: %s%s[%s]%s%s %s%s%s:%d %s\n"
+        "## %s%s%s()%s: %s%s%s%s%s",
         HG_LOG_REG, HG_LOG_GREEN, hg_time_to_double(tv), HG_LOG_REG,
         HG_LOG_YELLOW, "mercury", hg_log_outlet->name, HG_LOG_RESET,
-        HG_LOG_BOLD, color, level_name, HG_LOG_REG, color, file, line,
-        HG_LOG_RESET, HG_LOG_REG, HG_LOG_YELLOW, func, HG_LOG_RESET, HG_LOG_REG,
+        HG_LOG_BOLD, color, level_name, HG_LOG_REG, color, module ? module : "",
+        module ? ":" : "", file, line, HG_LOG_RESET, HG_LOG_REG, HG_LOG_YELLOW,
+        func, HG_LOG_RESET, HG_LOG_REG,
         log_level != HG_LOG_LEVEL_DEBUG ? color : HG_LOG_RESET, buf,
-        HG_LOG_RESET);
+        no_return ? "" : "\n", HG_LOG_RESET);
 #else
     /* Print using logging function */
     hg_log_func_g(stream,
-        "# [%lf] %s->%s: [%s] %s:%d\n"
-        " # %s(): %s\n",
-        hg_time_to_double(tv), "mercury", hg_log_outlet->name, level_name, file,
-        line, func, buf);
+        "# [%lf] %s->%s: [%s] %s%s%s:%d\n"
+        " # %s(): %s%s",
+        hg_time_to_double(tv), "mercury", hg_log_outlet->name, level_name,
+        module ? module : "", module ? ":" : "", file, line, func, buf,
+        no_return ? "" : "\n");
 #endif
 
     if (log_level == HG_LOG_LEVEL_ERROR && hg_log_outlet->debug_log &&
