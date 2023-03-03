@@ -30,6 +30,7 @@
 #include <rdma/fi_domain.h>
 #include <rdma/fi_endpoint.h>
 #include <rdma/fi_errno.h>
+#include <rdma/fi_ext.h>
 #include <rdma/fi_rma.h>
 #include <rdma/fi_tagged.h>
 #ifdef NA_OFI_HAS_EXT_GNI_H
@@ -63,7 +64,13 @@
  * Specify the version of OFI is coded to, the provider will select struct
  * layouts that are compatible with this version.
  */
-#define NA_OFI_VERSION FI_VERSION(1, 9)
+#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
+    FI_VERSION(1, 15))
+#    define NA_OFI_VERSION FI_VERSION(1, 9)
+#else
+/* Bump to 1.13 to support redefinition of OFI log callbacks */
+#    define NA_OFI_VERSION FI_VERSION(1, 13)
+#endif
 
 /* Fallback for undefined OPX values */
 #if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
@@ -747,6 +754,37 @@ struct na_ofi_class {
 /********************/
 /* Local Prototypes */
 /********************/
+
+#if !defined(_WIN32) &&                                                        \
+    FI_VERSION_GE(                                                             \
+        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 15))
+/**
+ * Check if OFI log is enabled.
+ */
+static int
+na_ofi_log_enabled(const struct fi_provider *prov, enum fi_log_level level,
+    enum fi_log_subsys subsys, uint64_t flags);
+
+/**
+ * Print OFI log.
+ */
+static void
+na_ofi_log(const struct fi_provider *prov, enum fi_log_level level,
+    enum fi_log_subsys subsys, const char *func, int line, const char *msg);
+
+/**
+ * Check if OFI log is ready.
+ */
+static int
+na_ofi_log_ready(const struct fi_provider *prov, enum fi_log_level level,
+    enum fi_log_subsys subsys, uint64_t flags, uint64_t *showtime);
+
+/**
+ * Convert FI log level to HG log level.
+ */
+static enum hg_log_level
+na_ofi_log_level_to_hg(enum fi_log_level level);
+#endif
 
 /**
  * Convert FI errno to NA return values.
@@ -1739,6 +1777,137 @@ static HG_LIST_HEAD(na_ofi_domain)
 /* Domain list lock */
 static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
     HG_THREAD_MUTEX_INITIALIZER;
+
+#if !defined(_WIN32) &&                                                        \
+    FI_VERSION_GE(                                                             \
+        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 15))
+/* Custom log */
+static struct fid_logging na_ofi_log_fid_g = {.ops = NULL};
+static struct fi_ops_log na_ofi_import_log_ops_g = {
+    .size = sizeof(struct fi_ops),
+    .enabled = na_ofi_log_enabled,
+    .ready = na_ofi_log_ready,
+    .log = na_ofi_log,
+};
+
+/* OFI log subsys names */
+static const char *const na_ofi_log_subsys_g[] = {[FI_LOG_CORE] = "core",
+    [FI_LOG_FABRIC] = "fabric",
+    [FI_LOG_DOMAIN] = "domain",
+    [FI_LOG_EP_CTRL] = "ep_ctrl",
+    [FI_LOG_EP_DATA] = "ep_data",
+    [FI_LOG_AV] = "av",
+    [FI_LOG_CQ] = "cq",
+    [FI_LOG_EQ] = "eq",
+    [FI_LOG_MR] = "mr",
+    [FI_LOG_CNTR] = "cntr",
+    [FI_LOG_SUBSYS_MAX] = NULL};
+
+/* Log interval in ms */
+static int na_ofi_log_interval_g = 2000;
+
+/* Initialize list of plugins etc */
+static void
+na_ofi_log_import(void) NA_CONSTRUCTOR;
+static void
+na_ofi_log_close(void) NA_DESTRUCTOR;
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_log_import(void)
+{
+    /* Only import log if FI_LOG_LEVEL is not set */
+    if (getenv("FI_LOG_LEVEL") == NULL) {
+        int rc;
+
+        na_ofi_log_fid_g.ops = &na_ofi_import_log_ops_g;
+        rc = fi_import_log(NA_OFI_VERSION, 0, &na_ofi_log_fid_g);
+        NA_CHECK_SUBSYS_ERROR_NORET(cls, rc != 0, error,
+            "fi_import_log() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    }
+
+    return;
+
+error:
+    na_ofi_log_fid_g.ops = NULL;
+    return;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_log_close(void)
+{
+    if (na_ofi_log_fid_g.ops != NULL) {
+        int rc = fi_close(&na_ofi_log_fid_g.fid);
+        na_ofi_log_fid_g.ops = NULL;
+        NA_CHECK_SUBSYS_ERROR_NORET(cls, rc != 0, error,
+            "fi_close() logging failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    }
+
+    return;
+
+error:
+    return;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_ofi_log_enabled(const struct fi_provider NA_UNUSED *prov,
+    enum fi_log_level level, enum fi_log_subsys NA_UNUSED subsys,
+    uint64_t NA_UNUSED flags)
+{
+    /* We do not filter on libfabric subsystems at the moment */
+    return HG_LOG_OUTLET(libfabric).level >= na_ofi_log_level_to_hg(level);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_log(const struct fi_provider *prov, enum fi_log_level level,
+    enum fi_log_subsys subsys, const char *func, int line, const char *msg)
+{
+    HG_LOG_WRITE_FUNC(libfabric, na_ofi_log_level_to_hg(level), prov->name,
+        na_ofi_log_subsys_g[subsys], (unsigned int) line, func, true, "%s",
+        msg);
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_ofi_log_ready(const struct fi_provider *prov, enum fi_log_level level,
+    enum fi_log_subsys subsys, uint64_t flags, uint64_t *showtime)
+{
+    if (na_ofi_log_enabled(prov, level, subsys, flags)) {
+        hg_time_t tv;
+        uint64_t cur;
+
+        hg_time_get_current_ms(&tv);
+        cur = (uint64_t) hg_time_to_ms(tv);
+        if (cur >= *showtime) {
+            *showtime = cur + (uint64_t) na_ofi_log_interval_g;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*---------------------------------------------------------------------------*/
+static enum hg_log_level
+na_ofi_log_level_to_hg(enum fi_log_level level)
+{
+    switch (level) {
+        case FI_LOG_WARN:
+            return HG_LOG_LEVEL_WARNING;
+        case FI_LOG_TRACE:
+        case FI_LOG_INFO:
+        case FI_LOG_DEBUG:
+            return HG_LOG_LEVEL_DEBUG;
+        case FI_LOG_MAX:
+        default:
+            return HG_LOG_LEVEL_MAX;
+    }
+}
+
+#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
