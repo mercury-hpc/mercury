@@ -33,6 +33,9 @@ extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(poll_loop); /* Progress loop */
 extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(ip);        /* IP res */
 extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(perf); /* Perf related log */
 
+/* Plugin specific log (must be declared here to prevent contructor issues) */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(libfabric); /* Libfabric log */
+
 /* Base log macros */
 #define NA_LOG_ERROR(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define NA_LOG_SUBSYS_ERROR(subsys, ...)                                       \

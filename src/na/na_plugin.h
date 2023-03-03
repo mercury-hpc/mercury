@@ -48,6 +48,12 @@ struct na_cb_completion_data {
 #    define NA_DEBUG_LOG_USED NA_UNUSED
 #endif
 
+/* Make sure it executes first */
+#define NA_CONSTRUCTOR HG_ATTR_CONSTRUCTOR
+
+/* Destructor */
+#define NA_DESTRUCTOR HG_ATTR_DESTRUCTOR
+
 /**
  * container_of - cast a member of a structure out to the containing structure
  * \ptr:        the pointer to the member.

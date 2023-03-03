@@ -219,14 +219,17 @@ HG_LOG_SUBSYS_DECL_STATE_REGISTER(poll_loop, NA_SUBSYS_NAME, HG_LOG_OFF);
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(ip, NA_SUBSYS_NAME, HG_LOG_OFF);
 HG_LOG_SUBSYS_DECL_STATE_REGISTER(perf, NA_SUBSYS_NAME, HG_LOG_OFF);
 
+/* Extra log outlet for libfabric */
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(libfabric, NA_SUBSYS_NAME, HG_LOG_OFF);
+
 #ifdef NA_HAS_DYNAMIC_PLUGINS
 /* Initialize list of plugins etc */
 static void
-na_initialize(void) HG_ATTR_CONSTRUCTOR;
+na_initialize(void) NA_CONSTRUCTOR;
 
 /* Free list of plugins etc */
 static void
-na_finalize(void) HG_ATTR_DESTRUCTOR;
+na_finalize(void) NA_DESTRUCTOR;
 #endif
 
 /*---------------------------------------------------------------------------*/
