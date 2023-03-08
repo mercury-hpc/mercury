@@ -37,7 +37,7 @@ struct na_test_info {
     bool busy_wait;          /* Busy wait */
     uint8_t max_classes;     /* Max classes */
     uint8_t max_contexts;    /* Max contexts */
-    uint8_t max_targets;     /* Max targets */
+    uint32_t max_targets;    /* Max targets */
     size_t max_msg_size;     /* Max msg size */
     size_t buf_size_min;     /* Min buffer size */
     size_t buf_size_max;     /* Max buffer size */
