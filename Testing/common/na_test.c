@@ -63,7 +63,7 @@ na_test_mpi_finalize(struct na_test_info *na_test_info);
 #endif
 
 static char *
-na_test_gen_config(struct na_test_info *na_test_info, int i);
+na_test_gen_config(struct na_test_info *na_test_info, unsigned int i);
 
 static na_return_t
 na_test_self_addr_publish(na_class_t *na_class, bool append);
@@ -321,7 +321,7 @@ na_test_mpi_finalize(struct na_test_info *na_test_info)
 
 /*---------------------------------------------------------------------------*/
 static char *
-na_test_gen_config(struct na_test_info *na_test_info, int i)
+na_test_gen_config(struct na_test_info *na_test_info, unsigned int i)
 {
     char *info_string = NULL, *info_string_ptr = NULL;
 
@@ -366,8 +366,8 @@ na_test_gen_config(struct na_test_info *na_test_info, int i)
             info_string_ptr +=
                 sprintf(info_string_ptr, "%s", na_test_info->hostname);
         if (na_test_info->port)
-            info_string_ptr +=
-                sprintf(info_string_ptr, ":%d", na_test_info->port + i);
+            info_string_ptr += sprintf(
+                info_string_ptr, ":%u", (unsigned int) na_test_info->port + i);
     }
 
     return info_string;
@@ -503,7 +503,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
-    int i;
+    unsigned int i;
 
     if (!log_subsys) {
         const char *log_level = getenv("HG_LOG_LEVEL");
@@ -556,8 +556,9 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
     for (i = 0; i < na_test_info->max_classes; i++) {
         /* Generate NA init string and get config options */
-        info_string = na_test_gen_config(na_test_info,
-            i + na_test_info->mpi_comm_rank * na_test_info->max_classes);
+        info_string = na_test_gen_config(
+            na_test_info, i + (unsigned int) na_test_info->mpi_comm_rank *
+                                  na_test_info->max_classes);
         NA_TEST_CHECK_ERROR(info_string == NULL, error, ret, NA_PROTOCOL_ERROR,
             "Could not generate config string");
 
@@ -643,11 +644,9 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 #endif
         na_test_info->target_name = na_test_info->target_names[0];
         if (na_test_info->mpi_comm_rank == 0) {
-            printf(
-                "# %d target name(s) read:\n", (int) na_test_info->max_targets);
+            printf("# %u target name(s) read:\n", na_test_info->max_targets);
             for (i = 0; i < na_test_info->max_targets; i++)
-                printf("# - %d/%d: %s\n", i + 1,
-                    (int) na_test_info->max_targets,
+                printf("# - %u/%d: %s\n", i + 1, na_test_info->max_targets,
                     na_test_info->target_names[i]);
         }
     }
@@ -666,7 +665,7 @@ na_return_t
 NA_Test_finalize(struct na_test_info *na_test_info)
 {
     na_return_t ret = NA_SUCCESS;
-    int i;
+    unsigned int i;
 
     if (na_test_info->na_classes != NULL) {
         for (i = 0; i < na_test_info->max_classes; i++) {
