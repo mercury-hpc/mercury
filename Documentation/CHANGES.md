@@ -4,6 +4,24 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## New features
 
+<span style="color:lightblue">Added in rc2</span>
+
+- __[HG Test]__
+    - Perf test now supports multi-client / multi-server workloads
+    - Add `BUILD_TESTING_UNIT` and `BUILD_TESTING_PERF` CMake options
+- __[NA OFI]__
+    - Add support for libfabric log redirection
+        - Requires libfabric >= 1.15.0, disabled if FI_LOG_LEVEL is set
+        - Add `libfabric` log subsys (off by default)
+        - Bump FI_VERSION to 1.13 when log redirection is supported
+- __[HG util]__
+    - Add HG_LOG_WRITE_FUNC() macro to pass func/line info
+    - Add also `module` / `no_return` parameters to hg_log_write()
+    - Remove `HG_ATOMIC_VAR_INIT` (deprecated)
+
+---
+<span style="color:lightblue">Added in rc1
+
 - __[HG]__
     - Add support for multi-recv operations (OFI plugin only)
         - Currently disable multi-recv when auto SM is on
@@ -70,6 +88,23 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Bump HG util version to 4.0.0
 
 ## Bug fixes
+
+<span style="color:lightblue">Added in rc2</span>
+
+- __[HG/NA]__
+    - Ensure init info version is compatible
+- __[NA OFI]__
+    - Fix handling of extra caps to not always follow advertised caps    
+    - Pass `FI_COMPLETION` to RMA ops as flag is currently not ignored (`prov/opx` tmp fix) 
+- __[CMake]__
+    - Ensure `VERSION`/`SOVERSION` is not set on `MODULE` libraries
+    - Allow for in-source builds (RPM support)
+    - Add missing `DL` lib dependency
+    - Fix object target linking on CMake < 3.12
+    - Ensure we build with PIC and PIE when available
+
+---
+<span style="color:lightblue">Added in rc1
 
 - __[HG]__
     - Clean up and refactoring fixes
