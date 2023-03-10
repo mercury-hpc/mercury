@@ -65,7 +65,7 @@
  * layouts that are compatible with this version.
  */
 #if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
-    FI_VERSION(1, 15))
+    FI_VERSION(1, 16))
 #    define NA_OFI_VERSION FI_VERSION(1, 9)
 #else
 /* Bump to 1.13 to support redefinition of OFI log callbacks */
@@ -757,7 +757,7 @@ struct na_ofi_class {
 
 #if !defined(_WIN32) &&                                                        \
     FI_VERSION_GE(                                                             \
-        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 15))
+        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 16))
 /**
  * Check if OFI log is enabled.
  */
@@ -1780,7 +1780,7 @@ static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
 
 #if !defined(_WIN32) &&                                                        \
     FI_VERSION_GE(                                                             \
-        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 15))
+        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 16))
 /* Custom log */
 static struct fid_logging na_ofi_log_fid_g = {.ops = NULL};
 static struct fi_ops_log na_ofi_import_log_ops_g = {
