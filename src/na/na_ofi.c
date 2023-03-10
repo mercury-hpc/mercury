@@ -4366,7 +4366,7 @@ na_ofi_basic_ep_open(const struct na_ofi_fabric *na_ofi_fabric,
 
     /* When using FI_MULTI_RECV, make sure the recv buffer remains sufficiently
      * large until it is released */
-    if (fi_info->caps & FI_MULTI_RECV) {
+    if (na_ofi_prov_extra_caps[na_ofi_fabric->prov_type] & FI_MULTI_RECV) {
         size_t old_min, old_min_len = sizeof(old_min);
 
         rc = fi_getopt(&na_ofi_endpoint->fi_ep->fid, FI_OPT_ENDPOINT,
@@ -6452,7 +6452,7 @@ na_ofi_initialize(
         na_ofi_prov_name[prov_type]);
 
     /* Set optional features */
-    if ((na_ofi_class->fi_info->caps & FI_MULTI_RECV) &&
+    if ((na_ofi_prov_extra_caps[prov_type] & FI_MULTI_RECV) &&
         (na_ofi_class->msg_recv_unexpected == na_ofi_msg_recv))
         na_ofi_class->opt_features |= NA_OPT_MULTI_RECV;
 
@@ -7030,7 +7030,8 @@ na_ofi_msg_get_max_expected_size(const na_class_t *na_class)
 static NA_INLINE size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
-    if (!(NA_OFI_CLASS(na_class)->fi_info->caps & FI_SOURCE_ERR))
+    if (!(na_ofi_prov_extra_caps[NA_OFI_CLASS(na_class)->fabric->prov_type] &
+            FI_SOURCE_ERR))
         return na_ofi_raw_addr_serialize_size(
             (int) NA_OFI_CLASS(na_class)->fi_info->addr_format);
 
@@ -7124,7 +7125,8 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size)
 {
     /* For providers that don't support FI_SOURCE_ERR, insert the msg header
      * to piggyback the source address for unexpected message. */
-    if (!(NA_OFI_CLASS(na_class)->fi_info->caps & FI_SOURCE_ERR))
+    if (!(na_ofi_prov_extra_caps[NA_OFI_CLASS(na_class)->fabric->prov_type] &
+            FI_SOURCE_ERR))
         return na_ofi_raw_addr_serialize(
             (int) NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
             &NA_OFI_CLASS(na_class)->endpoint->src_addr->addr_key.addr);
@@ -7763,7 +7765,8 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     size_t length, na_addr_t *remote_addr, uint8_t remote_id, na_op_id_t *op_id)
 {
     return na_ofi_rma_common(NA_OFI_CLASS(na_class), context, NA_CB_PUT,
-        callback, arg, fi_writemsg, "fi_writemsg", FI_DELIVERY_COMPLETE,
+        callback, arg, fi_writemsg, "fi_writemsg",
+        FI_COMPLETION | FI_DELIVERY_COMPLETE,
         (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
         (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
         (struct na_ofi_addr *) remote_addr, remote_id,
@@ -7778,7 +7781,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     size_t length, na_addr_t *remote_addr, uint8_t remote_id, na_op_id_t *op_id)
 {
     return na_ofi_rma_common(NA_OFI_CLASS(na_class), context, NA_CB_GET,
-        callback, arg, fi_readmsg, "fi_readmsg", 0,
+        callback, arg, fi_readmsg, "fi_readmsg", FI_COMPLETION,
         (struct na_ofi_mem_handle *) local_mem_handle, local_offset,
         (struct na_ofi_mem_handle *) remote_mem_handle, remote_offset, length,
         (struct na_ofi_addr *) remote_addr, remote_id,
