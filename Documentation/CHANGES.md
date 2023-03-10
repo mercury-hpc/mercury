@@ -11,7 +11,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Add `BUILD_TESTING_UNIT` and `BUILD_TESTING_PERF` CMake options
 - __[NA OFI]__
     - Add support for libfabric log redirection
-        - Requires libfabric >= 1.15.0, disabled if FI_LOG_LEVEL is set
+        - Requires libfabric >= 1.16.0, disabled if FI_LOG_LEVEL is set
         - Add `libfabric` log subsys (off by default)
         - Bump FI_VERSION to 1.13 when log redirection is supported
 - __[HG util]__
@@ -89,13 +89,18 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## Bug fixes
 
+<span style="color:lightblue">Added in rc3</span>
+
+- __[NA OFI]__
+    - Log redirection requires libfabric >= 1.16.0
+
 <span style="color:lightblue">Added in rc2</span>
 
 - __[HG/NA]__
     - Ensure init info version is compatible
 - __[NA OFI]__
-    - Fix handling of extra caps to not always follow advertised caps    
-    - Pass `FI_COMPLETION` to RMA ops as flag is currently not ignored (`prov/opx` tmp fix) 
+    - Fix handling of extra caps to not always follow advertised caps
+    - Pass `FI_COMPLETION` to RMA ops as flag is currently not ignored (`prov/opx` tmp fix)
 - __[CMake]__
     - Ensure `VERSION`/`SOVERSION` is not set on `MODULE` libraries
     - Allow for in-source builds (RPM support)
