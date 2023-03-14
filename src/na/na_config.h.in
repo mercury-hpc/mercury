@@ -81,6 +81,7 @@
 
 /* Build Options */
 #cmakedefine NA_HAS_DEBUG
+#cmakedefine NA_HAS_MULTI_PROGRESS
 
 /* HWLOC */
 #cmakedefine NA_HAS_HWLOC
