@@ -5714,6 +5714,12 @@ na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
     if (src_addr != FI_ADDR_NOTAVAIL) {
         struct na_ofi_addr *na_ofi_addr = NULL;
 
+        NA_CHECK_SUBSYS_ERROR(addr,
+            !(na_ofi_prov_extra_caps[na_ofi_class->fabric->prov_type] &
+                FI_SOURCE),
+            error, ret, NA_PROTOCOL_ERROR,
+            "Provider should not be using FI_SOURCE");
+
         NA_LOG_SUBSYS_DEBUG(
             addr, "Retrieving address for FI addr %" PRIu64, src_addr);
 
@@ -5749,6 +5755,9 @@ na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
         /* Lookup key and create new addr if it does not exist */
         ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, na_ofi_addr_p);
         NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
+
+        NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
+            (*na_ofi_addr_p)->fi_addr);
     }
 
     return NA_SUCCESS;
