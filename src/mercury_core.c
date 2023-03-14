@@ -341,7 +341,7 @@ struct hg_core_private_handle {
     hg_atomic_int32_t no_response_done; /* Reference count to reach for done */
     hg_atomic_int32_t status;           /* Handle status */
     hg_atomic_int32_t ret_status;       /* Handle return status */
-    unsigned int op_completed_count;    /* Completed operation count */
+    hg_atomic_int32_t op_completed_count; /* Completed operation count */
     unsigned int
         op_expected_count;     /* Expected operation count for completion */
     hg_core_op_type_t op_type; /* Core operation type */
@@ -3392,7 +3392,7 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
         HG_NA_ERROR, "Could not create NA op ID");
 
     hg_core_handle->op_expected_count = 1; /* Default (no response) */
-    hg_core_handle->op_completed_count = 0;
+    hg_atomic_init32(&hg_core_handle->op_completed_count, 0);
 
     return HG_SUCCESS;
 
@@ -3469,7 +3469,7 @@ hg_core_reset(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->in_buf_used = 0;
     hg_core_handle->out_buf_used = 0;
     hg_core_handle->op_expected_count = 1; /* Default (no response) */
-    hg_core_handle->op_completed_count = 0;
+    hg_atomic_init32(&hg_core_handle->op_completed_count, 0);
     hg_core_handle->no_response = HG_FALSE;
 
     /* Free extra data here if needed */
@@ -3737,7 +3737,7 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
 
     /* Reset op counts */
     hg_core_handle->op_expected_count = 1; /* Default (no response) */
-    hg_core_handle->op_completed_count = 0;
+    hg_atomic_init32(&hg_core_handle->op_completed_count, 0);
 
     /* Reset handle ret */
     hg_core_handle->ret = HG_SUCCESS;
@@ -4796,7 +4796,8 @@ error:
 static HG_INLINE void
 hg_core_complete_op(struct hg_core_private_handle *hg_core_handle)
 {
-    unsigned int op_completed_count = ++hg_core_handle->op_completed_count;
+    unsigned int op_completed_count =
+        hg_atomic_incr32(&hg_core_handle->op_completed_count);
 
     HG_LOG_SUBSYS_DEBUG(rpc, "Completed %u/%u NA operations for handle (%p)",
         op_completed_count, hg_core_handle->op_expected_count,

@@ -9,6 +9,10 @@
 
 #include "mercury_atomic_queue.h"
 #include "mercury_mem.h"
+#ifdef NA_HAS_MULTI_PROGRESS
+#    include "mercury_thread_condition.h"
+#    include "mercury_thread_mutex.h"
+#endif
 #include "mercury_thread_spin.h"
 #ifdef NA_HAS_DYNAMIC_PLUGINS
 #    include "mercury_dl.h"
@@ -42,6 +46,9 @@
 
 #define NA_ATOMIC_QUEUE_SIZE 1024 /* TODO make it configurable */
 
+/* 32-bit lock value for serial progress */
+#define NA_PROGRESS_LOCK 0x80000000
+
 /* Dynamic plugins */
 #define NA_PLUGIN_PREFIX   "libna_plugin_"
 #define NA_PLUGIN_SCN_NAME "libna_plugin_%16[^_.]"
@@ -73,9 +80,21 @@ struct na_completion_queue {
     hg_atomic_int32_t count;                    /* Number of entries */
 };
 
+#ifdef NA_HAS_MULTI_PROGRESS
+/* Ensure thread safety when progressing context from multiple threads */
+struct na_progress_multi {
+    hg_thread_cond_t cond;   /* Cond */
+    hg_thread_mutex_t mutex; /* Mutex */
+    hg_atomic_int32_t count; /* Count */
+};
+#endif
+
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
-    struct na_context context;                 /* Must remain as first field */
+    struct na_context context; /* Must remain as first field */
+#ifdef NA_HAS_MULTI_PROGRESS
+    struct na_progress_multi progress_multi; /* Progress multi */
+#endif
     struct na_completion_queue backfill_queue; /* Backfill queue */
     struct hg_atomic_queue *completion_queue;  /* Default completion queue */
     na_class_t *na_class;                      /* Pointer to NA class */
@@ -773,6 +792,10 @@ na_context_t *
 NA_Context_create_id(na_class_t *na_class, uint8_t id)
 {
     struct na_private_context *na_private_context = NULL;
+#ifdef NA_HAS_MULTI_PROGRESS
+    struct na_progress_multi *progress_multi = NULL;
+    bool mutex_init = false, cond_init = false;
+#endif
     struct na_completion_queue *backfill_queue = NULL;
     bool lock_init = false;
     na_return_t ret;
@@ -786,6 +809,21 @@ NA_Context_create_id(na_class_t *na_class, uint8_t id)
     NA_CHECK_SUBSYS_ERROR(ctx, na_private_context == NULL, error, ret, NA_NOMEM,
         "Could not allocate context");
     na_private_context->na_class = na_class;
+
+#ifdef NA_HAS_MULTI_PROGRESS
+    /* Initialize multi-progress lock */
+    progress_multi = &na_private_context->progress_multi;
+    hg_atomic_init32(&progress_multi->count, 0);
+    rc = hg_thread_mutex_init(&progress_multi->mutex);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        ctx, rc != HG_UTIL_SUCCESS, error, "hg_thread_mutex_init() failed");
+    mutex_init = true;
+
+    rc = hg_thread_cond_init(&progress_multi->cond);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        ctx, rc != HG_UTIL_SUCCESS, error, "hg_thread_cond_init() failed");
+    cond_init = true;
+#endif
 
     /* Initialize backfill queue */
     backfill_queue = &na_private_context->backfill_queue;
@@ -814,6 +852,12 @@ NA_Context_create_id(na_class_t *na_class, uint8_t id)
 
 error:
     if (na_private_context) {
+#ifdef NA_HAS_MULTI_PROGRESS
+        if (mutex_init)
+            (void) hg_thread_mutex_destroy(&progress_multi->mutex);
+        if (cond_init)
+            (void) hg_thread_cond_destroy(&progress_multi->cond);
+#endif
         if (lock_init)
             (void) hg_thread_spin_destroy(&backfill_queue->lock);
         hg_atomic_queue_free(na_private_context->completion_queue);
@@ -828,6 +872,9 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 {
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
+#ifdef NA_HAS_MULTI_PROGRESS
+    struct na_progress_multi *progress_multi = NULL;
+#endif
     struct na_completion_queue *backfill_queue = NULL;
     bool empty;
     na_return_t ret;
@@ -837,6 +884,13 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 
     if (na_private_context == NULL)
         return NA_SUCCESS;
+
+#ifdef NA_HAS_MULTI_PROGRESS
+    /* Check that we are no longer progressing */
+    progress_multi = &na_private_context->progress_multi;
+    NA_CHECK_SUBSYS_ERROR(ctx, hg_atomic_get32(&progress_multi->count) > 0,
+        error, ret, NA_BUSY, "Still progressing on context");
+#endif
 
     /* Check that backfill completion queue is empty now */
     backfill_queue = &na_private_context->backfill_queue;
@@ -862,6 +916,10 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 
     hg_atomic_queue_free(na_private_context->completion_queue);
     (void) hg_thread_spin_destroy(&backfill_queue->lock);
+#ifdef NA_HAS_MULTI_PROGRESS
+    (void) hg_thread_mutex_destroy(&progress_multi->mutex);
+    (void) hg_thread_cond_destroy(&progress_multi->cond);
+#endif
     free(na_private_context);
 
     return NA_SUCCESS;
@@ -1571,6 +1629,105 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef NA_HAS_MULTI_PROGRESS
+na_return_t
+NA_Progress(
+    na_class_t *na_class, na_context_t *context, unsigned int timeout_ms)
+{
+    struct na_private_context *na_private_context =
+        (struct na_private_context *) context;
+    struct na_progress_multi *progress_multi = NULL;
+    double remaining =
+        timeout_ms / 1000.0; /* Convert timeout in ms into seconds */
+    int32_t old, num;
+    na_return_t ret = NA_TIMEOUT;
+
+    NA_CHECK_SUBSYS_ERROR(
+        poll, na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
+    NA_CHECK_SUBSYS_ERROR(poll, na_private_context == NULL, done, ret,
+        NA_INVALID_ARG, "NULL context");
+    progress_multi = &na_private_context->progress_multi;
+
+    NA_CHECK_SUBSYS_ERROR(poll, na_class->ops == NULL, done, ret,
+        NA_INVALID_ARG, "NULL NA class ops");
+    NA_CHECK_SUBSYS_ERROR(poll, na_class->ops->progress == NULL, done, ret,
+        NA_OPNOTSUPPORTED, "progress plugin callback is not defined");
+
+    NA_LOG_SUBSYS_DEBUG(poll_loop,
+        "Entering progress on context (%p) for %u ms", (void *) context,
+        timeout_ms);
+
+    hg_atomic_incr32(&progress_multi->count);
+    for (;;) {
+        hg_time_t t1, t2;
+
+        old = hg_atomic_get32(&progress_multi->count) &
+              (int32_t) ~NA_PROGRESS_LOCK;
+        num = old | (int32_t) NA_PROGRESS_LOCK;
+        if (hg_atomic_cas32(&progress_multi->count, old, num))
+            break; /* No other thread is progressing */
+
+        /* Timeout is 0 so leave */
+        if (remaining <= 0) {
+            hg_atomic_decr32(&progress_multi->count);
+            goto done;
+        }
+
+        hg_time_get_current_ms(&t1);
+
+        /* Prevent multiple threads from concurrently calling progress on
+         * the same context */
+        hg_thread_mutex_lock(&progress_multi->mutex);
+
+        num = hg_atomic_get32(&progress_multi->count);
+        /* Do not need to enter condition if lock is already released */
+        if (((num & (int32_t) NA_PROGRESS_LOCK) != 0) &&
+            (hg_thread_cond_timedwait(&progress_multi->cond,
+                 &progress_multi->mutex,
+                 (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS)) {
+            /* Timeout occurred so leave */
+            hg_atomic_decr32(&progress_multi->count);
+            hg_thread_mutex_unlock(&progress_multi->mutex);
+            goto done;
+        }
+
+        hg_thread_mutex_unlock(&progress_multi->mutex);
+
+        hg_time_get_current_ms(&t2);
+        remaining -= hg_time_diff(t2, t1);
+        /* Give a chance to call progress with timeout of 0 */
+        if (remaining < 0)
+            remaining = 0;
+    }
+
+    /* Something is in one of the completion queues */
+    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
+        hg_atomic_get32(&na_private_context->backfill_queue.count) > 0) {
+        ret = NA_SUCCESS; /* Progressed */
+        goto unlock;
+    }
+
+    /* Try to make progress for remaining time */
+    ret = na_class->ops->progress(
+        na_class, context, (unsigned int) (remaining * 1000.0));
+
+unlock:
+    do {
+        old = hg_atomic_get32(&progress_multi->count);
+        num = (old - 1) ^ (int32_t) NA_PROGRESS_LOCK;
+    } while (!hg_atomic_cas32(&progress_multi->count, old, num));
+
+    if (num > 0) {
+        /* If there is another processes entered in progress, signal it */
+        hg_thread_mutex_lock(&progress_multi->mutex);
+        hg_thread_cond_signal(&progress_multi->cond);
+        hg_thread_mutex_unlock(&progress_multi->mutex);
+    }
+
+done:
+    return ret;
+}
+#else
 na_return_t
 NA_Progress(
     na_class_t *na_class, na_context_t *context, unsigned int timeout_ms)
@@ -1591,6 +1748,7 @@ NA_Progress(
     /* Try to make progress for remaining time */
     return na_class->ops->progress(na_class, context, timeout_ms);
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 na_return_t
