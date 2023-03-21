@@ -1820,6 +1820,12 @@ na_ofi_log_import(void)
     if (getenv("FI_LOG_LEVEL") == NULL) {
         int rc;
 
+        if (FI_VERSION_LT(fi_version(), FI_VERSION(1, 16))) {
+            NA_LOG_SUBSYS_WARNING(
+                cls, "libfabric version < 1.16, log redirection not supported");
+            return;
+        }
+
         na_ofi_log_fid_g.ops = &na_ofi_import_log_ops_g;
         rc = fi_import_log(NA_OFI_VERSION, 0, &na_ofi_log_fid_g);
         NA_CHECK_SUBSYS_ERROR_NORET(cls, rc != 0, error,
@@ -1997,11 +2003,12 @@ na_ofi_prov_name_to_type(const char *prov_name)
 {
     enum na_ofi_prov_type i = 0;
 
-#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
-    FI_VERSION(1, 18))
-    if (strcmp(prov_name, "tcp") == 0)
+    if (FI_VERSION_LT(fi_version(), FI_VERSION(1, 18)) &&
+        (strcmp(prov_name, "tcp") == 0)) {
         prov_name = "tcp;ofi_rxm";
-#endif
+        NA_LOG_SUBSYS_WARNING(
+            cls, "Requested \"tcp\" provider, defaulting to \"%s\"", prov_name);
+    }
 
     while (strcmp(na_ofi_prov_name[i], prov_name) &&
            strcmp(na_ofi_prov_alt_name[i], prov_name) && i != NA_OFI_PROV_MAX) {
@@ -6308,7 +6315,17 @@ na_ofi_check_protocol(const char *protocol_name)
     struct fi_info *prov, *providers = NULL;
     enum na_ofi_prov_type type;
     bool accept;
+    uint32_t runtime_version = fi_version();
     na_return_t na_ret;
+
+    NA_LOG_SUBSYS_DEBUG(cls, "Querying info on libfabric v%d.%d",
+        FI_MAJOR(runtime_version), FI_MINOR(runtime_version));
+    NA_CHECK_SUBSYS_ERROR(cls, FI_VERSION_LT(runtime_version, NA_OFI_VERSION),
+        out, accept, false,
+        "runtime libfabric version (v%d.%d) is lower than required version "
+        "(v%d.%d)",
+        FI_MAJOR(runtime_version), FI_MINOR(runtime_version),
+        FI_MAJOR(NA_OFI_VERSION), FI_MINOR(NA_OFI_VERSION));
 
     type = na_ofi_prov_name_to_type(protocol_name);
     NA_CHECK_SUBSYS_ERROR(cls, type == NA_OFI_PROV_NULL, out, accept, false,
