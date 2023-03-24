@@ -245,10 +245,14 @@ hg_test_rpc_output_cb(const struct hg_cb_info *callback_info)
         free, ret, HG_FAULT, "Cookie did not match RPC response");
 
 free:
-    /* Free output */
-    ret = HG_Free_output(handle, &rpc_open_out_struct);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
+    if (ret != HG_SUCCESS)
+        (void) HG_Free_output(handle, &rpc_open_out_struct);
+    else {
+        /* Free output */
+        ret = HG_Free_output(handle, &rpc_open_out_struct);
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
+    }
 
 done:
     args->ret = ret;
@@ -465,10 +469,14 @@ hg_test_rpc_multi_cb(const struct hg_cb_info *callback_info)
         free, ret, HG_FAULT, "Cookie did not match RPC response");
 
 free:
-    /* Free output */
-    ret = HG_Free_output(handle, &rpc_open_out_struct);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
+    if (ret != HG_SUCCESS)
+        (void) HG_Free_output(handle, &rpc_open_out_struct);
+    else {
+        /* Free output */
+        ret = HG_Free_output(handle, &rpc_open_out_struct);
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
+    }
 
 done:
     args->rets[args->complete_count] = ret;

@@ -186,6 +186,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         /* Set global log level */
         HG_Set_log_level(log_level);
+        HG_Set_log_subsys("hg,hg_test");
         HG_Util_set_log_level(log_level);
     }
 
