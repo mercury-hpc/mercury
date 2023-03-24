@@ -854,7 +854,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
 /**
  * Process expected messages.
  */
-static na_return_t
+static void
 na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
     struct na_sm_addr *poll_addr, union na_sm_msg_hdr msg_hdr);
 
@@ -3944,10 +3944,8 @@ na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
                 msg, done, ret, "Could not make progress on unexpected msg");
             break;
         case NA_CB_SEND_EXPECTED:
-            ret = na_sm_process_expected(
+            na_sm_process_expected(
                 &na_sm_endpoint->expected_op_queue, poll_addr, msg_hdr);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                msg, done, ret, "Could not make progress on expected msg");
             break;
         default:
             NA_GOTO_SUBSYS_ERROR(
@@ -4051,12 +4049,11 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static void
 na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
     struct na_sm_addr *poll_addr, union na_sm_msg_hdr msg_hdr)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
-    na_return_t ret = NA_SUCCESS;
 
     NA_LOG_SUBSYS_DEBUG(msg, "Processing expected msg");
 
@@ -4073,9 +4070,17 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
     }
     hg_thread_spin_unlock(&expected_op_queue->lock);
 
-    NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
-        "Invalid operation ID");
-    /* Cannot have an already completed operation ID, TODO add sanity check */
+    /* If a message arrives without any OP ID being posted, drop it */
+    if (na_sm_op_id == NULL) {
+        NA_LOG_SUBSYS_WARNING(
+            op, "No OP ID posted for that operation, dropping msg");
+        if (msg_hdr.hdr.buf_size > 0) {
+            /* Release buffer */
+            na_sm_buf_release(
+                &poll_addr->shared_region->copy_bufs, msg_hdr.hdr.buf_idx);
+        }
+        return;
+    }
 
     na_sm_op_id->completion_data.callback_info.info.recv_expected
         .actual_buf_size = msg_hdr.hdr.buf_size;
@@ -4093,9 +4098,6 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
 
     /* Complete operation */
     na_sm_complete(na_sm_op_id, NA_SUCCESS);
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
