@@ -201,6 +201,63 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
+hg_test_bulk_forward_interrupt(hg_handle_t handle, hg_addr_t addr,
+    hg_id_t rpc_id, hg_cb_t callback, hg_bulk_t bulk_handle,
+    hg_size_t transfer_size, hg_size_t origin_offset, hg_size_t target_offset,
+    hg_request_t *request)
+{
+    hg_return_t ret;
+    struct forward_cb_args forward_cb_args = {
+        .request = request, .expected_size = transfer_size, .ret = HG_SUCCESS};
+    bulk_write_in_t in_struct = {.bulk_handle = bulk_handle,
+        .fildes = 0,
+        .wait_s = 5,
+        .origin_offset = origin_offset,
+        .target_offset = target_offset,
+        .transfer_size = transfer_size};
+    unsigned int flag;
+    int rc;
+
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%" PRIu64
+                      ", origin_offset=%" PRIu64 ",  target_offset=%" PRIu64,
+        in_struct.transfer_size, in_struct.origin_offset,
+        in_struct.target_offset);
+
+    hg_request_reset(request);
+
+    ret = HG_Reset(handle, addr, rpc_id);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
+
+    /* Forward call to remote addr and get a new request */
+    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %" PRIu64 "...", rpc_id);
+
+    ret = HG_Forward(handle, callback, &forward_cb_args, &in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Cancel(handle);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
+
+    rc = hg_request_wait(request, HG_TEST_WAIT_TIMEOUT, &flag);
+    HG_TEST_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_PROTOCOL_ERROR,
+        "hg_request_wait() failed");
+
+    HG_TEST_CHECK_ERROR(
+        !flag, error, ret, HG_TIMEOUT, "hg_request_wait() timed out");
+    ret = forward_cb_args.ret;
+    HG_TEST_CHECK_ERROR_NORET(ret != HG_CANCELED, error,
+        "Error in HG callback (%s)", HG_Error_to_string(ret));
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
 hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
 {
     hg_handle_t handle = callback_info->info.forward.handle;
@@ -241,6 +298,25 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_bulk_forward_interrupt_cb(const struct hg_cb_info *callback_info)
+{
+    struct forward_cb_args *args =
+        (struct forward_cb_args *) callback_info->arg;
+    hg_return_t ret = callback_info->ret;
+
+    HG_TEST_CHECK_ERROR_NORET(ret != HG_CANCELED, done,
+        "Error in HG callback (%s)", HG_Error_to_string(callback_info->ret));
+
+done:
+    args->ret = ret;
+
+    hg_request_complete(args->request);
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 int
 main(int argc, char *argv[])
 {
@@ -249,6 +325,7 @@ main(int argc, char *argv[])
         .buf_ptrs = NULL,
         .buf_sizes = NULL,
         .bulk_handle = HG_BULK_NULL};
+    struct hg_test_bulk_info bulk_info_interrupt = bulk_info;
     hg_return_t hg_ret;
     size_t buf_size;
 
@@ -494,6 +571,45 @@ main(int argc, char *argv[])
         HG_Error_to_string(hg_ret));
     HG_PASSED();
 #endif
+
+    /* Destroy bulk info */
+    hg_ret = hg_test_bulk_destroy(&bulk_info);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_destroy() failed (%s)",
+        HG_Error_to_string(hg_ret));
+
+    /**************************************************************************
+     * Interrupted bulk tests.
+     *************************************************************************/
+
+    /* Create bulk info */
+    hg_ret = hg_test_bulk_create(info.hg_class, 1, buf_size, &bulk_info);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_create() failed (%s)",
+        HG_Error_to_string(hg_ret));
+    hg_ret =
+        hg_test_bulk_create(info.hg_class, 1, buf_size, &bulk_info_interrupt);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_create() failed (%s)",
+        HG_Error_to_string(hg_ret));
+
+    HG_TEST("interrupted bulk transfer");
+    hg_ret = hg_test_bulk_forward_interrupt(info.handles[0], info.target_addr,
+        hg_test_bulk_write_id_g, hg_test_bulk_forward_interrupt_cb,
+        bulk_info_interrupt.bulk_handle, buf_size, 0, 0, info.request);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_forward() failed (%s)",
+        HG_Error_to_string(hg_ret));
+
+    /* Destroy bulk info prematurely */
+    hg_ret = hg_test_bulk_destroy(&bulk_info_interrupt);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_destroy() failed (%s)",
+        HG_Error_to_string(hg_ret));
+
+    sleep(10);
+
+    hg_ret = hg_test_bulk_forward(info.handles[0], info.target_addr,
+        hg_test_bulk_write_id_g, hg_test_bulk_forward_cb, bulk_info.bulk_handle,
+        buf_size, 0, 0, info.request);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_forward() failed (%s)",
+        HG_Error_to_string(hg_ret));
+    HG_PASSED();
 
     /* Destroy bulk info */
     hg_ret = hg_test_bulk_destroy(&bulk_info);

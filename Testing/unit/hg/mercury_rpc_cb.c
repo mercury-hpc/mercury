@@ -332,6 +332,10 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "HG_Get_input() failed (%s)", HG_Error_to_string(ret));
 
+    /* Wait if needed */
+    if (in_struct.wait_s > 0)
+        sleep(in_struct.wait_s);
+
     /* Get parameters */
     fildes = in_struct.fildes;
     origin_bulk_handle = in_struct.bulk_handle;
