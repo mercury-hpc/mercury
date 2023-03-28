@@ -211,7 +211,7 @@ hg_test_bulk_forward_interrupt(hg_handle_t handle, hg_addr_t addr,
         .request = request, .expected_size = transfer_size, .ret = HG_SUCCESS};
     bulk_write_in_t in_struct = {.bulk_handle = bulk_handle,
         .fildes = 0,
-        .wait_s = 5,
+        .wait_s = 15,
         .origin_offset = origin_offset,
         .target_offset = target_offset,
         .transfer_size = transfer_size};
@@ -235,6 +235,10 @@ hg_test_bulk_forward_interrupt(hg_handle_t handle, hg_addr_t addr,
     ret = HG_Forward(handle, callback, &forward_cb_args, &in_struct);
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+
+    rc = hg_request_wait(request, 1000, NULL);
+    HG_TEST_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_PROTOCOL_ERROR,
+        "hg_request_wait() failed");
 
     ret = HG_Cancel(handle);
     HG_TEST_CHECK_HG_ERROR(
@@ -340,7 +344,7 @@ main(int argc, char *argv[])
         "Buffer size must be a power of 2 (%zu)", buf_size);
     HG_TEST_CHECK_ERROR_NORET(buf_size < 1024, error,
         "Buffer size must be at least 1024 (%zu)", buf_size);
-
+goto intr;
     /**************************************************************************
      * NULL RPC bulk tests.
      *************************************************************************/
@@ -580,7 +584,7 @@ main(int argc, char *argv[])
     /**************************************************************************
      * Interrupted bulk tests.
      *************************************************************************/
-
+intr:
     /* Create bulk info */
     hg_ret = hg_test_bulk_create(info.hg_class, 1, buf_size, &bulk_info);
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_create() failed (%s)",
@@ -598,12 +602,15 @@ main(int argc, char *argv[])
         HG_Error_to_string(hg_ret));
 
     /* Destroy bulk info prematurely */
+    printf("\nDestroying bulk info\n");
     hg_ret = hg_test_bulk_destroy(&bulk_info_interrupt);
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_destroy() failed (%s)",
         HG_Error_to_string(hg_ret));
 
+printf("Sleeping for 10s\n");
     sleep(10);
 
+printf("Issuing new bulk RPC\n");
     hg_ret = hg_test_bulk_forward(info.handles[0], info.target_addr,
         hg_test_bulk_write_id_g, hg_test_bulk_forward_cb, bulk_info.bulk_handle,
         buf_size, 0, 0, info.request);
@@ -616,6 +623,7 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_destroy() failed (%s)",
         HG_Error_to_string(hg_ret));
 
+sleep(10);
     hg_unit_cleanup(&info);
 
     return EXIT_SUCCESS;

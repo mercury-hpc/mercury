@@ -148,7 +148,7 @@ bulk_write(int fildes, const void *buf, size_t offset, size_t start_value,
         }
     }
     if (!error && verbose)
-        HG_TEST_LOG_DEBUG("Successfully transfered %zu bytes!", nbyte);
+        HG_TEST_LOG_WARNING("Successfully transfered %zu bytes!", nbyte);
 
     return nbyte;
 }
@@ -333,8 +333,11 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         error, ret, "HG_Get_input() failed (%s)", HG_Error_to_string(ret));
 
     /* Wait if needed */
-    if (in_struct.wait_s > 0)
+    if (in_struct.wait_s > 0) {
+printf("Sleeping for %ds\n", in_struct.wait_s);
         sleep(in_struct.wait_s);
+        printf("Issuing bulk transfer\n");
+    }
 
     /* Get parameters */
     fildes = in_struct.fildes;
