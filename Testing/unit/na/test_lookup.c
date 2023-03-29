@@ -21,7 +21,7 @@ struct na_test_common_thread {
     struct na_test_common_class_info *class_info;
     char **target_names;
     hg_thread_t thread;
-    uint8_t target_name_count;
+    size_t target_name_count;
     int thread_id;
 };
 
@@ -31,7 +31,7 @@ struct na_test_common_thread {
 
 static na_return_t
 na_test_send_all(struct na_test_common_class_info *info, char **target_names,
-    uint8_t target_name_count, int thread_id);
+    size_t target_name_count, int thread_id);
 
 /*******************/
 /* Local Variables */
@@ -59,15 +59,15 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_test_send_all(struct na_test_common_class_info *info, char **target_names,
-    uint8_t target_name_count, int NA_UNUSED thread_id)
+    size_t target_name_count, int NA_UNUSED thread_id)
 {
     na_return_t ret;
     int i, j, loop = 10;
 
-    NA_TEST_LOG_DEBUG("Sending msg to %" PRIu8 " targets", target_name_count);
+    NA_TEST_LOG_DEBUG("Sending msg to %zu targets", target_name_count);
 
     for (j = 0; j < loop; j++) {
-        for (i = 0; i < target_name_count; i++) {
+        for (i = 0; i < (int) target_name_count; i++) {
             na_addr_t *target_addr = NULL;
 
             NA_TEST_LOG_DEBUG(
@@ -104,12 +104,12 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_test_finalize_all(struct na_test_common_class_info *info,
-    char **target_names, uint8_t target_name_count)
+    char **target_names, size_t target_name_count)
 {
     na_return_t ret;
     int i;
 
-    for (i = 0; i < target_name_count; i++) {
+    for (i = 0; i < (int) target_name_count; i++) {
         na_addr_t *target_addr = NULL;
 
         ret = NA_Addr_lookup(info->na_class, target_names[i], &target_addr);
@@ -154,7 +154,8 @@ main(int argc, char *argv[])
 
         send_threads[i].class_info = &info.class_info[i];
         send_threads[i].target_names = info.na_test_info.target_names;
-        send_threads[i].target_name_count = info.na_test_info.max_targets;
+        send_threads[i].target_name_count =
+            (size_t) info.na_test_info.max_targets;
         send_threads[i].thread_id = i;
 
         rc = hg_thread_create(
