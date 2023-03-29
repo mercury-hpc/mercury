@@ -268,7 +268,8 @@ struct hg_core_private_context {
 #endif
     hg_atomic_int32_t multi_recv_op_count; /* Number of multi-recv posted */
     hg_atomic_int32_t n_handles;           /* Number of handles */
-    hg_bool_t finalizing;                  /* Prevent re-using handles */
+    hg_atomic_int32_t unposting;           /* Prevent re-posting handles */
+    hg_bool_t posted;                      /* Posted receives on context */
 };
 
 /* Info for wrapping callbacks if self addr */
@@ -437,7 +438,8 @@ hg_core_context_post(struct hg_core_private_context *context);
  * Cancel posted requests.
  */
 static hg_return_t
-hg_core_context_unpost(struct hg_core_private_context *context);
+hg_core_context_unpost(
+    struct hg_core_private_context *context, unsigned int timeout_ms);
 
 /**
  * Allocate multi-recv resources.
@@ -465,7 +467,7 @@ hg_core_context_multi_recv_post(struct hg_core_private_context *context,
  */
 static hg_return_t
 hg_core_context_multi_recv_unpost(struct hg_core_private_context *context,
-    na_class_t *na_class, na_context_t *na_context);
+    na_class_t *na_class, na_context_t *na_context, unsigned int timeout_ms);
 
 /**
  * Check list of handles not freed.
@@ -478,7 +480,7 @@ hg_core_context_check_handles(struct hg_core_private_context *context);
  */
 static hg_return_t
 hg_core_context_list_wait(struct hg_core_private_context *context,
-    struct hg_core_handle_list *handle_list);
+    struct hg_core_handle_list *handle_list, unsigned int timeout_ms);
 
 /**
  * Create pool of handles.
@@ -526,7 +528,8 @@ hg_core_handle_pool_insert(struct hg_core_private_context *context,
  * Cancel pending operations on pool until pending list is empty.
  */
 static hg_return_t
-hg_core_handle_pool_unpost(struct hg_core_handle_pool *hg_core_handle_pool);
+hg_core_handle_pool_unpost(
+    struct hg_core_handle_pool *hg_core_handle_pool, unsigned int timeout_ms);
 
 /**
  * Hash map keys based on RPC ID.
@@ -1403,6 +1406,7 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
     HG_CHECK_SUBSYS_ERROR(ctx, context == NULL, error, ret, HG_NOMEM,
         "Could not allocate HG context");
     hg_atomic_init32(&context->n_handles, 0);
+    hg_atomic_init32(&context->unposting, 0);
 
     context->core_context.core_class = (struct hg_core_class *) hg_core_class;
     backfill_queue = &context->backfill_queue;
@@ -1600,12 +1604,17 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     /* Keep reference to class */
     hg_core_class = HG_CORE_CONTEXT_CLASS(context);
 
-    /* Context is now finalizing */
-    context->finalizing = HG_TRUE;
-
-    /* Unpost requests */
-    ret = hg_core_context_unpost(context);
-    HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not unpost requests");
+    if (context->posted) {
+        /* Unpost requests */
+        ret = hg_core_context_unpost(context, HG_CORE_CLEANUP_TIMEOUT);
+        HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not unpost requests");
+    } else {
+        /* Wait on created list (user created handles) */
+        ret = hg_core_context_list_wait(
+            context, &context->created_list, HG_CORE_CLEANUP_TIMEOUT);
+        HG_CHECK_SUBSYS_HG_ERROR(
+            ctx, error, ret, "Could not wait on handle list");
+    }
 
     /* Number of handles for that context should be 0 */
     ret = hg_core_context_check_handles(context);
@@ -1710,8 +1719,6 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     return HG_SUCCESS;
 
 error:
-    context->finalizing = HG_FALSE;
-
     return ret;
 }
 
@@ -1722,7 +1729,6 @@ hg_core_context_post(struct hg_core_private_context *context)
     struct hg_core_private_class *hg_core_class =
         HG_CORE_CONTEXT_CLASS(context);
     unsigned long flags = HG_CORE_HANDLE_LISTEN;
-    // hg_bool_t posted = HG_FALSE;
     hg_return_t ret;
 
     /* Allocate resources for "listening" on incoming RPCs */
@@ -1770,17 +1776,22 @@ hg_core_context_post(struct hg_core_private_context *context)
             ctx, error, ret, "Could not post multi-recv operations");
     }
 
+    context->posted = HG_TRUE;
+
     return HG_SUCCESS;
 
 error:
-    // if (posted)
-    //     (void) hg_core_handle_pool_unpost(private_context->handle_pool);
-
-    if (context->handle_pool != NULL)
+    if (context->handle_pool != NULL) {
+        (void) hg_core_handle_pool_unpost(
+            context->handle_pool, HG_CORE_CLEANUP_TIMEOUT);
         hg_core_handle_pool_destroy(context->handle_pool);
+    }
 #ifdef NA_HAS_SM
-    if (context->sm_handle_pool != NULL)
+    if (context->sm_handle_pool != NULL) {
+        (void) hg_core_handle_pool_unpost(
+            context->sm_handle_pool, HG_CORE_CLEANUP_TIMEOUT);
         hg_core_handle_pool_destroy(context->sm_handle_pool);
+    }
 #endif
     if (hg_core_class->init_info.multi_recv)
         hg_core_context_multi_recv_free(
@@ -1791,25 +1802,29 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_context_unpost(struct hg_core_private_context *context)
+hg_core_context_unpost(
+    struct hg_core_private_context *context, unsigned int timeout_ms)
 {
     struct hg_core_private_class *hg_core_class =
         HG_CORE_CONTEXT_CLASS(context);
     hg_return_t ret;
 
-    if (!hg_core_class->init_info.listen)
+    if (!hg_core_class->init_info.listen || !context->posted)
         return HG_SUCCESS;
+
+    /* Prevent requests from being reposted as they complete */
+    hg_atomic_set32(&context->unposting, 1);
 
     if (hg_core_class->init_info.multi_recv) {
         ret = hg_core_context_multi_recv_unpost(context,
             hg_core_class->core_class.na_class,
-            context->core_context.na_context);
+            context->core_context.na_context, timeout_ms);
         HG_CHECK_SUBSYS_HG_ERROR(
             ctx, error, ret, "Could not unpost multi-recv operations");
     }
 
     if (context->handle_pool != NULL) {
-        ret = hg_core_handle_pool_unpost(context->handle_pool);
+        ret = hg_core_handle_pool_unpost(context->handle_pool, timeout_ms);
         HG_CHECK_SUBSYS_HG_ERROR(
             ctx, error, ret, "Could not unpost pool of handles");
 
@@ -1819,7 +1834,7 @@ hg_core_context_unpost(struct hg_core_private_context *context)
 
 #ifdef NA_HAS_SM
     if (context->sm_handle_pool != NULL) {
-        ret = hg_core_handle_pool_unpost(context->sm_handle_pool);
+        ret = hg_core_handle_pool_unpost(context->sm_handle_pool, timeout_ms);
         HG_CHECK_SUBSYS_HG_ERROR(
             ctx, error, ret, "Could not unpost pool of handles");
 
@@ -1829,12 +1844,15 @@ hg_core_context_unpost(struct hg_core_private_context *context)
 #endif
 
     /* Wait on created list */
-    ret = hg_core_context_list_wait(context, &context->created_list);
+    ret =
+        hg_core_context_list_wait(context, &context->created_list, timeout_ms);
     HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not wait on handle list");
 
     if (hg_core_class->init_info.multi_recv)
         hg_core_context_multi_recv_free(
             context, hg_core_class->core_class.na_class);
+
+    context->posted = HG_FALSE;
 
 error:
     return ret;
@@ -1952,7 +1970,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_context_multi_recv_unpost(struct hg_core_private_context *context,
-    na_class_t *na_class, na_context_t *na_context)
+    na_class_t *na_class, na_context_t *na_context, unsigned int timeout_ms)
 {
     hg_return_t ret;
     int i;
@@ -1981,7 +1999,7 @@ hg_core_context_multi_recv_unpost(struct hg_core_private_context *context,
         if (hg_atomic_get32(&context->multi_recv_op_count) == 0)
             break;
 
-        ret = hg_core_progress(context, HG_CORE_CLEANUP_TIMEOUT);
+        ret = hg_core_progress(context, timeout_ms);
         HG_CHECK_SUBSYS_ERROR_NORET(ctx, ret != HG_SUCCESS && ret != HG_TIMEOUT,
             error, "Could not make progress");
     }
@@ -2028,14 +2046,15 @@ hg_core_context_check_handles(struct hg_core_private_context *context)
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_context_list_wait(struct hg_core_private_context *context,
-    struct hg_core_handle_list *handle_list)
+    struct hg_core_handle_list *handle_list, unsigned int timeout_ms)
 {
     bool list_empty = false;
-    hg_time_t deadline, now;
+    hg_time_t deadline, now = hg_time_from_ms(0);
     hg_return_t ret;
 
-    hg_time_get_current_ms(&now);
-    deadline = hg_time_add(now, hg_time_from_ms(HG_CORE_CLEANUP_TIMEOUT));
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     /* Make first progress pass without waiting to empty trigger queues */
     ret = hg_core_progress(context, 0);
@@ -2060,7 +2079,8 @@ hg_core_context_list_wait(struct hg_core_private_context *context,
             break;
 
         /* Gives a chance to always call trigger after progress */
-        hg_time_get_current_ms(&now);
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
         if (!hg_time_less(now, deadline))
             break;
 
@@ -2353,7 +2373,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_handle_pool_unpost(struct hg_core_handle_pool *hg_core_handle_pool)
+hg_core_handle_pool_unpost(
+    struct hg_core_handle_pool *hg_core_handle_pool, unsigned int timeout_ms)
 {
     struct hg_core_private_handle *hg_core_handle;
     hg_return_t ret;
@@ -2375,8 +2396,8 @@ hg_core_handle_pool_unpost(struct hg_core_handle_pool *hg_core_handle_pool)
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
 
     /* Check that operations have completed */
-    ret = hg_core_context_list_wait(
-        hg_core_handle_pool->context, &hg_core_handle_pool->pending_list);
+    ret = hg_core_context_list_wait(hg_core_handle_pool->context,
+        &hg_core_handle_pool->pending_list, timeout_ms);
     HG_CHECK_SUBSYS_HG_ERROR(
         ctx, error, ret, "Could not wait on pool handle list");
 
@@ -3195,7 +3216,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
 
     /* Re-use handle if we were listening, otherwise destroy it */
     if (hg_core_handle->reuse &&
-        !HG_CORE_HANDLE_CONTEXT(hg_core_handle)->finalizing) {
+        !hg_atomic_get32(&HG_CORE_HANDLE_CONTEXT(hg_core_handle)->unposting)) {
         HG_LOG_SUBSYS_DEBUG(
             rpc, "Re-using handle (%p)", (void *) hg_core_handle);
 
@@ -4185,7 +4206,8 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 
     if (callback_info->ret == NA_SUCCESS) {
         /* Extend pool if all handles are being utilized */
-        if (hg_core_handle_pool->incr_count > 0 && !context->finalizing &&
+        if (hg_core_handle_pool->incr_count > 0 &&
+            !hg_atomic_get32(&context->unposting) &&
             hg_core_handle_pool_empty(hg_core_handle_pool)) {
             HG_LOG_SUBSYS_WARNING(perf,
                 "Pre-posted handles have all been consumed / are being "
@@ -4797,7 +4819,7 @@ static HG_INLINE void
 hg_core_complete_op(struct hg_core_private_handle *hg_core_handle)
 {
     unsigned int op_completed_count =
-        hg_atomic_incr32(&hg_core_handle->op_completed_count);
+        (unsigned int) hg_atomic_incr32(&hg_core_handle->op_completed_count);
 
     HG_LOG_SUBSYS_DEBUG(rpc, "Completed %u/%u NA operations for handle (%p)",
         op_completed_count, hg_core_handle->op_expected_count,
@@ -5639,7 +5661,29 @@ HG_Core_context_post(hg_core_context_t *context)
     HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not post context");
 
     HG_LOG_SUBSYS_DEBUG(
-        ctx, "Posted handles on context (%p)", (void *) context);
+        ctx, "Pre-posted handles on context (%p)", (void *) context);
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_context_unpost(hg_core_context_t *context)
+{
+    hg_return_t ret;
+
+    HG_CHECK_SUBSYS_ERROR(ctx, context == NULL, error, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+
+    ret = hg_core_context_unpost(
+        (struct hg_core_private_context *) context, HG_CORE_CLEANUP_TIMEOUT);
+    HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not unpost context");
+
+    HG_LOG_SUBSYS_DEBUG(
+        ctx, "Unposted handles on context (%p)", (void *) context);
 
     return HG_SUCCESS;
 

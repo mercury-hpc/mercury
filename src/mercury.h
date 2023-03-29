@@ -304,7 +304,9 @@ HG_PUBLIC hg_context_t *
 HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id);
 
 /**
- * Destroy a context created by HG_Context_create().
+ * Destroy a context created by HG_Context_create(). If listening and
+ * HG_Context_unpost() has not already been called, also cancels previously
+ * posted requests.
  *
  * \param context [IN]          pointer to HG context
  *
@@ -312,6 +314,17 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id);
  */
 HG_PUBLIC hg_return_t
 HG_Context_destroy(hg_context_t *context);
+
+/**
+ * Unpost pre-posted requests if listening. This prevents any further RPCs
+ * from being received by that context.
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Context_unpost(hg_context_t *context);
 
 /**
  * Retrieve the class used to create the given context.
