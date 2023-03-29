@@ -454,6 +454,10 @@ hg_unit_cleanup(struct hg_unit_info *info)
         info->request_class = NULL;
     }
 
+    ret = HG_Context_unpost(info->context);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Context_unpost() failed (%s)", HG_Error_to_string(ret));
+
     /* Make sure we triggered everything */
     do {
         unsigned int actual_count;
