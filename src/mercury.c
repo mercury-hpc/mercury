@@ -1248,6 +1248,25 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Context_unpost(hg_context_t *context)
+{
+    hg_return_t ret;
+
+    HG_CHECK_SUBSYS_ERROR(
+        ctx, context == NULL, error, ret, HG_INVALID_ARG, "NULL HG context");
+
+    ret = HG_Core_context_unpost(context->core_context);
+    HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret,
+        "Could not unpost HG core context (%s)", HG_Error_to_string(ret));
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_id_t
 HG_Register_name(hg_class_t *hg_class, const char *func_name,
     hg_proc_cb_t in_proc_cb, hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)

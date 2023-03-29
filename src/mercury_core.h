@@ -371,17 +371,29 @@ HG_Core_context_set_handle_create_callback(hg_core_context_t *context,
 /**
  * Post requests associated to context in order to receive incoming RPCs.
  * Requests are automatically re-posted after completion until the context is
- * destroyed. Additionally a callback can be triggered on HG handle
- * creation. This allows upper layers to instantiate data that needs to be
- * attached to a handle. Number of requests that are posted can be controlled
- * through HG init info.
+ * destroyed or HG_Core_context_unpost() is called. Additionally a callback
+ * can be triggered on HG handle creation. This allows upper layers to
+ * instantiate data that needs to be attached to a handle. Number of requests
+ * that are posted can be controlled through HG init info.
  *
  * \param context [IN]          pointer to HG core context
  *
- * \return the associated class
+ * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Core_context_post(hg_core_context_t *context);
+
+/**
+ * Cancel requests posted and wait for those requests to be successfully
+ * canceled. This prevents any further RPCs from being received until
+ * HG_Core_context_destroy() is called.
+ *
+ * \param context [IN]          pointer to HG core context
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_context_unpost(hg_core_context_t *context);
 
 /**
  * Dynamically register an RPC ID as well as the RPC callback executed
