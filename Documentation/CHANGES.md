@@ -4,6 +4,12 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## New features
 
+<span style="color:lightblue">Added in rc4
+
+- __[HG]__
+    - Add `HG_Context_unpost()` / `HG_Core_context_unpost()` for optional
+    2-step context shutdown
+---
 <span style="color:lightblue">Added in rc2</span>
 
 - __[HG Test]__
@@ -18,18 +24,21 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Add HG_LOG_WRITE_FUNC() macro to pass func/line info
     - Add also `module` / `no_return` parameters to hg_log_write()
     - Remove `HG_ATOMIC_VAR_INIT` (deprecated)
-
 ---
 <span style="color:lightblue">Added in rc1
 
 - __[HG]__
     - Add support for multi-recv operations (OFI plugin only)
         - Currently disable multi-recv when auto SM is on
-        - Posted recv operations are in that case decoupled from pool of RPC handles
-        - Add `release_input_early` init info flag to attempt to release input buffers early once input is decoded
+        - Posted recv operations are in that case decoupled from pool of RPC
+        handles
+        - Add `release_input_early` init info flag to attempt to release input
+        buffers early once input is decoded
         - Add `HG_Release_input_buf()` to manually release input buffer.
-        - Add also `no_multi_recv` init info option to force disabling multi-recv
-    - Make use of subsys logs (`cls`, `ctx`, `addr`, `rpc`, `poll`) to control log output
+        - Add also `no_multi_recv` init info option to force disabling
+        multi-recv
+    - Make use of subsys logs (`cls`, `ctx`, `addr`, `rpc`, `poll`) to control
+    log output
     - Add init info struct versioning
 - __[HG bulk]__
     - Update to new logging system through `bulk` subsys log.
@@ -42,38 +51,49 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Install perf tests if `BUILD_TESTING` is `ON`
 - __[NA]__
     - Add support for multi-recv operations
-        - Add `NA_Msg_multi_recv_unexpected()` and `na_cb_info_multi_recv_unexpected` cb info
+        - Add `NA_Msg_multi_recv_unexpected()` and
+        `na_cb_info_multi_recv_unexpected` cb info
         - Add `flags` parameter to `NA_Op_create()` and `NA_Msg_buf_alloc()`
         - Add `NA_Has_opt_feature()` to query multi recv capability
     - Remove int return type from NA callbacks and return void
     - Remove unused `timeout` parameter from `NA_Trigger()`
-    - `NA_Addr_free()` / `NA_Mem_handle_free()` and `NA_Op_destroy()` now return void
+    - `NA_Addr_free()` / `NA_Mem_handle_free()` and `NA_Op_destroy()` now
+    return void
     - `na_mem_handle_t` and `na_addr_t` types to no longer include pointer type
-    - Add `NA_PLUGIN_PATH` env variable to optionally control plugin loading path
-    - Add `NA_DEFAULT_PLUGIN_PATH` CMake option to control default plugin path (default is lib install path)
+    - Add `NA_PLUGIN_PATH` env variable to optionally control plugin loading
+    path
+    - Add `NA_DEFAULT_PLUGIN_PATH` CMake option to control default plugin path
+    (default is lib install path)
     - Add `NA_USE_DYNAMIC_PLUGINS` CMake option (OFF by default)
     - Bump NA library version to 4.0.0
 - __[NA OFI]__
     - Add support for multi-recv operations and use `FI_MSG`
     - Allocate multi-recv buffers using hugepages when available
     - Switch to using `fi_senddata()` with immediate data for unexpected msgs
-        - `NA_OFI_UNEXPECTED_TAG_MSG` can be set to switch back to former behavior that uses tagged messages instead
+        - `NA_OFI_UNEXPECTED_TAG_MSG` can be set to switch back to former
+        behavior that uses tagged messages instead
     - Remove support for deprecated `psm` provider
-    - Control CQ interrupt signaling with `FI_AFFINITY` (only used if thread is bound to a single CPU ID)
+    - Control CQ interrupt signaling with `FI_AFFINITY` (only used if thread is
+    bound to a single CPU ID)
     - Enable `cxi` provider to use `FI_WAIT_FD`
     - Add `NA_OFI_OP_RETRY_TIMEOUT` and `NA_OFI_OP_RETRY_PERIOD`
-        - Once `NA_OFI_OP_RETRY_TIMEOUT` milliseconds elapse, retry is stopped and operation is aborted (default is 120000ms)
-        - When `NA_OFI_OP_RETRY_PERIOD` is set, operations are retried only every `NA_OFI_OP_RETRY_PERIOD` milliseconds (default is 0)
+        - Once `NA_OFI_OP_RETRY_TIMEOUT` milliseconds elapse, retry is stopped
+        and operation is aborted (default is 120000ms)
+        - When `NA_OFI_OP_RETRY_PERIOD` is set, operations are retried only
+        every `NA_OFI_OP_RETRY_PERIOD` milliseconds (default is 0)
     - Add support for `tcp` with and without `ofi_rxm`
         - `tcp` defaults to `tcp;ofi_rxm` for libfabric < 1.18
     - Enable plugin to be built as a dynamic plugin
 - __[NA UCX]__
     - Attempt to disable UCX backtrace if `UCX_HANDLE_ERRORS` is not set
     - Add support for `UCP_EP_PARAM_FIELD_LOCAL_SOCK_ADDR`
-        - With UCX >= 1.13 local src address information can now be specified on client to use specific interface and port
-    - Set `CM_REUSEADDR` by default to enable reuse of existing listener addr after a listener exits abnormally
+        - With UCX >= 1.13 local src address information can now be specified
+        on client to use specific interface and port
+    - Set `CM_REUSEADDR` by default to enable reuse of existing listener addr
+    after a listener exits abnormally
     - Attempt to reconnect EP if disconnected
-        - This concerns cases where a peer would have reappeared after a previous disconnection
+        - This concerns cases where a peer would have reappeared after a
+        previous disconnection
     - Enable plugin to be built as a dynamic plugin
 - __[NA Test]__
     - Update NA test perf to use multi-recv feature
@@ -89,25 +109,35 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## Bug fixes
 
+<span style="color:lightblue">Added in rc4</span>
+
+- __[NA OFI]__
+    - Add runtime version check
+        - Ensure that runtime version is greater than min version
+        - Replace prov/tcp compile check by runtime check
+- __[NA SM]__
+    - Fix issue where an expected msg that is no longer posted arrives
+        - In that particular case just drop the incoming msg
+---
 <span style="color:lightblue">Added in rc3</span>
 
 - __[NA OFI]__
     - Log redirection requires libfabric >= 1.16.0
-
+---
 <span style="color:lightblue">Added in rc2</span>
 
 - __[HG/NA]__
     - Ensure init info version is compatible
 - __[NA OFI]__
     - Fix handling of extra caps to not always follow advertised caps
-    - Pass `FI_COMPLETION` to RMA ops as flag is currently not ignored (`prov/opx` tmp fix)
+    - Pass `FI_COMPLETION` to RMA ops as flag is currently not ignored
+    (`prov/opx` tmp fix)
 - __[CMake]__
     - Ensure `VERSION`/`SOVERSION` is not set on `MODULE` libraries
     - Allow for in-source builds (RPM support)
     - Add missing `DL` lib dependency
     - Fix object target linking on CMake < 3.12
     - Ensure we build with PIC and PIE when available
-
 ---
 <span style="color:lightblue">Added in rc1
 
@@ -127,8 +157,10 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Refactor `test_rpc` to correctly handle timeout return values
 - __[NA OFI]__
     - Force `sockets` provider to use shared domains
-        - This prevents a performance regression when multiple classes are being used (`FI_THREAD_DOMAIN` is therefore disabled for this provider)
-    - Refactor unexpected and expected sends, retry of OFI operations, handling of RMA operations
+        - This prevents a performance regression when multiple classes are
+        being used (`FI_THREAD_DOMAIN` is therefore disabled for this provider)
+    - Refactor unexpected and expected sends, retry of OFI operations, handling
+    of RMA operations
     - Always include `FI_DIRECTED_RECV` in primary caps
     - Remove `NA_OFI_SOURCE_MSG` flag that was matching `FI_SOURCE_ERR`
     - Fix potential refcount race when sharing domains
@@ -153,4 +185,5 @@ This version brings bug fixes and updates to our v2.0.0 release.
 ## :warning: Known Issues
 
 - __[NA OFI]__
-    - [tcp/verbs;ofi_rxm] Using more than 256 peers requires `FI_UNIVERSE_SIZE` to be set.
+    - [tcp/verbs;ofi_rxm] Using more than 256 peers requires `FI_UNIVERSE_SIZE`
+    to be set.
