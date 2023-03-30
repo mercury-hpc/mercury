@@ -138,7 +138,7 @@
         } while (0)
 
 #    define HG_LOG_WRITE_FUNC_DEBUG_EXT(                                       \
-        name, header, module, file, line, func, ...)                           \
+        name, header, module, file, line, func, no_return, ...)                \
         do {                                                                   \
             if (!HG_LOG_OUTLET(name).registered)                               \
                 hg_log_outlet_register(&HG_LOG_OUTLET(name));                  \
