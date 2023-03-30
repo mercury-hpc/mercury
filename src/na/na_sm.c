@@ -2109,7 +2109,7 @@ static na_return_t
 na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
     bool listen, bool no_wait, uint32_t nofile_max)
 {
-    static hg_atomic_int32_t sm_id_g = 0;
+    static hg_atomic_int32_t sm_id_g = HG_ATOMIC_VAR_INIT(0);
     struct na_sm_addr_key addr_key = {0, 0};
     struct na_sm_region *shared_region = NULL;
     char uri[NA_SM_MAX_FILENAME], *uri_p = NULL;
