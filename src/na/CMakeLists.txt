@@ -9,6 +9,9 @@ endif()
 if(NOT NA_INSTALL_LIB_DIR)
   set(NA_INSTALL_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
 endif()
+if(NOT NA_INSTALL_PLUGIN_DIR)
+  set(NA_INSTALL_PLUGIN_DIR ${NA_INSTALL_LIB_DIR})
+endif()
 if(NOT NA_INSTALL_INCLUDE_DIR)
   # Interface include will default to prefix/include
   set(NA_INSTALL_INCLUDE_INTERFACE include)
@@ -72,13 +75,14 @@ include(CheckVariableExists)
 include(CheckCSourceCompiles)
 
 # Dynamically loaded plugins
-if(BUILD_SHARED_LIBS)
-  option(NA_USE_DYNAMIC_PLUGINS "Build as dynamically loadable plugins." OFF)
-  if(NA_USE_DYNAMIC_PLUGINS)
-    set(NA_HAS_DYNAMIC_PLUGINS 1)
-    set(NA_DEFAULT_PLUGIN_PATH ${NA_INSTALL_LIB_DIR} CACHE PATH "Default path used to install and load plugins.")
-    mark_as_advanced(NA_DEFAULT_PLUGIN_PATH)
+option(NA_USE_DYNAMIC_PLUGINS "Build as dynamically loadable plugins." OFF)
+if(NA_USE_DYNAMIC_PLUGINS)
+  if(NOT BUILD_SHARED_LIBS)
+    message(FATAL_ERROR "Using dynamic plugins requires BUILD_SHARED_LIBS to be ON.")
   endif()
+  set(NA_HAS_DYNAMIC_PLUGINS 1)
+  set(NA_DEFAULT_PLUGIN_PATH ${NA_INSTALL_PLUGIN_DIR} CACHE PATH "Default path used to load plugins.")
+  mark_as_advanced(NA_DEFAULT_PLUGIN_PATH)
 endif()
 
 # BMI
@@ -92,8 +96,8 @@ if(NA_USE_BMI)
     ${NA_INT_INCLUDE_DEPENDENCIES}
     ${BMI_INCLUDE_DIR}
   )
-  set(NA_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
+  set(NA_INT_LIB_DEPENDENCIES
+    ${NA_INT_LIB_DEPENDENCIES}
     ${BMI_LIBRARIES}
   )
 endif()
@@ -125,8 +129,8 @@ if(NA_USE_MPI)
       ${NA_INT_INCLUDE_DEPENDENCIES}
       ${GNI_INCLUDE_DIRS}
     )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
+    set(NA_INT_LIB_DEPENDENCIES
+      ${NA_INT_LIB_DEPENDENCIES}
       ${GNI_LIBRARIES}
     )
   endif()
@@ -143,8 +147,8 @@ if(NA_USE_CCI)
     ${NA_INT_INCLUDE_DEPENDENCIES}
     ${CCI_INCLUDE_DIR}
   )
-  set(NA_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
+  set(NA_INT_LIB_DEPENDENCIES
+    ${NA_INT_LIB_DEPENDENCIES}
     ${CCI_LIBRARIES}
   )
 endif()
@@ -171,13 +175,13 @@ if(NA_USE_OFI)
     ${NA_OFI_INT_INCLUDE_DEPENDENCIES}
     ${OFI_INCLUDE_DIRS}
   )
-  set(NA_OFI_EXT_LIB_DEPENDENCIES
-    ${NA_OFI_EXT_LIB_DEPENDENCIES}
+  set(NA_OFI_INT_LIB_DEPENDENCIES
+    ${NA_OFI_INT_LIB_DEPENDENCIES}
     ${OFI_LIBRARIES}
   )
   if(WIN32)
-    set(NA_OFI_EXT_LIB_DEPENDENCIES
-      ${NA_OFI_EXT_LIB_DEPENDENCIES}
+    set(NA_OFI_INT_LIB_DEPENDENCIES
+      ${NA_OFI_INT_LIB_DEPENDENCIES}
       ws2_32
     )
   endif()
@@ -189,8 +193,8 @@ if(NA_USE_OFI)
       ${NA_INT_INCLUDE_DEPENDENCIES}
       ${HWLOC_INCLUDE_DIR}
     )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
+    set(NA_INT_LIB_DEPENDENCIES
+      ${NA_INT_LIB_DEPENDENCIES}
       ${HWLOC_LIBRARIES}
     )
   endif()
@@ -205,9 +209,9 @@ if(NA_USE_OFI)
       ${NA_INT_INCLUDE_DEPENDENCIES}
       ${NA_OFI_INT_INCLUDE_DEPENDENCIES}
     )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${NA_OFI_EXT_LIB_DEPENDENCIES}
+    set(NA_INT_LIB_DEPENDENCIES
+      ${NA_INT_LIB_DEPENDENCIES}
+      ${NA_OFI_INT_LIB_DEPENDENCIES}
     )
   endif()
 endif()
@@ -223,8 +227,8 @@ if(NA_USE_UCX)
     ${NA_UCX_INT_INCLUDE_DEPENDENCIES}
     ${UCX_INCLUDE_DIR}
   )
-  set(NA_UCX_EXT_LIB_DEPENDENCIES
-    ${NA_UCX_EXT_LIB_DEPENDENCIES}
+  set(NA_UCX_INT_LIB_DEPENDENCIES
+    ${NA_UCX_INT_LIB_DEPENDENCIES}
     ${UCX_LIBRARIES}
   )
   # Additional cmake testing
@@ -265,9 +269,9 @@ if(NA_USE_UCX)
       ${NA_INT_INCLUDE_DEPENDENCIES}
       ${NA_UCX_INT_INCLUDE_DEPENDENCIES}
     )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${NA_UCX_EXT_LIB_DEPENDENCIES}
+    set(NA_INT_LIB_DEPENDENCIES
+      ${NA_INT_LIB_DEPENDENCIES}
+      ${NA_UCX_INT_LIB_DEPENDENCIES}
     )
   endif()
 endif()
@@ -331,8 +335,8 @@ if(NA_USE_PSM)
     ${NA_INT_INCLUDE_DEPENDENCIES}
     ${PSM_INCLUDE_DIR}
   )
-  set(NA_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
+  set(NA_INT_LIB_DEPENDENCIES
+    ${NA_INT_LIB_DEPENDENCIES}
     ${PSM_LIBRARIES}
   )
 endif()
@@ -348,8 +352,8 @@ if(NA_USE_PSM2)
     ${NA_INT_INCLUDE_DEPENDENCIES}
     ${PSM2_INCLUDE_DIR}
   )
-  set(NA_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
+  set(NA_INT_LIB_DEPENDENCIES
+    ${NA_INT_LIB_DEPENDENCIES}
     ${PSM2_LIBRARIES}
   )
 endif()
@@ -448,16 +452,8 @@ endif()
 #----------------------------------------------------------------------------
 
 # Clean up system include path first
-foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
-  if(NA_EXT_INCLUDE_DEPENDENCIES)
-    list(REMOVE_ITEM NA_EXT_INCLUDE_DEPENDENCIES ${item})
-  endif()
-endforeach()
-foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
-  if(NA_INT_INCLUDE_DEPENDENCIES)
-    list(REMOVE_ITEM NA_INT_INCLUDE_DEPENDENCIES ${item})
-  endif()
-endforeach()
+mercury_clean_include_path(NA_INT_INCLUDE_DEPENDENCIES)
+mercury_clean_include_path(NA_EXT_INCLUDE_DEPENDENCIES)
 
 # NA
 add_library(na ${NA_SRCS}
@@ -466,12 +462,16 @@ add_library(na ${NA_SRCS}
 target_include_directories(na
   PUBLIC  "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
+          $<TARGET_PROPERTY:mercury_util,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_include_directories(na
   SYSTEM PUBLIC  ${NA_EXT_INCLUDE_DEPENDENCIES}
          PRIVATE ${NA_INT_INCLUDE_DEPENDENCIES}
 )
-target_link_libraries(na mercury_util ${NA_EXT_LIB_DEPENDENCIES})
+target_link_libraries(na
+  PUBLIC  ${NA_EXT_LIB_DEPENDENCIES}
+  PRIVATE ${NA_INT_LIB_DEPENDENCIES} mercury_util
+)
 mercury_set_lib_options(na "na" ${NA_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)
@@ -485,17 +485,16 @@ foreach(plugin ${NA_DYNAMIC_PLUGINS})
   STRING(TOUPPER ${plugin} PLUGIN)
   add_library(na_plugin_${plugin} MODULE ${NA_${PLUGIN}_SRCS})
   target_include_directories(na_plugin_${plugin}
-    PUBLIC  "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
-            $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
+    PRIVATE "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
   )
   target_include_directories(na_plugin_${plugin}
-  SYSTEM PUBLIC  ${NA_${PLUGIN}_EXT_INCLUDE_DEPENDENCIES}
-          PRIVATE ${NA_${PLUGIN}_INT_INCLUDE_DEPENDENCIES}
+    SYSTEM PRIVATE ${NA_${PLUGIN}_INT_INCLUDE_DEPENDENCIES}
   )
-  target_link_libraries(na_plugin_${plugin} na ${NA_${PLUGIN}_EXT_LIB_DEPENDENCIES})
+  target_link_libraries(na_plugin_${plugin}
+    PRIVATE ${NA_${PLUGIN}_INT_LIB_DEPENDENCIES} na)
   mercury_set_lib_options(na_plugin_${plugin} "na_plugin_${plugin}" MODULE ${PROJECT_NAME})
   if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(na_{plugin})
+    set_coverage_flags(na_plugin_${plugin})
   endif()
 endforeach()
 
@@ -515,14 +514,9 @@ install(
 
 foreach(plugin ${NA_DYNAMIC_PLUGINS})
   install(
-    TARGETS
-      na_plugin_${plugin}
-    EXPORT
-      ${NA_EXPORTED_TARGETS}
-    LIBRARY DESTINATION ${NA_INSTALL_LIB_DIR}
-    ARCHIVE DESTINATION ${NA_INSTALL_LIB_DIR}
-    PUBLIC_HEADER DESTINATION ${NA_INSTALL_INCLUDE_DIR}
-    RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
+    TARGETS na_plugin_${plugin}
+    LIBRARY DESTINATION ${NA_INSTALL_PLUGIN_DIR}
+    RUNTIME DESTINATION ${NA_INSTALL_PLUGIN_DIR}
   )
 endforeach()
 
@@ -535,54 +529,23 @@ set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
 # For automake compatibility, also provide a pkgconfig file
 #-----------------------------------------------------------------------------
 if(NOT WIN32)
-  if(CMAKE_BUILD_TYPE)
-    string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
-  endif()
-
   # Retrieve NA library
-  if(lower_cmake_build_type MATCHES "debug")
-    get_target_property(NA_LIBRARY na OUTPUT_NAME_DEBUG)
-  else()
-    get_target_property(NA_LIBRARY na OUTPUT_NAME_RELEASE)
-  endif()
+  mercury_get_pc_lib_name(NA_PC_LIBRARY na)
 
   # Pkg dependencies
-  set(NA_PKG_DEPENDENCIES mercury_util)
+  set(NA_PC_INT_PKG_DEPENDENCIES mercury_util)
+
+  # NA internal library dependencies
+  mercury_get_pc_lib_deps(NA_PC_INT_LIB_DEPENDENCIES "${NA_INT_LIB_DEPENDENCIES}")
 
   # NA external library dependencies
-  # Need to generate -llib if not already passed
-  foreach(lib_dep ${NA_EXT_LIB_DEPENDENCIES})
-    # get library name
-    get_filename_component(lib_name ${lib_dep} NAME_WE)
-    if(lib_name MATCHES "^-l" OR lib_name MATCHES "-pthread")
-      # lib_name found is -lxxx
-      set(NA_EXT_LIB_DEPENDENCIES_LIST
-          ${NA_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
-    else()
-      # lib_name is /path/to/lib so get library path and name
-      get_filename_component(lib_path ${lib_dep} PATH)
-      if(lib_path)
-        set(NA_EXT_LIB_DEPENDENCIES_LIST
-            ${NA_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path})
-      endif()
-      string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
-      set(NA_EXT_LIB_DEPENDENCIES_LIST
-          ${NA_EXT_LIB_DEPENDENCIES_LIST} -l${lib_name})
-    endif()
-  endforeach()
-  if(NA_EXT_LIB_DEPENDENCIES_LIST)
-    list(REMOVE_DUPLICATES NA_EXT_LIB_DEPENDENCIES_LIST)
-    string(REPLACE ";" " "
-           NA_LIB_DEPENDENCIES "${NA_EXT_LIB_DEPENDENCIES_LIST}")
-  endif()
+  mercury_get_pc_lib_deps(NA_PC_LIB_DEPENDENCIES "${NA_EXT_LIB_DEPENDENCIES}")
 
   # External include dependencies (should be rare)
   if(NA_EXT_INCLUDE_DEPENDENCIES)
     list(REMOVE_DUPLICATES NA_EXT_INCLUDE_DEPENDENCIES)
+    mercury_get_pc_inc_deps(NA_PC_INCLUDE_DEPENDENCIES "${NA_EXT_INCLUDE_DEPENDENCIES}")
   endif()
-  foreach(inc_dep ${NA_EXT_INCLUDE_DEPENDENCIES})
-    set(NA_INCLUDE_DEPENDENCIES "${NA_INCLUDE_DEPENDENCIES} -I${inc_dep}")
-  endforeach()
 
   # Configure pkg-config file
   configure_file(

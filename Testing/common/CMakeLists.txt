@@ -136,7 +136,7 @@ target_include_directories(na_test_common
 target_include_directories(na_test_common
   SYSTEM PUBLIC ${NA_TEST_COMMON_EXT_INCLUDE_DEPENDENCIES}
 )
-target_link_libraries(na_test_common na
+target_link_libraries(na_test_common na mercury_util
   ${NA_TEST_COMMON_EXT_LIB_DEPENDENCIES}
 )
 if(MSVC)
