@@ -258,12 +258,76 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
   endif()
 endfunction()
 
+#-----------------------------------------------------------------------------
+function(mercury_get_pc_lib_name output_var lib_target)
+  if(CMAKE_BUILD_TYPE)
+    string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+  endif()
+  if(lower_cmake_build_type MATCHES "debug")
+    get_target_property(${output_var} ${lib_target} OUTPUT_NAME_DEBUG)
+  else()
+    get_target_property(${output_var} ${lib_target} OUTPUT_NAME_RELEASE)
+  endif()
+  set(${output_var} "${${output_var}}" PARENT_SCOPE)
+endfunction()
+
+#-----------------------------------------------------------------------------
+function(mercury_get_pc_inc_deps output_var inc_deps)
+  foreach(inc_dep ${inc_deps})
+    set(${output_var} "${${output_var}} -I${inc_dep}")
+  endforeach()
+  set(${output_var} "${${output_var}}" PARENT_SCOPE)
+endfunction()
+
+#-----------------------------------------------------------------------------
+function(mercury_get_pc_lib_deps output_var lib_deps)
+  # Need to generate -llib if not already passed
+  foreach(lib_dep ${lib_deps})
+    # get library name
+    get_filename_component(lib_name ${lib_dep} NAME_WE)
+    if(lib_name MATCHES "^-l" OR lib_name MATCHES "-pthread")
+      # lib_name found is -lxxx
+      set(deps_list ${deps_list} ${lib_name})
+    else()
+      # lib_name is /path/to/lib so get library path and name
+      get_filename_component(lib_path ${lib_dep} PATH)
+      if(lib_path)
+        set(deps_list ${deps_list} -L${lib_path})
+      endif()
+      string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
+      set(deps_list ${deps_list} "-l${lib_name}")
+    endif()
+  endforeach()
+  if(deps_list)
+    list(REMOVE_DUPLICATES deps_list)
+    string(REPLACE ";" " " ${output_var} "${deps_list}")
+  endif()
+  set(${output_var} "${${output_var}}" PARENT_SCOPE)
+endfunction()
+
+#-----------------------------------------------------------------------------
 # Avoid explicitly including system include paths
 set(MERCURY_SYSTEM_INCLUDE_PATH ${CMAKE_SYSTEM_INCLUDE_PATH}
   ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES})
-if(NOT WIN32)
-  set(MERCURY_SYSTEM_INCLUDE_PATH /usr/include ${MERCURY_SYSTEM_INCLUDE_PATH})
-endif()
+function(mercury_clean_include_path path_list)
+  if(${path_list})
+    foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
+      list(REMOVE_ITEM ${path_list} ${item})
+    endforeach()
+  endif()
+  set(${path_list} "${${path_list}}" PARENT_SCOPE)
+endfunction()
+
+set(MERCURY_SYSTEM_LIBRARY_PATH ${CMAKE_SYSTEM_LIBRARY_PATH}
+  ${CMAKE_C_IMPLICIT_LINK_DIRECTORIES})
+function(mercury_clean_library_path path_list)
+  if(${path_list})
+    foreach(item ${MERCURY_SYSTEM_LIBRARY_PATH})
+      list(REMOVE_ITEM ${path_list} ${item})
+    endforeach()
+  endif()
+  set(${path_list} "${${path_list}}" PARENT_SCOPE)
+endfunction()
 
 #-----------------------------------------------------------------------------
 # Coverage

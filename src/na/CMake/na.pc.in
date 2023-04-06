@@ -7,7 +7,7 @@ Name: @NA_PACKAGE@
 Description: @NA_PACKAGE_DESCRIPTION@
 Version: @NA_VERSION_MAJOR@.@NA_VERSION_MINOR@.@NA_VERSION_PATCH@
 Requires:
-Libs: -L${libdir} -l@NA_LIBRARY@
-Libs.private: @NA_LIB_DEPENDENCIES@
-Cflags: -I${includedir} @NA_INCLUDE_DEPENDENCIES@
-Requires.private: @NA_PKG_DEPENDENCIES@
+Libs: -L${libdir} -l@NA_PC_LIBRARY@ @NA_PC_LIB_DEPENDENCIES@
+Libs.private: @NA_PC_INT_LIB_DEPENDENCIES@
+Cflags: -I${includedir} @NA_PC_INCLUDE_DEPENDENCIES@
+Requires.private: @NA_PC_INT_PKG_DEPENDENCIES@
