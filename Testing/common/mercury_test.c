@@ -240,9 +240,10 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         /* Init HG with init options */
         hg_test_info->hg_classes[i] =
-            HG_Init_opt(NULL, hg_test_info->na_test_info.listen, &hg_init_info);
+            HG_Init_opt2(NULL, hg_test_info->na_test_info.listen,
+                HG_VERSION(HG_VERSION_MAJOR, HG_VERSION_MINOR), &hg_init_info);
         HG_TEST_CHECK_ERROR(hg_test_info->hg_classes[i] == NULL, error, ret,
-            HG_FAULT, "HG_Init_opt() failed");
+            HG_FAULT, "HG_Init_opt2() failed");
     }
     hg_test_info->hg_class = hg_test_info->hg_classes[0]; /* default */
 

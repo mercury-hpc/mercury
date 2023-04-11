@@ -99,7 +99,8 @@ HG_Core_init(const char *na_info_string, hg_bool_t na_listen);
 
 /**
  * Initialize the Mercury layer with options provided by init_info.
- * Must be finalized with HG_Core_finalize().
+ * Must be finalized with HG_Core_finalize(). Using this routine limits the info
+ * struct version to 2.2 version.
  * \remark HG_Core_init_opt() may become HG_Core_init() in the future.
  *
  * \param na_info_string [IN]   host address with port number (e.g.,
@@ -113,6 +114,24 @@ HG_Core_init(const char *na_info_string, hg_bool_t na_listen);
 HG_PUBLIC hg_core_class_t *
 HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info);
+
+/**
+ * Initialize the Mercury layer with options provided by init_info.
+ * Must be finalized with HG_Core_finalize().
+ * \remark HG_Core_init_opt() may become HG_Core_init() in the future.
+ *
+ * \param na_info_string [IN]   host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param na_listen [IN]        listen for incoming connections
+ * \param version [IN]          API version of the init info struct
+ * \param hg_init_info [IN]     (Optional) HG init info, NULL if no info
+ *
+ * \return Pointer to HG core class or NULL in case of failure
+ */
+HG_PUBLIC hg_core_class_t *
+HG_Core_init_opt2(const char *na_info_string, hg_bool_t na_listen,
+    unsigned int version, const struct hg_init_info *hg_init_info);
 
 /**
  * Finalize the Mercury layer.

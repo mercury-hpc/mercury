@@ -31,9 +31,6 @@ typedef enum hg_checksum_level {
  * NB. should be initialized using HG_INIT_INFO_INITIALIZER
  */
 struct hg_init_info {
-    /* Requested API version. */
-    hg_uint32_t api_version;
-
     /* NA init info struct, see na_types.h for documentation */
     struct na_init_info na_init_info;
 
@@ -174,6 +171,8 @@ typedef enum {
 #define HG_VERSION(major, minor) (((major) << 16) | (minor))
 #define HG_MAJOR(version)        (version >> 16)
 #define HG_MINOR(version)        (version & 0xffff)
+#define HG_VERSION_GE(v1, v2)    (v1 >= v2)
+#define HG_VERSION_LT(v1, v2)    (v1 < v2)
 
 /* Max timeout */
 #define HG_MAX_IDLE_TIME (3600 * 1000)
@@ -185,7 +184,6 @@ typedef enum {
 #define HG_INIT_INFO_INITIALIZER                                               \
     (struct hg_init_info)                                                      \
     {                                                                          \
-        .api_version = HG_VERSION(HG_VERSION_MAJOR, HG_VERSION_MINOR),         \
         .na_init_info = NA_INIT_INFO_INITIALIZER, .na_class = NULL,            \
         .request_post_init = 0, .request_post_incr = 0, .auto_sm = HG_FALSE,   \
         .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \

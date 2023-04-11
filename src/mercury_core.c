@@ -406,7 +406,7 @@ hg_core_proc_header_response(struct hg_core_handle *hg_core_handle,
  */
 static hg_return_t
 hg_core_init(const char *na_info_string, hg_bool_t na_listen,
-    const struct hg_init_info *hg_init_info,
+    unsigned int version, const struct hg_init_info *hg_init_info,
     struct hg_core_private_class **class_p);
 
 /**
@@ -1101,7 +1101,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_init(const char *na_info_string, hg_bool_t na_listen,
-    const struct hg_init_info *hg_init_info_p,
+    unsigned int version, const struct hg_init_info *hg_init_info_p,
     struct hg_core_private_class **class_p)
 {
     struct hg_init_info hg_init_info = HG_INIT_INFO_INITIALIZER;
@@ -1140,17 +1140,17 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 
     /* Ensure init info is API compatible */
     if (hg_init_info_p) {
-        HG_CHECK_SUBSYS_ERROR(fatal,
-            (hg_init_info_p->api_version != 0) &&
-                (HG_MAJOR(hg_init_info_p->api_version) != HG_VERSION_MAJOR),
-            error, ret, HG_PROTONOSUPPORT,
-            "API version mismatch, expected %d, got %d", HG_VERSION_MAJOR,
-            HG_MAJOR(hg_init_info_p->api_version));
-        HG_CHECK_SUBSYS_WARNING(cls, hg_init_info_p->api_version == 0,
-            "API version field of init info is not set, assuming latest");
+        HG_CHECK_SUBSYS_ERROR(cls, version == 0, error, ret, HG_INVALID_ARG,
+            "API version cannot be 0");
+        HG_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
+            HG_MAJOR(version), HG_MINOR(version));
 
         /* Get init info and overwrite defaults */
-        hg_init_info = *hg_init_info_p;
+        if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
+            hg_init_info = *hg_init_info_p;
+        else
+            hg_init_info_dup_2_2(&hg_init_info,
+                (const struct hg_init_info_2_2 *) hg_init_info_p);
     }
 
     /* request_post_incr is used only if request_post_init is non-zero */
@@ -5476,7 +5476,7 @@ HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
     HG_LOG_SUBSYS_DEBUG(
         cls, "Initializing with %s, listen=%d", na_info_string, na_listen);
 
-    ret = hg_core_init(na_info_string, na_listen, NULL, &hg_core_class);
+    ret = hg_core_init(na_info_string, na_listen, 0, NULL, &hg_core_class);
     HG_CHECK_SUBSYS_HG_ERROR(cls, error, ret, "Cannot initialize core class");
 
     HG_LOG_SUBSYS_DEBUG(
@@ -5499,7 +5499,33 @@ HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
     HG_LOG_SUBSYS_DEBUG(
         cls, "Initializing with %s, listen=%d", na_info_string, na_listen);
 
-    ret = hg_core_init(na_info_string, na_listen, hg_init_info, &hg_core_class);
+    /* v2.2 is latest version for which init struct was not versioned */
+    ret = hg_core_init(na_info_string, na_listen, HG_VERSION(2, 2),
+        hg_init_info, &hg_core_class);
+    HG_CHECK_SUBSYS_HG_ERROR(cls, error, ret, "Cannot initialize core class");
+
+    HG_LOG_SUBSYS_DEBUG(
+        cls, "Initialized core class (%p)", (void *) hg_core_class);
+
+    return (hg_core_class_t *) hg_core_class;
+
+error:
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_core_class_t *
+HG_Core_init_opt2(const char *na_info_string, hg_bool_t na_listen,
+    unsigned int version, const struct hg_init_info *hg_init_info)
+{
+    struct hg_core_private_class *hg_core_class;
+    hg_return_t ret;
+
+    HG_LOG_SUBSYS_DEBUG(
+        cls, "Initializing with %s, listen=%d", na_info_string, na_listen);
+
+    ret = hg_core_init(
+        na_info_string, na_listen, version, hg_init_info, &hg_core_class);
     HG_CHECK_SUBSYS_HG_ERROR(cls, error, ret, "Cannot initialize core class");
 
     HG_LOG_SUBSYS_DEBUG(

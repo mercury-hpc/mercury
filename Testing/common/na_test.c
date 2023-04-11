@@ -566,9 +566,10 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
             printf("# Class %d using info string: %s\n", i + 1, info_string);
 
         na_test_info->na_classes[i] =
-            NA_Initialize_opt(info_string, na_test_info->listen, &na_init_info);
+            NA_Initialize_opt2(info_string, na_test_info->listen,
+                NA_VERSION(NA_VERSION_MAJOR, NA_VERSION_MINOR), &na_init_info);
         NA_TEST_CHECK_ERROR(na_test_info->na_classes[i] == NULL, error, ret,
-            NA_PROTOCOL_ERROR, "NA_Initialize_opt(%s) failed", info_string);
+            NA_PROTOCOL_ERROR, "NA_Initialize_opt2(%s) failed", info_string);
 
         free(info_string);
         info_string = NULL;

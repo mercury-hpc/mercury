@@ -16,6 +16,20 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+/* Previous versions of init info to keep compatiblity with older versions */
+struct hg_init_info_2_2 {
+    struct na_init_info na_init_info;
+    na_class_t *na_class;
+    hg_uint32_t request_post_init;
+    hg_uint32_t request_post_incr;
+    hg_bool_t auto_sm;
+    const char *sm_info_string;
+    hg_checksum_level_t checksum_level;
+    hg_bool_t no_bulk_eager;
+    hg_bool_t no_loopback;
+    hg_bool_t stats;
+};
+
 /* Private callback type after completion of operations */
 typedef void (*hg_core_completion_cb_t)(void *arg);
 
@@ -70,6 +84,13 @@ extern "C" {
 #endif
 
 /**
+ * Duplicate init info for ABI compatibility.
+ */
+static HG_INLINE void
+hg_init_info_dup_2_2(struct hg_init_info *hg_init_info,
+    const struct hg_init_info_2_2 *hg_init_info_2_2);
+
+/**
  * Increment bulk handle counter.
  */
 HG_PRIVATE void
@@ -112,6 +133,26 @@ hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
  */
 HG_PRIVATE void
 hg_bulk_op_pool_destroy(struct hg_bulk_op_pool *hg_bulk_op_pool);
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_init_info_dup_2_2(struct hg_init_info *hg_init_info,
+    const struct hg_init_info_2_2 *hg_init_info_2_2)
+{
+    *hg_init_info =
+        (struct hg_init_info){.na_init_info = hg_init_info_2_2->na_init_info,
+            .na_class = hg_init_info_2_2->na_class,
+            .request_post_init = hg_init_info_2_2->request_post_init,
+            .request_post_incr = hg_init_info_2_2->request_post_incr,
+            .auto_sm = hg_init_info_2_2->auto_sm,
+            .sm_info_string = hg_init_info_2_2->sm_info_string,
+            .checksum_level = hg_init_info_2_2->checksum_level,
+            .no_bulk_eager = hg_init_info_2_2->no_bulk_eager,
+            .no_loopback = hg_init_info_2_2->no_loopback,
+            .stats = hg_init_info_2_2->stats,
+            .no_multi_recv = HG_FALSE,
+            .release_input_early = HG_FALSE};
+}
 
 #ifdef __cplusplus
 }
