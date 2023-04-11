@@ -628,12 +628,22 @@ NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 na_class_t *
 NA_Initialize(const char *info_string, bool listen)
 {
-    return NA_Initialize_opt(info_string, listen, NULL);
+    return NA_Initialize_opt2(info_string, listen, 0, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Initialize_opt(const char *info_string, bool listen,
+    const struct na_init_info *na_init_info)
+{
+    /* Keep as latest version until info struct is modified */
+    return NA_Initialize_opt2(info_string, listen,
+        NA_VERSION(NA_VERSION_MAJOR, NA_VERSION_MINOR), na_init_info);
+}
+
+/*---------------------------------------------------------------------------*/
+na_class_t *
+NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
     const struct na_init_info *na_init_info)
 {
     struct na_private_class *na_private_class = NULL;
@@ -655,14 +665,10 @@ NA_Initialize_opt(const char *info_string, bool listen,
 
     /* Ensure init info is API compatible */
     if (na_init_info) {
-        NA_CHECK_SUBSYS_ERROR(fatal,
-            (na_init_info->api_version != 0) &&
-                (NA_MAJOR(na_init_info->api_version) != NA_VERSION_MAJOR),
-            error, ret, NA_PROTONOSUPPORT,
-            "API version mismatch, expected %d, got %d", NA_VERSION_MAJOR,
-            NA_MAJOR(na_init_info->api_version));
-        NA_CHECK_SUBSYS_WARNING(cls, na_init_info->api_version == 0,
-            "API version field of init info is not set, assuming latest");
+        NA_CHECK_SUBSYS_ERROR(fatal, version == 0, error, ret, NA_INVALID_ARG,
+            "API version cannot be 0");
+        NA_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
+            NA_MAJOR(version), NA_MINOR(version));
 
         na_info->na_init_info = na_init_info;
         na_private_class->na_class.progress_mode = na_init_info->progress_mode;

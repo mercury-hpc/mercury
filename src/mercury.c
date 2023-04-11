@@ -11,6 +11,8 @@
 #include "mercury_proc.h"
 #include "mercury_proc_bulk.h"
 
+#include "mercury_private.h"
+
 #include "mercury_hash_string.h"
 #include "mercury_mem.h"
 #include "mercury_thread_spin.h"
@@ -1036,7 +1038,7 @@ HG_Error_to_string(hg_return_t errnum)
 hg_class_t *
 HG_Init(const char *na_info_string, hg_bool_t na_listen)
 {
-    return HG_Init_opt(na_info_string, na_listen, NULL);
+    return HG_Init_opt2(na_info_string, na_listen, 0, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1044,7 +1046,18 @@ hg_class_t *
 HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
+    /* v2.2 is latest version for which init struct was not versioned */
+    return HG_Init_opt2(
+        na_info_string, na_listen, HG_VERSION(2, 2), hg_init_info);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_class_t *
+HG_Init_opt2(const char *na_info_string, hg_bool_t na_listen,
+    unsigned int version, const struct hg_init_info *hg_init_info_p)
+{
     struct hg_private_class *hg_class = NULL;
+    struct hg_init_info hg_init_info = HG_INIT_INFO_INITIALIZER;
 
     /* Make sure error return codes match */
     assert(HG_CANCELED == (hg_return_t) NA_CANCELED);
@@ -1053,27 +1066,38 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     HG_CHECK_SUBSYS_ERROR_NORET(
         cls, hg_class == NULL, error, "Could not allocate HG class");
 
+    if (hg_init_info_p != NULL) {
+        HG_CHECK_SUBSYS_ERROR_NORET(
+            cls, version == 0, error, "API version cannot be 0");
+        HG_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
+            HG_MAJOR(version), HG_MINOR(version));
+
+        /* Get init info and overwrite defaults */
+        if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
+            hg_init_info = *hg_init_info_p;
+        else
+            hg_init_info_dup_2_2(&hg_init_info,
+                (const struct hg_init_info_2_2 *) hg_init_info_p);
+    }
+
     /* Save bulk eager information */
-    hg_class->bulk_eager =
-        (hg_init_info) ? !hg_init_info->no_bulk_eager : HG_TRUE;
+    hg_class->bulk_eager = !hg_init_info.no_bulk_eager;
 
     /* Save checksum level information */
 #ifdef HG_HAS_CHECKSUMS
-    if (hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_NONE)
-        hg_class->checksum_level = hg_init_info->checksum_level;
+    hg_class->checksum_level = hg_init_info.checksum_level;
 #else
     HG_CHECK_SUBSYS_WARNING(cls,
-        hg_init_info && hg_init_info->checksum_level != HG_CHECKSUM_NONE,
-        "Option checksum_level requires CMake option MERCURY_USE_CHECKSUMS to "
-        "be turned ON.");
+        hg_init_info.checksum_level != HG_CHECKSUM_NONE,
+        "Option checksum_level requires CMake option MERCURY_USE_CHECKSUMS "
+        "to be turned ON.");
 #endif
 
     /* Release input early */
-    hg_class->release_input_early =
-        (hg_init_info) ? hg_init_info->release_input_early : HG_FALSE;
+    hg_class->release_input_early = hg_init_info.release_input_early;
 
     hg_class->hg_class.core_class =
-        HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
+        HG_Core_init_opt2(na_info_string, na_listen, version, hg_init_info_p);
     HG_CHECK_SUBSYS_ERROR_NORET(cls, hg_class->hg_class.core_class == NULL,
         error, "Could not create HG core class");
 

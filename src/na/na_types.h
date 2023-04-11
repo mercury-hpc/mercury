@@ -45,9 +45,6 @@ enum na_mem_type {
 
 /* Init info */
 struct na_init_info {
-    /* Requested API version. */
-    uint32_t api_version;
-
     /* Preferred IP subnet to use. */
     const char *ip_subnet;
 
@@ -230,7 +227,6 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_INIT_INFO_INITIALIZER                                               \
     (struct na_init_info)                                                      \
     {                                                                          \
-        .api_version = NA_VERSION(NA_VERSION_MAJOR, NA_VERSION_MINOR),         \
         .ip_subnet = NULL, .auth_key = NULL, .max_unexpected_size = 0,         \
         .max_expected_size = 0, .progress_mode = 0,                            \
         .addr_format = NA_ADDR_UNSPEC, .max_contexts = 1, .thread_mode = 0,    \

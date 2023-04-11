@@ -41,7 +41,7 @@ NA_PUBLIC void
 NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 
 /**
- * Initialize the network NAion layer.
+ * Initialize the NA layer.
  * Must be finalized with NA_Finalize().
  *
  * \param info_string [IN]      host address with port number (e.g.,
@@ -55,7 +55,7 @@ NA_PUBLIC na_class_t *
 NA_Initialize(const char *info_string, bool listen) NA_WARN_UNUSED_RESULT;
 
 /**
- * Initialize the network NAion layer with options provided by init_info.
+ * Initialize the NA layer with options provided by init_info.
  * Must be finalized with NA_Finalize().
  *
  * \param info_string [IN]      host address with port number (e.g.,
@@ -71,7 +71,24 @@ NA_Initialize_opt(const char *info_string, bool listen,
     const struct na_init_info *na_init_info) NA_WARN_UNUSED_RESULT;
 
 /**
- * Finalize the network NAion layer.
+ * Initialize the NA layer with options provided by init_info.
+ * Must be finalized with NA_Finalize().
+ *
+ * \param info_string [IN]      host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param listen [IN]           listen for incoming connections
+ * \param version [IN]          API version of the init info struct
+ * \param na_init_info [IN]     (Optional) NA init info, NULL if no info
+ *
+ * \return Pointer to NA class or NULL in case of failure
+ */
+NA_PUBLIC na_class_t *
+NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
+    const struct na_init_info *na_init_info) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Finalize the NA layer.
  *
  * \param na_class [IN/OUT]     pointer to NA class
  *
