@@ -7,6 +7,7 @@
 
 #include "example_snappy.h"
 
+#include <inttypes.h>
 #include <snappy-c.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,14 +59,14 @@ snappy_pull_cb(const struct hg_cb_info *hg_cb_info)
         (struct snappy_transfer_args *) hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
     void *input;
-    size_t input_length;
+    hg_size_t input_length;
     size_t source_length =
         HG_Bulk_get_size(snappy_transfer_args->local_input_bulk_handle);
 
     /* Get pointer to input buffer from local handle */
     HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0, source_length,
         HG_BULK_READ_ONLY, 1, &input, &input_length, NULL);
-    printf("Transferred input buffer of length: %zu\n", input_length);
+    printf("Transferred input buffer of length: %" PRIu64 "\n", input_length);
     print_buf(20, (int *) input);
 
     /* Allocate compressed buffer for compressing input data */
@@ -122,7 +123,7 @@ snappy_push_cb(const struct hg_cb_info *hg_cb_info)
     snappy_compress_out_t snappy_compress_output;
 
     /* Set output parameters to inform origin */
-    snappy_compress_output.ret = snappy_transfer_args->ret;
+    snappy_compress_output.ret = (hg_int32_t) snappy_transfer_args->ret;
     snappy_compress_output.compressed_length =
         snappy_transfer_args->compressed_length;
     printf("Transferred compressed buffer of length %zu\n",

@@ -58,7 +58,7 @@ snappy_compress_rpc_cb(const struct hg_cb_info *callback_info)
     HG_Get_output(handle, &snappy_compress_output);
 
     /* Get Snappy output parameters */
-    ret = snappy_compress_output.ret;
+    ret = (snappy_status) snappy_compress_output.ret;
     compressed_length = snappy_compress_output.compressed_length;
     compressed = snappy_compress_rpc_args->compressed;
     input = snappy_compress_rpc_args->input;

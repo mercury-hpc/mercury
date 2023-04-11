@@ -87,7 +87,7 @@ run_my_rpc(const char *svr_addr_string, int value)
     hg_addr_t svr_addr;
     my_rpc_in_t in;
     const struct hg_info *hgi;
-    int ret;
+    hg_return_t ret;
     struct my_rpc_state *my_rpc_state_p;
 
     /* address lookup. */
@@ -131,7 +131,7 @@ static hg_return_t
 my_rpc_cb(const struct hg_cb_info *info)
 {
     my_rpc_out_t out;
-    int ret;
+    hg_return_t ret;
     struct my_rpc_state *my_rpc_state_p = info->arg;
 
     assert(info->ret == HG_SUCCESS);
