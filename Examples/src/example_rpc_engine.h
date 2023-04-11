@@ -5,18 +5,15 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#ifndef EXAMPLE_RPC_ENGINE_H
+#define EXAMPLE_RPC_ENGINE_H
+
 #include <mercury.h>
-#include <mercury_bulk.h>
-#include <mercury_macros.h>
 
 /* example_rpc_engine: API of generic utilities and progress engine hooks that
  * are reused across many RPC functions.  init and finalize() manage a
  * dedicated thread that will drive all HG progress
  */
-
-#ifndef EXAMPLE_RPC_ENGINE_H
-#    define EXAMPLE_RPC_ENGINE_H
-
 void
 hg_engine_init(hg_bool_t listen, const char *local_addr);
 void

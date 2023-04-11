@@ -202,6 +202,12 @@ set(CTEST_BUILD_NAME "${BUILD_NAME}-${OS_NAME}-$ENV{CC}-${lower_mercury_build_co
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 
+if(NOT DEFINED MERCURY_MEMORYCHECK_TYPE AND NOT MERCURY_DO_COVERAGE)
+  set(build_examples TRUE)
+else()
+  set(build_examples FALSE)
+endif()
+
 # OS specific options
 if(APPLE)
   set(SOEXT dylib)
@@ -246,6 +252,7 @@ set(dashboard_cache "
 CMAKE_C_FLAGS:STRING=${MERCURY_C_FLAGS}
 CMAKE_CXX_FLAGS:STRING=${MERCURY_CXX_FLAGS}
 
+BUILD_EXAMPLES:BOOL=${build_examples}
 BUILD_SHARED_LIBS:BOOL=${build_shared_libs}
 BUILD_TESTING:BOOL=ON
 

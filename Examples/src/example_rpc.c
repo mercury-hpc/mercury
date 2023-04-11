@@ -6,6 +6,7 @@
  */
 
 #include "example_rpc.h"
+#include "example_rpc_engine.h"
 
 #include <aio.h>
 #include <assert.h>
@@ -77,7 +78,7 @@ my_rpc_register(void)
 static hg_return_t
 my_rpc_handler(hg_handle_t handle)
 {
-    int ret;
+    hg_return_t ret;
     struct my_rpc_state *my_rpc_state_p;
     const struct hg_info *hgi;
 
@@ -157,11 +158,13 @@ static void
 my_rpc_handler_write_cb(union sigval sig)
 {
     struct my_rpc_state *my_rpc_state_p = sig.sival_ptr;
-    int ret;
+    hg_return_t ret;
+    int rc;
     my_rpc_out_t out;
 
-    ret = aio_error(&my_rpc_state_p->acb);
-    assert(ret == 0);
+    rc = aio_error(&my_rpc_state_p->acb);
+    assert(rc == 0);
+    (void) rc;
     out.ret = 0;
 
     /* NOTE: really this should be nonblocking */
