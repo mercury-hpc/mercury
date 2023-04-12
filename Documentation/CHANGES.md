@@ -4,7 +4,17 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## New features
 
-<span style="color:lightblue">Added in rc4
+<span style="color:lightblue">Added in rc5</span>
+
+- __[HG/NA]__
+    - Add `HG_Init_opt2()` / `HG_Core_init_opt2()` / `NA_Initialize_opt2()` to
+    safely pass updated init info while maintaining ABI compatibility between
+    versions
+- __[CMake]__
+    - Add `NA_INSTALL_PLUGIN_DIR` variable to control plugin install path
+
+---
+<span style="color:lightblue">Added in rc4</span>
 
 - __[HG]__
     - Add `HG_Context_unpost()` / `HG_Core_context_unpost()` for optional
@@ -25,7 +35,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Add also `module` / `no_return` parameters to hg_log_write()
     - Remove `HG_ATOMIC_VAR_INIT` (deprecated)
 ---
-<span style="color:lightblue">Added in rc1
+<span style="color:lightblue">Added in rc1</span>
 
 - __[HG]__
     - Add support for multi-recv operations (OFI plugin only)
@@ -109,6 +119,14 @@ This version brings bug fixes and updates to our v2.0.0 release.
 
 ## Bug fixes
 
+<span style="color:lightblue">Added in rc5</span>
+
+- __[Examples]__
+    - Allow examples to build without Boost support
+- __[CMake]__
+    - Fix internal/external dependencies that were not correctly set
+    - Fix pkg-config entries wrongly set as public/private
+
 <span style="color:lightblue">Added in rc4</span>
 
 - __[NA OFI]__
@@ -139,7 +157,7 @@ This version brings bug fixes and updates to our v2.0.0 release.
     - Fix object target linking on CMake < 3.12
     - Ensure we build with PIC and PIE when available
 ---
-<span style="color:lightblue">Added in rc1
+<span style="color:lightblue">Added in rc1</span>
 
 - __[HG]__
     - Clean up and refactoring fixes
