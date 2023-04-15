@@ -518,7 +518,8 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class);
  */
 static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
-    char **net_device_p, struct sockaddr **sockaddr_p, socklen_t *addrlen_p);
+    bool listen, char **net_device_p, struct sockaddr **sockaddr_p,
+    socklen_t *addrlen_p);
 
 /**
  * Hash address key.
@@ -1412,19 +1413,38 @@ na_ucp_connect(ucp_worker_h worker, const struct sockaddr *src_addr,
         .flags = UCP_EP_PARAMS_FLAGS_CLIENT_SERVER,
         .sockaddr = (ucs_sock_addr_t){.addr = dst_addr, .addrlen = addrlen},
         .conn_request = NULL};
+    struct sockaddr_storage src_ss_addr;
+    na_return_t ret;
 
 #ifdef NA_UCX_HAS_FIELD_LOCAL_SOCK_ADDR
     if (src_addr != NULL) {
+        /* Reset port to 0 to ensure a separate port is used per connection. */
+        memcpy(&src_ss_addr, src_addr, addrlen);
+        if (src_ss_addr.ss_family == AF_INET)
+            ((struct sockaddr_in *) &src_ss_addr)->sin_port = 0;
+        else if (src_ss_addr.ss_family == AF_INET6)
+            ((struct sockaddr_in6 *) &src_ss_addr)->sin6_port = 0;
+        else
+            NA_GOTO_SUBSYS_ERROR(addr, error, ret, NA_PROTONOSUPPORT,
+                "unsupported address family");
+
         ep_params.field_mask |= UCP_EP_PARAM_FIELD_LOCAL_SOCK_ADDR;
-        ep_params.local_sockaddr.addr = src_addr;
+        ep_params.local_sockaddr.addr = (const struct sockaddr *) &src_ss_addr;
         ep_params.local_sockaddr.addrlen = addrlen;
     }
 #else
     (void) src_addr;
+    (void) src_ss_addr;
+    (void) ret;
 #endif
 
     return na_ucp_ep_create(
         worker, &ep_params, err_handler_cb, err_handler_arg, ep_p);
+
+#ifdef NA_UCX_HAS_FIELD_LOCAL_SOCK_ADDR
+error:
+    return ret;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2122,7 +2142,8 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
-    char **net_device_p, struct sockaddr **sockaddr_p, socklen_t *addrlen_p)
+    bool listen, char **net_device_p, struct sockaddr **sockaddr_p,
+    socklen_t *addrlen_p)
 {
     char **ifa_name_p = NULL;
     char *hostname = NULL;
@@ -2165,6 +2186,11 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
             char *port_str = NULL;
             strtok_r(hostname, ":", &port_str);
             port = strtoul(port_str, NULL, 10) & 0xffff;
+            if (port != 0 && !listen) {
+                NA_LOG_SUBSYS_WARNING(
+                    cls, "Not listening, port value is ignored");
+                port = 0;
+            }
         }
     }
 
@@ -2842,7 +2868,7 @@ na_ucx_initialize(
         (na_info->na_init_info && na_info->na_init_info->ip_subnet)
             ? na_info->na_init_info->ip_subnet
             : NULL,
-        &net_device, &src_sockaddr, &src_addrlen);
+        listen, &net_device, &src_sockaddr, &src_addrlen);
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "na_ucx_parse_hostname_info() failed");
 
