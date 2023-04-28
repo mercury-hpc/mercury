@@ -18,6 +18,7 @@
 #include "mercury_thread_spin.h"
 
 #include <ucp/api/ucp.h>
+#include <uct/api/uct.h> /* To query component info */
 
 #include <stdalign.h>
 #include <stdlib.h>
@@ -29,6 +30,9 @@
 /****************/
 /* Local Macros */
 /****************/
+
+/* Name of this class */
+#define NA_UCX_CLASS_NAME "ucx"
 
 /* Default protocol */
 #define NA_UCX_PROTOCOL_DEFAULT "all"
@@ -269,6 +273,20 @@ enum na_ucp_type { NA_UCP_CONFIG, NA_UCP_CONTEXT, NA_UCP_WORKER };
  */
 static na_return_t
 na_ucs_status_to_na(ucs_status_t status);
+
+/**
+ * Query UCT component.
+ */
+static na_return_t
+na_uct_component_query(uct_component_h component, const char *protocol_name,
+    struct na_protocol_info **na_protocol_info_p);
+
+/**
+ * Query transport info from component.
+ */
+static na_return_t
+na_uct_get_md_info(uct_component_h component, const char *md_name,
+    struct na_protocol_info **na_protocol_info_p);
 
 /**
  * Print debug info.
@@ -665,6 +683,11 @@ na_ucx_release(void *arg);
 /* Plugin callbacks */
 /********************/
 
+/* get_protocol_info */
+static na_return_t
+na_ucx_get_protocol_info(const struct na_info *na_info,
+    struct na_protocol_info **na_protocol_info_p);
+
 /* check_protocol */
 static bool
 na_ucx_check_protocol(const char *protocol_name);
@@ -846,6 +869,7 @@ na_ucx_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 NA_PLUGIN const struct na_class_ops NA_PLUGIN_OPS(ucx) = {
     "ucx",                                /* name */
+    na_ucx_get_protocol_info,             /* get_protocol_info */
     na_ucx_check_protocol,                /* check_protocol */
     na_ucx_initialize,                    /* initialize */
     na_ucx_finalize,                      /* finalize */
@@ -997,6 +1021,105 @@ na_ucs_status_to_na(ucs_status_t status)
             break;
     }
 
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_uct_component_query(uct_component_h component, const char *protocol_name,
+    struct na_protocol_info **na_protocol_info_p)
+{
+    uct_component_attr_t component_attr = {
+        .field_mask = UCT_COMPONENT_ATTR_FIELD_NAME |
+                      UCT_COMPONENT_ATTR_FIELD_MD_RESOURCE_COUNT |
+                      UCT_COMPONENT_ATTR_FIELD_FLAGS};
+    unsigned int i;
+    ucs_status_t status;
+    na_return_t ret;
+
+    status = uct_component_query(component, &component_attr);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "uct_component_query() failed (%s)",
+        ucs_status_string(status));
+
+    component_attr.field_mask = UCT_COMPONENT_ATTR_FIELD_MD_RESOURCES;
+    component_attr.md_resources = alloca(sizeof(*component_attr.md_resources) *
+                                         component_attr.md_resource_count);
+
+    status = uct_component_query(component, &component_attr);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "uct_component_query() failed (%s)",
+        ucs_status_string(status));
+
+    for (i = 0; i < component_attr.md_resource_count; i++) {
+        if (protocol_name != NULL &&
+            strcmp(protocol_name, component_attr.md_resources[i].md_name))
+            continue;
+
+        ret = na_uct_get_md_info(component,
+            component_attr.md_resources[i].md_name, na_protocol_info_p);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not get resource info");
+    }
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_uct_get_md_info(uct_component_h component, const char *md_name,
+    struct na_protocol_info **na_protocol_info_p)
+{
+    uct_md_config_t *md_config;
+    uct_md_h md = NULL;
+    uct_tl_resource_desc_t *resources = NULL;
+    unsigned int num_resources, i;
+    ucs_status_t status;
+    na_return_t ret;
+
+    status = uct_md_config_read(component, NULL, NULL, &md_config);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "uct_md_config_read() failed (%s)",
+        ucs_status_string(status));
+
+    status = uct_md_open(component, md_name, md_config, &md);
+    uct_config_release(md_config);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "uct_md_open() failed (%s)",
+        ucs_status_string(status));
+
+    status = uct_md_query_tl_resources(md, &resources, &num_resources);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "uct_md_query_tl_resources() failed (%s)",
+        ucs_status_string(status));
+
+    for (i = 0; i < num_resources; i++) {
+        struct na_protocol_info *entry;
+
+        /* Skip non net resources (e.g., memory) */
+        if (resources[i].dev_type != UCT_DEVICE_TYPE_NET)
+            continue;
+
+        entry = na_protocol_info_alloc(
+            NA_UCX_CLASS_NAME, resources[i].tl_name, resources[i].dev_name);
+        NA_CHECK_SUBSYS_ERROR(cls, entry == NULL, error, ret, NA_NOMEM,
+            "Could not allocate protocol info entry");
+
+        entry->next = *na_protocol_info_p;
+        *na_protocol_info_p = entry;
+    }
+
+    uct_release_tl_resource_list(resources);
+    uct_md_close(md);
+
+    return NA_SUCCESS;
+
+error:
+    if (md != NULL)
+        uct_md_close(md);
     return ret;
 }
 
@@ -2761,6 +2884,43 @@ na_ucx_release(void *arg)
 /* Plugin callbacks */
 /********************/
 
+static na_return_t
+na_ucx_get_protocol_info(
+    const struct na_info *na_info, struct na_protocol_info **na_protocol_info_p)
+{
+    const char *protocol_name =
+        (na_info != NULL) ? na_info->protocol_name : NULL;
+    struct na_protocol_info *na_protocol_info = NULL;
+    uct_component_h *components = NULL;
+    unsigned i, num_components;
+    ucs_status_t status;
+    na_return_t ret;
+
+    status = uct_query_components(&components, &num_components);
+    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "uct_query_components() failed (%s)",
+        ucs_status_string(status));
+
+    for (i = 0; i < num_components; i++) {
+        ret = na_uct_component_query(
+            components[i], protocol_name, &na_protocol_info);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not query component");
+    }
+
+    uct_release_component_list(components);
+
+    *na_protocol_info_p = na_protocol_info;
+
+    return NA_SUCCESS;
+
+error:
+    if (components != NULL)
+        uct_release_component_list(components);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static bool
 na_ucx_check_protocol(const char *protocol_name)
 {

@@ -5467,6 +5467,21 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_get_na_protocol_info(
+    const char *info_string, struct na_protocol_info **na_protocol_info_p)
+{
+    return (hg_return_t) NA_Get_protocol_info(info_string, na_protocol_info_p);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Core_free_na_protocol_info(struct na_protocol_info *na_protocol_info)
+{
+    NA_Free_protocol_info(na_protocol_info);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_core_class_t *
 HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
 {

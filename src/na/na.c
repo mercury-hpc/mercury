@@ -55,6 +55,9 @@
 #define NA_PLUGIN_PATH_MAX (1024)
 #define NA_PLUGIN_NAME_MAX (16)
 
+/* Max number of NA plugins */
+#define NA_PLUGIN_MAX (16)
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -122,17 +125,19 @@ na_info_parse(
 static void
 na_info_free(struct na_info *na_info);
 
-/* Attempt to find a suitable static plugin */
+/* Get protocol info from plugins */
 static na_return_t
-na_plugin_static_check(const char *class_name, const char *protocol_name,
+na_plugin_get_protocol_info(const struct na_class_ops *const class_ops[],
+    const char *class_name, const struct na_info *na_info,
+    struct na_protocol_info **na_protocol_info_p);
+
+/* Attempt to find a suitable plugin */
+static na_return_t
+na_plugin_check_protocol(const struct na_class_ops *const class_ops[],
+    const char *class_name, const char *protocol_name,
     const struct na_class_ops **ops_p);
 
 #ifdef NA_HAS_DYNAMIC_PLUGINS
-/* Attempt to find a suitable dynamic plugin */
-static na_return_t
-na_plugin_dynamic_check(const char *class_name, const char *protocol_name,
-    const struct na_class_ops **ops_p);
-
 /* Scan a given path and return a list of plugins */
 static na_return_t
 na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p);
@@ -372,15 +377,66 @@ na_info_free(struct na_info *na_info)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_plugin_static_check(const char *class_name, const char *protocol_name,
+na_plugin_get_protocol_info(const struct na_class_ops *const class_ops[],
+    const char *class_name, const struct na_info *na_info,
+    struct na_protocol_info **na_protocol_info_p)
+{
+    const struct na_class_ops *ops;
+    struct na_protocol_info *na_protocol_info = NULL;
+    na_return_t ret;
+    int i;
+
+    /* Parse plugins */
+    for (i = 0, ops = class_ops[0]; ops != NULL; i++, ops = class_ops[i]) {
+        struct na_protocol_info *plugin_protocol_info = NULL, *tail = NULL;
+
+        NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
+            NA_PROTONOSUPPORT, "class name is not defined");
+        NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
+            NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
+
+        /* Skip check protocol if class name does not match */
+        if ((class_name != NULL &&
+                (strcmp(ops->class_name, class_name) != 0)) ||
+            ops->get_protocol_info == NULL) {
+            NA_LOG_SUBSYS_DEBUG(cls, "Skipping %s", ops->class_name);
+            continue;
+        }
+
+        ret = ops->get_protocol_info(na_info, &plugin_protocol_info);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not get protocol info");
+        if (plugin_protocol_info == NULL) {
+            NA_LOG_SUBSYS_DEBUG(
+                cls, "\"%s\" returned no protocol info", ops->class_name);
+            continue;
+        }
+
+        for (tail = plugin_protocol_info; tail->next != NULL; tail = tail->next)
+            /* nothing */;
+        tail->next = na_protocol_info;
+        na_protocol_info = plugin_protocol_info;
+    }
+
+    *na_protocol_info_p = na_protocol_info;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_plugin_check_protocol(const struct na_class_ops *const class_ops[],
+    const char *class_name, const char *protocol_name,
     const struct na_class_ops **ops_p)
 {
     const struct na_class_ops *ops = NULL;
     na_return_t ret;
     int i;
 
-    for (i = 0, ops = na_plugin_static_g[0]; ops != NULL;
-         i++, ops = na_plugin_static_g[i]) {
+    for (i = 0, ops = class_ops[0]; ops != NULL; i++, ops = class_ops[i]) {
         NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
             NA_PROTONOSUPPORT, "class name is not defined");
         NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
@@ -411,49 +467,6 @@ error:
 
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_DYNAMIC_PLUGINS
-static na_return_t
-na_plugin_dynamic_check(const char *class_name, const char *protocol_name,
-    const struct na_class_ops **ops_p)
-{
-    const struct na_class_ops *ops = NULL;
-    na_return_t ret;
-    unsigned int i;
-
-    NA_CHECK_SUBSYS_ERROR(cls, na_plugin_dynamic_g == NULL, error, ret,
-        NA_NOENTRY, "No dynamic plugins were found");
-
-    for (i = 0, ops = na_plugin_dynamic_g[0].ops; ops != NULL;
-         i++, ops = na_plugin_dynamic_g[i].ops) {
-        NA_CHECK_SUBSYS_ERROR(cls, ops->class_name == NULL, error, ret,
-            NA_PROTONOSUPPORT, "class name is not defined");
-        NA_CHECK_SUBSYS_ERROR(cls, ops->check_protocol == NULL, error, ret,
-            NA_OPNOTSUPPORTED, "check_protocol plugin callback is not defined");
-
-        /* Skip check protocol if class name does not match */
-        if ((class_name != NULL) && (strcmp(ops->class_name, class_name) != 0))
-            continue;
-
-        /* Check that protocol is supported, if no class name specified, take
-         * the first plugin that supports the protocol */
-        if (ops->check_protocol(protocol_name))
-            break;
-        else
-            NA_CHECK_SUBSYS_ERROR(fatal, class_name != NULL, error, ret,
-                NA_PROTONOSUPPORT,
-                "Specified class name \"%s\" does not support requested "
-                "protocol",
-                class_name);
-    }
-
-    *ops_p = ops;
-
-    return NA_SUCCESS;
-
-error:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 #    ifdef _WIN32
 static na_return_t
 na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
@@ -625,6 +638,85 @@ NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 }
 
 /*---------------------------------------------------------------------------*/
+na_return_t
+NA_Get_protocol_info(
+    const char *info_string, struct na_protocol_info **na_protocol_info_p)
+{
+    char *class_name = NULL;
+    struct na_info *na_info = NULL;
+    struct na_protocol_info *na_protocol_info = NULL;
+    na_return_t ret;
+
+    /* If info string is NULL, get info from all plugins */
+    if (info_string != NULL) {
+        ret = na_info_parse(info_string, &class_name, &na_info);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not parse host string");
+    }
+
+    /* Check list of static plugins */
+    ret = na_plugin_get_protocol_info(
+        na_plugin_static_g, class_name, na_info, &na_protocol_info);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not check static plugins");
+
+    /* Check list of dynamic plugins */
+#ifdef NA_HAS_DYNAMIC_PLUGINS
+    if (na_plugin_dynamic_g != NULL) {
+        struct na_protocol_info *dynamic_protocol_info = NULL;
+        const struct na_class_ops *na_plugin_dynamic[NA_PLUGIN_MAX] = {NULL};
+        const struct na_class_ops *ops = NULL;
+        int i;
+
+        for (i = 0, ops = na_plugin_dynamic_g[0].ops;
+             i < NA_PLUGIN_MAX && ops != NULL;
+             i++, ops = na_plugin_dynamic_g[i].ops)
+            na_plugin_dynamic[i] = ops;
+
+        ret = na_plugin_get_protocol_info(
+            na_plugin_dynamic, class_name, na_info, &dynamic_protocol_info);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not check dynamic plugins");
+        if (dynamic_protocol_info != NULL) {
+            struct na_protocol_info *tail = NULL;
+
+            for (tail = dynamic_protocol_info; tail->next != NULL;
+                 tail = tail->next)
+                /* nothing */;
+            tail->next = na_protocol_info;
+            na_protocol_info = dynamic_protocol_info;
+        }
+    }
+#endif
+
+    *na_protocol_info_p = na_protocol_info;
+
+    na_info_free(na_info);
+
+    return NA_SUCCESS;
+
+error:
+    na_info_free(na_info);
+    while (na_protocol_info != NULL) {
+        struct na_protocol_info *tmp = na_protocol_info;
+        na_protocol_info = na_protocol_info->next;
+        na_protocol_info_free(tmp);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+NA_Free_protocol_info(struct na_protocol_info *na_protocol_info)
+{
+    while (na_protocol_info != NULL) {
+        struct na_protocol_info *tmp = na_protocol_info;
+        na_protocol_info = na_protocol_info->next;
+        na_protocol_info_free(tmp);
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Initialize(const char *info_string, bool listen)
 {
@@ -679,13 +771,27 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
         class_name, na_info->protocol_name, na_info->host_name);
 
     /* Check list of static plugins */
-    ret = na_plugin_static_check(class_name, na_info->protocol_name, &ops);
+    ret = na_plugin_check_protocol(
+        na_plugin_static_g, class_name, na_info->protocol_name, &ops);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not check static plugins");
 
 #ifdef NA_HAS_DYNAMIC_PLUGINS
     if (ops == NULL) {
+        const struct na_class_ops *na_plugin_dynamic[NA_PLUGIN_MAX] = {NULL};
+        int i;
+
+        NA_CHECK_SUBSYS_ERROR(cls, na_plugin_dynamic_g == NULL, error, ret,
+            NA_NOENTRY, "No dynamic plugins were found");
+
+        for (i = 0, ops = na_plugin_dynamic_g[0].ops;
+             i < NA_PLUGIN_MAX && ops != NULL;
+             i++, ops = na_plugin_dynamic_g[i].ops)
+            na_plugin_dynamic[i] = ops;
+
         /* Check list of dynamic plugins */
-        ret = na_plugin_dynamic_check(class_name, na_info->protocol_name, &ops);
+        ret = na_plugin_check_protocol(
+            (const struct na_class_ops *const *) na_plugin_dynamic, class_name,
+            na_info->protocol_name, &ops);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not check dynamic plugins");
 #endif
@@ -1863,6 +1969,48 @@ const char *
 na_cb_type_to_string(na_cb_type_t cb_type)
 {
     return na_cb_type_name_g[cb_type];
+}
+
+/*---------------------------------------------------------------------------*/
+struct na_protocol_info *
+na_protocol_info_alloc(
+    const char *class_name, const char *protocol_name, const char *device_name)
+{
+    struct na_protocol_info *entry;
+
+    entry = (struct na_protocol_info *) calloc(1, sizeof(*entry));
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, entry == NULL, error, "Could not allocate entry");
+
+    entry->class_name = strdup(class_name);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, entry->class_name == NULL, error, "Could not dup class name");
+
+    entry->protocol_name = strdup(protocol_name);
+    NA_CHECK_SUBSYS_ERROR_NORET(cls, entry->protocol_name == NULL, error,
+        "Could not dup protocol name");
+
+    entry->device_name = strdup(device_name);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, entry->device_name == NULL, error, "Could not dup device name");
+
+    return entry;
+
+error:
+    if (entry != NULL)
+        na_protocol_info_free(entry);
+
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+na_protocol_info_free(struct na_protocol_info *entry)
+{
+    free(entry->class_name);
+    free(entry->protocol_name);
+    free(entry->device_name);
+    free(entry);
 }
 
 /*---------------------------------------------------------------------------*/

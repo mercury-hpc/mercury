@@ -59,6 +59,9 @@
 /* Local Macros */
 /****************/
 
+/* Name of this class */
+#define NA_OFI_CLASS_NAME "ofi"
+
 /**
  * FI VERSION provides binary backward and forward compatibility support.
  * Specify the version of OFI is coded to, the provider will select struct
@@ -1495,6 +1498,11 @@ na_ofi_completion_multi_count(struct na_ofi_completion_multi *completion_multi);
 /* Plugin callbacks */
 /********************/
 
+/* get_protocol_info */
+static na_return_t
+na_ofi_get_protocol_info(const struct na_info *na_info,
+    struct na_protocol_info **na_protocol_info_p);
+
 /* check_protocol */
 static bool
 na_ofi_check_protocol(const char *protocol_name);
@@ -1710,7 +1718,8 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 /*******************/
 
 NA_PLUGIN const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
-    "ofi",                                 /* name */
+    NA_OFI_CLASS_NAME,                     /* name */
+    na_ofi_get_protocol_info,              /* get_protocol_info */
     na_ofi_check_protocol,                 /* check_protocol */
     na_ofi_initialize,                     /* initialize */
     na_ofi_finalize,                       /* finalize */
@@ -3088,9 +3097,11 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
         cls, hints == NULL, out, ret, NA_NOMEM, "fi_allocinfo() failed");
 
     /* Protocol name is provider name, filter out providers within libfabric */
-    hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
-    NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL, cleanup,
-        ret, NA_NOMEM, "Could not duplicate name");
+    if (prov_type != NA_OFI_PROV_NULL) {
+        hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
+        NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL,
+            cleanup, ret, NA_NOMEM, "Could not duplicate name");
+    }
 
     /**
      * FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
@@ -3108,10 +3119,11 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     hints->ep_attr->type = FI_EP_RDM;
 
     /* set endpoint protocol */
-    NA_CHECK_SUBSYS_ERROR(cls,
-        na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
-        NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
-        na_ofi_prov_ep_proto[prov_type]);
+    if (prov_type != NA_OFI_PROV_NULL)
+        NA_CHECK_SUBSYS_ERROR(cls,
+            na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
+            NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
+            na_ofi_prov_ep_proto[prov_type]);
     hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
 
     /* caps: capabilities required for all providers */
@@ -6309,6 +6321,109 @@ na_ofi_completion_multi_count(struct na_ofi_completion_multi *completion_multi)
 /* Plugin callbacks */
 /********************/
 
+static na_return_t
+na_ofi_get_protocol_info(
+    const struct na_info *na_info, struct na_protocol_info **na_protocol_info_p)
+{
+    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
+    struct fi_info *prov, *providers = NULL;
+    struct na_ofi_verify_info verify_info = {.addr_format = 0,
+        .domain_name = NULL,
+        .loc_info = NULL, /* Loc info is ignored */
+        .prov_type = NA_OFI_PROV_NULL};
+    struct na_protocol_info *head = NULL, *prev = NULL;
+    unsigned NA_DEBUG_LOG_USED count = 0;
+    na_return_t ret;
+
+    if (na_info != NULL) {
+        /* Get init info and overwrite defaults */
+        if (na_info->na_init_info != NULL)
+            na_init_info = *na_info->na_init_info;
+
+        if (na_info->protocol_name != NULL) {
+            verify_info.prov_type =
+                na_ofi_prov_name_to_type(na_info->protocol_name);
+            NA_CHECK_SUBSYS_ERROR(cls,
+                verify_info.prov_type == NA_OFI_PROV_NULL, error, ret,
+                NA_PROTONOSUPPORT, "Protocol \"%s\" not supported",
+                na_info->protocol_name);
+
+            verify_info.addr_format = na_ofi_prov_addr_format(
+                verify_info.prov_type, na_init_info.addr_format);
+            NA_CHECK_SUBSYS_ERROR(cls,
+                verify_info.addr_format <= FI_FORMAT_UNSPEC, error, ret,
+                NA_PROTONOSUPPORT, "Unsupported address format");
+        }
+    }
+
+    ret = na_ofi_getinfo(verify_info.prov_type, NULL, &providers);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not get provider info");
+
+    for (prov = providers; prov != NULL; prov = prov->next) {
+        if (na_info == NULL || na_info->protocol_name == NULL) {
+            verify_info.prov_type =
+                na_ofi_prov_name_to_type(prov->fabric_attr->prov_name);
+            if (verify_info.prov_type == NA_OFI_PROV_NULL)
+                continue;
+
+            verify_info.addr_format = na_ofi_prov_addr_format(
+                verify_info.prov_type, na_init_info.addr_format);
+        }
+
+        if (na_ofi_match_provider(&verify_info, prov)) {
+            struct na_protocol_info *entry;
+
+            /* Update last provider name if changed */
+            if (prev == NULL ||
+                strcmp(prev->protocol_name, prov->fabric_attr->prov_name)) {
+                entry = na_protocol_info_alloc(NA_OFI_CLASS_NAME,
+                    prov->fabric_attr->prov_name, prov->domain_attr->name);
+                NA_CHECK_SUBSYS_ERROR(cls, entry == NULL, error, ret, NA_NOMEM,
+                    "Could not allocate protocol info entry");
+
+                prev = entry;
+            } else {
+                /* Do not keep duplicates */
+                for (entry = head; entry != NULL && entry != prev->next;
+                     entry = entry->next)
+                    if (!strcmp(entry->device_name, prov->domain_attr->name))
+                        break;
+
+                if (entry != prev->next)
+                    continue;
+
+                entry = na_protocol_info_alloc(NA_OFI_CLASS_NAME,
+                    prov->fabric_attr->prov_name, prov->domain_attr->name);
+                NA_CHECK_SUBSYS_ERROR(cls, entry == NULL, error, ret, NA_NOMEM,
+                    "Could not allocate protocol info entry");
+            }
+            entry->next = head;
+            head = entry;
+
+            NA_LOG_SUBSYS_DEBUG(cls, "(#%u) Prov is %s, %s", count++,
+                head->protocol_name, head->device_name);
+        }
+    }
+
+    *na_protocol_info_p = head;
+
+    fi_freeinfo(providers);
+
+    return NA_SUCCESS;
+
+error:
+    if (providers != NULL)
+        fi_freeinfo(providers);
+
+    while (head != NULL) {
+        prev = head;
+        head = head->next;
+        na_protocol_info_free(prev);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static bool
 na_ofi_check_protocol(const char *protocol_name)
 {
@@ -6477,10 +6592,22 @@ na_ofi_initialize(
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not verify info for %s",
         na_ofi_prov_name[prov_type]);
 
-    /* Set optional features */
+    /* Set/check optional features */
     if ((na_ofi_prov_extra_caps[prov_type] & FI_MULTI_RECV) &&
-        (na_ofi_class->msg_recv_unexpected == na_ofi_msg_recv))
+        (na_ofi_class->msg_recv_unexpected == na_ofi_msg_recv)) {
+        NA_CHECK_SUBSYS_ERROR(cls,
+            !(na_ofi_class->fi_info->caps & FI_MULTI_RECV), error, ret,
+            NA_PROTONOSUPPORT, "FI_MULTI_RECV is not supported by provider");
         na_ofi_class->opt_features |= NA_OPT_MULTI_RECV;
+    }
+    if (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE)
+        NA_CHECK_SUBSYS_ERROR(cls, !(na_ofi_class->fi_info->caps & FI_SOURCE),
+            error, ret, NA_PROTONOSUPPORT,
+            "FI_SOURCE is not supported by provider");
+    if (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE_ERR)
+        NA_CHECK_SUBSYS_ERROR(cls,
+            !(na_ofi_class->fi_info->caps & FI_SOURCE_ERR), error, ret,
+            NA_PROTONOSUPPORT, "FI_SOURCE_ERR is not supported by provider");
 
     /* Open fabric */
     ret = na_ofi_fabric_open(

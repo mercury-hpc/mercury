@@ -356,6 +356,11 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 #-----------------------------------------------------------------------------
+# Util
+#-----------------------------------------------------------------------------
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
+
+#-----------------------------------------------------------------------------
 # Build doxygen documentation.
 #-----------------------------------------------------------------------------
 option(BUILD_DOCUMENTATION "Build documentation." OFF)

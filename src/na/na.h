@@ -41,6 +41,28 @@ NA_PUBLIC void
 NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 
 /**
+ * Get information on protocols that are supported by underlying plugins. If
+ * \info_string is NULL, a list of all supported protocols by all plugins will
+ * be returned. The returned list must be freed using NA_Free_protocol_info().
+ *
+ * \param info_string [IN]          NULL or "<protocol>" or "<plugin+protocol>"
+ * \param na_protocol_info_p [OUT]  linked-list of protocol infos
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_PUBLIC na_return_t
+NA_Get_protocol_info(
+    const char *info_string, struct na_protocol_info **na_protocol_info_p);
+
+/**
+ * Free protocol info.
+ *
+ * \param na_protocol_info [IN/OUT] linked-list of protocol infos
+ */
+NA_PUBLIC void
+NA_Free_protocol_info(struct na_protocol_info *na_protocol_info);
+
+/**
  * Initialize the NA layer.
  * Must be finalized with NA_Finalize().
  *
@@ -937,6 +959,8 @@ struct na_context {
 /* NA plugin callbacks */
 struct na_class_ops {
     const char *class_name;
+    na_return_t (*get_protocol_info)(const struct na_info *na_info,
+        struct na_protocol_info **na_protocol_info_p);
     bool (*check_protocol)(const char *protocol_name);
     na_return_t (*initialize)(
         na_class_t *na_class, const struct na_info *na_info, bool listen);

@@ -130,6 +130,27 @@ NA_PLUGIN_VISIBILITY const char *
 na_cb_type_to_string(na_cb_type_t cb_type) NA_WARN_UNUSED_RESULT;
 
 /**
+ * Allocate protocol info entry.
+ *
+ * \param class_name [IN]       NA class name (e.g., ofi)
+ * \param protocol_name [IN]    protocol name (e.g., tcp)
+ * \param device_name [IN]      device name (e.g., eth0)
+ *
+ * \return Pointer to allocated entry or NULL in case of failure
+ */
+NA_PLUGIN_VISIBILITY struct na_protocol_info *
+na_protocol_info_alloc(const char *class_name, const char *protocol_name,
+    const char *device_name) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Free protocol info entry.
+ *
+ * \param entry [IN/OUT]        pointer to protocol info entry
+ */
+NA_PLUGIN_VISIBILITY void
+na_protocol_info_free(struct na_protocol_info *entry);
+
+/**
  * Add callback to context completion queue.
  *
  * \param context [IN/OUT]              pointer to context of execution
