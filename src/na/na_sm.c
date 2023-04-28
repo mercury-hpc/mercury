@@ -889,6 +889,11 @@ na_sm_complete_signal(struct na_sm_class *na_sm_class);
 static NA_INLINE void
 na_sm_release(void *arg);
 
+/* get_protocol_info */
+static na_return_t
+na_sm_get_protocol_info(const struct na_info *na_info,
+    struct na_protocol_info **na_protocol_info_p);
+
 /* check_protocol */
 static bool
 na_sm_check_protocol(const char *protocol_name);
@@ -1078,6 +1083,7 @@ na_sm_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     "na",                              /* name */
+    na_sm_get_protocol_info,           /* get_protocol_info */
     na_sm_check_protocol,              /* check_protocol */
     na_sm_initialize,                  /* initialize */
     na_sm_finalize,                    /* finalize */
@@ -4238,6 +4244,30 @@ na_sm_release(void *arg)
 /* Plugin callbacks */
 /********************/
 
+static na_return_t
+na_sm_get_protocol_info(
+    const struct na_info *na_info, struct na_protocol_info **na_protocol_info_p)
+{
+    const char *protocol_name =
+        (na_info != NULL) ? na_info->protocol_name : NULL;
+    na_return_t ret;
+
+    if (protocol_name != NULL && strcmp(protocol_name, "sm")) {
+        *na_protocol_info_p = NULL;
+        return NA_SUCCESS;
+    }
+
+    *na_protocol_info_p = na_protocol_info_alloc("na", "sm", "shm");
+    NA_CHECK_SUBSYS_ERROR(cls, *na_protocol_info_p == NULL, error, ret,
+        NA_NOMEM, "Could not allocate protocol info entry");
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static bool
 na_sm_check_protocol(const char *protocol_name)
 {

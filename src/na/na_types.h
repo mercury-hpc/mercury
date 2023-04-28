@@ -91,6 +91,14 @@ struct na_segment {
     size_t len; /* Size of the segment in bytes */
 };
 
+/* NA protocol info */
+struct na_protocol_info {
+    struct na_protocol_info *next; /* Pointer to the next structure */
+    char *class_name;              /* Name of the class */
+    char *protocol_name;           /* Name of this protocol */
+    char *device_name;             /* Name of associated device */
+};
+
 /* Return codes:
  * Functions return 0 for success or corresponding return code */
 #define NA_RETURN_VALUES                                                       \

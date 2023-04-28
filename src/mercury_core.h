@@ -84,6 +84,29 @@ extern "C" {
 #endif
 
 /**
+ * Get information on protocols that are supported by underlying NA plugins. If
+ * \info_string is NULL, a list of all supported protocols by all plugins will
+ * be returned. The returned list must be freed using
+ * HG_Core_free_na_protocol_info().
+ *
+ * \param info_string [IN]          NULL or "<protocol>" or "<plugin+protocol>"
+ * \param na_protocol_info_p [OUT]  linked-list of protocol infos
+ *
+ * \return HG_SUCCESS or corresponding NA error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_get_na_protocol_info(
+    const char *info_string, struct na_protocol_info **na_protocol_info_p);
+
+/**
+ * Free protocol info.
+ *
+ * \param na_protocol_info [IN/OUT] linked-list of protocol infos
+ */
+HG_PUBLIC void
+HG_Core_free_na_protocol_info(struct na_protocol_info *na_protocol_info);
+
+/**
  * Initialize the core Mercury layer.
  * Must be finalized with HG_Core_finalize().
  *

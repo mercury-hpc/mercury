@@ -443,6 +443,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
     "bmi",                                /* name */
+    NULL,                                 /* get_protocol_info */
     na_bmi_check_protocol,                /* check_protocol */
     na_bmi_initialize,                    /* initialize */
     na_bmi_finalize,                      /* finalize */

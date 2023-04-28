@@ -59,6 +59,29 @@ HG_PUBLIC const char *
 HG_Error_to_string(hg_return_t errnum);
 
 /**
+ * Get information on protocols that are supported by underlying NA plugins. If
+ * \info_string is NULL, a list of all supported protocols by all plugins will
+ * be returned. The returned list must be freed using
+ * HG_Free_na_protocol_info().
+ *
+ * \param info_string [IN]          NULL or "<protocol>" or "<plugin+protocol>"
+ * \param na_protocol_info_p [OUT]  linked-list of protocol infos
+ *
+ * \return HG_SUCCESS or corresponding NA error code
+ */
+static HG_INLINE hg_return_t
+HG_Get_na_protocol_info(
+    const char *info_string, struct na_protocol_info **na_protocol_info_p);
+
+/**
+ * Free protocol info.
+ *
+ * \param na_protocol_info [IN/OUT] linked-list of protocol infos
+ */
+static HG_INLINE void
+HG_Free_na_protocol_info(struct na_protocol_info *na_protocol_info);
+
+/**
  * Initialize the Mercury layer.
  * Must be finalized with HG_Finalize().
  *
@@ -1039,6 +1062,21 @@ struct hg_handle {
     void *data;                         /* User data */
     void (*data_free_callback)(void *); /* User data free callback */
 };
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Get_na_protocol_info(
+    const char *info_string, struct na_protocol_info **na_protocol_info_p)
+{
+    return HG_Core_get_na_protocol_info(info_string, na_protocol_info_p);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+HG_Free_na_protocol_info(struct na_protocol_info *na_protocol_info)
+{
+    HG_Core_free_na_protocol_info(na_protocol_info);
+}
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE const char *

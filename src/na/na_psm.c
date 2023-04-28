@@ -2615,6 +2615,7 @@ unlock_finish:
  */
 const struct na_class_ops NA_PSM_PLUGIN_VARIABLE = {
     NA_PSM_NAME,                           /* name */
+    NULL,                                  /* get_protocol_info */
     na_psm_check_protocol,                 /* check_protocol */
     na_psm_initialize,                     /* initialize */
     na_psm_finalize,                       /* finalize */

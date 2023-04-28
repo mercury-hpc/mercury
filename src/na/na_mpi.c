@@ -387,6 +387,7 @@ na_mpi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     "mpi",                                /* name */
+    NULL,                                 /* get_protocol_info */
     na_mpi_check_protocol,                /* check_protocol */
     na_mpi_initialize,                    /* initialize */
     na_mpi_finalize,                      /* finalize */
