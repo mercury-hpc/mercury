@@ -4561,7 +4561,7 @@ na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
     cq_attr.wait_cond = FI_CQ_COND_NONE;
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
     cq_attr.size = NA_OFI_CQ_DEPTH;
-    if (cpu > 0) {
+    if (cpu >= 0) {
         NA_LOG_SUBSYS_DEBUG(ctx, "Setting CQ signaling_vector to cpu %d", cpu);
         cq_attr.flags = FI_AFFINITY;
         cq_attr.signaling_vector = cpu;
