@@ -241,7 +241,8 @@ na_test_mpi_init(struct na_test_info *na_test_info)
     NA_TEST_CHECK_NA_ERROR(error, ret, "Could not setup GNI job");
 #    endif
 
-    if (na_test_info->listen || na_test_info->mpi_static) {
+    if ((na_test_info->listen && na_test_info->use_threads) ||
+        na_test_info->mpi_static) {
         int provided;
 
         rc = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
@@ -522,7 +523,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 #ifdef HG_TEST_HAS_PARALLEL
     /* Test run in parallel using mpirun so must intialize MPI to get
      * basic setup info etc */
-    na_test_mpi_init(na_test_info);
+    ret = na_test_mpi_init(na_test_info);
+    NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_mpi_init() failed");
     na_test_info->max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
 #else
     na_test_info->mpi_comm_rank = 0;
