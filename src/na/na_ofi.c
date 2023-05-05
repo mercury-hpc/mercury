@@ -192,7 +192,7 @@
       FI_ADDR_OPX,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_OPX,                                                            \
-      FI_SOURCE | FI_SOURCE_ERR,                                               \
+      FI_SOURCE,                                                               \
       NA_OFI_SIGNAL | NA_OFI_SEP | NA_OFI_CONTEXT2                             \
     )                                                                          \
     X(NA_OFI_PROV_VERBS,                                                       \
@@ -3602,7 +3602,7 @@ na_ofi_parse_opx_info(
     const uint8_t hfi_interface, int port, struct na_ofi_opx_addr **addr)
 {
     struct na_ofi_opx_addr *opx_addr;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
     opx_addr = calloc(1, sizeof(*opx_addr));
     NA_CHECK_SUBSYS_ERROR(addr, opx_addr == NULL, error, ret, NA_NOMEM,
@@ -3618,7 +3618,7 @@ na_ofi_parse_opx_info(
 
     *addr = opx_addr;
 
-    return ret;
+    return NA_SUCCESS;
 
 error:
     if (opx_addr)
@@ -6970,7 +6970,7 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
     struct na_ofi_addr_key addr_key;
     int addr_format = (int) na_ofi_class->fi_info->addr_format;
     struct na_ofi_addr *na_ofi_addr = NULL;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
     /* Check provider from name */
     NA_CHECK_SUBSYS_ERROR(fatal,
@@ -7584,12 +7584,12 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     size_t buf_size, unsigned long flags, na_mem_handle_t **mem_handle_p)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
     /* Allocate memory handle */
     na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) calloc(1, sizeof(*na_ofi_mem_handle));
-    NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, out, ret, NA_NOMEM,
+    NA_CHECK_SUBSYS_ERROR(mem, na_ofi_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
 
     na_ofi_mem_handle->desc.iov.s[0].iov_base = buf;
@@ -7600,7 +7600,9 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
 
     *mem_handle_p = (na_mem_handle_t *) na_ofi_mem_handle;
 
-out:
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -7612,7 +7614,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     struct iovec *iov = NULL;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     size_t i;
 
     NA_CHECK_SUBSYS_WARNING(mem, segment_count == 1, "Segment count is 1");
@@ -7653,7 +7655,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
 
     *mem_handle_p = (na_mem_handle_t *) na_ofi_mem_handle;
 
-    return ret;
+    return NA_SUCCESS;
 
 error:
     if (na_ofi_mem_handle) {
@@ -7807,18 +7809,20 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
     int rc;
 
     /* close MR handle */
     if (na_ofi_mem_handle->fi_mr != NULL) {
         rc = fi_close(&na_ofi_mem_handle->fi_mr->fid);
-        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
         hg_atomic_decr32(domain->mr_reg_count);
     }
 
-out:
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -7845,17 +7849,19 @@ na_ofi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
         na_ofi_mem_handle->desc.iov, na_ofi_mem_handle->desc.info.iovcnt);
     char *buf_ptr = (char *) buf;
     size_t buf_size_left = buf_size;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
     /* Descriptor info */
-    NA_ENCODE(out, ret, buf_ptr, buf_size_left, &na_ofi_mem_handle->desc.info,
+    NA_ENCODE(error, ret, buf_ptr, buf_size_left, &na_ofi_mem_handle->desc.info,
         struct na_ofi_mem_desc_info);
 
     /* IOV */
-    NA_ENCODE_ARRAY(out, ret, buf_ptr, buf_size_left, iov, const struct iovec,
+    NA_ENCODE_ARRAY(error, ret, buf_ptr, buf_size_left, iov, const struct iovec,
         na_ofi_mem_handle->desc.info.iovcnt);
 
-out:
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -7868,7 +7874,7 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     const char *buf_ptr = (const char *) buf;
     size_t buf_size_left = buf_size;
     struct iovec *iov = NULL;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
     na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) malloc(sizeof(*na_ofi_mem_handle));
@@ -7899,7 +7905,7 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 
     *mem_handle_p = (na_mem_handle_t *) na_ofi_mem_handle;
 
-    return ret;
+    return NA_SUCCESS;
 
 error:
     if (na_ofi_mem_handle) {
