@@ -222,7 +222,7 @@
       FI_ADDR_CXI,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
+      FI_MULTI_RECV,                                                           \
       NA_OFI_WAIT_FD | NA_OFI_LOC_INFO | NA_OFI_HMEM                           \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
@@ -745,6 +745,8 @@ struct na_ofi_class {
         struct fid_ep *, const struct na_ofi_msg_info *, void *);
     na_return_t (*msg_recv_unexpected)(
         struct fid_ep *, const struct na_ofi_msg_info *, void *);
+    na_return_t (*cq_poll)(
+        struct na_ofi_class *, struct na_ofi_context *, size_t *);
     unsigned long opt_features;    /* Optional feature flags   */
     hg_atomic_int32_t n_contexts;  /* Number of context        */
     unsigned int op_retry_timeout; /* Retry timeout            */
@@ -1344,10 +1346,31 @@ static NA_INLINE void
 na_ofi_rma_release(struct na_ofi_rma_info *rma_info);
 
 /**
- * Read from CQ.
+ * Poll from CQ (FI_SOURCE not supported).
+ */
+static na_return_t
+na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
+    struct na_ofi_context *na_ofi_context, size_t *actual_count_p);
+
+/**
+ * Poll from CQ (FI_SOURCE supported).
+ */
+static na_return_t
+na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
+    struct na_ofi_context *na_ofi_context, size_t *actual_count_p);
+
+/**
+ * Read from CQ (FI_SOURCE not supported).
  */
 static na_return_t
 na_ofi_cq_read(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
+    size_t max_count, size_t *actual_count, bool *err_avail);
+
+/**
+ * Read from CQ (FI_SOURCE supported).
+ */
+static na_return_t
+na_ofi_cq_readfrom(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
     size_t max_count, fi_addr_t *src_addrs, size_t *actual_count,
     bool *err_avail);
 
@@ -1356,28 +1379,51 @@ na_ofi_cq_read(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
  */
 static na_return_t
 na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
-    size_t *actual_count, void **src_err_addr_p, size_t *src_err_addrlen_p);
-
-/**
- * Process event from CQ.
- */
-static na_return_t
-na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
-    const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
-    void *err_addr, size_t err_addrlen);
+    size_t *src_err_addrcount_p, void **src_err_addr_p,
+    size_t *src_err_addrlen_p);
 
 /**
  * Retrieve source address of unexpected messages.
  */
 static na_return_t
 na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
-    fi_addr_t src_addr, void *src_err_addr, size_t src_err_addrlen,
+    const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
+    void *src_err_addr, size_t src_err_addrlen,
+    struct na_ofi_addr **na_ofi_addr_p);
+
+/**
+ * Retrieve source address of unexpected messages (FI_SOURCE supported).
+ */
+static na_return_t
+na_ofi_cq_process_fi_src_addr(struct na_ofi_class *na_ofi_class,
+    fi_addr_t src_addr, struct na_ofi_addr **na_ofi_addr_p);
+
+/**
+ * Retrieve source address of unexpected messages (FI_SOURCE_ERR supported).
+ */
+static na_return_t
+na_ofi_cq_process_fi_src_err_addr(struct na_ofi_class *na_ofi_class,
+    void *src_err_addr, size_t src_err_addrlen,
+    struct na_ofi_addr **na_ofi_addr_p);
+
+/**
+ * Retrieve source address of unexpected messages (FI_SOURCE not supported).
+ */
+static na_return_t
+na_ofi_cq_process_raw_src_addr(struct na_ofi_class *na_ofi_class,
     const void *buf, size_t len, struct na_ofi_addr **na_ofi_addr_p);
+
+/**
+ * Process event from CQ.
+ */
+static na_return_t
+na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
+    const struct fi_cq_tagged_entry *cq_event, struct na_ofi_addr *na_ofi_addr);
 
 /**
  * Recv unexpected operation events.
  */
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_cq_process_recv_unexpected(struct na_ofi_class *na_ofi_class,
     const struct na_ofi_msg_info *msg_info,
     struct na_cb_info_recv_unexpected *recv_unexpected_info, void *buf,
@@ -1386,7 +1432,7 @@ na_ofi_cq_process_recv_unexpected(struct na_ofi_class *na_ofi_class,
 /**
  * Multi-recv unexpected operation events.
  */
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_cq_process_multi_recv_unexpected(struct na_ofi_class *na_ofi_class,
     const struct na_ofi_msg_info *msg_info,
     struct na_cb_info_multi_recv_unexpected *multi_recv_unexpected_info,
@@ -5493,38 +5539,177 @@ na_ofi_rma_release(struct na_ofi_rma_info *rma_info)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
+    struct na_ofi_context *na_ofi_context, size_t *actual_count_p)
+{
+    struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
+    size_t i, actual_count = 0;
+    bool err_avail = false;
+    na_return_t ret;
+
+    ret = na_ofi_cq_read(na_ofi_context->eq->fi_cq, cq_events,
+        NA_OFI_CQ_EVENT_NUM, &actual_count, &err_avail);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        poll, error, ret, "Could not read events from context CQ");
+
+    if (unlikely(err_avail)) {
+        ret = na_ofi_cq_readerr(
+            na_ofi_context->eq->fi_cq, &cq_events[0], NULL, NULL, NULL);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            poll, error, ret, "Could not read error events from context CQ");
+    }
+
+    for (i = 0; i < actual_count; i++) {
+        struct na_ofi_op_id *na_ofi_op_id =
+            container_of(cq_events[i].op_context, struct na_ofi_op_id, fi_ctx);
+        struct na_ofi_addr *na_ofi_addr = NULL;
+
+        NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret,
+            NA_INVALID_ARG, "Invalid operation ID");
+
+        if (na_ofi_op_id->type == NA_CB_RECV_UNEXPECTED ||
+            na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
+            ret = na_ofi_cq_process_raw_src_addr(na_ofi_class,
+                (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED)
+                    ? cq_events[i].buf
+                    : na_ofi_op_id->info.msg.buf.ptr,
+                cq_events[i].len, &na_ofi_addr);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                msg, error, ret, "Could not process raw src addr");
+        }
+
+        ret = na_ofi_cq_process_event(na_ofi_class, &cq_events[i], na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process event");
+    }
+
+    *actual_count_p = actual_count;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
+    struct na_ofi_context *na_ofi_context, size_t *actual_count_p)
+{
+    struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
+    fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM];
+    char src_err_addr[NA_OFI_CQ_MAX_ERR_DATA_SIZE] = {0};
+    void *src_err_addr_ptr = NULL;
+    size_t src_err_addrlen = 0;
+    size_t i, actual_count = 0;
+    bool err_avail = false;
+    na_return_t ret;
+
+    ret = na_ofi_cq_readfrom(na_ofi_context->eq->fi_cq, cq_events,
+        NA_OFI_CQ_EVENT_NUM, src_addrs, &actual_count, &err_avail);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        poll, error, ret, "Could not read events from context CQ");
+
+    if (unlikely(err_avail)) {
+        src_err_addr_ptr = src_err_addr;
+        src_err_addrlen = NA_OFI_CQ_MAX_ERR_DATA_SIZE;
+
+        ret = na_ofi_cq_readerr(na_ofi_context->eq->fi_cq, &cq_events[0],
+            &actual_count, &src_err_addr_ptr, &src_err_addrlen);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            poll, error, ret, "Could not read error events from context CQ");
+    }
+
+    for (i = 0; i < actual_count; i++) {
+        struct na_ofi_op_id *na_ofi_op_id =
+            container_of(cq_events[i].op_context, struct na_ofi_op_id, fi_ctx);
+        struct na_ofi_addr *na_ofi_addr = NULL;
+
+        NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret,
+            NA_INVALID_ARG, "Invalid operation ID");
+
+        if (na_ofi_op_id->type == NA_CB_RECV_UNEXPECTED ||
+            na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
+            ret = na_ofi_cq_process_src_addr(na_ofi_class, &cq_events[i],
+                src_addrs[i], src_err_addr_ptr, src_err_addrlen, &na_ofi_addr);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                poll, error, ret, "Could not process src addr");
+        }
+
+        ret = na_ofi_cq_process_event(na_ofi_class, &cq_events[i], na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process event");
+    }
+
+    *actual_count_p = actual_count;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_ofi_cq_read(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
+    size_t max_count, size_t *actual_count, bool *err_avail)
+{
+    na_return_t ret;
+    ssize_t rc;
+
+    rc = fi_cq_read(cq, cq_events, max_count);
+    if (rc > 0) { /* events available */
+        *actual_count = (size_t) rc;
+        *err_avail = false;
+    } else if (rc == -FI_EAGAIN) { /* no event available */
+        *actual_count = 0;
+        *err_avail = false;
+    } else if (rc == -FI_EAVAIL) {
+        *actual_count = 0;
+        *err_avail = true;
+    } else
+        NA_GOTO_SUBSYS_ERROR(poll, error, ret, na_ofi_errno_to_na((int) -rc),
+            "fi_cq_read() failed, rc: %zd (%s)", rc, fi_strerror((int) -rc));
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cq_readfrom(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
     size_t max_count, fi_addr_t *src_addrs, size_t *actual_count,
     bool *err_avail)
 {
+    na_return_t ret;
     ssize_t rc;
 
     rc = fi_cq_readfrom(cq, cq_events, max_count, src_addrs);
     if (rc > 0) { /* events available */
         *actual_count = (size_t) rc;
         *err_avail = false;
-        return NA_SUCCESS;
     } else if (rc == -FI_EAGAIN) { /* no event available */
         *actual_count = 0;
         *err_avail = false;
-        return NA_SUCCESS;
     } else if (rc == -FI_EAVAIL) {
         *actual_count = 0;
         *err_avail = true;
-        return NA_SUCCESS;
-    } else {
-        NA_LOG_SUBSYS_ERROR(poll, "fi_cq_readfrom() failed, rc: %zd (%s)", rc,
+    } else
+        NA_GOTO_SUBSYS_ERROR(poll, error, ret, na_ofi_errno_to_na((int) -rc),
+            "fi_cq_readfrom() failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
-        *actual_count = 0;
-        *err_avail = false;
-        return na_ofi_errno_to_na((int) -rc);
-    }
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
-    size_t *actual_count, void **src_err_addr_p, size_t *src_err_addrlen_p)
+    size_t *src_err_addrcount_p, void **src_err_addr_p,
+    size_t *src_err_addrlen_p)
 {
     struct fi_cq_err_entry cq_err;
     na_return_t ret = NA_SUCCESS;
@@ -5533,8 +5718,10 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
     memset(&cq_err, 0, sizeof(cq_err));
 
     /* Prevent provider from internally allocating resources */
-    cq_err.err_data = *src_err_addr_p;
-    cq_err.err_data_size = *src_err_addrlen_p;
+    if (src_err_addr_p != NULL) {
+        cq_err.err_data = *src_err_addr_p;
+        cq_err.err_data_size = *src_err_addrlen_p;
+    }
 
     /* Read error entry */
     rc = fi_cq_readerr(cq, &cq_err, 0 /* flags */);
@@ -5572,9 +5759,14 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
         } break;
 
         case FI_EADDRNOTAVAIL:
+            /* Most providers do not support FI_SOURCE_ERR, we should consider
+             * dropping support for FI_SOURCE_ERR */
+            NA_CHECK_SUBSYS_ERROR(op, src_err_addr_p = NULL, out, ret,
+                NA_PROTONOSUPPORT, "FI_SOURCE_ERR not supported by provider");
+
             memcpy(cq_event, &cq_err, sizeof(struct fi_cq_tagged_entry));
             /* Only one error event processed in that case */
-            *actual_count = 1;
+            *src_err_addrcount_p = 1;
             *src_err_addr_p = cq_err.err_data;
             *src_err_addrlen_p = cq_err.err_data_size;
             break;
@@ -5626,18 +5818,153 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
+na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
     const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
-    void *src_err_addr, size_t src_err_addrlen)
+    void *src_err_addr, size_t src_err_addrlen,
+    struct na_ofi_addr **na_ofi_addr_p)
 {
     struct na_ofi_op_id *na_ofi_op_id =
         container_of(cq_event->op_context, struct na_ofi_op_id, fi_ctx);
     struct na_ofi_addr *na_ofi_addr = NULL;
-    bool complete = true;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret;
 
-    NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret, NA_INVALID_ARG,
-        "Invalid operation ID");
+    if (src_addr != FI_ADDR_NOTAVAIL) {
+        ret =
+            na_ofi_cq_process_fi_src_addr(na_ofi_class, src_addr, &na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not process FI src addr");
+    } else if (src_err_addr != NULL && src_err_addrlen != 0) {
+        ret = na_ofi_cq_process_fi_src_err_addr(
+            na_ofi_class, src_err_addr, src_err_addrlen, &na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not process FI src error addr");
+    } else {
+        ret = na_ofi_cq_process_raw_src_addr(na_ofi_class,
+            (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED)
+                ? cq_event->buf
+                : na_ofi_op_id->info.msg.buf.ptr,
+            cq_event->len, &na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not process raw src addr");
+    }
+
+    *na_ofi_addr_p = na_ofi_addr;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cq_process_fi_src_addr(struct na_ofi_class *na_ofi_class,
+    fi_addr_t src_addr, struct na_ofi_addr **na_ofi_addr_p)
+{
+    struct na_ofi_addr *na_ofi_addr = NULL;
+    na_return_t ret;
+
+    NA_CHECK_SUBSYS_ERROR(addr, src_addr == FI_ADDR_NOTAVAIL, error, ret,
+        NA_INVALID_ARG, "Invalid FI addr (%" PRIu64 ")", src_addr);
+    NA_CHECK_SUBSYS_ERROR(addr,
+        !(na_ofi_prov_extra_caps[na_ofi_class->fabric->prov_type] & FI_SOURCE),
+        error, ret, NA_PROTOCOL_ERROR,
+        "Provider should not be using FI_SOURCE");
+
+    NA_LOG_SUBSYS_DEBUG(
+        addr, "Retrieving address for FI addr %" PRIu64, src_addr);
+
+    na_ofi_addr =
+        na_ofi_fi_addr_map_lookup(&na_ofi_class->domain->addr_map, &src_addr);
+    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, error, ret, NA_NOENTRY,
+        "No entry found for previously inserted src addr");
+
+    na_ofi_addr_ref_incr(na_ofi_addr);
+
+    *na_ofi_addr_p = na_ofi_addr;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cq_process_fi_src_err_addr(struct na_ofi_class *na_ofi_class,
+    void *src_err_addr, size_t src_err_addrlen,
+    struct na_ofi_addr **na_ofi_addr_p)
+{
+    struct na_ofi_addr_key addr_key;
+    int addr_format = (int) na_ofi_class->fi_info->addr_format;
+    na_return_t ret;
+
+    NA_CHECK_SUBSYS_ERROR(addr, src_err_addrlen > sizeof(addr_key.addr), error,
+        ret, NA_PROTONOSUPPORT,
+        "src addr len (%zu) greater than max supported (%zu)", src_err_addrlen,
+        sizeof(addr_key.addr));
+
+    memcpy(&addr_key.addr, src_err_addr, src_err_addrlen);
+
+    /* Create key from addr for faster lookups */
+    addr_key.val = na_ofi_raw_addr_to_key(addr_format, &addr_key.addr);
+    NA_CHECK_SUBSYS_ERROR(addr, addr_key.val == 0, error, ret,
+        NA_PROTONOSUPPORT, "Could not generate key from addr");
+
+    /* Lookup key and create new addr if it does not exist */
+    ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, na_ofi_addr_p);
+    NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
+        (*na_ofi_addr_p)->fi_addr);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cq_process_raw_src_addr(struct na_ofi_class *na_ofi_class,
+    const void *buf, size_t len, struct na_ofi_addr **na_ofi_addr_p)
+{
+    struct na_ofi_addr_key addr_key;
+    int addr_format = (int) na_ofi_class->fi_info->addr_format;
+    na_return_t ret;
+
+    ret = na_ofi_raw_addr_deserialize(addr_format, &addr_key.addr, buf, len);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        addr, error, ret, "Could not deserialize address key");
+
+    /* Create key from addr for faster lookups */
+    addr_key.val = na_ofi_raw_addr_to_key(addr_format, &addr_key.addr);
+    NA_CHECK_SUBSYS_ERROR(addr, addr_key.val == 0, error, ret,
+        NA_PROTONOSUPPORT, "Could not generate key from addr");
+
+    /* Lookup key and create new addr if it does not exist */
+    ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, na_ofi_addr_p);
+    NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
+
+    NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
+        (*na_ofi_addr_p)->fi_addr);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
+    const struct fi_cq_tagged_entry *cq_event, struct na_ofi_addr *na_ofi_addr)
+{
+    struct na_ofi_op_id *na_ofi_op_id =
+        container_of(cq_event->op_context, struct na_ofi_op_id, fi_ctx);
+    bool complete = true;
+    na_return_t ret;
+
     /* Cannot have an already completed operation ID, sanity check */
     NA_CHECK_SUBSYS_ERROR(op,
         hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED, error,
@@ -5656,12 +5983,6 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
 
     switch (na_ofi_op_id->type) {
         case NA_CB_RECV_UNEXPECTED:
-            ret = na_ofi_cq_process_src_addr(na_ofi_class, src_addr,
-                src_err_addr, src_err_addrlen, na_ofi_op_id->info.msg.buf.ptr,
-                cq_event->len, &na_ofi_addr);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                msg, error, ret, "Could not process unexpected src addr");
-
             /* Default to cq_event->tag for backward compatibility */
             ret = na_ofi_cq_process_recv_unexpected(na_ofi_class,
                 &na_ofi_op_id->info.msg,
@@ -5674,12 +5995,6 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
             break;
         case NA_CB_MULTI_RECV_UNEXPECTED:
             complete = cq_event->flags & FI_MULTI_RECV;
-
-            ret = na_ofi_cq_process_src_addr(na_ofi_class, src_addr,
-                src_err_addr, src_err_addrlen, cq_event->buf, cq_event->len,
-                &na_ofi_addr);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                msg, error, ret, "Could not process unexpected src addr");
 
             ret = na_ofi_cq_process_multi_recv_unexpected(na_ofi_class,
                 &na_ofi_op_id->info.msg,
@@ -5715,78 +6030,14 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
     return NA_SUCCESS;
 
 error:
-    if (na_ofi_addr)
+    if (na_ofi_addr != NULL)
         na_ofi_addr_ref_decr(na_ofi_addr);
 
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
-na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
-    fi_addr_t src_addr, void *src_err_addr, size_t src_err_addrlen,
-    const void *buf, size_t len, struct na_ofi_addr **na_ofi_addr_p)
-{
-    na_return_t ret;
-
-    /* Use src_addr when available */
-    if (src_addr != FI_ADDR_NOTAVAIL) {
-        struct na_ofi_addr *na_ofi_addr = NULL;
-
-        NA_CHECK_SUBSYS_ERROR(addr,
-            !(na_ofi_prov_extra_caps[na_ofi_class->fabric->prov_type] &
-                FI_SOURCE),
-            error, ret, NA_PROTOCOL_ERROR,
-            "Provider should not be using FI_SOURCE");
-
-        NA_LOG_SUBSYS_DEBUG(
-            addr, "Retrieving address for FI addr %" PRIu64, src_addr);
-
-        na_ofi_addr = na_ofi_fi_addr_map_lookup(
-            &na_ofi_class->domain->addr_map, &src_addr);
-        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, error, ret, NA_NOENTRY,
-            "No entry found for previously inserted src addr");
-
-        na_ofi_addr_ref_incr(na_ofi_addr);
-        *na_ofi_addr_p = na_ofi_addr;
-    } else {
-        struct na_ofi_addr_key addr_key;
-        int addr_format = (int) na_ofi_class->fi_info->addr_format;
-
-        if (src_err_addr && src_err_addrlen) {
-            NA_CHECK_SUBSYS_ERROR(addr, src_err_addrlen > sizeof(addr_key.addr),
-                error, ret, NA_PROTONOSUPPORT,
-                "src addr len (%zu) greater than max supported (%zu)",
-                src_err_addrlen, sizeof(addr_key.addr));
-            memcpy(&addr_key.addr, src_err_addr, src_err_addrlen);
-        } else { /* FI_SOURCE_ERR not supported */
-            ret = na_ofi_raw_addr_deserialize(
-                addr_format, &addr_key.addr, buf, len);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                addr, error, ret, "Could not deserialize address key");
-        }
-
-        /* Create key from addr for faster lookups */
-        addr_key.val = na_ofi_raw_addr_to_key(addr_format, &addr_key.addr);
-        NA_CHECK_SUBSYS_ERROR(addr, addr_key.val == 0, error, ret,
-            NA_PROTONOSUPPORT, "Could not generate key from addr");
-
-        /* Lookup key and create new addr if it does not exist */
-        ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, na_ofi_addr_p);
-        NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
-
-        NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
-            (*na_ofi_addr_p)->fi_addr);
-    }
-
-    return NA_SUCCESS;
-
-error:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_cq_process_recv_unexpected(struct na_ofi_class *na_ofi_class,
     const struct na_ofi_msg_info *msg_info,
     struct na_cb_info_recv_unexpected *recv_unexpected_info, void *buf,
@@ -5816,7 +6067,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_cq_process_multi_recv_unexpected(struct na_ofi_class *na_ofi_class,
     const struct na_ofi_msg_info *msg_info,
     struct na_cb_info_multi_recv_unexpected *multi_recv_unexpected_info,
@@ -6600,14 +6851,18 @@ na_ofi_initialize(
             NA_PROTONOSUPPORT, "FI_MULTI_RECV is not supported by provider");
         na_ofi_class->opt_features |= NA_OPT_MULTI_RECV;
     }
-    if (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE)
+    if (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE) {
         NA_CHECK_SUBSYS_ERROR(cls, !(na_ofi_class->fi_info->caps & FI_SOURCE),
             error, ret, NA_PROTONOSUPPORT,
             "FI_SOURCE is not supported by provider");
-    if (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE_ERR)
         NA_CHECK_SUBSYS_ERROR(cls,
-            !(na_ofi_class->fi_info->caps & FI_SOURCE_ERR), error, ret,
-            NA_PROTONOSUPPORT, "FI_SOURCE_ERR is not supported by provider");
+            (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE_ERR) &&
+                !(na_ofi_class->fi_info->caps & FI_SOURCE_ERR),
+            error, ret, NA_PROTONOSUPPORT,
+            "FI_SOURCE_ERR is not supported by provider");
+        na_ofi_class->cq_poll = na_ofi_cq_poll_fi_source;
+    } else
+        na_ofi_class->cq_poll = na_ofi_cq_poll_no_source;
 
     /* Open fabric */
     ret = na_ofi_fabric_open(
@@ -8025,13 +8280,7 @@ na_ofi_progress(
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     do {
-        struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
-        fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM] = {FI_ADDR_UNSPEC};
-        char src_err_addr[NA_OFI_CQ_MAX_ERR_DATA_SIZE] = {0};
-        void *src_err_addr_ptr = NULL;
-        size_t src_err_addrlen = 0;
-        size_t i, actual_count = 0;
-        bool err_avail = false;
+        size_t actual_count = 0;
 
         if (timeout_ms != 0 && na_ofi_context->eq->fi_wait != NULL) {
             /* Wait in wait set if provider does not support wait on FDs */
@@ -8042,7 +8291,6 @@ na_ofi_progress(
                 hg_time_get_current_ms(&now);
                 continue;
             }
-
             if (rc == -FI_ETIMEDOUT)
                 break;
 
@@ -8070,27 +8318,9 @@ na_ofi_progress(
         }
 
         /* Read from CQ and process events */
-        ret = na_ofi_cq_read(na_ofi_context->eq->fi_cq, cq_events,
-            NA_OFI_CQ_EVENT_NUM, src_addrs, &actual_count, &err_avail);
-        NA_CHECK_SUBSYS_NA_ERROR(
-            poll, error, ret, "Could not read events from context CQ");
-
-        if (unlikely(err_avail)) {
-            src_err_addr_ptr = src_err_addr;
-            src_err_addrlen = NA_OFI_CQ_MAX_ERR_DATA_SIZE;
-
-            ret = na_ofi_cq_readerr(na_ofi_context->eq->fi_cq, &cq_events[0],
-                &actual_count, &src_err_addr_ptr, &src_err_addrlen);
-            NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
-                "Could not read error events from context CQ");
-        }
-
-        for (i = 0; i < actual_count; i++) {
-            ret = na_ofi_cq_process_event(na_ofi_class, &cq_events[i],
-                src_addrs[i], src_err_addr_ptr, src_err_addrlen);
-            NA_CHECK_SUBSYS_NA_ERROR(
-                poll, error, ret, "Could not process event");
-        }
+        ret =
+            na_ofi_class->cq_poll(na_ofi_class, na_ofi_context, &actual_count);
+        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll context CQ");
 
         /* Attempt to process retries */
         ret = na_ofi_cq_process_retries(
