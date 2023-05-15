@@ -174,7 +174,7 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 na_test_info->busy_wait = true;
                 break;
             case 'C': /* number of classes */
-                na_test_info->max_classes = (uint8_t) atoi(na_test_opt_arg_g);
+                na_test_info->max_classes = (size_t) atol(na_test_opt_arg_g);
                 break;
             case 'X': /* number of contexts */
                 na_test_info->max_contexts = (uint8_t) atoi(na_test_opt_arg_g);
@@ -504,7 +504,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
-    unsigned int i;
+    size_t i;
 
     if (!log_subsys) {
         const char *log_level = getenv("HG_LOG_LEVEL");
@@ -558,14 +558,14 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
     for (i = 0; i < na_test_info->max_classes; i++) {
         /* Generate NA init string and get config options */
-        info_string = na_test_gen_config(
-            na_test_info, i + (unsigned int) na_test_info->mpi_comm_rank *
-                                  na_test_info->max_classes);
+        info_string = na_test_gen_config(na_test_info,
+            (unsigned int) (i + (unsigned int) na_test_info->mpi_comm_rank *
+                                    na_test_info->max_classes));
         NA_TEST_CHECK_ERROR(info_string == NULL, error, ret, NA_PROTOCOL_ERROR,
             "Could not generate config string");
 
         if (na_test_info->mpi_comm_rank == 0)
-            printf("# Class %d using info string: %s\n", i + 1, info_string);
+            printf("# Class %zu using info string: %s\n", i + 1, info_string);
 
         na_test_info->na_classes[i] =
             NA_Initialize_opt2(info_string, na_test_info->listen,
@@ -604,12 +604,14 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
             ret = na_test_get_config(NULL, &count);
             NA_TEST_CHECK_NA_ERROR(error, ret,
                 "na_test_get_config() failed (%s)", NA_Error_to_string(ret));
-            na_test_info->max_targets = (uint8_t) count;
+            NA_TEST_CHECK_ERROR(count > UINT32_MAX, error, ret, NA_OVERFLOW,
+                "Exceeded maximum number of targets (%zu)", count);
+            na_test_info->max_targets = (uint32_t) count;
         }
 
 #ifdef HG_TEST_HAS_PARALLEL
         if (na_test_info->mpi_comm_size > 1)
-            MPI_Bcast(&na_test_info->max_targets, 1, MPI_UINT8_T, 0,
+            MPI_Bcast(&na_test_info->max_targets, 1, MPI_UINT32_T, 0,
                 na_test_info->mpi_comm);
 #endif
 
@@ -628,18 +630,20 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
 #ifdef HG_TEST_HAS_PARALLEL
         if (na_test_info->mpi_comm_size > 1) {
-            for (i = 0; i < na_test_info->max_targets; i++) {
+            uint32_t j;
+
+            for (j = 0; j < na_test_info->max_targets; j++) {
                 char test_addr_name[NA_TEST_MAX_ADDR_NAME];
 
                 if (na_test_info->mpi_comm_rank == 0)
-                    strcpy(test_addr_name, na_test_info->target_names[i]);
+                    strcpy(test_addr_name, na_test_info->target_names[j]);
 
                 MPI_Bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
                     na_test_info->mpi_comm);
 
                 if (na_test_info->mpi_comm_rank != 0) {
-                    na_test_info->target_names[i] = strdup(test_addr_name);
-                    NA_TEST_CHECK_ERROR(na_test_info->target_names[i] == NULL,
+                    na_test_info->target_names[j] = strdup(test_addr_name);
+                    NA_TEST_CHECK_ERROR(na_test_info->target_names[j] == NULL,
                         error, ret, NA_NOMEM, "strdup() of target_name failed");
                 }
             }
@@ -647,10 +651,13 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 #endif
         na_test_info->target_name = na_test_info->target_names[0];
         if (na_test_info->mpi_comm_rank == 0) {
-            printf("# %u target name(s) read:\n", na_test_info->max_targets);
-            for (i = 0; i < na_test_info->max_targets; i++)
-                printf("# - %u/%d: %s\n", i + 1, na_test_info->max_targets,
-                    na_test_info->target_names[i]);
+            uint32_t j;
+
+            printf("# %" PRIu32 " target name(s) read:\n",
+                na_test_info->max_targets);
+            for (j = 0; j < na_test_info->max_targets; j++)
+                printf("# - %" PRIu32 "/%" PRIu32 ": %s\n", j + 1,
+                    na_test_info->max_targets, na_test_info->target_names[j]);
         }
     }
 
@@ -668,9 +675,10 @@ na_return_t
 NA_Test_finalize(struct na_test_info *na_test_info)
 {
     na_return_t ret = NA_SUCCESS;
-    unsigned int i;
 
     if (na_test_info->na_classes != NULL) {
+        size_t i;
+
         for (i = 0; i < na_test_info->max_classes; i++) {
             ret = NA_Finalize(na_test_info->na_classes[i]);
             NA_TEST_CHECK_NA_ERROR(done, ret, "NA_Finalize() failed (%s)",
@@ -682,6 +690,8 @@ NA_Test_finalize(struct na_test_info *na_test_info)
     }
 
     if (na_test_info->target_names != NULL) {
+        uint32_t i;
+
         for (i = 0; i < na_test_info->max_targets; i++)
             free(na_test_info->target_names[i]);
         free(na_test_info->target_names);

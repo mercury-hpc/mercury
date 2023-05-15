@@ -175,7 +175,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
-    uint8_t i;
+    size_t i;
 
     if (!log_subsys) {
         const char *log_level = getenv("HG_LOG_LEVEL");
@@ -284,7 +284,7 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
-    uint8_t i;
+    size_t i;
 
     /* Finalize interface */
     if (hg_test_info->hg_classes != NULL) {

@@ -149,7 +149,7 @@ main(int argc, char *argv[])
     NA_TEST_CHECK_ERROR_NORET(
         send_threads == NULL, error, "Could not allocate send threads");
 
-    for (i = 0; i < info.na_test_info.max_classes; i++) {
+    for (i = 0; i < (int) info.na_test_info.max_classes; i++) {
         int rc;
 
         send_threads[i].class_info = &info.class_info[i];
@@ -163,7 +163,7 @@ main(int argc, char *argv[])
         NA_TEST_CHECK_ERROR_NORET(rc != 0, error, "hg_thread_create() failed");
     }
 
-    for (i = 0; i < info.na_test_info.max_classes; i++)
+    for (i = 0; i < (int) info.na_test_info.max_classes; i++)
         hg_thread_join(send_threads[i].thread);
 
     /* Finalize interface */
