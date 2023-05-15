@@ -35,7 +35,7 @@ struct na_test_info {
     char *key;               /* Auth key */
     int loop;                /* Number of loops */
     bool busy_wait;          /* Busy wait */
-    uint8_t max_classes;     /* Max classes */
+    size_t max_classes;      /* Max classes */
     uint8_t max_contexts;    /* Max contexts */
     uint32_t max_targets;    /* Max targets */
     size_t max_msg_size;     /* Max msg size */
