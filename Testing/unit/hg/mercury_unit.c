@@ -127,46 +127,40 @@ done:
 static hg_return_t
 hg_test_finalize_rpc(struct hg_unit_info *info, hg_uint8_t target_id)
 {
-    hg_request_t *request_object = NULL;
-    hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS, cleanup_ret;
+    hg_return_t ret;
     unsigned int completed;
 
-    request_object = hg_request_create(info->request_class);
+    hg_request_reset(info->request);
 
-    ret = HG_Create(
-        info->context, info->target_addr, hg_test_finalize_id_g, &handle);
+    ret = HG_Reset(info->handles[0], info->target_addr, hg_test_finalize_id_g);
     HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
+        error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
 
     /* Set target ID */
-    ret = HG_Set_target_id(handle, target_id);
+    ret = HG_Set_target_id(info->handles[0], target_id);
     HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
+        error, ret, "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
 
     /* Forward call to target addr */
-    ret = HG_Forward(handle, hg_test_finalize_rpc_cb, request_object, NULL);
+    ret = HG_Forward(
+        info->handles[0], hg_test_finalize_rpc_cb, info->request, NULL);
     HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+        error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
-    hg_request_wait(request_object, HG_TEST_TIMEOUT_MAX, &completed);
+    hg_request_wait(info->request, HG_TEST_TIMEOUT_MAX, &completed);
     if (!completed) {
         HG_TEST_LOG_WARNING("Canceling finalize, no response from server");
 
-        ret = HG_Cancel(handle);
+        ret = HG_Cancel(info->handles[0]);
         HG_TEST_CHECK_HG_ERROR(
-            done, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
+            error, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
 
-        hg_request_wait(request_object, HG_TEST_TIMEOUT_MAX, &completed);
+        hg_request_wait(info->request, HG_TEST_TIMEOUT_MAX, &completed);
     }
 
-done:
-    cleanup_ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
-        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
+    return HG_SUCCESS;
 
-    hg_request_destroy(request_object);
-
+error:
     return ret;
 }
 
@@ -174,9 +168,7 @@ done:
 static hg_return_t
 hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 {
-    hg_request_t *request_object = (hg_request_t *) callback_info->arg;
-
-    hg_request_complete(request_object);
+    hg_request_complete((hg_request_t *) callback_info->arg);
 
     return HG_SUCCESS;
 }
