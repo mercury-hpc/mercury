@@ -4008,6 +4008,9 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
         /* Complete operation (no need to notify) */
         na_sm_complete(na_sm_op_id, NA_SUCCESS);
     } else {
+        NA_LOG_SUBSYS_WARNING(
+            perf, "No operation was preposted, data must be copied");
+
         /* If no error and message arrived, keep a copy of the struct in
          * the unexpected message queue (should rarely happen) */
         na_sm_unexpected_info = (struct na_sm_unexpected_info *) malloc(
