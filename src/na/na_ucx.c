@@ -223,6 +223,7 @@ struct na_ucx_unexpected_info {
     void *data;
     size_t length;
     ucp_tag_t tag;
+    bool data_alloc;
 };
 
 /* Msg queue */
@@ -648,6 +649,19 @@ na_ucx_addr_ref_incr(struct na_ucx_addr *na_ucx_addr);
  */
 static NA_INLINE void
 na_ucx_addr_ref_decr(struct na_ucx_addr *na_ucx_addr);
+
+/**
+ * Allocate unexpected info.
+ */
+static struct na_ucx_unexpected_info *
+na_ucx_unexpected_info_alloc(void *data, size_t data_alloc_size);
+
+/**
+ * Free unexpected info.
+ */
+static void
+na_ucx_unexpected_info_free(
+    struct na_ucx_unexpected_info *na_ucx_unexpected_info);
 
 /**
  * Post RMA operation.
@@ -1829,7 +1843,18 @@ na_ucp_am_recv(
     HG_QUEUE_POP_HEAD(&unexpected_msg_queue->queue, entry);
     hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
-    if (unlikely(na_ucx_unexpected_info)) {
+    if (likely(na_ucx_unexpected_info == NULL)) {
+        struct na_ucx_op_queue *unexpected_op_queue =
+            &na_ucx_class->unexpected_op_queue;
+
+        /* Nothing has been received yet so add op_id to progress queue */
+        hg_thread_spin_lock(&unexpected_op_queue->lock);
+        HG_QUEUE_PUSH_TAIL(&unexpected_op_queue->queue, na_ucx_op_id, entry);
+        hg_atomic_or32(&na_ucx_op_id->status, NA_UCX_OP_QUEUED);
+        hg_thread_spin_unlock(&unexpected_op_queue->lock);
+    } else {
+        NA_LOG_SUBSYS_DEBUG(msg, "Unexpected data was already received");
+
         /* Copy buffers */
         memcpy(na_ucx_op_id->info.msg.buf.ptr, na_ucx_unexpected_info->data,
             na_ucx_unexpected_info->length);
@@ -1841,19 +1866,15 @@ na_ucp_am_recv(
                 .actual_buf_size = (size_t) na_ucx_unexpected_info->length,
                 .source = (na_addr_t *) na_ucx_unexpected_info->na_ucx_addr};
 
-        ucp_am_data_release(
-            na_ucx_class->ucp_worker, na_ucx_unexpected_info->data);
-        free(na_ucx_unexpected_info);
-        na_ucx_complete(na_ucx_op_id, NA_SUCCESS);
-    } else {
-        struct na_ucx_op_queue *unexpected_op_queue =
-            &na_ucx_class->unexpected_op_queue;
+        /* Release AM buffer if returned UCS_INPROGRESS */
+        if (!na_ucx_unexpected_info->data_alloc &&
+            na_ucx_unexpected_info->length > 0) {
+            ucp_am_data_release(
+                na_ucx_class->ucp_worker, na_ucx_unexpected_info->data);
+        }
+        na_ucx_unexpected_info_free(na_ucx_unexpected_info);
 
-        /* Nothing has been received yet so add op_id to progress queue */
-        hg_thread_spin_lock(&unexpected_op_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&unexpected_op_queue->queue, na_ucx_op_id, entry);
-        hg_atomic_or32(&na_ucx_op_id->status, NA_UCX_OP_QUEUED);
-        hg_thread_spin_unlock(&unexpected_op_queue->lock);
+        na_ucx_complete(na_ucx_op_id, NA_SUCCESS);
     }
 }
 
@@ -1917,18 +1938,22 @@ na_ucp_am_recv_cb(void *arg, const void *header, size_t header_length,
         struct na_ucx_unexpected_msg_queue *unexpected_msg_queue =
             &na_ucx_class->unexpected_msg_queue;
         struct na_ucx_unexpected_info *na_ucx_unexpected_info = NULL;
+        bool data_alloc = !(param->recv_attr & UCP_AM_RECV_ATTR_FLAG_DATA);
+
+        NA_LOG_SUBSYS_WARNING(perf,
+            "No operation was preposted, data will persist (data_alloc=%d)",
+            (int) data_alloc);
 
         /* If no error and message arrived, keep a copy of the struct in
          * the unexpected message queue (should rarely happen) */
-        na_ucx_unexpected_info = (struct na_ucx_unexpected_info *) malloc(
-            sizeof(*na_ucx_unexpected_info));
+        na_ucx_unexpected_info =
+            na_ucx_unexpected_info_alloc(data, data_alloc ? length : 0);
         NA_CHECK_SUBSYS_ERROR(msg, na_ucx_unexpected_info == NULL, error, ret,
             UCS_ERR_NO_MEMORY, "Could not allocate unexpected info");
 
-        *na_ucx_unexpected_info = (struct na_ucx_unexpected_info){.data = data,
-            .length = length,
-            .tag = tag,
-            .na_ucx_addr = source_addr};
+        na_ucx_unexpected_info->length = length;
+        na_ucx_unexpected_info->tag = tag;
+        na_ucx_unexpected_info->na_ucx_addr = source_addr;
         na_ucx_addr_ref_incr(source_addr);
 
         /* Otherwise push the unexpected message into our unexpected queue so
@@ -1939,8 +1964,8 @@ na_ucp_am_recv_cb(void *arg, const void *header, size_t header_length,
         hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
         /* If data is going to be used outside this callback, UCS_INPROGRESS
-         * should be returned */
-        return UCS_INPROGRESS;
+         * should be returned, otherwise return UCS_OK as a copy was made */
+        return (data_alloc) ? UCS_OK : UCS_INPROGRESS;
     }
 
 error:
@@ -2747,6 +2772,46 @@ na_ucx_addr_ref_decr(struct na_ucx_addr *na_ucx_addr)
         na_ucx_addr_destroy(na_ucx_addr);
 #endif
     }
+}
+
+/*---------------------------------------------------------------------------*/
+static struct na_ucx_unexpected_info *
+na_ucx_unexpected_info_alloc(void *data, size_t data_alloc_size)
+{
+    struct na_ucx_unexpected_info *na_ucx_unexpected_info;
+
+    na_ucx_unexpected_info = (struct na_ucx_unexpected_info *) calloc(
+        1, sizeof(*na_ucx_unexpected_info));
+    NA_CHECK_SUBSYS_ERROR_NORET(msg, na_ucx_unexpected_info == NULL, error,
+        "Could not allocate unexpected info");
+
+    if (data_alloc_size > 0) {
+        na_ucx_unexpected_info->data = malloc(data_alloc_size);
+        NA_CHECK_SUBSYS_ERROR_NORET(msg, na_ucx_unexpected_info->data == NULL,
+            error, "Could not allocate data of size %zu", data_alloc_size);
+        na_ucx_unexpected_info->data_alloc = true;
+        memcpy(na_ucx_unexpected_info->data, data, data_alloc_size);
+    } else {
+        na_ucx_unexpected_info->data = data;
+        na_ucx_unexpected_info->data_alloc = false;
+    }
+
+    return na_ucx_unexpected_info;
+
+error:
+    free(na_ucx_unexpected_info);
+
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ucx_unexpected_info_free(
+    struct na_ucx_unexpected_info *na_ucx_unexpected_info)
+{
+    if (na_ucx_unexpected_info->data_alloc)
+        free(na_ucx_unexpected_info->data);
+    free(na_ucx_unexpected_info);
 }
 
 /*---------------------------------------------------------------------------*/
