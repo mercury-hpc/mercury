@@ -162,7 +162,7 @@
       FI_SOCKADDR_IN,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_XNET,                                                           \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
+      FI_MULTI_RECV,                                                           \
       NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD                                        \
     )                                                                          \
     X(NA_OFI_PROV_TCP_RXM,                                                     \
@@ -172,7 +172,7 @@
       FI_SOCKADDR_IN,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
+      FI_MULTI_RECV,                                                           \
       NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD                                        \
     )                                                                          \
     X(NA_OFI_PROV_PSM2,                                                        \
@@ -192,17 +192,17 @@
       FI_ADDR_OPX,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_OPX,                                                            \
-      FI_SOURCE,                                                               \
+      0,                                                                       \
       NA_OFI_SIGNAL | NA_OFI_SEP | NA_OFI_CONTEXT2                             \
     )                                                                          \
-    X(NA_OFI_PROV_VERBS,                                                       \
+    X(NA_OFI_PROV_VERBS_RXM,                                                   \
       "verbs;ofi_rxm",                                                         \
       "verbs",                                                                 \
       FI_SOCKADDR_IN,                                                          \
       FI_SOCKADDR_IB,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_RXM,                                                            \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
+      FI_MULTI_RECV,                                                           \
       NA_OFI_WAIT_FD | NA_OFI_LOC_INFO | NA_OFI_HMEM                           \
     )                                                                          \
     X(NA_OFI_PROV_GNI,                                                         \
@@ -258,6 +258,10 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Address / URI max len */
 #define NA_OFI_MAX_URI_LEN (128)
+
+/* Address key hash */
+#define NA_OFI_HASH64(x)                                                       \
+    ((((uint32_t) (x >> 32)) & 0xFFFF0000U) | ((x & 0xFFFFFFFFU) & 0xFFFFU))
 
 /* Address serialization optimization */
 /* Don't enable for now to prevent backward compatibility issues */
@@ -2843,13 +2847,7 @@ error:
 static NA_INLINE unsigned int
 na_ofi_addr_key_hash(hg_hash_table_key_t key)
 {
-    struct na_ofi_addr_key *addr_key = (struct na_ofi_addr_key *) key;
-    uint32_t hi, lo;
-
-    hi = (uint32_t) (addr_key->val >> 32);
-    lo = (addr_key->val & 0xFFFFFFFFU);
-
-    return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
+    return NA_OFI_HASH64(((struct na_ofi_addr_key *) key)->val);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2942,13 +2940,15 @@ na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
     NA_LOG_SUBSYS_DEBUG(
         addr, "Inserted new addr, FI addr is %" PRIu64, na_ofi_addr->fi_addr);
 
-    /* Insert new value to secondary map to look up by FI addr and prevent
-     * fi_av_lookup() followed by map lookup call */
-    rc = hg_hash_table_insert(na_ofi_map->fi_map,
-        (hg_hash_table_key_t) &na_ofi_addr->fi_addr,
-        (hg_hash_table_value_t) na_ofi_addr);
-    NA_CHECK_SUBSYS_ERROR(
-        addr, rc == 0, out, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+    /* Insert new value to secondary map to look up by FI addr when FI_SOURCE is
+     * used and prevent fi_av_lookup() followed by map lookup call */
+    if (na_ofi_map->fi_map != NULL) {
+        rc = hg_hash_table_insert(na_ofi_map->fi_map,
+            (hg_hash_table_key_t) &na_ofi_addr->fi_addr,
+            (hg_hash_table_value_t) na_ofi_addr);
+        NA_CHECK_SUBSYS_ERROR(
+            addr, rc == 0, out, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+    }
 
     /* Insert new value to primary map */
     rc = hg_hash_table_insert(na_ofi_map->key_map,
@@ -2995,10 +2995,12 @@ na_ofi_addr_map_remove(
         "hg_hash_table_remove() failed");
 
     /* Remove FI addr from secondary map */
-    rc = hg_hash_table_remove(
-        na_ofi_map->fi_map, (hg_hash_table_key_t) &na_ofi_addr->fi_addr);
-    NA_CHECK_SUBSYS_ERROR(addr, rc != 1, unlock, ret, NA_NOENTRY,
-        "hg_hash_table_remove() failed");
+    if (na_ofi_map->fi_map != NULL) {
+        rc = hg_hash_table_remove(
+            na_ofi_map->fi_map, (hg_hash_table_key_t) &na_ofi_addr->fi_addr);
+        NA_CHECK_SUBSYS_ERROR(addr, rc != 1, unlock, ret, NA_NOENTRY,
+            "hg_hash_table_remove() failed");
+    }
 
     /* Remove address from AV */
     rc = fi_av_remove(na_ofi_addr->class->domain->fi_av, &na_ofi_addr->fi_addr,
@@ -3021,13 +3023,7 @@ unlock:
 static NA_INLINE unsigned int
 na_ofi_fi_addr_hash(hg_hash_table_key_t key)
 {
-    fi_addr_t fi_addr = *((fi_addr_t *) key);
-    uint32_t hi, lo;
-
-    hi = (uint32_t) (fi_addr >> 32);
-    lo = (fi_addr & 0xFFFFFFFFU);
-
-    return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
+    return NA_OFI_HASH64(*((fi_addr_t *) key));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3995,7 +3991,7 @@ na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
         case NA_OFI_PROV_TCP_RXM:
         case NA_OFI_PROV_PSM2:
         case NA_OFI_PROV_OPX:
-        case NA_OFI_PROV_VERBS:
+        case NA_OFI_PROV_VERBS_RXM:
         default:
             NA_LOG_SUBSYS_ERROR(
                 fatal, "Unsupported auth key for this provider: %d", prov_type);
@@ -4218,11 +4214,13 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.key_map == NULL, error,
         ret, NA_NOMEM, "Could not allocate key map");
 
-    /* Create secondary hash-table to lookup by fi_addr */
-    na_ofi_domain->addr_map.fi_map =
-        hg_hash_table_new(na_ofi_fi_addr_hash, na_ofi_fi_addr_equal);
-    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL, error,
-        ret, NA_NOMEM, "Could not allocate FI addr map");
+    /* Create secondary hash-table to lookup by fi_addr if using FI_SOURCE */
+    if (na_ofi_prov_extra_caps[na_ofi_fabric->prov_type] & FI_SOURCE) {
+        na_ofi_domain->addr_map.fi_map =
+            hg_hash_table_new(na_ofi_fi_addr_hash, na_ofi_fi_addr_equal);
+        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL,
+            error, ret, NA_NOMEM, "Could not allocate FI addr map");
+    }
 
 #ifndef _WIN32
     if (na_ofi_domain->shared) {
