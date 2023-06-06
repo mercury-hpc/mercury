@@ -26,17 +26,16 @@ Architectures supported
 Architectures supported by MPI implementations are generally supported by the
 network abstraction layer.
 
-The OFI libfabric plugin as well as the SM plugin
-are stable and provide the best performance in most workloads. Libfabric
-providers currently supported are: `tcp`, `verbs`, `gni`, `cxi`.
+The OFI libfabric plugin as well as the shared-memory (SM) plugin
+are stable and provide the best performance in most workloads.
 
 The UCX plugin is also available as an alternative transport on platforms
-for which libfabric is either not available or not recommended to use,
-currently supported protocols are tcp and verbs.
+for which libfabric is either not available or not recommended to use.
 
-MPI and BMI (tcp) plugins are still supported but gradually being moved as
-deprecated, therefore should only be used as fallback methods.
-The CCI plugin is deprecated and no longer supported.
+For both OFI and UCX plugins, please run the `hg_info` command for a list of
+available transports on the system.
+
+MPI, CCI and BMI plugins are deprecated and no longer supported.
 
 See the [plugin requirements](#plugin-requirements) section for
 plugin requirement details.
@@ -63,25 +62,12 @@ instructions available on this [page][libfabric].
 To make use of the UCX plugin, please refer to the UCX build
 instructions available on this [page][ucx].
 
-To make use of the native NA SM (shared-memory) plugin on Linux,
+To make use of the native NA shared-memory (SM) plugin on Linux,
 the cross-memory attach (CMA) feature introduced in kernel v3.2 is required.
 The yama security module must also be configured to allow remote process memory
 to be accessed (see this [page][yama]). On MacOS, code signing with inclusion of
 the na_sm.plist file into the binary is currently required to allow process
 memory to be accessed.
-
-To make use of the BMI plugin, the most convenient way is to install it through
-spack or one can also do:
-
-    git clone https://github.com/radix-io/bmi.git && cd bmi
-    ./prepare && ./configure --enable-shared --enable-bmi-only
-    make && make install
-
-To make use of the MPI plugin, Mercury requires a _well-configured_ MPI
-implementation (MPICH2 v1.4.1 or higher / OpenMPI v1.6 or higher) with
-`MPI_THREAD_MULTIPLE` available on targets that will accept remote
-connections. Processes that are _not_ accepting incoming connections are
-_not_ required to have a multithreaded level of execution.
 
 Optional requirements
 ---------------------
@@ -124,15 +110,18 @@ Type `'c'` multiple times and choose suitable options. Recommended options are:
     BUILD_SHARED_LIBS                ON (or OFF if the library you link
                                      against requires static libraries)
     BUILD_TESTING                    ON/OFF
+    BUILD_TESTING_PERF               ON/OFF
+    BUILD_TESTING_UNIT               ON/OFF
     Boost_INCLUDE_DIR                /path/to/include/directory
     CMAKE_INSTALL_PREFIX             /path/to/install/directory
     MERCURY_ENABLE_DEBUG             ON/OFF
     MERCURY_TESTING_ENABLE_PARALLEL  ON/OFF
-    MERCURY_USE_BOOST_PP             ON
+    MERCURY_USE_BOOST_PP             ON/OFF
     MERCURY_USE_CHECKSUMS            ON/OFF
     MERCURY_USE_SYSTEM_BOOST         ON/OFF
     MERCURY_USE_SYSTEM_MCHECKSUM     ON/OFF
-    MERCURY_USE_XDR                  OFF
+    MERCURY_USE_XDR                  ON/OFF
+    NA_USE_DYNAMIC_PLUGINS           ON/OFF
     NA_USE_BMI                       ON/OFF
     NA_USE_MPI                       ON/OFF
     NA_USE_OFI                       ON/OFF
@@ -163,12 +152,15 @@ from the build directory:
 
      make install
 
+If `RPATH` is not requested, ensure also that `CMAKE_SKIP_INSTALL_RPATH` has
+previously been set when configuring the project with CMake.
+
 Testing
 =======
 
 Tests can be run to check that basic RPC functionality (requests and bulk
-data transfers) is properly working. CTest is used to run the tests,
-simply run from the build directory:
+data transfers) is properly working. With `BUILD_TESTING_UNIT` set to `ON`,
+CTest is used to run the tests, simply run from the build directory:
 
     ctest .
 
@@ -184,7 +176,7 @@ Extra verbose information can be displayed by inserting `-VV`. E.g.:
 
 Some tests run with one server process and X client processes. To change the
 number of client processes that are being used, the `MPIEXEC_MAX_NUMPROCS`
-variable needs to be modified (toggle to advanced mode if you do not see
+variable may need to be modified (toggle to advanced mode if you do not see
 it). The default value is automatically detected by CMake based on the number
 of cores that are available.
 Note that you need to run `make` again after the makefile generation
