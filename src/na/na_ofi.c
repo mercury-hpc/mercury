@@ -6697,10 +6697,11 @@ na_ofi_check_protocol(const char *protocol_name)
 
 /* Only the sockets provider is currently supported on macOS */
 #ifdef __APPLE__
-    NA_CHECK_SUBSYS_ERROR(fatal, type != NA_OFI_PROV_SOCKETS, out, accept,
-        false,
-        "Protocol \"tcp\" not supported on macOS, please use \"sockets\" "
-        "instead");
+    NA_CHECK_SUBSYS_ERROR(fatal,
+        FI_VERSION_LT(runtime_version, FI_VERSION(1, 18)) &&
+            (type != NA_OFI_PROV_SOCKETS),
+        out, accept, false,
+        "\"sockets\" is the only supported provider on macOS");
 #endif
 
     /* Get info from provider (no node info) */
