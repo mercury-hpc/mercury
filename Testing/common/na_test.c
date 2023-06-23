@@ -54,6 +54,9 @@ static void
 na_test_parse_options(
     int argc, char *argv[], struct na_test_info *na_test_info);
 
+static size_t
+na_test_parse_size(const char *str);
+
 #ifdef HG_TEST_HAS_PARALLEL
 static na_return_t
 na_test_mpi_init(struct na_test_info *na_test_info);
@@ -180,16 +183,19 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 na_test_info->max_contexts = (uint8_t) atoi(na_test_opt_arg_g);
                 break;
             case 'y': /* min buffer size */
-                na_test_info->buf_size_min = (size_t) atol(na_test_opt_arg_g);
+                na_test_info->buf_size_min =
+                    na_test_parse_size(na_test_opt_arg_g);
                 break;
             case 'z': /* max buffer size */
-                na_test_info->buf_size_max = (size_t) atol(na_test_opt_arg_g);
+                na_test_info->buf_size_max =
+                    na_test_parse_size(na_test_opt_arg_g);
                 break;
             case 'w': /* buffer count */
                 na_test_info->buf_count = (size_t) atol(na_test_opt_arg_g);
                 break;
             case 'Z': /* msg size */
-                na_test_info->max_msg_size = (size_t) atol(na_test_opt_arg_g);
+                na_test_info->max_msg_size =
+                    na_test_parse_size(na_test_opt_arg_g);
                 break;
             case 'R': /* force-register */
                 na_test_info->force_register = true;
@@ -218,6 +224,34 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
     }
     if (!na_test_info->loop)
         na_test_info->loop = 1; /* Default */
+}
+
+/*---------------------------------------------------------------------------*/
+static size_t
+na_test_parse_size(const char *str)
+{
+    size_t size;
+    char prefix;
+
+    if (sscanf(str, "%zu%c", &size, &prefix) == 2) {
+        switch (prefix) {
+            case 'k':
+                size *= 1024;
+                break;
+            case 'm':
+                size *= (1024 * 1024);
+                break;
+            case 'g':
+                size *= (1024 * 1024 * 1024);
+                break;
+            default:
+                break;
+        }
+        return size;
+    } else if (sscanf(str, "%zu", &size) == 1)
+        return size;
+    else
+        return 0;
 }
 
 /*---------------------------------------------------------------------------*/
