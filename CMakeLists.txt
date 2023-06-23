@@ -98,8 +98,6 @@ if(APPLE AND NOT MERCURY_EXTERNALLY_CONFIGURED)
     set(CMAKE_INSTALL_PREFIX ${CACHED_CMAKE_INSTALL_PREFIX} CACHE PATH "Install prefix")
   endif()
   unset(MACOSX_APP_INSTALL_PREFIX CACHE)
-
-  set(CMAKE_INSTALL_NAME_DIR "@rpath")
   mark_as_advanced(
     CMAKE_OSX_ARCHITECTURES
     CMAKE_OSX_DEPLOYMENT_TARGET
@@ -195,6 +193,7 @@ function(mercury_set_exe_options exetarget var_prefix)
   set_target_properties(${exetarget} PROPERTIES
       POSITION_INDEPENDENT_CODE  ${BUILD_SHARED_LIBS}
       INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
+      INSTALL_NAME_DIR           ${${var_prefix}_INSTALL_LIB_DIR}
   )
 endfunction()
 
@@ -238,6 +237,7 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
     set_target_properties(${libtarget}
         PROPERTIES
         INSTALL_RPATH              ${${var_prefix}_INSTALL_LIB_DIR}
+        INSTALL_NAME_DIR           ${${var_prefix}_INSTALL_LIB_DIR}
         VERSION                    ${${var_prefix}_VERSION}.${${var_prefix}_VERSION_PATCH}
         SOVERSION                  ${${var_prefix}_VERSION_MAJOR}
     )
