@@ -67,6 +67,7 @@
 /* Handle flags */
 #define HG_CORE_HANDLE_LISTEN     (1 << 1) /* Listener handle */
 #define HG_CORE_HANDLE_MULTI_RECV (1 << 2) /* Handle used for multi-recv */
+#define HG_CORE_HANDLE_USER       (1 << 3) /* User-created handle */
 
 /* Op status bits */
 #define HG_CORE_OP_COMPLETED  (1 << 0) /* Operation completed */
@@ -252,7 +253,8 @@ struct hg_core_private_context {
     struct hg_core_completion_queue backfill_queue; /* Backfill queue */
     struct hg_atomic_queue *completion_queue;       /* Default queue */
     struct hg_core_loopback_notify loopback_notify; /* Loopback notification */
-    struct hg_core_handle_list created_list;        /* Created handle list */
+    struct hg_core_handle_list user_list;           /* Created handle list */
+    struct hg_core_handle_list internal_list;       /* Created handle list */
     struct hg_core_handle_pool *handle_pool;        /* Pool of handles */
 #ifdef NA_HAS_SM
     struct hg_core_handle_pool *sm_handle_pool; /* Pool of SM handles */
@@ -319,6 +321,7 @@ struct hg_core_private_handle {
     HG_LIST_ENTRY(hg_core_private_handle) pending;  /* Pending list entry */
     struct hg_core_header in_header;                /* Input header */
     struct hg_core_header out_header;               /* Output header */
+    struct hg_core_handle_list *created_list;       /* Created list */
     na_class_t *na_class;                           /* NA class */
     na_context_t *na_context;                       /* NA context */
     na_addr_t *na_addr;                             /* NA addr */
@@ -473,7 +476,7 @@ hg_core_context_multi_recv_unpost(struct hg_core_private_context *context,
  * Check list of handles not freed.
  */
 static hg_return_t
-hg_core_context_check_handles(struct hg_core_private_context *context);
+hg_core_context_check_handle_list(struct hg_core_handle_list *handle_list);
 
 /**
  * Wail until handle lists are empty.
@@ -676,7 +679,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle);
  * Allocate new handle.
  */
 static hg_return_t
-hg_core_alloc(struct hg_core_private_context *context,
+hg_core_alloc(struct hg_core_private_context *context, hg_bool_t user,
     struct hg_core_private_handle **hg_core_handle_p);
 
 /**
@@ -1400,7 +1403,8 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
     hg_bool_t backfill_queue_mutex_init = HG_FALSE,
               backfill_queue_cond_init = HG_FALSE,
               loopback_notify_mutex_init = HG_FALSE,
-              created_list_lock_init = HG_FALSE;
+              user_list_lock_init = HG_FALSE,
+              internal_list_lock_init = HG_FALSE;
 
     context = (struct hg_core_private_context *) calloc(1, sizeof(*context));
     HG_CHECK_SUBSYS_ERROR(ctx, context == NULL, error, ret, HG_NOMEM,
@@ -1434,11 +1438,17 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
         "hg_thread_mutex_init() failed");
     loopback_notify_mutex_init = HG_TRUE;
 
-    HG_LIST_INIT(&context->created_list.list);
-    rc = hg_thread_spin_init(&context->created_list.lock);
+    HG_LIST_INIT(&context->user_list.list);
+    rc = hg_thread_spin_init(&context->user_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
-    created_list_lock_init = HG_TRUE;
+    user_list_lock_init = HG_TRUE;
+
+    HG_LIST_INIT(&context->internal_list.list);
+    rc = hg_thread_spin_init(&context->internal_list.lock);
+    HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
+        "hg_thread_spin_init() failed");
+    internal_list_lock_init = HG_TRUE;
 
     /* Create NA context */
     context->core_context.na_context =
@@ -1579,8 +1589,10 @@ error:
             (void) hg_thread_cond_destroy(&backfill_queue->cond);
         if (loopback_notify_mutex_init)
             (void) hg_thread_mutex_destroy(&context->loopback_notify.mutex);
-        if (created_list_lock_init)
-            (void) hg_thread_spin_destroy(&context->created_list.lock);
+        if (user_list_lock_init)
+            (void) hg_thread_spin_destroy(&context->user_list.lock);
+        if (internal_list_lock_init)
+            (void) hg_thread_spin_destroy(&context->internal_list.lock);
         hg_atomic_queue_free(context->completion_queue);
         free(context);
     }
@@ -1608,18 +1620,28 @@ hg_core_context_destroy(struct hg_core_private_context *context)
         /* Unpost requests */
         ret = hg_core_context_unpost(context, HG_CORE_CLEANUP_TIMEOUT);
         HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not unpost requests");
-    } else {
-        /* Wait on created list (user created handles) */
-        ret = hg_core_context_list_wait(
-            context, &context->created_list, HG_CORE_CLEANUP_TIMEOUT);
-        HG_CHECK_SUBSYS_HG_ERROR(
-            ctx, error, ret, "Could not wait on handle list");
     }
 
+    /* Wait on created list (user created handles) */
+    ret = hg_core_context_list_wait(
+        context, &context->user_list, HG_CORE_CLEANUP_TIMEOUT);
+    HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not wait on handle list");
+
     /* Number of handles for that context should be 0 */
-    ret = hg_core_context_check_handles(context);
-    HG_CHECK_SUBSYS_HG_ERROR(
-        ctx, error, ret, "Handles for that context are still in use");
+    if (hg_atomic_get32(&context->n_handles) > 0) {
+        HG_LOG_SUBSYS_ERROR(ctx,
+            "HG core handles must be freed before destroying context (%" PRId32
+            " remaining)",
+            hg_atomic_get32(&context->n_handles));
+
+        ret = hg_core_context_check_handle_list(&context->user_list);
+        HG_CHECK_SUBSYS_HG_ERROR(
+            ctx, error, ret, "User-created handles are still in use");
+
+        ret = hg_core_context_check_handle_list(&context->internal_list);
+        HG_CHECK_SUBSYS_HG_ERROR(
+            ctx, error, ret, "Internal handles are still in use");
+    }
 
     /* Check that backfill completion queue is empty now */
     backfill_queue = &context->backfill_queue;
@@ -1708,7 +1730,8 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     (void) hg_thread_mutex_destroy(&backfill_queue->mutex);
     (void) hg_thread_cond_destroy(&backfill_queue->cond);
     (void) hg_thread_mutex_destroy(&context->loopback_notify.mutex);
-    (void) hg_thread_spin_destroy(&context->created_list.lock);
+    (void) hg_thread_spin_destroy(&context->user_list.lock);
+    (void) hg_thread_spin_destroy(&context->internal_list.lock);
 
     hg_atomic_queue_free(context->completion_queue);
     free(context);
@@ -1843,9 +1866,9 @@ hg_core_context_unpost(
     }
 #endif
 
-    /* Wait on created list */
+    /* Wait on internal list */
     ret =
-        hg_core_context_list_wait(context, &context->created_list, timeout_ms);
+        hg_core_context_list_wait(context, &context->internal_list, timeout_ms);
     HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not wait on handle list");
 
     if (hg_core_class->init_info.multi_recv)
@@ -2012,35 +2035,30 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_context_check_handles(struct hg_core_private_context *context)
+hg_core_context_check_handle_list(struct hg_core_handle_list *handle_list)
 {
-    int32_t n_handles;
+    struct hg_core_private_handle *hg_core_handle = NULL;
+    hg_return_t ret;
 
-    /* Number of handles for that context should be 0 */
-    n_handles = hg_atomic_get32(&context->n_handles);
-    if (n_handles != 0) {
-        struct hg_core_private_handle *hg_core_handle = NULL;
+    hg_thread_spin_lock(&handle_list->lock);
 
-        HG_LOG_SUBSYS_ERROR(ctx,
-            "HG core handles must be freed before destroying context (%d "
-            "remaining)",
-            n_handles);
+    if (HG_LIST_IS_EMPTY(&handle_list->list))
+        HG_GOTO_DONE(unlock, ret, HG_SUCCESS);
 
-        hg_thread_spin_lock(&context->created_list.lock);
-        HG_LIST_FOREACH (hg_core_handle, &context->created_list.list, created) {
-            /* TODO ideally we'd want the upper layer to print that */
-            if (hg_core_handle->core_handle.data)
-                HG_LOG_SUBSYS_ERROR(ctx, "Handle (%p) was not destroyed",
-                    hg_core_handle->core_handle.data);
-            HG_LOG_SUBSYS_DEBUG(ctx, "Core handle (%p) was not destroyed",
-                (void *) hg_core_handle);
-        }
-        hg_thread_spin_unlock(&context->created_list.lock);
-
-        return HG_BUSY;
+    HG_LIST_FOREACH (hg_core_handle, &handle_list->list, created) {
+        /* TODO ideally we'd want the upper layer to print that */
+        if (hg_core_handle->core_handle.data)
+            HG_LOG_SUBSYS_ERROR(ctx, "Handle (%p) was not destroyed",
+                hg_core_handle->core_handle.data);
+        HG_LOG_SUBSYS_DEBUG(
+            ctx, "Core handle (%p) was not destroyed", (void *) hg_core_handle);
     }
+    ret = HG_BUSY;
 
-    return HG_SUCCESS;
+unlock:
+    hg_thread_spin_unlock(&handle_list->lock);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3147,7 +3165,7 @@ hg_core_create(struct hg_core_private_context *context, na_class_t *na_class,
     hg_return_t ret;
 
     /* Allocate new handle */
-    ret = hg_core_alloc(context, &hg_core_handle);
+    ret = hg_core_alloc(context, flags & HG_CORE_HANDLE_USER, &hg_core_handle);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not allocate handle");
 
     /* Alloc/init NA resources */
@@ -3259,7 +3277,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_alloc(struct hg_core_private_context *context,
+hg_core_alloc(struct hg_core_private_context *context, hg_bool_t user,
     struct hg_core_private_handle **hg_core_handle_p)
 {
     hg_checksum_level_t checksum_level =
@@ -3285,9 +3303,12 @@ hg_core_alloc(struct hg_core_private_context *context,
     hg_core_handle->ret = HG_SUCCESS;
 
     /* Add handle to handle list so that we can track it */
-    hg_thread_spin_lock(&context->created_list.lock);
-    HG_LIST_INSERT_HEAD(&context->created_list.list, hg_core_handle, created);
-    hg_thread_spin_unlock(&context->created_list.lock);
+    hg_core_handle->created_list =
+        (user) ? &context->user_list : &context->internal_list;
+    hg_thread_spin_lock(&hg_core_handle->created_list->lock);
+    HG_LIST_INSERT_HEAD(
+        &hg_core_handle->created_list->list, hg_core_handle, created);
+    hg_thread_spin_unlock(&hg_core_handle->created_list->lock);
 
     /* Completed by default */
     hg_atomic_init32(&hg_core_handle->status, HG_CORE_OP_COMPLETED);
@@ -3320,25 +3341,22 @@ error:
 static void
 hg_core_free(struct hg_core_private_handle *hg_core_handle)
 {
-    struct hg_core_private_context *context;
-
     /* Remove reference to HG addr */
     hg_core_addr_free(
         (struct hg_core_private_addr *) hg_core_handle->core_handle.info.addr);
 
     /* Remove handle from list */
-    context = HG_CORE_HANDLE_CONTEXT(hg_core_handle);
-    hg_thread_spin_lock(&context->created_list.lock);
+    hg_thread_spin_lock(&hg_core_handle->created_list->lock);
     HG_LIST_REMOVE(hg_core_handle, created);
-    hg_thread_spin_unlock(&context->created_list.lock);
+    hg_thread_spin_unlock(&hg_core_handle->created_list->lock);
 
     hg_core_header_request_finalize(&hg_core_handle->in_header);
     hg_core_header_response_finalize(&hg_core_handle->out_header);
 
-    free(hg_core_handle);
-
     /* Decrement N handles from HG context */
-    hg_atomic_decr32(&context->n_handles);
+    hg_atomic_decr32(&HG_CORE_HANDLE_CONTEXT(hg_core_handle)->n_handles);
+
+    free(hg_core_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5719,8 +5737,8 @@ HG_Core_context_unpost(hg_core_context_t *context)
     HG_CHECK_SUBSYS_ERROR(ctx, context == NULL, error, ret, HG_INVALID_ARG,
         "NULL HG core context");
 
-    ret = hg_core_context_unpost(
-        (struct hg_core_private_context *) context, HG_CORE_CLEANUP_TIMEOUT);
+    ret = hg_core_context_unpost((struct hg_core_private_context *) context,
+        HG_CORE_CLEANUP_TIMEOUT * 10);
     HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not unpost context");
 
     HG_LOG_SUBSYS_DEBUG(
@@ -6174,7 +6192,7 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
 
     /* Create new handle */
     ret = hg_core_create((struct hg_core_private_context *) context, na_class,
-        na_context, 0, &hg_core_handle);
+        na_context, HG_CORE_HANDLE_USER, &hg_core_handle);
     HG_CHECK_SUBSYS_HG_ERROR(
         rpc, error, ret, "Could not create HG core handle");
 
