@@ -301,8 +301,16 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Number of CQ event provided for fi_cq_read() */
 #define NA_OFI_CQ_EVENT_NUM (16)
-/* CQ depth (the socket provider's default value is 256 */
-#define NA_OFI_CQ_DEPTH (8192)
+/**
+ * CQ default provider sizes:
+ * - tcp: 1024
+ * - verbs: 1024
+ * - opx: 8192
+ * - socket: 256
+ * - gni: 256
+ * Override default to 128k
+ */
+#define NA_OFI_CQ_DEPTH (131072)
 /* CQ max err data size (fix to 48 to work around bug in gni provider code) */
 #define NA_OFI_CQ_MAX_ERR_DATA_SIZE (48)
 
