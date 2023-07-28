@@ -267,6 +267,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* Don't enable for now to prevent backward compatibility issues */
 // #define NA_OFI_ADDR_OPT
 
+/* OPX */
+#define NA_OFI_OPX_NODE_PREFIX "ib"
+
 /* IB */
 #ifndef AF_IB
 #    define AF_IB 27
@@ -278,6 +281,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* GNI */
 #define NA_OFI_GNI_AV_STR_ADDR_VERSION (1)
 #define NA_OFI_GNI_UDREG_REG_LIMIT     (2048)
+
+/* CXI */
+#define NA_OFI_CXI_NODE_PREFIX "cxi"
 
 /* Address pool (enabled by default, comment out to disable) */
 #define NA_OFI_HAS_ADDR_POOL
@@ -1022,22 +1028,20 @@ na_ofi_free_hostname_info(
  * Parse IPv4 info.
  */
 static na_return_t
-na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
-    uint16_t *port_p, char **domain_name_p);
+na_ofi_parse_sin_info(
+    const char *str, char **domain_name_p, char **hostname_p, uint16_t *port_p);
 
 /**
  * Parse CXI info.
  */
 static na_return_t
-na_ofi_parse_cxi_info(
-    const char *hostname_info, char **node_p, char **service_p);
+na_ofi_parse_cxi_info(const char *str, char **node_p, char **service_p);
 
 /**
- * Parse OPX address.
+ * Parse OPX info.
  */
 static na_return_t
-na_ofi_parse_opx_info(
-    const uint8_t hfi_interface, int port, struct na_ofi_opx_addr **addr);
+na_ofi_parse_opx_info(const char *str, struct na_ofi_opx_addr **src_addr_p);
 
 /**
  * Allocate new OFI class.
@@ -2199,9 +2203,8 @@ na_ofi_str_to_sin(const char *str, struct sockaddr_in *sin_addr)
     sin_addr->sin_family = AF_INET;
     if (sscanf(str, "%*[^:]://:%" SCNu16, &sin_addr->sin_port) == 1) {
         NA_LOG_SUBSYS_DEBUG(addr, "port=%" PRIu16, sin_addr->sin_port);
-    } else if ((sscanf(str, "%*[^:]://%16[^:]:%" SCNu16, ip,
-                    &sin_addr->sin_port) == 2) ||
-               (sscanf(str, "%*[^:]://%16[^:/]", ip) == 1)) {
+    } else if (sscanf(str, "%*[^:]://%16[^:]:%" SCNu16, ip,
+                   &sin_addr->sin_port) > 0) {
         int rc;
 
         ip[sizeof(ip) - 1] = '\0';
@@ -2237,9 +2240,8 @@ na_ofi_str_to_sin6(const char *str, struct sockaddr_in6 *sin6_addr)
     sin6_addr->sin6_family = AF_INET6;
     if (sscanf(str, "%*[^:]://:%" SCNu16, &sin6_addr->sin6_port) == 1) {
         NA_LOG_SUBSYS_DEBUG(addr, "port=%" PRIu16, sin6_addr->sin6_port);
-    } else if ((sscanf(str, "%*[^:]://[%64[^]]]:%" SCNu16, ip,
-                    &sin6_addr->sin6_port) == 2) ||
-               (sscanf(str, "%*[^:]://[%64[^]]", ip) == 1)) {
+    } else if (sscanf(str, "%*[^:]://[%64[^]]]:%" SCNu16, ip,
+                   &sin6_addr->sin6_port) > 0) {
         int rc;
 
         ip[sizeof(ip) - 1] = '\0';
@@ -3388,12 +3390,8 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
 #endif
 
             ret = na_ofi_parse_sin_info(
-                hostname_info, &hostname, &port, &domain_name);
+                hostname_info, &domain_name, &hostname, &port);
             NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse sin info");
-
-            NA_LOG_SUBSYS_DEBUG(cls,
-                "Found hostname: %s, port %" PRIu16 ", domain %s", hostname,
-                port, domain_name);
 
             if (hostname == NULL) {
                 char host[NA_OFI_MAX_URI_LEN];
@@ -3469,52 +3467,12 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             }
             break;
 
-        case FI_ADDR_OPX: {
-            char *resolve_name = NULL;
-            unsigned int hfi_interface = 0;
-            int port = -1;
-
-            hostname = strdup(hostname_info);
-            NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, out, ret, NA_NOMEM,
-                "strdup() of hostname failed");
-
-            /* Extract hostname */
-            if (strstr(hostname, ":")) {
-                char *hostname_str = NULL;
-
-                strtok_r(hostname, ":", &hostname_str);
-                hfi_interface = (unsigned int) strtoul(hostname_str, NULL, 10);
-
-                strtok_r(hostname_str, ":", &hostname_str);
-                if (strlen(hostname_str)) {
-                    port = (int) strtoul(hostname_str, NULL, 10);
-                }
-            }
-
-            /* Extract domain (if specified) */
-            if (strstr(hostname, "/")) {
-                strtok_r(hostname, "/", &resolve_name);
-            } else {
-                resolve_name = hostname;
-            }
-
-            /* Get hostname/port info if available */
-            if (resolve_name) {
-                struct na_ofi_opx_addr *na_ofi_opx_addr;
-                /* Port is HFI interface card ID */
-                ret = na_ofi_parse_opx_info(
-                    (uint8_t) hfi_interface, port, &na_ofi_opx_addr);
-                NA_CHECK_SUBSYS_ERROR(cls,
-                    ret != NA_SUCCESS || !na_ofi_opx_addr, out, ret,
-                    NA_ADDRNOTAVAIL,
-                    "Could not convert device port to NA OPX address");
-
-                /* Pass src addr information to avoid name resolution */
-                *src_addr_p = (void *) na_ofi_opx_addr;
-                *src_addrlen_p = sizeof(*na_ofi_opx_addr);
-            }
+        case FI_ADDR_OPX:
+            ret = na_ofi_parse_opx_info(
+                hostname_info, (struct na_ofi_opx_addr **) src_addr_p);
+            NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse opx info");
+            *src_addrlen_p = sizeof(struct na_ofi_opx_addr);
             break;
-        }
         default:
             NA_LOG_SUBSYS_ERROR(
                 fatal, "Unsupported address format: %d", addr_format);
@@ -3541,55 +3499,55 @@ na_ofi_free_hostname_info(
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_parse_sin_info(const char *hostname_info, char **resolve_name_p,
-    uint16_t *port_p, char **domain_name_p)
+na_ofi_parse_sin_info(
+    const char *str, char **domain_name_p, char **hostname_p, uint16_t *port_p)
 {
-    char domain_name[65];
-    char *hostname = NULL;
+    char hostname[65], domain_name[65];
     na_return_t ret;
 
-    if (sscanf(hostname_info, ":%" SCNu16, port_p) == 1) {
-        NA_LOG_SUBSYS_DEBUG(cls, "port=%" PRIu16, *port_p);
+    if (sscanf(str, ":%" SCNu16, port_p) == 1) {
         /* Only port, e.g. ":12345" */
-    } else if (sscanf(hostname_info, "%64[^/]/:%" SCNu16, domain_name,
-                   port_p) == 2) {
+        NA_LOG_SUBSYS_DEBUG(cls, "port: %" PRIu16, *port_p);
+    } else if (sscanf(str, "%64[^/]/:%" SCNu16, domain_name, port_p) == 2) {
+        /* Domain and port, e.g. "lo/:12345" */
         NA_LOG_SUBSYS_DEBUG(
             cls, "domain: %s, port: %" PRIu16, domain_name, *port_p);
-        /* Domain and port, e.g. "lo/:12345" */
+
         *domain_name_p = strdup(domain_name);
         NA_CHECK_SUBSYS_ERROR(cls, *domain_name_p == NULL, error, ret, NA_NOMEM,
-            "strdup() of host_name failed");
-    } else {
-        hostname = strdup(hostname_info);
-        NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, error, ret, NA_NOMEM,
-            "strdup() of host_name failed");
+            "strdup() of domain_name failed");
 
-        /* Domain, hostname and port, e.g. "lo/localhost:12345" */
-        if (strchr(hostname, ':')) {
-            char *port_str = NULL;
-            strtok_r(hostname, ":", &port_str);
-            *port_p = (uint16_t) strtoul(port_str, NULL, 10);
-        }
+        *hostname_p = strdup(domain_name);
+        NA_CHECK_SUBSYS_ERROR(cls, *hostname_p == NULL, error, ret, NA_NOMEM,
+            "strdup() of domain_name failed");
+    } else if (sscanf(str, "%64[^/]/%64[^/:]:%" SCNu16, domain_name, hostname,
+                   port_p) > 1) {
+        /* Domain / hostname and port, e.g. "lo/lo:12345" */
+        NA_LOG_SUBSYS_DEBUG(cls, "domain: %s, hostname: %s, port: %" PRIu16,
+            domain_name, hostname, *port_p);
 
-        /* Extract domain */
-        if (strchr(hostname, '/')) {
-            char *host_str = NULL;
-            strtok_r(hostname, "/", &host_str);
+        *domain_name_p = strdup(domain_name);
+        NA_CHECK_SUBSYS_ERROR(cls, *domain_name_p == NULL, error, ret, NA_NOMEM,
+            "strdup() of domain_name failed");
 
-            *domain_name_p = hostname;
-            if (host_str && host_str[0] != '\0') {
-                *resolve_name_p = strdup(host_str);
-                NA_CHECK_SUBSYS_ERROR(cls, *resolve_name_p == NULL, error, ret,
-                    NA_NOMEM, "strdup() of hostname failed");
-            }
-        } else
-            *resolve_name_p = hostname;
-    }
+        *hostname_p = strdup(hostname);
+        NA_CHECK_SUBSYS_ERROR(cls, *hostname_p == NULL, error, ret, NA_NOMEM,
+            "strdup() of hostname failed");
+    } else if (sscanf(str, "%64[^/:]:%" SCNu16, hostname, port_p) > 0) {
+        /* Hostname and port, e.g. "lo:12345" */
+        NA_LOG_SUBSYS_DEBUG(
+            cls, "hostname: %s, port: %" PRIu16, hostname, *port_p);
+
+        *hostname_p = strdup(hostname);
+        NA_CHECK_SUBSYS_ERROR(cls, *hostname_p == NULL, error, ret, NA_NOMEM,
+            "strdup() of hostname failed");
+    } else
+        NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
+            "Malformed SIN info, format is: <domain>/<node>:<service>");
 
     return NA_SUCCESS;
 
 error:
-    free(hostname);
     return ret;
 }
 
@@ -3598,23 +3556,21 @@ static na_return_t
 na_ofi_parse_cxi_info(
     const char *hostname_info, char **node_p, char **service_p)
 {
-    char nic_name[5] = {"cxiX"}; /* cxi[0-9] */
+    char nic_name[5] = {NA_OFI_CXI_NODE_PREFIX "X"}; /* cxi[0-9] */
     char pid_name[4];
     uint16_t pid = 0; /* [0-510] */
     uint16_t pid_mask = 0x1ff;
     char *node = NULL;
     na_return_t ret;
 
-    /* Only port, e.g. ":510" */
     if (sscanf(hostname_info, ":%" SCNu16, &pid) == 1) {
+        /* Only port, e.g. ":510" */
         NA_CHECK_SUBSYS_ERROR(cls, pid >= pid_mask, error, ret,
             NA_PROTONOSUPPORT, "CXI PID is %" PRIu16 ", must be [0-510]", pid);
         NA_LOG_SUBSYS_DEBUG(cls, "PID: %" PRIu16, pid);
-    }
-    /* cxi[0-9]:port or cxi[0-9] */
-    else if ((sscanf(hostname_info, "cxi%1[0-9]:%" SCNu16, &nic_name[3],
-                  &pid) == 2) ||
-             (sscanf(hostname_info, "cxi%1[0-9]", &nic_name[3]) == 1)) {
+    } else if (sscanf(hostname_info, NA_OFI_CXI_NODE_PREFIX "%1[0-9]:%" SCNu16,
+                   &nic_name[3], &pid) > 0) {
+        /* cxi[0-9]:port or cxi[0-9] */
         NA_CHECK_SUBSYS_ERROR(cls, pid >= pid_mask, error, ret,
             NA_PROTONOSUPPORT, "CXI PID is %" PRIu16 ", must be [0-510]", pid);
         NA_LOG_SUBSYS_DEBUG(cls, "NIC name: %s, PID: %" PRIu16, nic_name, pid);
@@ -3624,7 +3580,8 @@ na_ofi_parse_cxi_info(
             "strdup() of nic_name failed");
     } else
         NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
-            "Malformed CXI info, format is: cxi[0-9]:[0-510]");
+            "Malformed CXI info, format is: " NA_OFI_CXI_NODE_PREFIX
+            "[0-9]:[0-510]");
 
     /* Let the service string be NULL if PID is 0 to prevent CXI failure on
      * endpoint open when same PID is used */
@@ -3647,32 +3604,43 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_return_t
+static na_return_t
 na_ofi_parse_opx_info(
-    const uint8_t hfi_interface, int port, struct na_ofi_opx_addr **addr)
+    const char *hostname_info, struct na_ofi_opx_addr **src_addr_p)
 {
-    struct na_ofi_opx_addr *opx_addr;
+    struct na_ofi_opx_addr *src_addr = NULL;
+    uint8_t hfi_unit = 0;
+    na_ofi_opx_uid_t uid = 0;
     na_return_t ret;
 
-    opx_addr = calloc(1, sizeof(*opx_addr));
-    NA_CHECK_SUBSYS_ERROR(addr, opx_addr == NULL, error, ret, NA_NOMEM,
+    if (sscanf(hostname_info, ":%" SCNu32, &uid) == 1) {
+        /* Only port */
+        NA_LOG_SUBSYS_DEBUG(cls, ":%" PRIu32, uid);
+    } else if (sscanf(hostname_info,
+                   NA_OFI_OPX_NODE_PREFIX "%" SCNu8 ":%" SCNu32, &hfi_unit,
+                   &uid) > 0) {
+        /* Interface and port */
+        NA_LOG_SUBSYS_DEBUG(
+            cls, NA_OFI_OPX_NODE_PREFIX "%" PRIu8 ":%" PRIu32, hfi_unit, uid);
+    } else
+        NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
+            "Malformed OPX info, format is: <" NA_OFI_OPX_NODE_PREFIX
+            "[0-9]>:<uid>");
+
+    src_addr = calloc(1, sizeof(*src_addr));
+    NA_CHECK_SUBSYS_ERROR(addr, src_addr == NULL, error, ret, NA_NOMEM,
         "Could not allocate na ofi opx address");
 
-    memset(opx_addr, 0, sizeof(*opx_addr));
-    opx_addr->addr.hfi1_unit = hfi_interface;
+    src_addr->addr.hfi1_unit = hfi_unit;
+    /* Need to use the uuid field of the address because key requires 4 bytes */
+    src_addr->addr.uid.fi = uid;
 
-    /* Need to use the uuid field of the address, because key
-     * requires 4 bytes
-     */
-    opx_addr->addr.uid.fi = (na_ofi_opx_uid_t) port;
-
-    *addr = opx_addr;
+    *src_addr_p = src_addr;
 
     return NA_SUCCESS;
 
 error:
-    if (opx_addr)
-        free(opx_addr);
+    free(src_addr);
 
     return ret;
 }
