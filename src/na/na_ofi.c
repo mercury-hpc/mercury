@@ -343,6 +343,16 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_CLASS(x)   ((struct na_ofi_class *) ((x)->plugin_class))
 #define NA_OFI_CONTEXT(x) ((struct na_ofi_context *) ((x)->plugin_context))
 
+/* Init info */
+#define NA_OFI_INFO_INITIALIZER                                                \
+    ((struct na_ofi_info){.addr_format = FI_FORMAT_UNSPEC,                     \
+        .thread_mode = FI_THREAD_UNSPEC,                                       \
+        .node = NULL,                                                          \
+        .service = NULL,                                                       \
+        .src_addr = NULL,                                                      \
+        .src_addrlen = 0,                                                      \
+        .use_hmem = false})
+
 /* Get IOV */
 #define NA_OFI_IOV(iov, iovcnt) (iovcnt > NA_OFI_IOV_STATIC_MAX) ? iov.d : iov.s
 
@@ -3148,13 +3158,6 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     NA_CHECK_SUBSYS_ERROR(
         cls, hints == NULL, out, ret, NA_NOMEM, "fi_allocinfo() failed");
 
-    /* Protocol name is provider name, filter out providers within libfabric */
-    if (prov_type != NA_OFI_PROV_NULL) {
-        hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
-        NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL,
-            cleanup, ret, NA_NOMEM, "Could not duplicate name");
-    }
-
     /**
      * FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
      * buffering needed for the IO vectors. When set, an application must not
@@ -3162,27 +3165,12 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
      * descriptor array, until the associated operation has completed.
      */
     hints->mode = FI_ASYNC_IOV; // FI_RX_CQ_DATA
-    if (na_ofi_prov_flags[prov_type] & NA_OFI_CONTEXT2)
-        hints->mode |= FI_CONTEXT2;
-    else
-        hints->mode |= FI_CONTEXT;
 
     /* ep_type: reliable datagram (connection-less) */
     hints->ep_attr->type = FI_EP_RDM;
 
-    /* set endpoint protocol */
-    if (prov_type != NA_OFI_PROV_NULL)
-        NA_CHECK_SUBSYS_ERROR(cls,
-            na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
-            NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
-            na_ofi_prov_ep_proto[prov_type]);
-    hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
-
     /* caps: capabilities required for all providers */
     hints->caps = FI_MSG | FI_TAGGED | FI_RMA | FI_DIRECTED_RECV;
-
-    /* add any additional caps that are particular to this provider */
-    hints->caps |= na_ofi_prov_extra_caps[prov_type];
 
     /**
      * msg_order: guarantee that messages with same tag are ordered.
@@ -3210,13 +3198,37 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     hints->domain_attr->mr_mode =
         NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT;
 
-    /* set default progress mode */
-    hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
-    hints->domain_attr->data_progress = na_ofi_prov_progress[prov_type];
+    if (prov_type != NA_OFI_PROV_NULL) {
+        /* Filter out providers within libfabric using provider name */
+        hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
+        NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL,
+            cleanup, ret, NA_NOMEM, "Could not duplicate name");
+
+        if (na_ofi_prov_flags[prov_type] & NA_OFI_CONTEXT2)
+            hints->mode |= FI_CONTEXT2;
+        else
+            hints->mode |= FI_CONTEXT;
+
+        /* set endpoint protocol */
+        NA_CHECK_SUBSYS_ERROR(cls,
+            na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
+            NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
+            na_ofi_prov_ep_proto[prov_type]);
+        hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
+
+        /* add any additional caps that are particular to this provider */
+        hints->caps |= na_ofi_prov_extra_caps[prov_type];
+
+        /* set default progress mode */
+        hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
+        hints->domain_attr->data_progress = na_ofi_prov_progress[prov_type];
+    }
 
     if (info) {
         /* Use addr format if not FI_FORMAT_UNSPEC */
-        NA_CHECK_SUBSYS_ERROR(cls, info->addr_format <= FI_FORMAT_UNSPEC,
+        NA_CHECK_SUBSYS_ERROR(cls,
+            (prov_type != NA_OFI_PROV_NULL) &&
+                (info->addr_format <= FI_FORMAT_UNSPEC),
             cleanup, ret, NA_PROTONOSUPPORT, "Unsupported address format (%d)",
             info->addr_format);
         hints->addr_format = (uint32_t) info->addr_format;
@@ -6552,12 +6564,10 @@ na_ofi_get_protocol_info(
 {
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     struct fi_info *prov, *providers = NULL;
-    struct na_ofi_verify_info verify_info = {.addr_format = 0,
-        .domain_name = NULL,
-        .loc_info = NULL, /* Loc info is ignored */
-        .prov_type = NA_OFI_PROV_NULL};
+    struct na_ofi_info info = NA_OFI_INFO_INITIALIZER;
     struct na_protocol_info *head = NULL, *prev = NULL;
     unsigned NA_DEBUG_LOG_USED count = 0;
+    enum na_ofi_prov_type prov_type = NA_OFI_PROV_NULL;
     na_return_t ret;
 
     if (na_info != NULL) {
@@ -6566,62 +6576,58 @@ na_ofi_get_protocol_info(
             na_init_info = *na_info->na_init_info;
 
         if (na_info->protocol_name != NULL) {
-            verify_info.prov_type =
-                na_ofi_prov_name_to_type(na_info->protocol_name);
-            NA_CHECK_SUBSYS_ERROR(cls,
-                verify_info.prov_type == NA_OFI_PROV_NULL, error, ret,
-                NA_PROTONOSUPPORT, "Protocol \"%s\" not supported",
+            prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
+            NA_CHECK_SUBSYS_ERROR(cls, prov_type == NA_OFI_PROV_NULL, error,
+                ret, NA_PROTONOSUPPORT, "Protocol \"%s\" not supported",
                 na_info->protocol_name);
 
-            verify_info.addr_format = na_ofi_prov_addr_format(
-                verify_info.prov_type, na_init_info.addr_format);
-            NA_CHECK_SUBSYS_ERROR(cls,
-                verify_info.addr_format <= FI_FORMAT_UNSPEC, error, ret,
-                NA_PROTONOSUPPORT, "Unsupported address format");
+            info.addr_format =
+                na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
+            NA_CHECK_SUBSYS_ERROR(cls, info.addr_format <= FI_FORMAT_UNSPEC,
+                error, ret, NA_PROTONOSUPPORT, "Unsupported address format");
         }
     }
 
-    ret = na_ofi_getinfo(verify_info.prov_type, NULL, &providers);
+    ret = na_ofi_getinfo(prov_type, &info, &providers);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not get provider info");
 
     for (prov = providers; prov != NULL; prov = prov->next) {
-        if (na_info == NULL || na_info->protocol_name == NULL) {
-            verify_info.prov_type =
-                na_ofi_prov_name_to_type(prov->fabric_attr->prov_name);
-            if (verify_info.prov_type == NA_OFI_PROV_NULL)
-                continue;
+        struct na_ofi_verify_info verify_info = {
+            .loc_info = NULL,
+            .domain_name = NULL,
+            .addr_format = FI_FORMAT_UNSPEC,
+            .prov_type =
+                (prov_type != NA_OFI_PROV_NULL)
+                    ? prov_type
+                    : na_ofi_prov_name_to_type(prov->fabric_attr->prov_name),
+        };
 
-            verify_info.addr_format = na_ofi_prov_addr_format(
-                verify_info.prov_type, na_init_info.addr_format);
-        }
+        if (verify_info.prov_type == NA_OFI_PROV_NULL)
+            continue; /* Unsupported provider */
+
+        verify_info.addr_format =
+            (info.addr_format != FI_FORMAT_UNSPEC)
+                ? info.addr_format
+                : na_ofi_prov_addr_format(
+                      verify_info.prov_type, na_init_info.addr_format);
 
         if (na_ofi_match_provider(&verify_info, prov)) {
             struct na_protocol_info *entry;
 
-            /* Update last provider name if changed */
-            if (prev == NULL ||
-                strcmp(prev->protocol_name, prov->fabric_attr->prov_name)) {
-                entry = na_protocol_info_alloc(NA_OFI_CLASS_NAME,
-                    prov->fabric_attr->prov_name, prov->domain_attr->name);
-                NA_CHECK_SUBSYS_ERROR(cls, entry == NULL, error, ret, NA_NOMEM,
-                    "Could not allocate protocol info entry");
+            /* Do not keep duplicates generated by OFI */
+            for (entry = head; entry != NULL; entry = entry->next)
+                if (!strcmp(entry->device_name, prov->domain_attr->name) &&
+                    !strcmp(entry->protocol_name, prov->fabric_attr->prov_name))
+                    break;
 
-                prev = entry;
-            } else {
-                /* Do not keep duplicates */
-                for (entry = head; entry != NULL && entry != prev->next;
-                     entry = entry->next)
-                    if (!strcmp(entry->device_name, prov->domain_attr->name))
-                        break;
+            if (entry != NULL)
+                continue; /* duplicate found */
 
-                if (entry != prev->next)
-                    continue;
+            entry = na_protocol_info_alloc(NA_OFI_CLASS_NAME,
+                prov->fabric_attr->prov_name, prov->domain_attr->name);
+            NA_CHECK_SUBSYS_ERROR(cls, entry == NULL, error, ret, NA_NOMEM,
+                "Could not allocate protocol info entry");
 
-                entry = na_protocol_info_alloc(NA_OFI_CLASS_NAME,
-                    prov->fabric_attr->prov_name, prov->domain_attr->name);
-                NA_CHECK_SUBSYS_ERROR(cls, entry == NULL, error, ret, NA_NOMEM,
-                    "Could not allocate protocol info entry");
-            }
             entry->next = head;
             head = entry;
 
@@ -6718,13 +6724,7 @@ na_ofi_initialize(
     enum na_ofi_prov_type prov_type;
     bool no_wait;
     char *domain_name = NULL;
-    struct na_ofi_info info = {.addr_format = FI_FORMAT_UNSPEC,
-        .thread_mode = FI_THREAD_UNSPEC,
-        .node = NULL,
-        .service = NULL,
-        .src_addr = NULL,
-        .src_addrlen = 0,
-        .use_hmem = false};
+    struct na_ofi_info info = NA_OFI_INFO_INITIALIZER;
     struct na_loc_info *loc_info = NULL;
     na_return_t ret;
 #ifdef NA_OFI_HAS_MEM_POOL
