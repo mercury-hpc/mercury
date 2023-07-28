@@ -233,12 +233,14 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /* NA init info initializer */
 #define NA_INIT_INFO_INITIALIZER                                               \
-    (struct na_init_info)                                                      \
-    {                                                                          \
-        .ip_subnet = NULL, .auth_key = NULL, .max_unexpected_size = 0,         \
-        .max_expected_size = 0, .progress_mode = 0,                            \
-        .addr_format = NA_ADDR_UNSPEC, .max_contexts = 1, .thread_mode = 0,    \
-        .request_mem_device = false                                            \
-    }
+    ((struct na_init_info){.ip_subnet = NULL,                                  \
+        .auth_key = NULL,                                                      \
+        .max_unexpected_size = 0,                                              \
+        .max_expected_size = 0,                                                \
+        .progress_mode = 0,                                                    \
+        .addr_format = NA_ADDR_UNSPEC,                                         \
+        .max_contexts = 1,                                                     \
+        .thread_mode = 0,                                                      \
+        .request_mem_device = false})
 
 #endif /* NA_TYPES_H */
