@@ -345,7 +345,7 @@ struct hg_core_private_handle {
     hg_atomic_int32_t status;           /* Handle status */
     hg_atomic_int32_t ret_status;       /* Handle return status */
     hg_atomic_int32_t op_completed_count; /* Completed operation count */
-    unsigned int
+    hg_atomic_int32_t
         op_expected_count;     /* Expected operation count for completion */
     hg_core_op_type_t op_type; /* Core operation type */
     hg_return_t ret;           /* Return code associated to handle */
@@ -3429,7 +3429,8 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
     HG_CHECK_SUBSYS_ERROR(rpc, hg_core_handle->na_ack_op_id == NULL, error, ret,
         HG_NA_ERROR, "Could not create NA op ID");
 
-    hg_core_handle->op_expected_count = 1; /* Default (no response) */
+    hg_atomic_init32(
+        &hg_core_handle->op_expected_count, 1); /* Default (no response) */
     hg_atomic_init32(&hg_core_handle->op_completed_count, 0);
 
     return HG_SUCCESS;
@@ -3506,7 +3507,8 @@ hg_core_reset(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->ret = HG_SUCCESS;
     hg_core_handle->in_buf_used = 0;
     hg_core_handle->out_buf_used = 0;
-    hg_core_handle->op_expected_count = 1; /* Default (no response) */
+    hg_atomic_init32(
+        &hg_core_handle->op_expected_count, 1); /* Default (no response) */
     hg_atomic_init32(&hg_core_handle->op_completed_count, 0);
     hg_core_handle->no_response = HG_FALSE;
 
@@ -3774,8 +3776,9 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
         (void *) hg_core_handle, ref_count);
 
     /* Reset op counts */
-    hg_core_handle->op_expected_count = 1; /* Default (no response) */
-    hg_atomic_init32(&hg_core_handle->op_completed_count, 0);
+    hg_atomic_set32(
+        &hg_core_handle->op_expected_count, 1); /* Default (no response) */
+    hg_atomic_set32(&hg_core_handle->op_completed_count, 0);
 
     /* Reset handle ret */
     hg_core_handle->ret = HG_SUCCESS;
@@ -3883,7 +3886,7 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
             NA_Error_to_string(na_ret));
 
         /* Increment number of expected operations */
-        hg_core_handle->op_expected_count++;
+        hg_atomic_incr32(&hg_core_handle->op_expected_count);
     }
 
     /* Mark handle as posted */
@@ -3913,7 +3916,7 @@ error_send:
         /* No recv was posted */
         return ret;
     } else {
-        hg_core_handle->op_expected_count--;
+        hg_atomic_decr32(&hg_core_handle->op_expected_count);
 
         /* Keep error for return status */
         hg_atomic_set32(&hg_core_handle->ret_status, (int32_t) ret);
@@ -4009,7 +4012,7 @@ hg_core_respond_self(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->op_type = HG_CORE_RESPOND_SELF;
 
     /* Increment number of expected operations */
-    hg_core_handle->op_expected_count++;
+    hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
     /* Complete and add to completion queue */
     hg_core_complete_op(hg_core_handle);
@@ -4025,7 +4028,7 @@ hg_core_no_respond_self(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Increment number of expected operations */
-    hg_core_handle->op_expected_count++;
+    hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
     /* Complete and add to completion queue */
     hg_core_complete_op(hg_core_handle);
@@ -4042,7 +4045,7 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
     hg_bool_t ack_recv_posted = HG_FALSE;
 
     /* Increment number of expected operations */
-    hg_core_handle->op_expected_count++;
+    hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
     /* Set operation type for trigger */
     hg_core_handle->op_type = HG_CORE_RESPOND;
@@ -4071,7 +4074,7 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
         }
 
         /* Increment number of expected operations */
-        hg_core_handle->op_expected_count++;
+        hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
         /* Pre-post recv (ack) if more data is expected */
         na_ret = NA_Msg_recv_expected(hg_core_handle->na_class,
@@ -4108,7 +4111,7 @@ error:
     hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
 
     if (ack_recv_posted) {
-        hg_core_handle->op_expected_count--;
+        hg_atomic_decr32(&hg_core_handle->op_expected_count);
 
         /* Keep error for return status */
         hg_atomic_set32(&hg_core_handle->ret_status, (int32_t) ret);
@@ -4142,7 +4145,7 @@ hg_core_no_respond_na(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->op_type = HG_CORE_NO_RESPOND;
 
     /* Increment number of expected operations */
-    hg_core_handle->op_expected_count++;
+    hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
     hg_core_complete_op(hg_core_handle);
 
@@ -4437,7 +4440,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
             (void *) hg_core_handle);
 
         /* Increment number of expected operations */
-        hg_core_handle->op_expected_count++;
+        hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
 #if defined(HG_HAS_DEBUG) && !defined(_WIN32)
         /* Increment counter */
@@ -4577,7 +4580,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
             (void *) hg_core_handle);
 
         /* Increment number of expected operations */
-        hg_core_handle->op_expected_count++;
+        hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
 #if defined(HG_HAS_DEBUG) && !defined(_WIN32)
         /* Increment counter */
@@ -4716,7 +4719,7 @@ hg_core_self_cb(const struct hg_core_cb_info *callback_info)
     hg_return_t ret;
 
     /* Increment number of expected operations */
-    hg_core_handle->op_expected_count++;
+    hg_atomic_incr32(&hg_core_handle->op_expected_count);
 
     /* First execute response callback */
     if (hg_core_handle->response_callback) {
@@ -4835,19 +4838,20 @@ error:
 static HG_INLINE void
 hg_core_complete_op(struct hg_core_private_handle *hg_core_handle)
 {
-    unsigned int op_completed_count =
-        (unsigned int) hg_atomic_incr32(&hg_core_handle->op_completed_count);
+    int32_t op_completed_count =
+                hg_atomic_incr32(&hg_core_handle->op_completed_count),
+            op_expected_count =
+                hg_atomic_get32(&hg_core_handle->op_expected_count);
 
-    HG_LOG_SUBSYS_DEBUG(rpc, "Completed %u/%u NA operations for handle (%p)",
-        op_completed_count, hg_core_handle->op_expected_count,
-        (void *) hg_core_handle);
+    HG_LOG_SUBSYS_DEBUG(rpc,
+        "Completed %" PRId32 "/%" PRId32 " NA operations for handle (%p)",
+        op_completed_count, op_expected_count, (void *) hg_core_handle);
 
     /* Add handle to completion queue when expected operations have
      * completed */
-    if (op_completed_count == hg_core_handle->op_expected_count) {
+    if (op_completed_count == op_expected_count)
         hg_core_complete(hg_core_handle,
             (hg_return_t) hg_atomic_get32(&hg_core_handle->ret_status));
-    }
 }
 
 /*---------------------------------------------------------------------------*/
