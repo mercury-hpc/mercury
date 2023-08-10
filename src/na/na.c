@@ -1887,9 +1887,11 @@ NA_Trigger(
 
             if (hg_atomic_get32(&backfill_queue->count)) {
                 hg_thread_spin_lock(&backfill_queue->lock);
-                completion_data_p = HG_QUEUE_FIRST(&backfill_queue->queue);
-                HG_QUEUE_POP_HEAD(&backfill_queue->queue, entry);
-                hg_atomic_decr32(&backfill_queue->count);
+                if (hg_atomic_get32(&backfill_queue->count)) {
+                    completion_data_p = HG_QUEUE_FIRST(&backfill_queue->queue);
+                    HG_QUEUE_POP_HEAD(&backfill_queue->queue, entry);
+                    hg_atomic_decr32(&backfill_queue->count);
+                }
                 hg_thread_spin_unlock(&backfill_queue->lock);
                 if (completion_data_p == NULL)
                     continue; /* Give another chance to grab it */
