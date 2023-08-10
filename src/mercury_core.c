@@ -5232,9 +5232,12 @@ hg_core_trigger(struct hg_core_private_context *context,
             /* Check backfill queue */
             if (hg_atomic_get32(&backfill_queue->count) > 0) {
                 hg_thread_mutex_lock(&backfill_queue->mutex);
-                hg_completion_entry = HG_QUEUE_FIRST(&backfill_queue->queue);
-                HG_QUEUE_POP_HEAD(&backfill_queue->queue, entry);
-                hg_atomic_decr32(&backfill_queue->count);
+                if (hg_atomic_get32(&backfill_queue->count) > 0) {
+                    hg_completion_entry =
+                        HG_QUEUE_FIRST(&backfill_queue->queue);
+                    HG_QUEUE_POP_HEAD(&backfill_queue->queue, entry);
+                    hg_atomic_decr32(&backfill_queue->count);
+                }
                 hg_thread_mutex_unlock(&backfill_queue->mutex);
                 if (hg_completion_entry == NULL)
                     continue; /* Give another change to grab it */
