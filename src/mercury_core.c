@@ -260,11 +260,10 @@ struct hg_core_private_context {
     struct hg_core_handle_pool *sm_handle_pool; /* Pool of SM handles */
 #endif
     struct hg_core_multi_recv_op multi_recv_ops[HG_CORE_MULTI_RECV_OP_MAX];
-    struct hg_core_handle_create_cb handle_create_cb;     /* Handle create cb */
-    struct hg_bulk_op_pool *hg_bulk_op_pool;              /* Pool of op IDs */
-    struct hg_poll_set *poll_set;                         /* Poll set */
-    struct hg_poll_event poll_events[HG_CORE_MAX_EVENTS]; /* Poll events */
-    int na_event;                                         /* NA event */
+    struct hg_core_handle_create_cb handle_create_cb; /* Handle create cb */
+    struct hg_bulk_op_pool *hg_bulk_op_pool;          /* Pool of op IDs */
+    struct hg_poll_set *poll_set;                     /* Poll set */
+    int na_event;                                     /* NA event */
 #ifdef NA_HAS_SM
     int na_sm_event; /* NA SM event */
 #endif
@@ -5011,13 +5010,14 @@ static hg_return_t
 hg_core_poll_wait(struct hg_core_private_context *context,
     unsigned int timeout_ms, hg_bool_t *progressed_p)
 {
+    struct hg_poll_event poll_events[HG_CORE_MAX_EVENTS]; /* Poll events */
     unsigned int i, nevents;
     hg_return_t ret;
     hg_bool_t progressed = HG_FALSE;
     int rc;
 
     rc = hg_poll_wait(context->poll_set, timeout_ms, HG_CORE_MAX_EVENTS,
-        context->poll_events, &nevents);
+        poll_events, &nevents);
 
     /* No longer need to notify when we're not waiting */
     hg_atomic_set32(&context->loopback_notify.must_notify, 0);
@@ -5025,7 +5025,7 @@ hg_core_poll_wait(struct hg_core_private_context *context,
     HG_CHECK_SUBSYS_ERROR(poll, rc != HG_UTIL_SUCCESS, error, ret,
         HG_PROTOCOL_ERROR, "hg_poll_wait() failed");
 
-    if (nevents == 1 && (context->poll_events[0].events & HG_POLLINTR)) {
+    if (nevents == 1 && (poll_events[0].events & HG_POLLINTR)) {
         HG_LOG_SUBSYS_DEBUG(poll_loop, "Interrupted");
         *progressed_p = HG_FALSE;
         return HG_SUCCESS;
@@ -5035,7 +5035,7 @@ hg_core_poll_wait(struct hg_core_private_context *context,
     for (i = 0; i < nevents; i++) {
         hg_bool_t progressed_event = HG_FALSE;
 
-        switch (context->poll_events[i].data.u32) {
+        switch (poll_events[i].data.u32) {
             case HG_CORE_POLL_LOOPBACK:
                 HG_LOG_SUBSYS_DEBUG(poll_loop, "HG_CORE_POLL_LOOPBACK event");
                 ret = hg_core_progress_loopback_notify(
@@ -5068,7 +5068,7 @@ hg_core_poll_wait(struct hg_core_private_context *context,
             default:
                 HG_GOTO_SUBSYS_ERROR(poll, error, ret, HG_INVALID_ARG,
                     "Invalid type of poll event (%d)",
-                    (int) context->poll_events[i].data.u32);
+                    (int) poll_events[i].data.u32);
         }
         progressed |= progressed_event;
     }
