@@ -10,7 +10,7 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
 fi
 #OFI_PR=
-OFI_VERSION=1.18.1
+OFI_VERSION=1.19.0rc1
 
 # UCX
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
@@ -53,7 +53,7 @@ cd bmi-${BMI_VERSION} && ./prepare && ./configure --enable-shared --disable-stat
 
 # OFI
 if [ -z "$OFI_PR" ]; then
-  cd $HOME && wget https://github.com/ofiwg/libfabric/releases/download/v${OFI_VERSION}/libfabric-${OFI_VERSION}.tar.bz2
+  cd $HOME && wget https://github.com/ofiwg/libfabric/releases/download/v1.19.0.rc1/libfabric-${OFI_VERSION}.tar.bz2
   tar -xjf libfabric-${OFI_VERSION}.tar.bz2;
   cd libfabric-${OFI_VERSION};
   #wget https://github.com/ofiwg/libfabric/pull/6509.patch
