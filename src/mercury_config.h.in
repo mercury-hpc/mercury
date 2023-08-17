@@ -89,6 +89,9 @@ typedef hg_uint8_t hg_bool_t;
 /* Checksums */
 #cmakedefine HG_HAS_CHECKSUMS
 
+/* Multi-progress */
+#cmakedefine HG_HAS_MULTI_PROGRESS
+
 /* XDR */
 #cmakedefine HG_HAS_XDR
 

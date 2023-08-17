@@ -56,6 +56,9 @@
 #define HG_CORE_MAX_EVENTS        (1)
 #define HG_CORE_MAX_TRIGGER_COUNT (1)
 
+/* 32-bit lock value for serial progress */
+#define HG_CORE_PROGRESS_LOCK (0x80000000)
+
 #ifdef NA_HAS_SM
 /* Addr string format */
 #    define HG_CORE_ADDR_MAX_SIZE      (256)
@@ -247,9 +250,21 @@ struct hg_core_handle_pool {
     hg_bool_t extending;                     /* When extending the pool */
 };
 
+#ifdef HG_HAS_MULTI_PROGRESS
+/* Ensure thread safety when progressing context from multiple threads */
+struct hg_core_progress_multi {
+    hg_thread_cond_t cond;   /* Cond */
+    hg_thread_mutex_t mutex; /* Mutex */
+    hg_atomic_int32_t count; /* Count */
+};
+#endif
+
 /* HG context */
 struct hg_core_private_context {
     struct hg_core_context core_context; /* Must remain as first field */
+#ifdef HG_HAS_MULTI_PROGRESS
+    struct hg_core_progress_multi progress_multi; /* Progress multi */
+#endif
     struct hg_core_completion_queue backfill_queue; /* Backfill queue */
     struct hg_atomic_queue *completion_queue;       /* Default queue */
     struct hg_core_loopback_notify loopback_notify; /* Loopback notification */
@@ -1404,6 +1419,10 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
               loopback_notify_mutex_init = HG_FALSE,
               user_list_lock_init = HG_FALSE,
               internal_list_lock_init = HG_FALSE;
+#ifdef HG_HAS_MULTI_PROGRESS
+    struct hg_core_progress_multi *progress_multi = NULL;
+    bool progress_multi_mutex_init = false, progress_multi_cond_init = false;
+#endif
 
     context = (struct hg_core_private_context *) calloc(1, sizeof(*context));
     HG_CHECK_SUBSYS_ERROR(ctx, context == NULL, error, ret, HG_NOMEM,
@@ -1448,6 +1467,21 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
     internal_list_lock_init = HG_TRUE;
+
+#ifdef HG_HAS_MULTI_PROGRESS
+    /* Initialize multi-progress lock */
+    progress_multi = &context->progress_multi;
+    hg_atomic_init32(&progress_multi->count, 0);
+    rc = hg_thread_mutex_init(&progress_multi->mutex);
+    HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
+        "hg_thread_mutex_init() failed");
+    progress_multi_mutex_init = true;
+
+    rc = hg_thread_cond_init(&progress_multi->cond);
+    HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
+        "hg_thread_cond_init() failed");
+    progress_multi_cond_init = true;
+#endif
 
     /* Create NA context */
     context->core_context.na_context =
@@ -1592,6 +1626,12 @@ error:
             (void) hg_thread_spin_destroy(&context->user_list.lock);
         if (internal_list_lock_init)
             (void) hg_thread_spin_destroy(&context->internal_list.lock);
+#ifdef HG_HAS_MULTI_PROGRESS
+        if (progress_multi_mutex_init)
+            (void) hg_thread_mutex_destroy(&progress_multi->mutex);
+        if (progress_multi_cond_init)
+            (void) hg_thread_cond_destroy(&progress_multi->cond);
+#endif
         hg_atomic_queue_free(context->completion_queue);
         free(context);
     }
@@ -1604,6 +1644,9 @@ static hg_return_t
 hg_core_context_destroy(struct hg_core_private_context *context)
 {
     struct hg_core_private_class *hg_core_class = NULL;
+#ifdef HG_HAS_MULTI_PROGRESS
+    struct hg_core_progress_multi *progress_multi = NULL;
+#endif
     struct hg_core_completion_queue *backfill_queue = NULL;
     hg_bool_t empty;
     hg_return_t ret;
@@ -1614,6 +1657,12 @@ hg_core_context_destroy(struct hg_core_private_context *context)
 
     /* Keep reference to class */
     hg_core_class = HG_CORE_CONTEXT_CLASS(context);
+#ifdef HG_HAS_MULTI_PROGRESS
+    /* Check that we are no longer progressing */
+    progress_multi = &context->progress_multi;
+    HG_CHECK_SUBSYS_ERROR(ctx, hg_atomic_get32(&progress_multi->count) > 0,
+        error, ret, HG_BUSY, "Still progressing on context");
+#endif
 
     if (context->posted) {
         /* Unpost requests */
@@ -1731,6 +1780,10 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     (void) hg_thread_mutex_destroy(&context->loopback_notify.mutex);
     (void) hg_thread_spin_destroy(&context->user_list.lock);
     (void) hg_thread_spin_destroy(&context->internal_list.lock);
+#ifdef HG_HAS_MULTI_PROGRESS
+    (void) hg_thread_mutex_destroy(&progress_multi->mutex);
+    (void) hg_thread_cond_destroy(&progress_multi->cond);
+#endif
 
     hg_atomic_queue_free(context->completion_queue);
     free(context);
@@ -6414,6 +6467,85 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_MULTI_PROGRESS
+hg_return_t
+HG_Core_progress(hg_core_context_t *context, unsigned int timeout_ms)
+{
+    struct hg_core_private_context *hg_core_private_context =
+        (struct hg_core_private_context *) context;
+    struct hg_core_progress_multi *progress_multi = NULL;
+    double remaining =
+        timeout_ms / 1000.0; /* Convert timeout in ms into seconds */
+    int32_t old, num;
+    hg_return_t ret = HG_TIMEOUT;
+
+    HG_CHECK_SUBSYS_ERROR(poll, context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+    progress_multi = &hg_core_private_context->progress_multi;
+
+    hg_atomic_incr32(&progress_multi->count);
+    for (;;) {
+        hg_time_t t1, t2;
+
+        old = hg_atomic_get32(&progress_multi->count) &
+              (int32_t) ~HG_CORE_PROGRESS_LOCK;
+        num = old | (int32_t) HG_CORE_PROGRESS_LOCK;
+        if (hg_atomic_cas32(&progress_multi->count, old, num))
+            break; /* No other thread is progressing */
+
+        /* Timeout is 0 so leave */
+        if (remaining <= 0) {
+            hg_atomic_decr32(&progress_multi->count);
+            goto done;
+        }
+
+        hg_time_get_current_ms(&t1);
+
+        /* Prevent multiple threads from concurrently calling progress on
+         * the same context */
+        hg_thread_mutex_lock(&progress_multi->mutex);
+
+        num = hg_atomic_get32(&progress_multi->count);
+        /* Do not need to enter condition if lock is already released */
+        if (((num & (int32_t) HG_CORE_PROGRESS_LOCK) != 0) &&
+            (hg_thread_cond_timedwait(&progress_multi->cond,
+                 &progress_multi->mutex,
+                 (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS)) {
+            /* Timeout occurred so leave */
+            hg_atomic_decr32(&progress_multi->count);
+            hg_thread_mutex_unlock(&progress_multi->mutex);
+            goto done;
+        }
+
+        hg_thread_mutex_unlock(&progress_multi->mutex);
+
+        hg_time_get_current_ms(&t2);
+        remaining -= hg_time_diff(t2, t1);
+        /* Give a chance to call progress with timeout of 0 */
+        if (remaining < 0)
+            remaining = 0;
+    }
+
+    /* Make progress on the HG layer */
+    ret = hg_core_progress(
+        hg_core_private_context, (unsigned int) (remaining * 1000.0));
+
+    do {
+        old = hg_atomic_get32(&progress_multi->count);
+        num = (old - 1) ^ (int32_t) HG_CORE_PROGRESS_LOCK;
+    } while (!hg_atomic_cas32(&progress_multi->count, old, num));
+
+    if (num > 0) {
+        /* If there is another processes entered in progress, signal it */
+        hg_thread_mutex_lock(&progress_multi->mutex);
+        hg_thread_cond_signal(&progress_multi->cond);
+        hg_thread_mutex_unlock(&progress_multi->mutex);
+    }
+
+done:
+    return ret;
+}
+#else
 hg_return_t
 HG_Core_progress(hg_core_context_t *context, unsigned int timeout)
 {
@@ -6430,6 +6562,7 @@ HG_Core_progress(hg_core_context_t *context, unsigned int timeout)
 done:
     return ret;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
