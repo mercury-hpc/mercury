@@ -42,7 +42,7 @@ if [[ ${CC} == 'icc' ]]; then
 fi
 
 # BMI
-cd $HOME && wget https://github.com/radix-io/bmi/archive/refs/tags/v${BMI_VERSION}.tar.gz -O bmi-${BMI_VERSION}.tar.gz;
+cd $HOME && wget --secure-protocol=TLSv1_2 https://github.com/radix-io/bmi/archive/refs/tags/v${BMI_VERSION}.tar.gz -O bmi-${BMI_VERSION}.tar.gz;
 tar -xzf bmi-${BMI_VERSION}.tar.gz;
 cd bmi-${BMI_VERSION} && ./prepare && ./configure --enable-shared --disable-static --enable-bmi-only --prefix=$PREFIX && make -j2 -s && make install;
 
@@ -53,7 +53,7 @@ cd bmi-${BMI_VERSION} && ./prepare && ./configure --enable-shared --disable-stat
 
 # OFI
 if [ -z "$OFI_PR" ]; then
-  cd $HOME && wget https://github.com/ofiwg/libfabric/releases/download/v${OFI_VERSION}/libfabric-${OFI_VERSION}.tar.bz2
+  cd $HOME && wget --secure-protocol=TLSv1_2 https://github.com/ofiwg/libfabric/releases/download/v${OFI_VERSION}/libfabric-${OFI_VERSION}.tar.bz2
   tar -xjf libfabric-${OFI_VERSION}.tar.bz2;
   cd libfabric-${OFI_VERSION};
   #wget https://github.com/ofiwg/libfabric/pull/6509.patch
@@ -70,7 +70,7 @@ fi
 
 if [[ ${RUNNER_OS} == 'Linux' ]]; then
   # UCX
-  cd $HOME && wget https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}/ucx-${UCX_VERSION}.tar.gz
+  cd $HOME && wget --secure-protocol=TLSv1_2 https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}/ucx-${UCX_VERSION}.tar.gz
   tar -xzf ucx-${UCX_VERSION}.tar.gz;
   cd ucx-${UCX_VERSION};
   ./configure --prefix=$PREFIX --enable-profiling --enable-frame-pointer --enable-stats --enable-memtrack --enable-fault-injection --enable-mt --disable-numa --without-java --without-go --disable-silent-rules ${UCX_EXTRA_FLAGS} CC="${CC}" CXX="${CXX}" CFLAGS="${UCX_CFLAGS}" && make -j2 -s && make install;
