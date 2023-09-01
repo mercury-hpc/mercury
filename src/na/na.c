@@ -690,11 +690,13 @@ NA_Get_protocol_info(
 
     *na_protocol_info_p = na_protocol_info;
 
+    free(class_name);
     na_info_free(na_info);
 
     return NA_SUCCESS;
 
 error:
+    free(class_name);
     na_info_free(na_info);
     while (na_protocol_info != NULL) {
         struct na_protocol_info *tmp = na_protocol_info;
