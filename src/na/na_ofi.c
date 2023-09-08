@@ -1100,7 +1100,8 @@ na_ofi_gni_get_domain_op_value(
  */
 static na_return_t
 na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
-    union na_ofi_auth_key *auth_key, size_t *auth_key_size_p);
+    const char *domain_name, union na_ofi_auth_key *auth_key,
+    size_t *auth_key_size_p);
 
 /**
  * Parse GNI auth key.
@@ -1113,8 +1114,20 @@ na_ofi_parse_gni_auth_key(
  * Parse CXI auth key.
  */
 static na_return_t
-na_ofi_parse_cxi_auth_key(
-    const char *str, struct cxi_auth_key *auth_key, size_t *auth_key_size_p);
+na_ofi_parse_cxi_auth_key(const char *str, const char *domain_name,
+    struct cxi_auth_key *auth_key, size_t *auth_key_size_p);
+
+/**
+ * Find CXI svc_id.
+ */
+static na_return_t
+na_ofi_cxi_find_svc_id(const char *domain_name, uint32_t *svc_id_p);
+
+/**
+ * Find CXI vni.
+ */
+static na_return_t
+na_ofi_cxi_find_vni(int idx, uint16_t *vni_p);
 
 /**
  * Open domain.
@@ -3951,7 +3964,8 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
-    union na_ofi_auth_key *auth_key, size_t *auth_key_size_p)
+    const char *domain_name, union na_ofi_auth_key *auth_key,
+    size_t *auth_key_size_p)
 {
     switch (prov_type) {
         case NA_OFI_PROV_GNI:
@@ -3959,7 +3973,7 @@ na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
                 str, &auth_key->gni_auth_key, auth_key_size_p);
         case NA_OFI_PROV_CXI:
             return na_ofi_parse_cxi_auth_key(
-                str, &auth_key->cxi_auth_key, auth_key_size_p);
+                str, domain_name, &auth_key->cxi_auth_key, auth_key_size_p);
         case NA_OFI_PROV_NULL:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
@@ -3968,8 +3982,9 @@ na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
         case NA_OFI_PROV_OPX:
         case NA_OFI_PROV_VERBS_RXM:
         default:
-            NA_LOG_SUBSYS_ERROR(
-                fatal, "Unsupported auth key for this provider: %d", prov_type);
+            NA_LOG_SUBSYS_ERROR(fatal,
+                "auth_key not supported for this provider: %s",
+                na_ofi_prov_name[prov_type]);
             return NA_PROTONOSUPPORT;
     }
 }
@@ -3999,20 +4014,108 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_parse_cxi_auth_key(
-    const char *str, struct cxi_auth_key *auth_key, size_t *auth_key_size_p)
+na_ofi_parse_cxi_auth_key(const char *str, const char *domain_name,
+    struct cxi_auth_key *auth_key, size_t *auth_key_size_p)
 {
     na_return_t ret;
-    int rc;
+    int rc, idx = 1; /* default VNI index is 1 if not specified */
 
     memset(auth_key, 0, sizeof(*auth_key));
 
     /* Keep CXI auth key using the following format svc_id:vni */
-    rc = sscanf(str, "%" SCNu32 ":%" SCNu16, &auth_key->svc_id, &auth_key->vni);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != 2, error, ret, NA_PROTONOSUPPORT,
+    rc = sscanf(str, "%" SCNu32 ":%" SCNu16 ":%d", &auth_key->svc_id,
+        &auth_key->vni, &idx);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 2 && rc != 3, error, ret,
+        NA_PROTONOSUPPORT,
         "Invalid CXI auth key string (%s), format is \"svc_id:vni\"", str);
 
+    /* If zeros are passed for auth_key, try to find the missing bits */
+    if (auth_key->svc_id == 0) {
+        ret = na_ofi_cxi_find_svc_id(domain_name, &auth_key->svc_id);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not find CXI svc_id");
+    }
+    if (auth_key->vni == 0) {
+        ret = na_ofi_cxi_find_vni(idx, &auth_key->vni);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not find CXI vni");
+    }
+    NA_LOG_SUBSYS_DEBUG(
+        cls, "auth_key=%" PRIu32 ":%" PRIu16, auth_key->svc_id, auth_key->vni);
+
     *auth_key_size_p = sizeof(*auth_key);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cxi_find_svc_id(const char *domain_name, uint32_t *svc_id_p)
+{
+    char *device_name = getenv("SLINGSHOT_DEVICES"), *device_next;
+    char *svc_id = getenv("SLINGSHOT_SVC_IDS"), *svc_id_next;
+    int device_idx = 0, svc_id_idx = 0, rc;
+    na_return_t ret;
+
+    NA_CHECK_SUBSYS_ERROR(cls, device_name == NULL, error, ret, NA_NOENTRY,
+        "SLINGSHOT_DEVICES is not set");
+    while (strtok_r(device_name, ",", &device_next) != NULL) {
+        if (strcmp(device_name, domain_name) == 0)
+            break;
+        device_name = device_next;
+        device_idx++;
+    }
+    NA_CHECK_SUBSYS_ERROR(cls, device_name[0] == '\0', error, ret,
+        NA_PROTOCOL_ERROR, "No device found for domain name %s", domain_name);
+    NA_LOG_SUBSYS_DEBUG(
+        cls, "Found device name %s, idx=%d", device_name, device_idx);
+
+    NA_CHECK_SUBSYS_ERROR(cls, svc_id == NULL, error, ret, NA_NOENTRY,
+        "SLINGSHOT_SVC_IDS is not set");
+    while (strtok_r(svc_id, ",", &svc_id_next) != NULL) {
+        if (svc_id_idx == device_idx)
+            break;
+        svc_id = svc_id_next;
+        svc_id_idx++;
+    }
+    NA_CHECK_SUBSYS_ERROR(cls, svc_id_idx != device_idx, error, ret,
+        NA_PROTOCOL_ERROR, "No svc_id found for domain name %s", domain_name);
+    NA_LOG_SUBSYS_DEBUG(cls, "Found svc_id %s, idx=%d", svc_id, svc_id_idx);
+
+    rc = sscanf(svc_id, "%" SCNu32, svc_id_p);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Invalid CXI svc_id (%s)", svc_id);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_cxi_find_vni(int idx, uint16_t *vni_p)
+{
+    char *vni = getenv("SLINGSHOT_VNIS"), *vni_next;
+    int vni_idx = 0, rc;
+    na_return_t ret;
+
+    NA_CHECK_SUBSYS_ERROR(
+        cls, vni == NULL, error, ret, NA_NOENTRY, "SLINGSHOT_VNIS is not set");
+    while (strtok_r(vni, ",", &vni_next) != NULL) {
+        if (vni_idx == idx)
+            break;
+        vni = vni_next;
+        vni_idx++;
+    }
+    NA_CHECK_SUBSYS_ERROR(cls, vni_idx != idx, error, ret, NA_PROTOCOL_ERROR,
+        "No VNI found for idx %d", idx);
+    NA_LOG_SUBSYS_DEBUG(cls, "Found vni %s, idx=%d", vni, vni_idx);
+
+    rc = sscanf(vni, "%" SCNu16, vni_p);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Invalid CXI vni (%s)", vni);
 
     return NA_SUCCESS;
 
@@ -4080,7 +4183,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     /* Auth key */
     if (auth_key && auth_key[0] != '\0') {
         ret = na_ofi_parse_auth_key(auth_key, na_ofi_fabric->prov_type,
-            &na_ofi_domain->auth_key, &domain_attr->auth_key_size);
+            na_ofi_domain->name, &na_ofi_domain->auth_key,
+            &domain_attr->auth_key_size);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse auth key");
 
         domain_attr->auth_key = (void *) &na_ofi_domain->auth_key;
