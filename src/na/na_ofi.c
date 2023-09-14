@@ -781,6 +781,7 @@ struct na_ofi_class {
     unsigned int op_retry_period;  /* Time elapsed until next retry */
     uint8_t context_max;           /* Max number of contexts   */
     bool no_wait;                  /* Ignore wait object       */
+    bool use_sep;                  /* Use scalable endpoints */
     bool finalizing;               /* Class being destroyed    */
 };
 
@@ -843,12 +844,6 @@ na_ofi_prov_addr_format(
  */
 static NA_INLINE size_t
 na_ofi_prov_addr_size(int addr_format);
-
-/**
- * Uses Scalable endpoints (SEP).
- */
-static NA_INLINE bool
-na_ofi_with_sep(const struct na_ofi_class *na_ofi_class);
 
 /**
  * Get provider type encoded in string.
@@ -1126,8 +1121,8 @@ na_ofi_parse_cxi_auth_key(
  */
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, bool no_wait, bool shared, struct fi_info *fi_info,
-    struct na_ofi_domain **na_ofi_domain_p);
+    const char *auth_key, bool no_wait, bool sep, bool shared,
+    struct fi_info *fi_info, struct na_ofi_domain **na_ofi_domain_p);
 
 /**
  * Close domain.
@@ -1140,7 +1135,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
  */
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, bool no_wait,
+    const struct na_ofi_domain *na_ofi_domain, bool no_wait, bool sep,
     uint8_t max_contexts, size_t unexpected_msg_size_max,
     size_t expected_msg_size_max, struct fi_info *fi_info,
     struct na_ofi_endpoint **na_ofi_endpoint_p);
@@ -2146,14 +2141,6 @@ na_ofi_prov_addr_size(int addr_format)
             NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
             return 0;
     }
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE bool
-na_ofi_with_sep(const struct na_ofi_class *na_ofi_class)
-{
-    return (na_ofi_prov_flags[na_ofi_class->fabric->prov_type] & NA_OFI_SEP) &&
-           (na_ofi_class->context_max > 1);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4036,8 +4023,8 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, bool no_wait, bool shared, struct fi_info *fi_info,
-    struct na_ofi_domain **na_ofi_domain_p)
+    const char *auth_key, bool no_wait, bool sep, bool shared,
+    struct fi_info *fi_info, struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
     struct fi_domain_attr *domain_attr = fi_info->domain_attr;
@@ -4171,7 +4158,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
 
     /* Open fi address vector */
     av_attr.type = FI_AV_MAP;
-    av_attr.rx_ctx_bits = NA_OFI_SEP_RX_CTX_BITS;
+    if (sep)
+        av_attr.rx_ctx_bits = NA_OFI_SEP_RX_CTX_BITS;
     rc = fi_av_open(
         na_ofi_domain->fi_domain, &av_attr, &na_ofi_domain->fi_av, NULL);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
@@ -4317,7 +4305,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const struct na_ofi_domain *na_ofi_domain, bool no_wait,
+    const struct na_ofi_domain *na_ofi_domain, bool no_wait, bool sep,
     uint8_t max_contexts, size_t unexpected_msg_size_max,
     size_t expected_msg_size_max, struct fi_info *fi_info,
     struct na_ofi_endpoint **na_ofi_endpoint_p)
@@ -4361,8 +4349,7 @@ na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
         "Msg size max (%zu) larger than provider max (%zu)",
         na_ofi_endpoint->expected_msg_size_max, fi_info->ep_attr->max_msg_size);
 
-    if ((na_ofi_prov_flags[na_ofi_fabric->prov_type] & NA_OFI_SEP) &&
-        max_contexts > 1) {
+    if (sep) {
         ret = na_ofi_sep_open(
             na_ofi_domain, fi_info, max_contexts, na_ofi_endpoint);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_sep_open() failed");
@@ -5433,8 +5420,10 @@ na_ofi_rma_common(struct na_ofi_class *na_ofi_class, na_context_t *context,
         remote_key, remote_iov_start_index, remote_iov_start_offset, length,
         rma_info->remote_iov, rma_info->remote_iovcnt);
 
-    rma_info->fi_addr =
-        fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS);
+    rma_info->fi_addr = na_ofi_class->use_sep
+                            ? fi_rx_addr(na_ofi_addr->fi_addr, remote_id,
+                                  NA_OFI_SEP_RX_CTX_BITS)
+                            : na_ofi_addr->fi_addr;
 
     /* Post the OFI RMA operation */
     ret =
@@ -6848,8 +6837,9 @@ na_ofi_initialize(
     /* Open domain */
     no_wait = na_init_info.progress_mode & NA_NO_BLOCK;
     ret = na_ofi_domain_open(na_ofi_class->fabric, na_init_info.auth_key,
-        no_wait, na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED,
-        na_ofi_class->fi_info, &na_ofi_class->domain);
+        no_wait, na_ofi_prov_flags[prov_type] & NA_OFI_SEP,
+        na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED, na_ofi_class->fi_info,
+        &na_ofi_class->domain);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
         "Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
         na_ofi_class->fi_info->domain_attr->name);
@@ -6869,9 +6859,13 @@ na_ofi_initialize(
         na_init_info.max_contexts, na_ofi_class->domain->context_max);
     na_ofi_class->context_max = na_init_info.max_contexts;
 
+    /* Use SEP */
+    na_ofi_class->use_sep = (na_ofi_prov_flags[prov_type] & NA_OFI_SEP) &&
+                            (na_ofi_class->context_max > 1);
+
     /* Create endpoint */
     ret = na_ofi_endpoint_open(na_ofi_class->fabric, na_ofi_class->domain,
-        na_ofi_class->no_wait, na_ofi_class->context_max,
+        na_ofi_class->no_wait, na_ofi_class->use_sep, na_ofi_class->context_max,
         na_init_info.max_unexpected_size, na_init_info.max_expected_size,
         na_ofi_class->fi_info, &na_ofi_class->endpoint);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create endpoint");
@@ -6988,7 +6982,7 @@ na_ofi_context_create(na_class_t *na_class, void **context_p, uint8_t id)
     na_ofi_context->idx = id;
 
     /* If not using SEP, just point to class' endpoint */
-    if (!na_ofi_with_sep(na_ofi_class)) {
+    if (!na_ofi_class->use_sep) {
         na_ofi_context->fi_tx = na_ofi_class->endpoint->fi_ep;
         na_ofi_context->fi_rx = na_ofi_class->endpoint->fi_ep;
         na_ofi_context->eq = na_ofi_class->endpoint->eq;
@@ -7052,7 +7046,7 @@ na_ofi_context_create(na_class_t *na_class, void **context_p, uint8_t id)
 
 error:
     if (na_ofi_context) {
-        if (na_ofi_with_sep(na_ofi_class)) {
+        if (na_ofi_class->use_sep) {
             if (na_ofi_context->fi_tx)
                 (void) fi_close(&na_ofi_context->fi_tx->fid);
             if (na_ofi_context->fi_rx)
@@ -7074,7 +7068,7 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    if (na_ofi_with_sep(na_ofi_class)) {
+    if (na_ofi_class->use_sep) {
         bool empty;
 
         /* Check that retry op queue is empty */
@@ -7547,8 +7541,9 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
     na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.const_ptr = buf,
         .buf_size = buf_size,
-        .fi_addr =
-            fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS),
+        .fi_addr = na_ofi_class->use_sep ? fi_rx_addr(na_ofi_addr->fi_addr,
+                                               dest_id, NA_OFI_SEP_RX_CTX_BITS)
+                                         : na_ofi_addr->fi_addr,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
         .tag = (uint64_t) tag | NA_OFI_UNEXPECTED_TAG};
 
@@ -7725,8 +7720,9 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
     na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.const_ptr = buf,
         .buf_size = buf_size,
-        .fi_addr =
-            fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS),
+        .fi_addr = na_ofi_class->use_sep ? fi_rx_addr(na_ofi_addr->fi_addr,
+                                               dest_id, NA_OFI_SEP_RX_CTX_BITS)
+                                         : na_ofi_addr->fi_addr,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
         .tag = tag};
 
@@ -7783,8 +7779,10 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
     na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.ptr = buf,
         .buf_size = buf_size,
-        .fi_addr =
-            fi_rx_addr(na_ofi_addr->fi_addr, source_id, NA_OFI_SEP_RX_CTX_BITS),
+        .fi_addr = na_ofi_class->use_sep
+                       ? fi_rx_addr(na_ofi_addr->fi_addr, source_id,
+                             NA_OFI_SEP_RX_CTX_BITS)
+                       : na_ofi_addr->fi_addr,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
         .tag = tag};
 
