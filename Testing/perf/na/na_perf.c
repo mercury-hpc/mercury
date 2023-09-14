@@ -251,7 +251,7 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
         "hg_mem_aligned_alloc(%zu, %zu) failed", page_size, info->rma_size_max);
     memset(info->rma_buf, 0, info->rma_size_max * info->rma_count);
 
-    if (!info->na_test_info.force_register && !listen) {
+    if (!info->na_test_info.force_register || listen) {
         ret = NA_Mem_handle_create(info->na_class, info->rma_buf,
             info->rma_size_max * info->rma_count, NA_MEM_READWRITE,
             &info->local_handle);
