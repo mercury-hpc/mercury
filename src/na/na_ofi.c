@@ -3186,6 +3186,10 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
         NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT;
 
     if (prov_type != NA_OFI_PROV_NULL) {
+        /* Temporarily disable FI_MR_PROV_KEY */
+        if (prov_type == NA_OFI_PROV_CXI)
+            hints->domain_attr->mr_mode &= ~FI_MR_PROV_KEY;
+
         /* Filter out providers within libfabric using provider name */
         hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
         NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL,
