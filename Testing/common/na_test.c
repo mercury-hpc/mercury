@@ -53,6 +53,9 @@ na_test_parse_options(
 static size_t
 na_test_parse_size(const char *str);
 
+static enum na_traffic_class
+na_test_tclass(const char *str);
+
 static char *
 na_test_gen_config(struct na_test_info *na_test_info, unsigned int i);
 
@@ -95,6 +98,7 @@ na_test_usage(const char *execname)
            "                         Default: any\n");
     printf("    -S, --self_send      Send to self\n");
     printf("    -k, --key            Pass auth key\n");
+    printf("    -T, --tclass         Traffic class to use\n");
     printf("    -l, --loop           Number of loops (default: 1)\n");
     printf("    -b, --busy           Busy wait\n");
     printf("    -y  --buf_size_min   Min buffer size (in bytes)\n");
@@ -203,6 +207,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'f': /* hostfile */
                 na_test_info->hostfile = strdup(na_test_opt_arg_g);
                 break;
+            case 'T': /* tclass */
+                na_test_info->tclass = strdup(na_test_opt_arg_g);
+                break;
             default:
                 break;
         }
@@ -243,6 +250,30 @@ na_test_parse_size(const char *str)
         return size;
     else
         return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static enum na_traffic_class
+na_test_tclass(const char *str)
+{
+    if (strcmp(str, "best_effort") == 0)
+        return NA_TC_BEST_EFFORT;
+    else if (strcmp(str, "low_latency") == 0)
+        return NA_TC_LOW_LATENCY;
+    else if (strcmp(str, "bulk_data") == 0)
+        return NA_TC_BULK_DATA;
+    else if (strcmp(str, "dedicated_access") == 0)
+        return NA_TC_DEDICATED_ACCESS;
+    else if (strcmp(str, "scavenger") == 0)
+        return NA_TC_SCAVENGER;
+    else if (strcmp(str, "network_ctrl") == 0)
+        return NA_TC_NETWORK_CTRL;
+    else {
+        fprintf(stderr,
+            "Traffic class does not match: best_effort, low_latency, "
+            "bulk_data, dedicated_access, scavenger, network_ctrl\n");
+        return NA_TC_UNSPEC;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -480,6 +511,13 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     na_init_info.max_expected_size = (size_t) na_test_info->max_msg_size;
     na_init_info.thread_mode =
         na_test_info->use_threads ? 0 : NA_THREAD_MODE_SINGLE;
+    if (na_test_info->tclass != NULL) {
+        na_init_info.traffic_class = na_test_tclass(na_test_info->tclass);
+        NA_TEST_CHECK_ERROR(na_init_info.traffic_class == NA_TC_UNSPEC, error,
+            ret, NA_PROTONOSUPPORT, "Unsupported traffic class");
+        if (na_test_info->mpi_info.rank == 0)
+            printf("# Using traffic class: %s\n", na_test_info->tclass);
+    }
 
     na_test_info->na_classes = (na_class_t **) malloc(
         sizeof(na_class_t *) * na_test_info->max_classes);
@@ -648,6 +686,10 @@ NA_Test_finalize(struct na_test_info *na_test_info)
     if (na_test_info->hostfile != NULL) {
         free(na_test_info->hostfile);
         na_test_info->hostfile = NULL;
+    }
+    if (na_test_info->tclass != NULL) {
+        free(na_test_info->tclass);
+        na_test_info->tclass = NULL;
     }
 
     na_test_mpi_finalize(&na_test_info->mpi_info);

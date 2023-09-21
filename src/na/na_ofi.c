@@ -854,6 +854,12 @@ static NA_INLINE enum na_ofi_prov_type
 na_ofi_prov_name_to_type(const char *prov_name);
 
 /**
+ * Convert NA traffic class to tclass.
+ */
+static NA_INLINE uint32_t
+na_ofi_tclass(enum na_traffic_class traffic_class);
+
+/**
  * Determine addr format to use based on preferences.
  */
 static NA_INLINE int
@@ -1176,8 +1182,9 @@ na_ofi_cxi_find_vni(int idx, uint16_t *vni_p);
  */
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, bool no_wait, bool sep, bool shared,
-    struct fi_info *fi_info, struct na_ofi_domain **na_ofi_domain_p);
+    const char *auth_key, enum na_traffic_class traffic_class, bool no_wait,
+    bool sep, bool shared, struct fi_info *fi_info,
+    struct na_ofi_domain **na_ofi_domain_p);
 
 /**
  * Close domain.
@@ -2147,6 +2154,31 @@ na_ofi_prov_name_to_type(const char *prov_name)
     }
 
     return ((i == NA_OFI_PROV_MAX) ? NA_OFI_PROV_NULL : i);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE uint32_t
+na_ofi_tclass(enum na_traffic_class traffic_class)
+{
+    switch (traffic_class) {
+        case NA_TC_BEST_EFFORT:
+            return FI_TC_BEST_EFFORT;
+        case NA_TC_LOW_LATENCY:
+            return FI_TC_LOW_LATENCY;
+        case NA_TC_BULK_DATA:
+            return FI_TC_BULK_DATA;
+        case NA_TC_DEDICATED_ACCESS:
+            return FI_TC_DEDICATED_ACCESS;
+        case NA_TC_SCAVENGER:
+            return FI_TC_SCAVENGER;
+        case NA_TC_NETWORK_CTRL:
+            return FI_TC_NETWORK_CTRL;
+        case NA_TC_UNSPEC:
+            return FI_TC_UNSPEC;
+        default:
+            NA_LOG_SUBSYS_ERROR(fatal, "Unsupported traffic class");
+            return FI_TC_UNSPEC;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4313,8 +4345,9 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, bool no_wait, bool sep, bool shared,
-    struct fi_info *fi_info, struct na_ofi_domain **na_ofi_domain_p)
+    const char *auth_key, enum na_traffic_class traffic_class, bool no_wait,
+    bool sep, bool shared, struct fi_info *fi_info,
+    struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
     struct fi_domain_attr *domain_attr = fi_info->domain_attr;
@@ -4376,6 +4409,10 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
 
         domain_attr->auth_key = (void *) &na_ofi_domain->auth_key;
     }
+
+    /* Traffic class */
+    if (traffic_class != NA_TC_UNSPEC)
+        domain_attr->tclass = na_ofi_tclass(traffic_class);
 
     /* Force manual progress if no wait set or do not support
      * FI_WAIT_FD/FI_WAIT_SET. */
@@ -6817,7 +6854,6 @@ static na_return_t
 na_ofi_get_protocol_info(
     const struct na_info *na_info, struct na_protocol_info **na_protocol_info_p)
 {
-    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     struct fi_info *prov, *providers = NULL;
     struct na_ofi_info info = NA_OFI_INFO_INITIALIZER;
     struct na_protocol_info *head = NULL, *prev = NULL;
@@ -6826,9 +6862,7 @@ na_ofi_get_protocol_info(
     na_return_t ret;
 
     if (na_info != NULL) {
-        /* Get init info and overwrite defaults */
-        if (na_info->na_init_info != NULL)
-            na_init_info = *na_info->na_init_info;
+        const struct na_init_info *na_init_info = &na_info->na_init_info;
 
         if (na_info->protocol_name != NULL) {
             prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
@@ -6837,7 +6871,7 @@ na_ofi_get_protocol_info(
                 na_info->protocol_name);
 
             info.addr_format =
-                na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
+                na_ofi_prov_addr_format(prov_type, na_init_info->addr_format);
             NA_CHECK_SUBSYS_ERROR(cls, info.addr_format <= FI_FORMAT_UNSPEC,
                 error, ret, NA_PROTONOSUPPORT, "Unsupported address format");
         }
@@ -6864,7 +6898,7 @@ na_ofi_get_protocol_info(
             (info.addr_format != FI_FORMAT_UNSPEC)
                 ? info.addr_format
                 : na_ofi_prov_addr_format(
-                      verify_info.prov_type, na_init_info.addr_format);
+                      verify_info.prov_type, NA_ADDR_UNSPEC);
 
         if (na_ofi_match_provider(&verify_info, prov)) {
             struct na_protocol_info *entry;
@@ -6974,7 +7008,7 @@ static na_return_t
 na_ofi_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool NA_UNUSED listen)
 {
-    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
+    const struct na_init_info *na_init_info = &na_info->na_init_info;
     struct na_ofi_class *na_ofi_class = NULL;
     enum na_ofi_prov_type prov_type;
     bool no_wait;
@@ -6992,10 +7026,6 @@ na_ofi_initialize(
     NA_LOG_SUBSYS_DEBUG(cls,
         "Entering na_ofi_initialize() protocol_name \"%s\", host_name \"%s\"",
         na_info->protocol_name, na_info->host_name);
-
-    /* Get init info and overwrite defaults */
-    if (na_info->na_init_info)
-        na_init_info = *na_info->na_init_info;
 
     /* Get provider type */
     prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
@@ -7019,18 +7049,18 @@ na_ofi_initialize(
 
     /* Get addr format */
     info.addr_format =
-        na_ofi_prov_addr_format(prov_type, na_init_info.addr_format);
+        na_ofi_prov_addr_format(prov_type, na_init_info->addr_format);
     NA_CHECK_SUBSYS_ERROR(cls, info.addr_format <= FI_FORMAT_UNSPEC, error, ret,
         NA_PROTONOSUPPORT, "Unsupported address format");
 
     /* Use HMEM */
-    if (na_init_info.request_mem_device) {
+    if (na_init_info->request_mem_device) {
         NA_LOG_SUBSYS_DEBUG(cls, "Requesting use of memory devices");
-        info.use_hmem = na_init_info.request_mem_device;
+        info.use_hmem = na_init_info->request_mem_device;
     }
 
     /* Thread mode */
-    info.thread_mode = ((na_init_info.thread_mode & NA_THREAD_MODE_SINGLE) &&
+    info.thread_mode = ((na_init_info->thread_mode & NA_THREAD_MODE_SINGLE) &&
                            !(na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED))
                            ? FI_THREAD_DOMAIN
                            : FI_THREAD_SAFE;
@@ -7101,9 +7131,10 @@ na_ofi_initialize(
         na_ofi_prov_name[prov_type]);
 
     /* Open domain */
-    no_wait = na_init_info.progress_mode & NA_NO_BLOCK;
-    ret = na_ofi_domain_open(na_ofi_class->fabric, na_init_info.auth_key,
-        no_wait, na_ofi_prov_flags[prov_type] & NA_OFI_SEP,
+    no_wait = na_init_info->progress_mode & NA_NO_BLOCK;
+    ret = na_ofi_domain_open(na_ofi_class->fabric, na_init_info->auth_key,
+        na_init_info->traffic_class, no_wait,
+        na_ofi_prov_flags[prov_type] & NA_OFI_SEP,
         na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED, na_ofi_class->fi_info,
         &na_ofi_class->domain);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
@@ -7118,12 +7149,12 @@ na_ofi_initialize(
 
     /* Set context limits */
     NA_CHECK_SUBSYS_ERROR(fatal,
-        na_init_info.max_contexts > na_ofi_class->domain->context_max, error,
+        na_init_info->max_contexts > na_ofi_class->domain->context_max, error,
         ret, NA_INVALID_ARG,
         "Maximum number of requested contexts (%" PRIu8 ") exceeds provider "
         "limitation(%zu)",
-        na_init_info.max_contexts, na_ofi_class->domain->context_max);
-    na_ofi_class->context_max = na_init_info.max_contexts;
+        na_init_info->max_contexts, na_ofi_class->domain->context_max);
+    na_ofi_class->context_max = na_init_info->max_contexts;
 
     /* Use SEP */
     na_ofi_class->use_sep = (na_ofi_prov_flags[prov_type] & NA_OFI_SEP) &&
@@ -7132,7 +7163,7 @@ na_ofi_initialize(
     /* Create endpoint */
     ret = na_ofi_endpoint_open(na_ofi_class->fabric, na_ofi_class->domain,
         na_ofi_class->no_wait, na_ofi_class->use_sep, na_ofi_class->context_max,
-        na_init_info.max_unexpected_size, na_init_info.max_expected_size,
+        na_init_info->max_unexpected_size, na_init_info->max_expected_size,
         na_ofi_class->fi_info, &na_ofi_class->endpoint);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create endpoint");
 

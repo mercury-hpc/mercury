@@ -29,6 +29,7 @@ struct na_test_info {
     bool mpi_static;         /* MPI static comm */
     bool self_send;          /* Self send */
     char *key;               /* Auth key */
+    char *tclass;            /* Traffic class */
     int loop;                /* Number of loops */
     bool busy_wait;          /* Busy wait */
     size_t max_classes;      /* Max classes */

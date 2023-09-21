@@ -14,7 +14,8 @@
 
 int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:d:p:H:P:sSk:l:bC:X:VZ:y:z:w:x:mt:BRvMUf:";
+const char *na_test_short_opt_g =
+    "hc:d:p:H:P:sSk:l:bC:X:VZ:y:z:w:x:mt:BRvMUf:T:";
 /* clang-format off */
 const struct na_test_opt na_test_opt_g[] = {
     {"help", no_arg, 'h'},
@@ -44,6 +45,7 @@ const struct na_test_opt na_test_opt_g[] = {
     {"millionbps", no_arg, 'M'},
     {"no-multi-recv", no_arg, 'U'},
     {"hostfile", require_arg, 'f'},
+    {"tclass", require_arg, 'T'},
     {NULL, 0, '\0'} /* Must add this at the end */
 };
 /* clang-format on */

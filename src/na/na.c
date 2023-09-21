@@ -294,8 +294,9 @@ na_info_parse(
     na_info = (struct na_info *) malloc(sizeof(struct na_info));
     NA_CHECK_SUBSYS_ERROR(cls, na_info == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA info struct");
-    *na_info = (struct na_info){
-        .host_name = NULL, .protocol_name = NULL, .na_init_info = NULL};
+    *na_info = (struct na_info){.host_name = NULL,
+        .protocol_name = NULL,
+        .na_init_info = NA_INIT_INFO_INITIALIZER};
 
     /* Copy info string and work from that */
     input_string = strdup(info_string);
@@ -764,7 +765,13 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
         NA_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
             NA_MAJOR(version), NA_MINOR(version));
 
-        na_info->na_init_info = na_init_info;
+        /* Get init info and overwrite defaults */
+        if (NA_VERSION_GE(version, NA_VERSION(4, 1)))
+            na_info->na_init_info = *na_init_info;
+        else
+            na_init_info_dup_4_0(&na_info->na_init_info,
+                (const struct na_init_info_4_0 *) na_init_info);
+
         na_private_class->na_class.progress_mode = na_init_info->progress_mode;
     }
 

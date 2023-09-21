@@ -17,8 +17,23 @@
 /*************************************/
 
 /* Previous versions of init info to keep compatiblity with older versions */
+struct hg_init_info_2_3 {
+    struct na_init_info_4_0 na_init_info;
+    na_class_t *na_class;
+    hg_uint32_t request_post_init;
+    hg_uint32_t request_post_incr;
+    hg_bool_t auto_sm;
+    const char *sm_info_string;
+    hg_checksum_level_t checksum_level;
+    hg_bool_t no_bulk_eager;
+    hg_bool_t no_loopback;
+    hg_bool_t stats;
+    hg_bool_t no_multi_recv;
+    hg_bool_t release_input_early;
+};
+
 struct hg_init_info_2_2 {
-    struct na_init_info na_init_info;
+    struct na_init_info_4_0 na_init_info;
     na_class_t *na_class;
     hg_uint32_t request_post_init;
     hg_uint32_t request_post_incr;
@@ -87,8 +102,11 @@ extern "C" {
  * Duplicate init info for ABI compatibility.
  */
 static HG_INLINE void
-hg_init_info_dup_2_2(struct hg_init_info *hg_init_info,
-    const struct hg_init_info_2_2 *hg_init_info_2_2);
+hg_init_info_dup_2_3(
+    struct hg_init_info *new_info, const struct hg_init_info_2_3 *old_info);
+static HG_INLINE void
+hg_init_info_dup_2_2(
+    struct hg_init_info *new_info, const struct hg_init_info_2_2 *old_info);
 
 /**
  * Increment bulk handle counter.
@@ -136,22 +154,40 @@ hg_bulk_op_pool_destroy(struct hg_bulk_op_pool *hg_bulk_op_pool);
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
-hg_init_info_dup_2_2(struct hg_init_info *hg_init_info,
-    const struct hg_init_info_2_2 *hg_init_info_2_2)
+hg_init_info_dup_2_3(
+    struct hg_init_info *new_info, const struct hg_init_info_2_3 *old_info)
 {
-    *hg_init_info =
-        (struct hg_init_info){.na_init_info = hg_init_info_2_2->na_init_info,
-            .na_class = hg_init_info_2_2->na_class,
-            .request_post_init = hg_init_info_2_2->request_post_init,
-            .request_post_incr = hg_init_info_2_2->request_post_incr,
-            .auto_sm = hg_init_info_2_2->auto_sm,
-            .sm_info_string = hg_init_info_2_2->sm_info_string,
-            .checksum_level = hg_init_info_2_2->checksum_level,
-            .no_bulk_eager = hg_init_info_2_2->no_bulk_eager,
-            .no_loopback = hg_init_info_2_2->no_loopback,
-            .stats = hg_init_info_2_2->stats,
-            .no_multi_recv = HG_FALSE,
-            .release_input_early = HG_FALSE};
+    *new_info = (struct hg_init_info){.na_class = old_info->na_class,
+        .request_post_init = old_info->request_post_init,
+        .request_post_incr = old_info->request_post_incr,
+        .auto_sm = old_info->auto_sm,
+        .sm_info_string = old_info->sm_info_string,
+        .checksum_level = old_info->checksum_level,
+        .no_bulk_eager = old_info->no_bulk_eager,
+        .no_loopback = old_info->no_loopback,
+        .stats = old_info->stats,
+        .no_multi_recv = old_info->no_multi_recv,
+        .release_input_early = old_info->release_input_early};
+    na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_init_info_dup_2_2(
+    struct hg_init_info *new_info, const struct hg_init_info_2_2 *old_info)
+{
+    *new_info = (struct hg_init_info){.na_class = old_info->na_class,
+        .request_post_init = old_info->request_post_init,
+        .request_post_incr = old_info->request_post_incr,
+        .auto_sm = old_info->auto_sm,
+        .sm_info_string = old_info->sm_info_string,
+        .checksum_level = old_info->checksum_level,
+        .no_bulk_eager = old_info->no_bulk_eager,
+        .no_loopback = old_info->no_loopback,
+        .stats = old_info->stats,
+        .no_multi_recv = HG_FALSE,
+        .release_input_early = HG_FALSE};
+    na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
 }
 
 #ifdef __cplusplus

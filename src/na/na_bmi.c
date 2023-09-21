@@ -1171,6 +1171,7 @@ static na_return_t
 na_bmi_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
+    const struct na_init_info *na_init_info = &na_info->na_init_info;
     struct na_bmi_class *na_bmi_class = NULL;
     char method_list[NA_BMI_ADDR_NAME_MAX] = {'\0'},
          listen_addr[NA_BMI_ADDR_NAME_MAX] = {'\0'},
@@ -1201,14 +1202,12 @@ na_bmi_initialize(
     hg_thread_mutex_init(&na_bmi_class->test_unexpected_mutex);
 
     /* Set msg size limits */
-    na_bmi_class->unexpected_size_max =
-        (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
-            ? na_info->na_init_info->max_unexpected_size
-            : NA_BMI_UNEXPECTED_SIZE;
-    na_bmi_class->expected_size_max =
-        (na_info->na_init_info && na_info->na_init_info->max_expected_size)
-            ? na_info->na_init_info->max_expected_size
-            : NA_BMI_EXPECTED_SIZE;
+    na_bmi_class->unexpected_size_max = na_init_info->max_unexpected_size
+                                            ? na_init_info->max_unexpected_size
+                                            : NA_BMI_UNEXPECTED_SIZE;
+    na_bmi_class->expected_size_max = na_init_info->max_expected_size
+                                          ? na_init_info->max_expected_size
+                                          : NA_BMI_EXPECTED_SIZE;
 
     na_bmi_class->protocol_name = strdup(na_info->protocol_name);
     NA_CHECK_ERROR(na_bmi_class->protocol_name == NULL, error, ret, NA_NOMEM,
@@ -1269,9 +1268,9 @@ na_bmi_initialize(
         if (strcmp(my_hostname, "0.0.0.0") == 0) {
             uint32_t subnet = 0, netmask = 0;
 
-            if (na_info->na_init_info && na_info->na_init_info->ip_subnet) {
+            if (na_init_info->ip_subnet) {
                 ret = na_ip_parse_subnet(
-                    na_info->na_init_info->ip_subnet, &subnet, &netmask);
+                    na_init_info->ip_subnet, &subnet, &netmask);
                 NA_CHECK_NA_ERROR(
                     error, ret, "BMI_initialize() failed - NA_Parse_subnet");
             }
