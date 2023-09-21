@@ -3023,6 +3023,7 @@ static na_return_t
 na_ucx_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
+    const struct na_init_info *na_init_info = &na_info->na_init_info;
     struct na_ucx_class *na_ucx_class = NULL;
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucp_lib_attr_t ucp_lib_attrs;
@@ -3046,26 +3047,24 @@ na_ucx_initialize(
 #endif
     bool multi_dev = false;
 
-    if (na_info->na_init_info != NULL) {
-        /* Progress mode */
-        if (na_info->na_init_info->progress_mode & NA_NO_BLOCK)
-            no_wait = true;
-        /* Max contexts */
-        // if (na_info->na_init_info->max_contexts)
-        //     context_max = na_info->na_init_info->max_contexts;
-        /* Sizes */
-        if (na_info->na_init_info->max_unexpected_size)
-            unexpected_size_max = na_info->na_init_info->max_unexpected_size;
-        if (na_info->na_init_info->max_expected_size)
-            expected_size_max = na_info->na_init_info->max_expected_size;
-        /* Thread mode */
-        if ((na_info->na_init_info->max_contexts > 1) &&
-            !(na_info->na_init_info->thread_mode & NA_THREAD_MODE_SINGLE))
-            context_thread_mode = UCS_THREAD_MODE_MULTI;
+    /* Progress mode */
+    if (na_init_info->progress_mode & NA_NO_BLOCK)
+        no_wait = true;
+    /* Max contexts */
+    // if (na_init_info->max_contexts)
+    //     context_max = na_init_info->max_contexts;
+    /* Sizes */
+    if (na_init_info->max_unexpected_size)
+        unexpected_size_max = na_init_info->max_unexpected_size;
+    if (na_init_info->max_expected_size)
+        expected_size_max = na_init_info->max_expected_size;
+    /* Thread mode */
+    if ((na_init_info->max_contexts > 1) &&
+        !(na_init_info->thread_mode & NA_THREAD_MODE_SINGLE))
+        context_thread_mode = UCS_THREAD_MODE_MULTI;
 
-        if (na_info->na_init_info->thread_mode & NA_THREAD_MODE_SINGLE_CTX)
-            worker_thread_mode = UCS_THREAD_MODE_SINGLE;
-    }
+    if (na_init_info->thread_mode & NA_THREAD_MODE_SINGLE_CTX)
+        worker_thread_mode = UCS_THREAD_MODE_SINGLE;
 
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucp_lib_attrs.field_mask = UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL;
@@ -3090,10 +3089,8 @@ na_ucx_initialize(
 
     /* Parse hostname info and get device / listener IP */
     ret = na_ucx_parse_hostname_info(na_info->host_name,
-        (na_info->na_init_info && na_info->na_init_info->ip_subnet)
-            ? na_info->na_init_info->ip_subnet
-            : NULL,
-        listen, &net_device, &src_sockaddr, &src_addrlen);
+        na_init_info->ip_subnet ? na_init_info->ip_subnet : NULL, listen,
+        &net_device, &src_sockaddr, &src_addrlen);
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "na_ucx_parse_hostname_info() failed");
 

@@ -1198,8 +1198,11 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             HG_MAJOR(version), HG_MINOR(version));
 
         /* Get init info and overwrite defaults */
-        if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
+        if (HG_VERSION_GE(version, HG_VERSION(2, 4)))
             hg_init_info = *hg_init_info_p;
+        else if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
+            hg_init_info_dup_2_3(&hg_init_info,
+                (const struct hg_init_info_2_3 *) hg_init_info_p);
         else
             hg_init_info_dup_2_2(&hg_init_info,
                 (const struct hg_init_info_2_2 *) hg_init_info_p);

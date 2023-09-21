@@ -843,6 +843,7 @@ static na_return_t
 na_mpi_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
+    const struct na_init_info *na_init_info = &na_info->na_init_info;
     struct na_mpi_class *na_mpi_class = NULL;
     int mpi_ext_initialized = 0;
     bool listening, use_static_inter_comm;
@@ -893,14 +894,12 @@ na_mpi_initialize(
     na_mpi_class->use_static_inter_comm = use_static_inter_comm;
 
     /* Set msg size limits */
-    na_mpi_class->unexpected_size_max =
-        (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
-            ? na_info->na_init_info->max_unexpected_size
-            : NA_MPI_UNEXPECTED_SIZE;
-    na_mpi_class->expected_size_max =
-        (na_info->na_init_info && na_info->na_init_info->max_expected_size)
-            ? na_info->na_init_info->max_expected_size
-            : NA_MPI_EXPECTED_SIZE;
+    na_mpi_class->unexpected_size_max = na_init_info->max_unexpected_size
+                                            ? na_init_info->max_unexpected_size
+                                            : NA_MPI_UNEXPECTED_SIZE;
+    na_mpi_class->expected_size_max = na_init_info->max_expected_size
+                                          ? na_init_info->max_expected_size
+                                          : NA_MPI_EXPECTED_SIZE;
 
     /* Initialize MPI */
     mpi_ret = MPI_Initialized(&mpi_ext_initialized);

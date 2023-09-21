@@ -4287,15 +4287,11 @@ static na_return_t
 na_sm_initialize(
     na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
-    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
+    const struct na_init_info *na_init_info = &na_info->na_init_info;
     struct na_sm_class *na_sm_class = NULL;
     struct rlimit rlimit;
     na_return_t ret;
     int rc;
-
-    /* Get init info and overwrite defaults */
-    if (na_info->na_init_info)
-        na_init_info = *na_info->na_init_info;
 
     /* Reset errno */
     errno = 0;
@@ -4318,11 +4314,11 @@ na_sm_initialize(
 #else
     na_sm_class->iov_max = 1;
 #endif
-    na_sm_class->context_max = na_init_info.max_contexts;
+    na_sm_class->context_max = na_init_info->max_contexts;
 
     /* Open endpoint */
     ret = na_sm_endpoint_open(&na_sm_class->endpoint, na_info->host_name,
-        listen, na_init_info.progress_mode & NA_NO_BLOCK,
+        listen, na_init_info->progress_mode & NA_NO_BLOCK,
         (uint32_t) rlimit.rlim_cur);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open endpoint");
 

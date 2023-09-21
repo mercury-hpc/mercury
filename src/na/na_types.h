@@ -33,6 +33,17 @@ enum na_addr_format {
     NA_ADDR_NATIVE  /* Use native addressing when available */
 };
 
+/* Traffic class */
+enum na_traffic_class {
+    NA_TC_UNSPEC,           /* Leave it upon plugin to choose */
+    NA_TC_BEST_EFFORT,      /* Best effort */
+    NA_TC_LOW_LATENCY,      /* Low latency */
+    NA_TC_BULK_DATA,        /* Bulk data */
+    NA_TC_DEDICATED_ACCESS, /* High priority */
+    NA_TC_SCAVENGER,        /* Low priority */
+    NA_TC_NETWORK_CTRL      /* Privileged network management */
+};
+
 /* Memory type */
 enum na_mem_type {
     NA_MEM_TYPE_HOST, /*!< Default system memory */
@@ -65,12 +76,15 @@ struct na_init_info {
      * used. */
     size_t max_expected_size;
 
+    /* Preferred address format. Default is NA_ADDR_UNSPEC. */
+    enum na_addr_format addr_format;
+
+    /* Preferred traffic class. Default is NA_TC_UNSPEC */
+    enum na_traffic_class traffic_class;
+
     /* Progress mode flag. Setting NA_NO_BLOCK will force busy-spin on progress
      * and remove any wait/notification calls. */
     uint8_t progress_mode;
-
-    /* Preferred address format. Default is NA_ADDR_UNSPEC. */
-    enum na_addr_format addr_format;
 
     /* Maximum number of contexts that are expected to be created. */
     uint8_t max_contexts;
@@ -187,6 +201,8 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_VERSION(major, minor) (((major) << 16) | (minor))
 #define NA_MAJOR(version)        (version >> 16)
 #define NA_MINOR(version)        (version & 0xffff)
+#define NA_VERSION_GE(v1, v2)    (v1 >= v2)
+#define NA_VERSION_LT(v1, v2)    (v1 < v2)
 
 /* Optional plugin dependent features that can be queried */
 #define NA_OPT_MULTI_RECV (1 << 0) /* multi-recv */
@@ -237,8 +253,9 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
         .auth_key = NULL,                                                      \
         .max_unexpected_size = 0,                                              \
         .max_expected_size = 0,                                                \
-        .progress_mode = 0,                                                    \
         .addr_format = NA_ADDR_UNSPEC,                                         \
+        .traffic_class = NA_TC_UNSPEC,                                         \
+        .progress_mode = 0,                                                    \
         .max_contexts = 1,                                                     \
         .thread_mode = 0,                                                      \
         .request_mem_device = false})

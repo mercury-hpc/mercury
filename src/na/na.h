@@ -934,12 +934,26 @@ NA_Error_to_string(na_return_t errnum) NA_WARN_UNUSED_RESULT;
 /* Local Type and Struct Definition */
 /************************************/
 
+/* Previous versions of init info to keep compatiblity with older versions,
+ * see public definition in na_types.h */
+struct na_init_info_4_0 {
+    const char *ip_subnet;
+    const char *auth_key;
+    size_t max_unexpected_size;
+    size_t max_expected_size;
+    uint8_t progress_mode;
+    enum na_addr_format addr_format;
+    uint8_t max_contexts;
+    uint8_t thread_mode;
+    bool request_mem_device;
+};
+
 /* NA info definition */
 struct na_info {
     char *protocol_name; /* Protocol (e.g., tcp, ib) */
     char *host_name;     /* Host (may be NULL in anonymous mode) */
     /* Additional init info (NULL if no info) */
-    const struct na_init_info *na_init_info;
+    struct na_init_info na_init_info;
 };
 
 /* NA class definition */
@@ -1053,6 +1067,23 @@ struct na_class_ops {
     na_return_t (*cancel)(
         na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 };
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_init_info_dup_4_0(
+    struct na_init_info *new_info, const struct na_init_info_4_0 *old_info)
+{
+    *new_info = (struct na_init_info){.ip_subnet = old_info->ip_subnet,
+        .auth_key = old_info->auth_key,
+        .max_unexpected_size = old_info->max_unexpected_size,
+        .max_expected_size = old_info->max_expected_size,
+        .addr_format = old_info->addr_format,
+        .traffic_class = NA_TC_UNSPEC,
+        .progress_mode = old_info->progress_mode,
+        .max_contexts = old_info->max_contexts,
+        .thread_mode = old_info->thread_mode,
+        .request_mem_device = old_info->request_mem_device};
+}
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE const char *
