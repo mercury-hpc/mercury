@@ -130,6 +130,10 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
         error, ret, "NA_Test_init() failed (%s)", NA_Error_to_string(ret));
     info->na_class = info->na_test_info.na_class;
 
+    /* Parallel is not supported */
+    NA_TEST_CHECK_ERROR(info->na_test_info.mpi_comm_size > 1, error, ret,
+        NA_OPNOTSUPPORTED, "Not a parallel test");
+
     /* Multi-recv */
     multi_recv =
         (listen && NA_Has_opt_feature(info->na_class, NA_OPT_MULTI_RECV) &&
@@ -398,10 +402,9 @@ void
 na_perf_print_lat(const struct na_perf_info *info, size_t buf_size, hg_time_t t)
 {
     double msg_lat;
-    size_t loop = (size_t) info->na_test_info.loop,
-           mpi_comm_size = (size_t) info->na_test_info.mpi_comm_size;
+    size_t loop = (size_t) info->na_test_info.loop;
 
-    msg_lat = hg_time_to_double(t) * 1e6 / (double) (loop * 2 * mpi_comm_size);
+    msg_lat = hg_time_to_double(t) * 1e6 / (double) (loop * 2);
 
     printf("%-*zu%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, msg_lat);
 }
@@ -432,14 +435,11 @@ void
 na_perf_print_bw(const struct na_perf_info *info, size_t buf_size, hg_time_t t)
 {
     size_t loop = (size_t) info->na_test_info.loop,
-           mpi_comm_size = (size_t) info->na_test_info.mpi_comm_size,
            buf_count = (size_t) info->rma_count;
     double avg_time, avg_bw;
 
-    avg_time = hg_time_to_double(t) * 1e6 /
-               (double) (loop * mpi_comm_size * buf_count);
-    avg_bw = (double) (buf_size * loop * mpi_comm_size * buf_count) /
-             hg_time_to_double(t);
+    avg_time = hg_time_to_double(t) * 1e6 / (double) (loop * buf_count);
+    avg_bw = (double) (buf_size * loop * buf_count) / hg_time_to_double(t);
 
     if (info->na_test_info.mbps)
         avg_bw /= 1e6; /* MB/s, matches OSU benchmarks */
