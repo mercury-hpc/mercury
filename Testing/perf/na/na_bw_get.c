@@ -35,9 +35,6 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
     na_return_t ret;
     size_t i, j;
 
-    if (info->na_test_info.mpi_comm_size > 1)
-        NA_Test_barrier(&info->na_test_info);
-
     /* Actual benchmark */
     for (i = 0; i < skip + (size_t) info->na_test_info.loop; i++) {
         struct na_perf_rma_info rma_info = {.request = info->request,
@@ -96,13 +93,9 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
         }
     }
 
-    if (info->na_test_info.mpi_comm_size > 1)
-        NA_Test_barrier(&info->na_test_info);
-
     hg_time_get_current(&t2);
 
-    if (info->na_test_info.mpi_comm_rank == 0)
-        na_perf_print_bw(info, buf_size, hg_time_subtract(t2, t1));
+    na_perf_print_bw(info, buf_size, hg_time_subtract(t2, t1));
 
     return NA_SUCCESS;
 
@@ -129,8 +122,7 @@ main(int argc, char *argv[])
         "na_perf_mem_handle_recv() failed (%s)", NA_Error_to_string(na_ret));
 
     /* Header info */
-    if (info.na_test_info.mpi_comm_rank == 0)
-        na_perf_print_header_bw(&info, BENCHMARK_NAME);
+    na_perf_print_header_bw(&info, BENCHMARK_NAME);
 
     /* Msg with different sizes */
     for (size = info.rma_size_min; size <= info.rma_size_max; size *= 2) {
@@ -142,8 +134,7 @@ main(int argc, char *argv[])
     }
 
     /* Finalize interface */
-    if (info.na_test_info.mpi_comm_rank == 0)
-        na_perf_send_finalize(&info);
+    na_perf_send_finalize(&info);
 
     na_perf_cleanup(&info);
 

@@ -62,11 +62,8 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
     /* Actual benchmark */
     for (i = 0; i < skip + (size_t) info->na_test_info.loop; i++) {
-        if (i == skip) {
-            if (info->na_test_info.mpi_comm_size > 1)
-                NA_Test_barrier(&info->na_test_info);
+        if (i == skip)
             hg_time_get_current(&t1);
-        }
 
         hg_request_reset(info->request);
 
@@ -105,13 +102,9 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
         }
     }
 
-    if (info->na_test_info.mpi_comm_size > 1)
-        NA_Test_barrier(&info->na_test_info);
-
     hg_time_get_current(&t2);
 
-    if (info->na_test_info.mpi_comm_rank == 0)
-        na_perf_print_lat(info, buf_size, hg_time_subtract(t2, t1));
+    na_perf_print_lat(info, buf_size, hg_time_subtract(t2, t1));
 
     return NA_SUCCESS;
 
@@ -135,15 +128,13 @@ main(int argc, char *argv[])
     /* Init data */
     na_perf_init_data(info.msg_unexp_buf, info.msg_unexp_size_max,
         info.msg_unexp_header_size);
-    if (info.na_test_info.mpi_comm_rank == 0)
-        na_perf_send_init(&info);
+    na_perf_send_init(&info);
 
     min_size =
         (info.msg_unexp_header_size > 0) ? info.msg_unexp_header_size : 1;
 
     /* Header info */
-    if (info.na_test_info.mpi_comm_rank == 0)
-        na_perf_print_header_lat(&info, BENCHMARK_NAME, min_size);
+    na_perf_print_header_lat(&info, BENCHMARK_NAME, min_size);
 
     /* Msg with different sizes */
     for (size = min_size; size <= info.msg_unexp_size_max; size *= 2) {
@@ -155,8 +146,7 @@ main(int argc, char *argv[])
     }
 
     /* Finalize interface */
-    if (info.na_test_info.mpi_comm_rank == 0)
-        na_perf_send_finalize(&info);
+    na_perf_send_finalize(&info);
 
     na_perf_cleanup(&info);
 
