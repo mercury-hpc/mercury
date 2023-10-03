@@ -49,7 +49,7 @@ struct hg_perf_class_info {
     size_t bulk_count;
     size_t target_addr_max;
     size_t handle_max;
-    size_t handle_per_rank;
+    size_t handle_target;
     size_t buf_size_min;
     size_t buf_size_max;
     hg_bulk_t *local_bulk_handles;
@@ -74,13 +74,12 @@ struct hg_perf_bulk_init_info {
     uint32_t handle_max;
     uint32_t bulk_count;
     uint32_t size_max;
-    uint32_t comm_rank;
     uint32_t comm_size;
+    uint32_t target_rank;
     uint32_t target_addr_max;
 };
 
 struct hg_perf_bulk_info {
-    uint32_t comm_rank; /* Source rank */
     uint32_t handle_id; /* Source handle ID */
     uint32_t size;      /* Transfer size*/
 };
@@ -108,11 +107,12 @@ void
 hg_perf_cleanup(struct hg_perf_info *info);
 
 hg_return_t
-hg_perf_set_handles(
+hg_perf_set_handles(const struct hg_test_info *hg_test_info,
     struct hg_perf_class_info *info, enum hg_perf_rpc_id rpc_id);
 
 hg_return_t
-hg_perf_rpc_buf_init(struct hg_perf_class_info *info);
+hg_perf_rpc_buf_init(
+    const struct hg_test_info *hg_test_info, struct hg_perf_class_info *info);
 
 hg_return_t
 hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,

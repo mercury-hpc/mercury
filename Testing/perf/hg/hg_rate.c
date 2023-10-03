@@ -126,12 +126,12 @@ main(int argc, char *argv[])
     info = &perf_info.class_info[0];
 
     /* Allocate RPC buffers */
-    hg_ret = hg_perf_rpc_buf_init(info);
+    hg_ret = hg_perf_rpc_buf_init(hg_test_info, info);
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_perf_init_rpc_buf() failed (%s)",
         HG_Error_to_string(hg_ret));
 
     /* Set HG handles */
-    hg_ret = hg_perf_set_handles(info, HG_PERF_RATE);
+    hg_ret = hg_perf_set_handles(hg_test_info, info, HG_PERF_RATE);
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_perf_set_handles() failed (%s)",
         HG_Error_to_string(hg_ret));
 
