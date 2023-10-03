@@ -33,20 +33,23 @@ static hg_return_t
 hg_perf_run(const struct hg_test_info *hg_test_info,
     struct hg_perf_class_info *info, size_t buf_size, size_t skip)
 {
+    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_comm_rank,
+           comm_size = (size_t) hg_test_info->na_test_info.mpi_comm_size,
+           loop = (size_t) hg_test_info->na_test_info.loop;
     hg_time_t t1, t2;
     hg_return_t ret;
     size_t i;
 
     /* Warm up for RPC */
-    for (i = 0; i < skip + (size_t) hg_test_info->na_test_info.loop; i++) {
+    for (i = 0; i < skip + loop; i++) {
         struct hg_perf_request args = {
             .expected_count = (int32_t) info->handle_max,
             .complete_count = 0,
             .request = info->request};
-        unsigned int j;
+        size_t j;
 
         if (i == skip) {
-            if (hg_test_info->na_test_info.mpi_comm_size > 1)
+            if (comm_size > 1)
                 NA_Test_barrier(&hg_test_info->na_test_info);
             hg_time_get_current(&t1);
         }
@@ -55,9 +58,8 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
 
         for (j = 0; j < info->handle_max; j++) {
             struct hg_perf_bulk_info in_struct = {
-                .comm_rank =
-                    (uint32_t) hg_test_info->na_test_info.mpi_comm_rank,
-                .handle_id = (uint32_t) (j / info->target_addr_max),
+                .handle_id = (uint32_t) ((comm_rank + j * comm_size) /
+                                         info->target_addr_max),
                 .size = (uint32_t) buf_size};
 
             ret = HG_Forward(
@@ -69,12 +71,12 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
         hg_request_wait(info->request, HG_MAX_IDLE_TIME, NULL);
     }
 
-    if (hg_test_info->na_test_info.mpi_comm_size > 1)
+    if (comm_size > 1)
         NA_Test_barrier(&hg_test_info->na_test_info);
 
     hg_time_get_current(&t2);
 
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+    if (comm_rank == 0)
         hg_perf_print_bw(
             hg_test_info, info, buf_size, hg_time_subtract(t2, t1));
 
@@ -107,7 +109,7 @@ main(int argc, char *argv[])
         HG_Error_to_string(hg_ret));
 
     /* Set HG handles */
-    hg_ret = hg_perf_set_handles(info, HG_PERF_BW_WRITE);
+    hg_ret = hg_perf_set_handles(hg_test_info, info, HG_PERF_BW_WRITE);
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_perf_set_handles() failed (%s)",
         HG_Error_to_string(hg_ret));
 
