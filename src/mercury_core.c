@@ -6230,9 +6230,9 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     hg_core_handle_t *handle_p)
 {
     struct hg_core_private_handle *hg_core_handle = NULL;
-    na_class_t *na_class;
-    na_context_t *na_context;
-    na_addr_t *na_addr;
+    na_class_t *na_class = NULL;
+    na_context_t *na_context = NULL;
+    na_addr_t *na_addr = NULL;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(rpc, context == NULL, error, ret, HG_INVALID_ARG,
@@ -6302,9 +6302,9 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
-    na_class_t *na_class;
-    na_context_t *na_context;
-    na_addr_t *na_addr;
+    na_class_t *na_class = NULL;
+    na_context_t *na_context = NULL;
+    na_addr_t *na_addr = NULL;
     hg_return_t ret;
     int32_t status;
 
