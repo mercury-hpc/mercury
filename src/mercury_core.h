@@ -72,8 +72,7 @@ typedef hg_return_t (*hg_core_cb_t)(
 #define HG_CORE_OP_ID_IGNORE ((hg_core_op_id_t *) 1)
 
 /* Flags */
-#define HG_CORE_MORE_DATA   (1 << 0) /* More data required */
-#define HG_CORE_NO_RESPONSE (1 << 1) /* No response required */
+#define HG_CORE_MORE_DATA (1 << 0) /* More data required */
 
 /*********************/
 /* Public Prototypes */
@@ -504,6 +503,39 @@ HG_Core_register_data(hg_core_class_t *hg_core_class, hg_id_t id, void *data,
  */
 HG_PUBLIC void *
 HG_Core_registered_data(hg_core_class_t *hg_core_class, hg_id_t id);
+
+/**
+ * Disable response for a given RPC ID. This allows an origin process to send an
+ * RPC to a target without waiting for a response. The RPC completes locally and
+ * the callback on the origin is therefore pushed to the completion queue once
+ * the RPC send is completed. By default, all RPCs expect a response to
+ * be sent back.
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param id [IN]               registered function ID
+ * \param disable [IN]          boolean (HG_TRUE to disable
+ *                                       HG_FALSE to re-enable)
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_registered_disable_response(
+    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t disable);
+
+/**
+ * Check if response is disabled for a given RPC ID
+ * (i.e., HG_Registered_disable_response() has been called for this RPC ID).
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param id [IN]               registered function ID
+ * \param disabled_p [OUT]      boolean (HG_TRUE if disabled
+ *                                       HG_FALSE if enabled)
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_registered_disabled_response(
+    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *disabled_p);
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
@@ -967,6 +999,7 @@ struct hg_core_rpc_info {
     void *data;                    /* User data */
     void (*free_callback)(void *); /* User data free callback */
     hg_id_t id;                    /* RPC ID */
+    hg_bool_t no_response;         /* RPC response not expected */
 };
 
 /* HG core handle */

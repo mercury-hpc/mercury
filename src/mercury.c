@@ -57,7 +57,6 @@ struct hg_proc_info {
     hg_proc_cb_t out_proc_cb;      /* Output proc callback */
     void *data;                    /* User data */
     void (*free_callback)(void *); /* User data free callback */
-    hg_bool_t no_response;         /* RPC response not expected */
 };
 
 /* HG handle */
@@ -480,11 +479,6 @@ hg_get_struct(struct hg_private_handle *hg_handle,
             extra_buf_size = hg_handle->in_extra_buf_size;
             break;
         case HG_OUTPUT:
-            /* Cannot respond if no_response flag set */
-            HG_CHECK_SUBSYS_ERROR(rpc, hg_proc_info->no_response, error, ret,
-                HG_OPNOTSUPPORTED,
-                "No output was produced on that RPC (no response)");
-
             /* Use custom header offset */
             header_offset += hg_handle->handle.info.hg_class->out_offset;
             /* Set output proc */
@@ -612,11 +606,6 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             extra_bulk = &hg_handle->in_extra_bulk;
             break;
         case HG_OUTPUT:
-            /* Cannot respond if no_response flag set */
-            HG_CHECK_SUBSYS_ERROR(rpc, hg_proc_info->no_response, error, ret,
-                HG_OPNOTSUPPORTED,
-                "No output was produced on that RPC (no response)");
-
             /* Use custom header offset */
             header_offset += hg_handle->handle.info.hg_class->out_offset;
             /* Set output proc */
@@ -1520,21 +1509,13 @@ hg_return_t
 HG_Registered_disable_response(
     hg_class_t *hg_class, hg_id_t id, hg_bool_t disable)
 {
-    struct hg_proc_info *hg_proc_info = NULL;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(
         cls, hg_class == NULL, error, ret, HG_INVALID_ARG, "NULL HG class");
 
-    /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
-        hg_class->core_class, id);
-    HG_CHECK_SUBSYS_ERROR(cls, hg_proc_info == NULL, error, ret, HG_NOENTRY,
-        "Could not get registered data for RPC ID %" PRIu64, id);
-
-    hg_proc_info->no_response = disable;
-
-    return HG_SUCCESS;
+    return HG_Core_registered_disable_response(
+        hg_class->core_class, id, disable);
 
 error:
     return ret;
@@ -1545,23 +1526,13 @@ hg_return_t
 HG_Registered_disabled_response(
     hg_class_t *hg_class, hg_id_t id, hg_bool_t *disabled_p)
 {
-    struct hg_proc_info *hg_proc_info = NULL;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(
         cls, hg_class == NULL, error, ret, HG_INVALID_ARG, "NULL HG class");
-    HG_CHECK_SUBSYS_ERROR(cls, disabled_p == NULL, error, ret, HG_INVALID_ARG,
-        "NULL pointer to disabled flag");
 
-    /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
-        hg_class->core_class, id);
-    HG_CHECK_SUBSYS_ERROR(cls, hg_proc_info == NULL, error, ret, HG_NOENTRY,
-        "Could not get registered data for RPC ID %" PRIu64, id);
-
-    *disabled_p = hg_proc_info->no_response;
-
-    return HG_SUCCESS;
+    return HG_Core_registered_disabled_response(
+        hg_class->core_class, id, disabled_p);
 
 error:
     return ret;
@@ -2102,10 +2073,6 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     /* Set more data flag on handle so that handle_more_callback is triggered */
     if (more_data)
         flags |= HG_CORE_MORE_DATA;
-
-    /* Set no response flag if no response required */
-    if (hg_proc_info->no_response)
-        flags |= HG_CORE_NO_RESPONSE;
 
     /* Send request */
     ret = HG_Core_forward(
