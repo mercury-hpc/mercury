@@ -167,7 +167,7 @@
     )                                                                          \
     X(NA_OFI_PROV_TCP_RXM,                                                     \
       "tcp;ofi_rxm",                                                           \
-      "",                                                                      \
+      "tcp_rxm",                                                               \
       FI_SOCKADDR_IN,                                                          \
       FI_SOCKADDR_IN,                                                          \
       FI_PROGRESS_MANUAL,                                                      \
