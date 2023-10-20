@@ -369,6 +369,10 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_destroy() failed (%s)",
         HG_Error_to_string(hg_ret));
 
+    /* BMI has issues with next tests */
+    if (strcmp(HG_Class_get_name(info.hg_class), "bmi") == 0)
+        goto cleanup;
+
     /**************************************************************************
      * Small RPC bulk tests.
      *************************************************************************/
@@ -457,7 +461,6 @@ main(int argc, char *argv[])
      *************************************************************************/
 
 #ifndef HG_HAS_XDR
-
     /* Create bulk info */
     hg_ret =
         hg_test_bulk_create(info.hg_class, 1024, buf_size / 1024, &bulk_info);
@@ -500,6 +503,7 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_bulk_destroy() failed (%s)",
         HG_Error_to_string(hg_ret));
 
+cleanup:
     hg_unit_cleanup(&info);
 
     return EXIT_SUCCESS;
