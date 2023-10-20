@@ -3172,15 +3172,10 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     /* caps: capabilities required for all providers */
     hints->caps = FI_MSG | FI_TAGGED | FI_RMA | FI_DIRECTED_RECV;
 
-    /**
-     * msg_order: guarantee that messages with same tag are ordered.
-     * (FI_ORDER_SAS - Send after send. If set, message send operations,
-     *  including tagged sends, are transmitted in the order submitted relative
-     *  to other message send. If not set, message sends may be transmitted out
-     *  of order from their submission).
-     */
-    hints->tx_attr->msg_order = FI_ORDER_SAS;
-    hints->tx_attr->comp_order = FI_ORDER_NONE; /* No send completion order */
+    /* msg_order, comp_order */
+    hints->tx_attr->msg_order = FI_ORDER_NONE;
+    hints->tx_attr->comp_order = FI_ORDER_NONE;
+
     /* Generate completion event when it is safe to re-use buffer */
     hints->tx_attr->op_flags = FI_INJECT_COMPLETE;
 
