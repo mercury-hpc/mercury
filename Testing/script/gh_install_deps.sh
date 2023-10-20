@@ -10,7 +10,7 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
 fi
 #OFI_PR=
-OFI_VERSION=1.19.0rc2
+OFI_VERSION=1.19.0
 
 # UCX
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
@@ -20,7 +20,7 @@ fi
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   UCX_EXTRA_FLAGS="--enable-debug"
 fi
-UCX_VERSION=1.14.1
+UCX_VERSION=1.15.0
 
 PREFIX=${RUNNER_TEMP}/${INSTALL_DIR}
 
