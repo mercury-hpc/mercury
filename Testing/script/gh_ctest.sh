@@ -36,10 +36,13 @@ else
   BUILD_DYNAMIC_PLUGINS=FALSE
 fi
 
-# Source intel env when using icc
-if [[ ${CC} == 'icc' ]]; then
-  ICC_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/compiler/ | grep -v latest | sort | tail -1)
-  source /opt/intel/oneapi/compiler/"$ICC_LATEST_VERSION"/env/vars.sh
+# Source intel env when using icx
+if [[ ${CC} == 'icx' ]]; then
+  ICX_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/compiler/ | grep -v latest | sort | tail -1)
+  source /opt/intel/oneapi/compiler/"$ICX_LATEST_VERSION"/env/vars.sh
+
+  IMPI_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/mpi/ | grep -v latest | sort | tail -1)
+  source /opt/intel/oneapi/mpi/"$IMPI_LATEST_VERSION"/env/vars.sh
 fi
 
 export COV=`which gcov`
