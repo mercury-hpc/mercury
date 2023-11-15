@@ -35,10 +35,10 @@ PSM_VERSION=updates
 
 set -e
 
-# Source intel env when using icc
-if [[ ${CC} == 'icc' ]]; then
-  ICC_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/compiler/ | grep -v latest | sort | tail -1)
-  source /opt/intel/oneapi/compiler/"$ICC_LATEST_VERSION"/env/vars.sh
+# Default to GNU compilers when building dependencies
+if [[ ${CC} == 'icx' ]]; then
+  CC=gcc
+  CXX=g++
 fi
 
 # BMI

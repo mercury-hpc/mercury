@@ -70,8 +70,8 @@ jobs:
           }
           - {
               os: ubuntu-latest,
-              cc: icc,
-              cxx: icpc
+              cc: icx,
+              cxx: icpx
             }
           - {
               os: macos-latest,
@@ -113,7 +113,7 @@ jobs:
       CC: ${{ matrix.config.cc }}
       CXX: ${{ matrix.config.cxx }}
       INSTALL_DIR: install
-      ICC_COMPONENTS: intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic
+      ICX_COMPONENTS: intel-oneapi-compiler-dpcpp-cpp intel-oneapi-mpi intel-oneapi-mpi-devel
 
     steps:
       - name: Set up hugepages
@@ -128,29 +128,30 @@ jobs:
           submodules: true
 
       - name: Setup compiler package dependencies
-        if: matrix.config.cc == 'icc'
+        if: matrix.config.cc == 'icx'
         run: |
           Testing/script/gh_setup_intel_repo_${{ runner.os }}.sh
-          Testing/script/gh_get_pkg_deps_${{ runner.os }}.sh $ICC_COMPONENTS | tee icc_pkg_deps.txt
+          Testing/script/gh_get_pkg_deps_${{ runner.os }}.sh "$ICX_COMPONENTS" | tee icx_pkg_deps.txt
 
       - name: Restore cached compiler package dependencies
         id: cache-pkg-deps
-        if: matrix.config.cc == 'icc'
+        if: matrix.config.cc == 'icx'
         uses: actions/cache@v3
         with:
           path: |
-            /opt/intel/oneapi/compiler
-          key: ${{ runner.os }}-${{ env.ICC_COMPONENTS }}-${{ hashFiles('**/icc_pkg_deps.txt') }}-pkg-deps
+            /opt/intel/oneapi
+          key: ${{ runner.os }}-icx-${{ hashFiles('**/icx_pkg_deps.txt') }}-pkg-deps
 
       - name: Install compiler package dependencies
-        if: matrix.config.cc == 'icc' && steps.cache-pkg-deps.outputs.cache-hit != 'true'
-        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh $ICC_COMPONENTS
+        if: matrix.config.cc == 'icx' && steps.cache-pkg-deps.outputs.cache-hit != 'true'
+        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh "$ICX_COMPONENTS"
 
       - name: Install pkg-config
         if: runner.os == 'macOS'
         run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh pkg-config
 
       - name: Install MPI package dependencies
+        if: matrix.config.cc != 'icx'
         run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh mpich
 
       - name: Restore cached dependencies
