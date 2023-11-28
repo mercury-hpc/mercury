@@ -37,7 +37,7 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
     /* Actual benchmark */
     for (i = 0; i < skip + (size_t) info->na_test_info.loop; i++) {
-        struct na_perf_rma_info rma_info = {.request = info->request,
+        struct na_perf_request_info request_info = {.request = info->request,
             .complete_count = 0,
             .expected_count = (int32_t) info->rma_count};
 
@@ -64,11 +64,11 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
         /* Post puts */
         for (j = 0; j < info->rma_count; j++) {
-            ret = NA_Put(info->na_class, info->context,
-                na_perf_rma_request_complete, &rma_info, info->local_handle,
-                j * info->rma_size_max, info->remote_handle,
-                j * info->rma_size_max, buf_size, info->target_addr, 0,
-                info->rma_op_ids[j]);
+            ret =
+                NA_Put(info->na_class, info->context, na_perf_request_complete,
+                    &request_info, info->local_handle, j * info->rma_size_max,
+                    info->remote_handle, j * info->rma_size_max, buf_size,
+                    info->target_addr, 0, info->rma_op_ids[j]);
             NA_TEST_CHECK_NA_ERROR(
                 error, ret, "NA_Put() failed (%s)", NA_Error_to_string(ret));
         }
@@ -76,13 +76,13 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
         hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
 
         if (info->na_test_info.verify) {
-            rma_info.complete_count = 0;
+            request_info.complete_count = 0;
             hg_request_reset(info->request);
 
             /* Post gets */
             for (j = 0; j < info->rma_count; j++) {
                 ret = NA_Get(info->na_class, info->context,
-                    na_perf_rma_request_complete, &rma_info,
+                    na_perf_request_complete, &request_info,
                     info->verify_handle, j * info->rma_size_max,
                     info->remote_handle, j * info->rma_size_max, buf_size,
                     info->target_addr, 0, info->rma_op_ids[j]);

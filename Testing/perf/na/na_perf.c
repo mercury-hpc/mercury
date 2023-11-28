@@ -99,14 +99,8 @@ na_perf_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 void
 na_perf_request_complete(const struct na_cb_info *na_cb_info)
 {
-    hg_request_complete((hg_request_t *) na_cb_info->arg);
-}
-
-/*---------------------------------------------------------------------------*/
-void
-na_perf_rma_request_complete(const struct na_cb_info *na_cb_info)
-{
-    struct na_perf_rma_info *info = (struct na_perf_rma_info *) na_cb_info->arg;
+    struct na_perf_request_info *info =
+        (struct na_perf_request_info *) na_cb_info->arg;
 
     if ((++info->complete_count) == info->expected_count)
         hg_request_complete(info->request);
@@ -514,22 +508,26 @@ error:
 na_return_t
 na_perf_mem_handle_recv(struct na_perf_info *info, na_tag_t tag)
 {
+    struct na_perf_request_info request_info = {.request = info->request,
+        .complete_count = 0,
+        .expected_count = (int32_t) 2};
     na_return_t ret;
 
     hg_request_reset(info->request);
 
     /* Post recv */
     ret = NA_Msg_recv_expected(info->na_class, info->context,
-        na_perf_request_complete, info->request, info->msg_exp_buf,
+        na_perf_request_complete, &request_info, info->msg_exp_buf,
         info->msg_exp_size_max, info->msg_exp_data, info->target_addr, 0, tag,
         info->msg_exp_op_id);
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_recv_expected() failed (%s)",
         NA_Error_to_string(ret));
 
     /* Ask server to send its handle */
-    ret = NA_Msg_send_unexpected(info->na_class, info->context, NULL, NULL,
-        info->msg_unexp_buf, info->msg_unexp_header_size, info->msg_unexp_data,
-        info->target_addr, 0, tag, info->msg_unexp_op_id);
+    ret = NA_Msg_send_unexpected(info->na_class, info->context,
+        na_perf_request_complete, &request_info, info->msg_unexp_buf,
+        info->msg_unexp_header_size, info->msg_unexp_data, info->target_addr, 0,
+        tag, info->msg_unexp_op_id);
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_unexpected() failed (%s)",
         NA_Error_to_string(ret));
 
@@ -551,6 +549,9 @@ error:
 na_return_t
 na_perf_send_finalize(struct na_perf_info *info)
 {
+    struct na_perf_request_info request_info = {.request = info->request,
+        .complete_count = 0,
+        .expected_count = (int32_t) 1};
     na_return_t ret;
 
     /* Reset */
@@ -558,7 +559,7 @@ na_perf_send_finalize(struct na_perf_info *info)
 
     /* Post one-way msg send */
     ret = NA_Msg_send_unexpected(info->na_class, info->context,
-        na_perf_request_complete, info->request, info->msg_unexp_buf,
+        na_perf_request_complete, &request_info, info->msg_unexp_buf,
         info->msg_unexp_header_size, info->msg_unexp_data, info->target_addr, 0,
         NA_PERF_TAG_DONE, info->msg_unexp_op_id);
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_unexpected() failed (%s)",

@@ -52,7 +52,7 @@ struct na_perf_info {
     int poll_fd;                       /* Poll fd */
 };
 
-struct na_perf_rma_info {
+struct na_perf_request_info {
     int32_t expected_count; /* Expected count */
     int32_t complete_count; /* Completed count */
     hg_request_t *request;  /* Request */
@@ -84,9 +84,6 @@ extern "C" {
 
 void
 na_perf_request_complete(const struct na_cb_info *na_cb_info);
-
-void
-na_perf_rma_request_complete(const struct na_cb_info *na_cb_info);
 
 na_return_t
 na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info);

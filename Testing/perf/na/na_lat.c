@@ -31,6 +31,9 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip);
 static na_return_t
 na_perf_send_init(struct na_perf_info *info)
 {
+    struct na_perf_request_info request_info = {.request = info->request,
+        .complete_count = 0,
+        .expected_count = (int32_t) 1};
     na_return_t ret;
 
     /* Reset */
@@ -38,7 +41,7 @@ na_perf_send_init(struct na_perf_info *info)
 
     /* Post one-way msg send */
     ret = NA_Msg_send_unexpected(info->na_class, info->context,
-        na_perf_request_complete, info->request, info->msg_unexp_buf,
+        na_perf_request_complete, &request_info, info->msg_unexp_buf,
         info->msg_unexp_header_size, info->msg_unexp_data, info->target_addr, 0,
         NA_PERF_TAG_LAT_INIT, info->msg_unexp_op_id);
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_unexpected() failed (%s)",
@@ -62,6 +65,10 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
     /* Actual benchmark */
     for (i = 0; i < skip + (size_t) info->na_test_info.loop; i++) {
+        struct na_perf_request_info request_info = {.request = info->request,
+            .complete_count = 0,
+            .expected_count = (int32_t) 2};
+
         if (i == skip)
             hg_time_get_current(&t1);
 
@@ -79,16 +86,17 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
         /* Post recv */
         ret = NA_Msg_recv_expected(info->na_class, info->context,
-            na_perf_request_complete, info->request, info->msg_exp_buf,
+            na_perf_request_complete, &request_info, info->msg_exp_buf,
             buf_size, info->msg_exp_data, info->target_addr, 0, NA_PERF_TAG_LAT,
             info->msg_exp_op_id);
         NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_recv_expected() failed (%s)",
             NA_Error_to_string(ret));
 
         /* Post send */
-        ret = NA_Msg_send_unexpected(info->na_class, info->context, NULL, NULL,
-            info->msg_unexp_buf, buf_size, info->msg_unexp_data,
-            info->target_addr, 0, NA_PERF_TAG_LAT, info->msg_unexp_op_id);
+        ret = NA_Msg_send_unexpected(info->na_class, info->context,
+            na_perf_request_complete, &request_info, info->msg_unexp_buf,
+            buf_size, info->msg_unexp_data, info->target_addr, 0,
+            NA_PERF_TAG_LAT, info->msg_unexp_op_id);
         NA_TEST_CHECK_NA_ERROR(error, ret,
             "NA_Msg_send_unexpected() failed (%s)", NA_Error_to_string(ret));
 
