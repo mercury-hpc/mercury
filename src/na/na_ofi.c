@@ -259,6 +259,9 @@ static uint64_t const na_ofi_prov_extra_caps[] = {NA_OFI_PROV_TYPES};
 static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #undef X
 
+/* Prov info array init count */
+#define NA_OFI_PROV_INFO_COUNT (32)
+
 /* Address / URI max len */
 #define NA_OFI_MAX_URI_LEN (128)
 
@@ -3359,43 +3362,82 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
     const char *domain_name, const struct na_loc_info *loc_info,
     struct fi_info **fi_info_p)
 {
-    struct fi_info *prov, *providers = NULL;
+    struct fi_info *prov, *providers = NULL, **prov_array = NULL;
+    size_t prov_count = 0, prov_max_count = NA_OFI_PROV_INFO_COUNT;
     struct na_ofi_verify_info verify_info =
         (struct na_ofi_verify_info){.prov_type = prov_type,
             .addr_format = info->addr_format,
             .domain_name = domain_name,
             .loc_info = loc_info};
-#ifdef NA_HAS_DEBUG
-    unsigned int count = 0;
-#endif
+    hg_cpu_set_t cpu_set;
+    int cpu = 0;
     na_return_t ret;
+    int rc;
 
     ret = na_ofi_getinfo(prov_type, info, &providers);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_getinfo() failed");
 
-#ifdef NA_HAS_DEBUG
-    for (prov = providers; prov != NULL; prov = prov->next) {
-        if (na_ofi_match_provider(&verify_info, prov)) {
-            // NA_LOG_SUBSYS_DEBUG_EXT(cls, "Verbose FI info for provider",
-            //     "#%u %s", count, fi_tostr(prov, FI_TYPE_INFO));
-            count++;
-        }
-    }
-    NA_LOG_SUBSYS_DEBUG(
-        cls, "na_ofi_getinfo() returned %u candidate(s)", count);
+#if !defined(_WIN32) && !defined(__APPLE__)
+    /**
+     * If threads are bound to a particular CPU ID, use that ID to select NIC
+     * on system with multiple NICs (if/when hwloc returns multiple close NICs).
+     */
+    CPU_ZERO(&cpu_set);
+    rc = hg_thread_getaffinity(hg_thread_self(), &cpu_set);
+    NA_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret,
+        NA_PROTOCOL_ERROR, "Could not retrieve CPU affinity");
+    for (cpu = 0; cpu < CPU_SETSIZE; cpu++)
+        if (CPU_ISSET((size_t) cpu, &cpu_set))
+            break;
+#else
+    (void) cpu_set;
 #endif
 
-    /* Try to find provider that matches protocol and domain/host name */
+    /* Create separate array to sort/filter prov infos */
+    prov_array =
+        (struct fi_info **) malloc(prov_max_count * sizeof(*prov_array));
+    NA_CHECK_SUBSYS_ERROR(cls, prov_array == NULL, error, ret, NA_NOMEM,
+        "Could not allocate prov_array");
+
     for (prov = providers; prov != NULL; prov = prov->next) {
-        if (na_ofi_match_provider(&verify_info, prov)) {
-            NA_LOG_SUBSYS_DEBUG_EXT(cls, "FI info for selected provider", "%s",
-                fi_tostr(prov, FI_TYPE_INFO));
-            break;
+        size_t i;
+
+        /* Try to find provider that matches protocol and domain/host name */
+        if (!na_ofi_match_provider(&verify_info, prov))
+            continue;
+
+        /* Keep only prov_infos that have different domains */
+        for (i = 0; i < prov_count; i++)
+            if (strcmp(prov_array[i]->domain_attr->name,
+                    prov->domain_attr->name) == 0)
+                break;
+        if (i < prov_count) /* duplicate */
+            continue;
+
+        NA_LOG_SUBSYS_DEBUG_EXT(cls, "Verbose FI info for provider",
+            "#%zu %s", prov_count, fi_tostr(prov, FI_TYPE_INFO));
+
+        if (prov_count == prov_max_count) {
+            prov_max_count *= 2;
+            prov_array = (struct fi_info **) realloc(
+                prov_array, prov_max_count * sizeof(*prov_array));
+            NA_CHECK_SUBSYS_ERROR(cls, prov_array == NULL, error, ret, NA_NOMEM,
+                "Could not reallocate prov_array");
         }
+        prov_array[prov_count] = prov;
+        prov_count++;
     }
-    NA_CHECK_SUBSYS_ERROR(fatal, prov == NULL, error, ret, NA_NOENTRY,
+    NA_CHECK_SUBSYS_ERROR(fatal, prov_count == 0, error, ret, NA_NOENTRY,
         "No provider found for \"%s\" provider on domain \"%s\"",
         na_ofi_prov_name[prov_type], domain_name);
+
+    NA_LOG_SUBSYS_DEBUG(
+        cls, "na_ofi_getinfo() returned %zu candidate(s)", prov_count);
+
+    /* Round-robin on domains based on selected CPU */
+    prov = prov_array[(prov_count > 1) ? (size_t) cpu % prov_count : 0];
+    NA_LOG_SUBSYS_DEBUG_EXT(cls, "FI info for selected provider", "%s",
+        fi_tostr(prov, FI_TYPE_INFO));
 
     /* Keep fi_info */
     *fi_info_p = fi_dupinfo(prov);
@@ -3403,12 +3445,14 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
         "Could not duplicate fi_info");
 
     fi_freeinfo(providers);
+    free(prov_array);
 
     return NA_SUCCESS;
 
 error:
     if (providers)
         fi_freeinfo(providers);
+    free(prov_array);
 
     return ret;
 }
