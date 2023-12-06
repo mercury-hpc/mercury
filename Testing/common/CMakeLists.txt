@@ -89,6 +89,7 @@ configure_file(
 set(NA_TEST_COMMON_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na_test.c
   ${CMAKE_CURRENT_SOURCE_DIR}/na_test_getopt.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_test_mpi.c
 )
 
 set(MERCURY_TEST_COMMON_SRCS
@@ -109,6 +110,7 @@ set(NA_TEST_COMMON_PRIVATE_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_test_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na_test.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na_test_getopt.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_test_mpi.h
 )
 
 set(MERCURY_TEST_COMMON_PRIVATE_HEADERS

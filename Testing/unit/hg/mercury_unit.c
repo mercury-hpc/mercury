@@ -413,7 +413,7 @@ hg_unit_cleanup(struct hg_unit_info *info)
 
     /* Client sends request to terminate server */
     if (!info->hg_test_info.na_test_info.listen) {
-        if (info->hg_test_info.na_test_info.mpi_comm_rank == 0) {
+        if (info->hg_test_info.na_test_info.mpi_info.rank == 0) {
             hg_uint8_t i, context_count = max_contexts ? max_contexts : 1;
             for (i = 0; i < context_count; i++)
                 hg_test_finalize_rpc(info, i);

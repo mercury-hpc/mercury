@@ -33,8 +33,8 @@ static hg_return_t
 hg_perf_run(const struct hg_test_info *hg_test_info,
     struct hg_perf_class_info *info, size_t buf_size, size_t skip)
 {
-    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_comm_rank,
-           comm_size = (size_t) hg_test_info->na_test_info.mpi_comm_size,
+    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_info.rank,
+           comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size,
            loop = (size_t) hg_test_info->na_test_info.loop;
     hg_time_t t1, t2;
     hg_return_t ret;
@@ -114,7 +114,7 @@ main(int argc, char *argv[])
         HG_Error_to_string(hg_ret));
 
     /* Header info */
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+    if (hg_test_info->na_test_info.mpi_info.rank == 0)
         hg_perf_print_header_bw(hg_test_info, info, BENCHMARK_NAME);
 
     /* Bulk RPC with different sizes */
@@ -128,7 +128,7 @@ main(int argc, char *argv[])
     }
 
     /* Finalize interface */
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+    if (hg_test_info->na_test_info.mpi_info.rank == 0)
         hg_perf_send_done(info);
 
     hg_perf_cleanup(&perf_info);

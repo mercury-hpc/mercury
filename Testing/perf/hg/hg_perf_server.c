@@ -151,8 +151,11 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_perf_init() failed (%s)",
         HG_Error_to_string(hg_ret));
     hg_test_info = &info.hg_test_info;
+    if (hg_test_info->na_test_info.mpi_info.rank == 0)
+        printf("# %d server process(es)\n",
+            hg_test_info->na_test_info.mpi_info.size);
 
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+    if (hg_test_info->na_test_info.mpi_info.rank == 0)
         HG_TEST_READY_MSG();
 
     if (info.class_max > 1) {
@@ -179,7 +182,7 @@ main(int argc, char *argv[])
     }
 
     /* Finalize interface */
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+    if (hg_test_info->na_test_info.mpi_info.rank == 0)
         printf("Finalizing...\n");
     hg_perf_cleanup(&info);
     free(progress_threads);

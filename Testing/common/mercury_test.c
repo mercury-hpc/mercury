@@ -248,26 +248,21 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_info->hg_class = hg_test_info->hg_classes[0]; /* default */
 
     if (hg_test_info->na_test_info.listen) {
-#ifdef HG_TEST_HAS_PARALLEL
         int j;
-        for (j = 0; j < hg_test_info->na_test_info.mpi_comm_size; j++) {
-            if (hg_test_info->na_test_info.mpi_comm_rank == j) {
-#endif
+        for (j = 0; j < hg_test_info->na_test_info.mpi_info.size; j++) {
+            if (hg_test_info->na_test_info.mpi_info.rank == j) {
                 for (i = 0; i < hg_test_info->na_test_info.max_classes; i++) {
                     ret = hg_test_self_addr_publish(hg_test_info->hg_classes[i],
-                        i > 0 || hg_test_info->na_test_info.mpi_comm_rank != 0);
+                        i > 0 || hg_test_info->na_test_info.mpi_info.rank != 0);
                     HG_TEST_CHECK_HG_ERROR(
                         error, ret, "hg_test_self_addr_publish() failed");
                 }
-
-#ifdef HG_TEST_HAS_PARALLEL
             }
             NA_Test_barrier(&hg_test_info->na_test_info);
         }
         /* If static client, must wait for server to write config file */
         if (hg_test_info->na_test_info.mpi_static)
-            MPI_Barrier(MPI_COMM_WORLD);
-#endif
+            na_test_mpi_barrier_world();
     }
 
     return HG_SUCCESS;
