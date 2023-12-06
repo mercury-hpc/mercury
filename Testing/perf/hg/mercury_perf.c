@@ -467,8 +467,8 @@ hg_return_t
 hg_perf_set_handles(const struct hg_test_info *hg_test_info,
     struct hg_perf_class_info *info, enum hg_perf_rpc_id rpc_id)
 {
-    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_comm_rank,
-           comm_size = (size_t) hg_test_info->na_test_info.mpi_comm_size;
+    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_info.rank,
+           comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
     hg_return_t ret;
     size_t i;
 
@@ -517,7 +517,7 @@ hg_perf_rpc_buf_init(
 
     barrier = true;
 
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
+    if (hg_test_info->na_test_info.mpi_info.rank == 0) {
         size_t i;
 
         for (i = 0; i < info->target_addr_max; i++) {
@@ -576,8 +576,8 @@ hg_return_t
 hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
     struct hg_perf_class_info *info, hg_bulk_op_t bulk_op)
 {
-    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_comm_rank,
-           comm_size = (size_t) hg_test_info->na_test_info.mpi_comm_size;
+    size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_info.rank,
+           comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
     hg_uint8_t bulk_flags =
         (bulk_op == HG_BULK_PULL) ? HG_BULK_READ_ONLY : HG_BULK_WRITE_ONLY;
     struct hg_perf_request args = {.expected_count = (int32_t) info->handle_max,
@@ -681,11 +681,13 @@ hg_perf_print_header_lat(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, const char *benchmark)
 {
     printf("# %s v%s\n", benchmark, VERSION_NAME);
+    printf(
+        "# %d client process(es)\n", hg_test_info->na_test_info.mpi_info.size);
     printf("# Loop %d times from size %zu to %zu byte(s) with %zu handle(s) "
            "in-flight\n",
         hg_test_info->na_test_info.loop, info->buf_size_min, info->buf_size_max,
         info->handle_max);
-    if (info->handle_max * (size_t) hg_test_info->na_test_info.mpi_comm_size <
+    if (info->handle_max * (size_t) hg_test_info->na_test_info.mpi_info.size <
         info->target_addr_max)
         printf("# WARNING number of handles in flight less than number of "
                "targets\n");
@@ -705,7 +707,7 @@ hg_perf_print_lat(const struct hg_test_info *hg_test_info,
     size_t loop = (size_t) hg_test_info->na_test_info.loop,
            handle_max = (size_t) info->handle_max,
            dir = (size_t) (hg_test_info->bidirectional ? 2 : 1),
-           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_comm_size;
+           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
 
     rpc_time = hg_time_to_double(t) * 1e6 /
                (double) (loop * handle_max * dir * mpi_comm_size);
@@ -720,6 +722,8 @@ hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, const char *benchmark)
 {
     printf("# %s v%s\n", benchmark, VERSION_NAME);
+    printf(
+        "# %d client process(es)\n", hg_test_info->na_test_info.mpi_info.size);
     printf("# Loop %d times from size %zu to %zu byte(s) with %zu handle(s) "
            "in-flight\n# - %zu bulk transfer(s) per handle\n",
         hg_test_info->na_test_info.loop, info->buf_size_min, info->buf_size_max,
@@ -741,7 +745,7 @@ hg_perf_print_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t)
 {
     size_t loop = (size_t) hg_test_info->na_test_info.loop,
-           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_comm_size,
+           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size,
            handle_max = (size_t) info->handle_max,
            buf_count = (size_t) info->bulk_count;
     double avg_time, avg_bw;

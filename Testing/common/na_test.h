@@ -8,12 +8,7 @@
 #ifndef NA_TEST_H
 #define NA_TEST_H
 
-#include "mercury_test_config.h"
-#include "na.h"
-
-#ifdef HG_TEST_HAS_PARALLEL
-#    include <mpi.h>
-#endif
+#include "na_test_mpi.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -43,13 +38,7 @@ struct na_test_info {
     size_t buf_size_max;     /* Max buffer size */
     size_t buf_count;        /* Buffer count */
     bool verbose;            /* Verbose mode */
-    int max_number_of_peers; /* Max number of peers */
-#ifdef HG_TEST_HAS_PARALLEL
-    MPI_Comm mpi_comm;    /* MPI comm */
-    bool mpi_no_finalize; /* Prevent from finalizing MPI */
-#endif
-    int mpi_comm_rank;   /* MPI comm rank */
-    int mpi_comm_size;   /* MPI comm size */
+    struct na_test_mpi_info mpi_info;
     bool extern_init;    /* Extern init */
     bool use_threads;    /* Use threads */
     bool force_register; /* Force registration each iteration */
@@ -216,7 +205,7 @@ NA_Test_barrier(const struct na_test_info *na_test_info);
  */
 void
 NA_Test_bcast(
-    char *buf, int count, int root, const struct na_test_info *na_test_info);
+    void *buf, size_t size, int root, const struct na_test_info *na_test_info);
 
 #ifdef __cplusplus
 }

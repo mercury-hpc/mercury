@@ -125,7 +125,7 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
     info->na_class = info->na_test_info.na_class;
 
     /* Parallel is not supported */
-    NA_TEST_CHECK_ERROR(info->na_test_info.mpi_comm_size > 1, error, ret,
+    NA_TEST_CHECK_ERROR(info->na_test_info.mpi_info.size > 1, error, ret,
         NA_OPNOTSUPPORTED, "Not a parallel test");
 
     /* Multi-recv */
