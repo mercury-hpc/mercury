@@ -8163,14 +8163,6 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     na_return_t ret;
     int rc;
 
-    /* Just throw a warning if we start exceeding the optimal number of
-     * MRs for that domain */
-    NA_CHECK_SUBSYS_WARNING(mem,
-        fi_info->domain_attr->mr_cnt > 0 &&
-            !((size_t) mr_cnt < fi_info->domain_attr->mr_cnt),
-        "Exceeding domain's optimal MR count (%" PRId32 " >= %zu)", mr_cnt,
-        fi_info->domain_attr->mr_cnt);
-
     /* Set access mode */
     switch (na_ofi_mem_handle->desc.info.flags) {
         case NA_MEM_READ_ONLY:
