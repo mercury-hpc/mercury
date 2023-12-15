@@ -78,6 +78,7 @@ else()
   # Disable sockets with Tsan builds (OFI issues)
   if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan")
     set(OFI_PROTOCOLS "tcp;tcp_rxm")
+    set(ENV{FI_PROVIDER} "tcp") # ensure MPI uses tcp
   else()
     set(OFI_PROTOCOLS "sockets;tcp;tcp_rxm")
   endif()
