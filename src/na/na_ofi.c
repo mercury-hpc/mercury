@@ -3369,10 +3369,12 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
             .addr_format = info->addr_format,
             .domain_name = domain_name,
             .loc_info = loc_info};
-    hg_cpu_set_t cpu_set;
     int cpu = 0;
     na_return_t ret;
+#if !defined(_WIN32) && !defined(__APPLE__)
+    hg_cpu_set_t cpu_set;
     int rc;
+#endif
 
     ret = na_ofi_getinfo(prov_type, info, &providers);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "na_ofi_getinfo() failed");
@@ -3389,8 +3391,6 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
     for (cpu = 0; cpu < CPU_SETSIZE; cpu++)
         if (CPU_ISSET((size_t) cpu, &cpu_set))
             break;
-#else
-    (void) cpu_set;
 #endif
 
     /* Create separate array to sort/filter prov infos */
@@ -3414,8 +3414,8 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
         if (i < prov_count) /* duplicate */
             continue;
 
-        NA_LOG_SUBSYS_DEBUG_EXT(cls, "Verbose FI info for provider",
-            "#%zu %s", prov_count, fi_tostr(prov, FI_TYPE_INFO));
+        NA_LOG_SUBSYS_DEBUG_EXT(cls, "Verbose FI info for provider", "#%zu %s",
+            prov_count, fi_tostr(prov, FI_TYPE_INFO));
 
         if (prov_count == prov_max_count) {
             prov_max_count *= 2;
