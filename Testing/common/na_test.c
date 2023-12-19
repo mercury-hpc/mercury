@@ -57,7 +57,8 @@ static char *
 na_test_gen_config(struct na_test_info *na_test_info, unsigned int i);
 
 static na_return_t
-na_test_self_addr_publish(na_class_t *na_class, bool append);
+na_test_self_addr_publish(
+    const char *hostfile, na_class_t *na_class, bool append);
 
 /*******************/
 /* Local Variables */
@@ -84,15 +85,14 @@ na_test_usage(const char *execname)
     printf("    NA OPTIONS\n");
     printf("    -h, --help           Print a usage message and exit\n");
     printf("    -c, --comm           Select NA plugin\n"
-           "                         NA plugins: bmi, mpi, cci, etc\n");
+           "                         NA plugins: ofi, ucx, etc\n");
     printf("    -d, --domain         Select NA OFI domain\n");
     printf("    -p, --protocol       Select plugin protocol\n"
-           "                         Available protocols: tcp, ib, etc\n");
+           "                         Available protocols: tcp, verbs, etc\n");
     printf("    -H, --hostname       Select hostname / IP address to use\n"
            "                         Default: any\n");
     printf("    -P, --port           Select port to use\n"
            "                         Default: any\n");
-    printf("    -L, --listen         Listen for incoming messages\n");
     printf("    -S, --self_send      Send to self\n");
     printf("    -k, --key            Pass auth key\n");
     printf("    -l, --loop           Number of loops (default: 1)\n");
@@ -103,6 +103,9 @@ na_test_usage(const char *execname)
     printf("    -R, --force-register Force registration of buffers\n");
     printf("    -M, --mbps           Output in MB/s instead of MiB/s\n");
     printf("    -U, --no-multi-recv  Disable multi-recv\n");
+    printf("    -f, --hostfile       Specify hostfile to use\n"
+           "                         Default: " HG_TEST_TEMP_DIRECTORY
+               HG_TEST_CONFIG_FILE_NAME "\n");
     printf("    -V, --verbose        Print verbose output\n");
 }
 
@@ -145,9 +148,6 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'P': /* port */
                 na_test_info->port = atoi(na_test_opt_arg_g);
-                break;
-            case 'L': /* listen */
-                na_test_info->listen = true;
                 break;
             case 's': /* static */
                 na_test_info->mpi_static = true;
@@ -199,6 +199,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'U': /* no-multi-recv */
                 na_test_info->no_multi_recv = true;
+                break;
+            case 'f': /* hostfile */
+                na_test_info->hostfile = strdup(na_test_opt_arg_g);
                 break;
             default:
                 break;
@@ -303,14 +306,18 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_test_set_config(const char *addr_name, bool append)
+na_test_set_config(const char *hostfile, const char *addr_name, bool append)
 {
+    const char *config_file =
+        hostfile != NULL ? hostfile
+                         : HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME;
     FILE *config = NULL;
     na_return_t ret;
     int rc;
 
-    config = fopen(
-        HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, append ? "a" : "w");
+    if (!append)
+        printf("# Writing config to %s\n", config_file);
+    config = fopen(config_file, append ? "a" : "w");
     NA_TEST_CHECK_ERROR(config == NULL, error, ret, NA_NOENTRY,
         "Could not open config file from: %s",
         HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
@@ -335,14 +342,19 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-na_test_get_config(char *addrs[], size_t *count_p)
+na_test_get_config(const char *hostfile, char *addrs[], size_t *count_p)
 {
+    const char *config_file =
+        hostfile != NULL ? hostfile
+                         : HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME;
     FILE *config = NULL;
     na_return_t ret;
     size_t count = 0;
     int rc;
 
-    config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "r");
+    if (addrs != NULL)
+        printf("# Reading config from %s\n", config_file);
+    config = fopen(config_file, "r");
     NA_TEST_CHECK_ERROR(config == NULL, error, ret, NA_NOENTRY,
         "Could not open config file from: %s",
         HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
@@ -387,7 +399,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_test_self_addr_publish(na_class_t *na_class, bool append)
+na_test_self_addr_publish(
+    const char *hostfile, na_class_t *na_class, bool append)
 {
     char addr_string[NA_TEST_MAX_ADDR_NAME];
     size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
@@ -405,7 +418,7 @@ na_test_self_addr_publish(na_class_t *na_class, bool append)
     NA_Addr_free(na_class, self_addr);
     self_addr = NULL;
 
-    ret = na_test_set_config(addr_string, append);
+    ret = na_test_set_config(hostfile, addr_string, append);
     NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_set_config() failed (%s)",
         NA_Error_to_string(ret));
 
@@ -497,7 +510,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
     if (na_test_info->listen && !na_test_info->extern_init) {
         for (i = 0; i < na_test_info->max_classes; i++) {
-            ret = na_test_self_addr_publish(na_test_info->na_classes[i], i > 0);
+            ret = na_test_self_addr_publish(
+                na_test_info->hostfile, na_test_info->na_classes[i], i > 0);
             NA_TEST_CHECK_NA_ERROR(
                 error, ret, "na_test_self_addr_publish() failed");
         }
@@ -515,7 +529,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         if (na_test_info->mpi_info.rank == 0) {
             size_t count = 0;
 
-            ret = na_test_get_config(NULL, &count);
+            ret = na_test_get_config(na_test_info->hostfile, NULL, &count);
             NA_TEST_CHECK_NA_ERROR(error, ret,
                 "na_test_get_config() failed (%s)", NA_Error_to_string(ret));
             NA_TEST_CHECK_ERROR(count > UINT32_MAX, error, ret, NA_OVERFLOW,
@@ -535,7 +549,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         if (na_test_info->mpi_info.rank == 0) {
             size_t count = na_test_info->max_targets;
 
-            ret = na_test_get_config(na_test_info->target_names, &count);
+            ret = na_test_get_config(
+                na_test_info->hostfile, na_test_info->target_names, &count);
             NA_TEST_CHECK_NA_ERROR(error, ret,
                 "na_test_get_config() failed (%s)", NA_Error_to_string(ret));
         }
@@ -629,6 +644,10 @@ NA_Test_finalize(struct na_test_info *na_test_info)
     if (na_test_info->key != NULL) {
         free(na_test_info->key);
         na_test_info->key = NULL;
+    }
+    if (na_test_info->hostfile != NULL) {
+        free(na_test_info->hostfile);
+        na_test_info->hostfile = NULL;
     }
 
     na_test_mpi_finalize(&na_test_info->mpi_info);

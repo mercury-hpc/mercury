@@ -12,10 +12,6 @@
 
 #include "mercury.h"
 
-#ifdef HG_TEST_HAS_CRAY_DRC
-#    include <rdmacred.h>
-#endif
-
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -24,17 +20,10 @@ struct hg_test_info {
     struct na_test_info na_test_info; /* NA test info */
     hg_class_t *hg_class;             /* Default HG class */
     hg_class_t **hg_classes;          /* Array of HG classes */
-#ifdef HG_TEST_HAS_CRAY_DRC
-    uint32_t credential;
-    uint32_t wlm_id;
-    drc_info_handle_t credential_info;
-    uint32_t cookie;
-#endif
-    unsigned int handle_max;   /* Max number of handles in-flight */
-    unsigned int thread_count; /* Max number of threads */
-    hg_bool_t auth;
-    hg_bool_t auto_sm;       /* Use shared-memory */
-    hg_bool_t bidirectional; /* Bidirectional tests */
+    unsigned int handle_max;          /* Max number of handles in-flight */
+    unsigned int thread_count;        /* Max number of threads */
+    hg_bool_t auto_sm;                /* Use shared-memory */
+    hg_bool_t bidirectional;          /* Bidirectional tests */
 };
 
 /*****************/

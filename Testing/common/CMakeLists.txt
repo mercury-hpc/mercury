@@ -44,26 +44,6 @@ else()
 endif()
 mark_as_advanced(MERCURY_TESTING_ENABLE_PARALLEL)
 
-# DRC
-if(NA_USE_OFI)
-  option(NA_OFI_TESTING_USE_CRAY_DRC
-    "Use Cray DRC to allow multi-job communication." OFF)
-  mark_as_advanced(NA_OFI_TESTING_USE_CRAY_DRC)
-  if(NA_OFI_TESTING_USE_CRAY_DRC)
-    find_package(DRC REQUIRED)
-    message(STATUS "DRC include directory: ${DRC_INCLUDE_DIRS}")
-    set(HG_TEST_HAS_CRAY_DRC 1)
-    set(MERCURY_TEST_COMMON_EXT_INCLUDE_DEPENDENCIES
-      ${MERCURY_TEST_COMMON_EXT_INCLUDE_DEPENDENCIES}
-      ${DRC_INCLUDE_DIRS}
-    )
-    set(MERCURY_TEST_COMMON_EXT_LIB_DEPENDENCIES
-      ${MERCURY_TEST_COMMON_EXT_LIB_DEPENDENCIES}
-      ${DRC_LIBRARIES}
-    )
-  endif()
-endif()
-
 # Detect <sys/prctl.h>
 check_include_files("sys/prctl.h" HG_TEST_HAS_SYSPRCTL_H)
 
@@ -96,13 +76,6 @@ set(MERCURY_TEST_COMMON_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test.c
 )
 
-if(NA_OFI_TESTING_USE_CRAY_DRC)
-  set(MERCURY_TEST_COMMON_SRCS
-    ${MERCURY_TEST_COMMON_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test_drc.c
-  )
-endif()
-
 #------------------------------------------------------------------------------
 # Specify project private header files
 #------------------------------------------------------------------------------
@@ -117,13 +90,6 @@ set(MERCURY_TEST_COMMON_PRIVATE_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_test_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test.h
 )
-
-if(NA_OFI_TESTING_USE_CRAY_DRC)
-  set(MERCURY_TEST_COMMON_PRIVATE_HEADERS
-    ${MERCURY_TEST_COMMON_PRIVATE_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test_drc.h
-  )
-endif()
 
 #----------------------------------------------------------------------------
 # Libraries
