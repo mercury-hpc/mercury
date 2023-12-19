@@ -224,11 +224,6 @@ build_mercury_test(proc)
 
 build_mercury_test(kill)
 
-# Cray DRC test
-if(NA_OFI_TESTING_USE_CRAY_DRC)
-  build_mercury_test(drc_auth)
-endif()
-
 add_mercury_test_standalone(proc)
 
 add_mercury_test_comm_all(rpc)

@@ -22,6 +22,7 @@ struct na_test_info {
     char *comm;              /* Comm/Plugin name */
     char *domain;            /* Domain name */
     char *protocol;          /* Protocol name */
+    char *hostfile;          /* Hostfile */
     char *hostname;          /* Hostname */
     int port;                /* Port */
     bool listen;             /* Listen */
@@ -174,13 +175,13 @@ na_test_usage(const char *execname);
  * Set config file
  */
 na_return_t
-na_test_set_config(const char *addr_name, bool append);
+na_test_set_config(const char *hostfile, const char *addr_name, bool append);
 
 /**
  * Get config file
  */
 na_return_t
-na_test_get_config(char *addrs[], size_t *count_p);
+na_test_get_config(const char *hostfile, char *addrs[], size_t *count_p);
 
 /**
  * Initialize

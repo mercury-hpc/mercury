@@ -14,7 +14,7 @@
 
 int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:d:p:H:P:LsSk:l:bC:X:VaZ:y:z:w:x:mt:BRvMU";
+const char *na_test_short_opt_g = "hc:d:p:H:P:sSk:l:bC:X:VZ:y:z:w:x:mt:BRvMUf:";
 /* clang-format off */
 const struct na_test_opt na_test_opt_g[] = {
     {"help", no_arg, 'h'},
@@ -23,7 +23,6 @@ const struct na_test_opt na_test_opt_g[] = {
     {"protocol", require_arg, 'p'},
     {"hostname", require_arg, 'H'},
     {"port", require_arg, 'P'},
-    {"listen", no_arg, 'L'},
     {"mpi_static", no_arg, 's'},
     {"self_send", no_arg, 'S'},
     {"key", require_arg, 'k'},
@@ -32,7 +31,6 @@ const struct na_test_opt na_test_opt_g[] = {
     {"classes", require_arg, 'C'},
     {"contexts", require_arg, 'X'},
     {"verbose", no_arg, 'V'},
-    {"auth", no_arg, 'a'},
     {"msg_size", require_arg, 'Z'},
     {"buf_size_min", require_arg, 'y'},
     {"buf_size_max", require_arg, 'z'},
@@ -45,6 +43,7 @@ const struct na_test_opt na_test_opt_g[] = {
     {"verify", no_arg, 'v'},
     {"millionbps", no_arg, 'M'},
     {"no-multi-recv", no_arg, 'U'},
+    {"hostfile", require_arg, 'f'},
     {NULL, 0, '\0'} /* Must add this at the end */
 };
 /* clang-format on */
