@@ -597,7 +597,7 @@ hg_atomic_cas64(
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
-hg_atomic_fence()
+hg_atomic_fence(void)
 {
 #if defined(_WIN32)
     MemoryBarrier();
