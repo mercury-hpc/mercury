@@ -204,7 +204,6 @@ na_test_mpi_init_lib(void)
     return;
 
 error:
-    printf("Could not find mpi\n");
     return;
 }
 #endif
