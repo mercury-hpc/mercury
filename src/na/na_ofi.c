@@ -148,7 +148,7 @@
       FI_ADDR_STR,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_SHM,                                                            \
-      FI_MULTI_RECV,                                                           \
+      0,                                                                       \
       NA_OFI_HMEM                                                              \
     )                                                                          \
     X(NA_OFI_PROV_SOCKETS,                                                     \
@@ -4242,6 +4242,7 @@ na_ofi_set_domain_ops(
 #else
             (void) na_ofi_domain;
 #endif
+        case NA_OFI_PROV_SHM:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
         case NA_OFI_PROV_TCP_RXM:
@@ -4394,6 +4395,7 @@ na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
             return na_ofi_parse_cxi_auth_key(
                 str, domain_name, &auth_key->cxi_auth_key, auth_key_size_p);
         case NA_OFI_PROV_NULL:
+        case NA_OFI_PROV_SHM:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
         case NA_OFI_PROV_TCP_RXM:
@@ -4553,6 +4555,7 @@ na_ofi_parse_auth_key_range(const char *str, enum na_ofi_prov_type prov_type,
             return na_ofi_parse_cxi_auth_key_range(
                 str, &base_key->cxi_auth_key, auth_key_num_p);
         case NA_OFI_PROV_NULL:
+        case NA_OFI_PROV_SHM:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
         case NA_OFI_PROV_TCP_RXM:
@@ -4612,6 +4615,7 @@ na_ofi_gen_auth_key(const union na_ofi_auth_key *base_key, int index,
                 &auth_key->cxi_auth_key, auth_key_size_p);
             return NA_SUCCESS;
         case NA_OFI_PROV_NULL:
+        case NA_OFI_PROV_SHM:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
         case NA_OFI_PROV_TCP_RXM:
