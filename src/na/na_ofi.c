@@ -67,24 +67,27 @@
  * Specify the version of OFI is coded to, the provider will select struct
  * layouts that are compatible with this version.
  */
-#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
-    FI_VERSION(1, 16))
+#ifndef FI_COMPILE_VERSION
+#    define FI_COMPILE_VERSION FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION)
+#endif
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 16))
 #    define NA_OFI_VERSION FI_VERSION(1, 9)
-#else
+#elif FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 20))
 /* Bump to 1.13 to support redefinition of OFI log callbacks */
 #    define NA_OFI_VERSION FI_VERSION(1, 13)
+#else
+/* Bump to 1.20 to support av auth keys */
+#    define NA_OFI_VERSION FI_VERSION(1, 20)
 #endif
 
 /* Fallback for undefined OPX values */
-#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
-    FI_VERSION(1, 15))
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 15))
 #    define FI_ADDR_OPX  -1
 #    define FI_PROTO_OPX -1
 #endif
 
 /* Fallback for undefined CXI values */
-#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
-    FI_VERSION(1, 14)) /* < 1.14 */
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 14)) /* < 1.14 */
 #    define FI_ADDR_CXI  -2
 #    define FI_PROTO_CXI -2
 #elif (FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 14) /* = 1.14 */
@@ -100,8 +103,7 @@
 #endif
 
 /* Fallback for undefined XNET values */
-#if FI_VERSION_LT(FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION),              \
-    FI_VERSION(1, 17))
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 17))
 #    define FI_PROTO_XNET -3
 #endif
 
@@ -111,15 +113,16 @@
 /* flags that control na_ofi behavior (in the X macro below for each
  * provider)
  */
-#define NA_OFI_DOM_IFACE  (1 << 0) /* domain name is interface name */
-#define NA_OFI_WAIT_SET   (1 << 1) /* supports FI_WAIT_SET */
-#define NA_OFI_WAIT_FD    (1 << 2) /* supports FI_WAIT_FD */
-#define NA_OFI_SIGNAL     (1 << 3) /* supports fi_signal() */
-#define NA_OFI_SEP        (1 << 4) /* supports SEPs */
-#define NA_OFI_LOC_INFO   (1 << 5) /* supports locality info */
-#define NA_OFI_CONTEXT2   (1 << 6) /* requires FI_CONTEXT2 */
-#define NA_OFI_HMEM       (1 << 7) /* supports FI_HMEM */
-#define NA_OFI_DOM_SHARED (1 << 8) /* requires shared domain */
+#define NA_OFI_DOM_IFACE   (1 << 0) /* domain name is interface name */
+#define NA_OFI_WAIT_SET    (1 << 1) /* supports FI_WAIT_SET */
+#define NA_OFI_WAIT_FD     (1 << 2) /* supports FI_WAIT_FD */
+#define NA_OFI_SIGNAL      (1 << 3) /* supports fi_signal() */
+#define NA_OFI_SEP         (1 << 4) /* supports SEPs */
+#define NA_OFI_LOC_INFO    (1 << 5) /* supports locality info */
+#define NA_OFI_CONTEXT2    (1 << 6) /* requires FI_CONTEXT2 */
+#define NA_OFI_HMEM        (1 << 7) /* supports FI_HMEM */
+#define NA_OFI_DOM_SHARED  (1 << 8) /* requires shared domain */
+#define NA_OFI_AV_AUTH_KEY (1 << 9) /* support FI_AV_AUTH_KEY */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -145,7 +148,7 @@
       FI_ADDR_STR,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_SHM,                                                            \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
+      FI_MULTI_RECV,                                                           \
       NA_OFI_HMEM                                                              \
     )                                                                          \
     X(NA_OFI_PROV_SOCKETS,                                                     \
@@ -155,7 +158,7 @@
       FI_SOCKADDR_IN,                                                          \
       FI_PROGRESS_AUTO,                                                        \
       FI_PROTO_SOCK_TCP,                                                       \
-      FI_SOURCE | FI_MULTI_RECV,                                               \
+      FI_MULTI_RECV,                                                           \
       NA_OFI_DOM_IFACE | NA_OFI_WAIT_FD | NA_OFI_SEP | NA_OFI_DOM_SHARED       \
     )                                                                          \
     X(NA_OFI_PROV_TCP,                                                         \
@@ -226,7 +229,7 @@
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
       FI_MULTI_RECV,                                                           \
-      NA_OFI_WAIT_FD | NA_OFI_LOC_INFO | NA_OFI_HMEM                           \
+      NA_OFI_WAIT_FD | NA_OFI_LOC_INFO | NA_OFI_HMEM | NA_OFI_AV_AUTH_KEY      \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
 /* clang-format on */
@@ -290,6 +293,12 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* CXI */
 #define NA_OFI_CXI_NODE_PREFIX "cxi"
+#ifndef C_DFA_PID_BITS_MAX
+#    define C_DFA_PID_BITS_MAX 9
+#endif
+#ifndef C_DFA_NIC_BITS
+#    define C_DFA_NIC_BITS 20
+#endif
 
 /* Address pool (enabled by default, comment out to disable) */
 #define NA_OFI_HAS_ADDR_POOL
@@ -323,8 +332,6 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
  * Override default to 128k
  */
 #define NA_OFI_CQ_DEPTH (131072)
-/* CQ max err data size (fix to 48 to work around bug in gni provider code) */
-#define NA_OFI_CQ_MAX_ERR_DATA_SIZE (48)
 
 /* Uncomment to register SGL regions */
 // #define NA_OFI_USE_REGV
@@ -357,6 +364,7 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
         .service = NULL,                                                       \
         .src_addr = NULL,                                                      \
         .src_addrlen = 0,                                                      \
+        .num_auth_keys = 0,                                                    \
         .use_hmem = false})
 
 /* Get IOV */
@@ -487,15 +495,19 @@ struct na_ofi_gni_addr {
 };
 
 /* CXI address */
-union na_ofi_cxi_addr {
-    uint32_t raw;
-    struct {
-        uint32_t pid : 9;  /* C_DFA_PID_BITS_MAX */
-        uint32_t nic : 20; /* C_DFA_NIC_BITS */
-        uint32_t valid : 1;
-        uint32_t unused : 2;
-    };
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+struct na_ofi_cxi_addr {
+    uint32_t pid : C_DFA_PID_BITS_MAX;
+    uint32_t nic : C_DFA_NIC_BITS;
+    /* ignore other bits */
 };
+#else
+struct na_ofi_cxi_addr {
+    uint32_t pid : C_DFA_PID_BITS_MAX;
+    uint32_t nic : C_DFA_NIC_BITS;
+    uint16_t vni;
+};
+#endif
 
 /* String address */
 struct na_ofi_str_addr {
@@ -511,7 +523,7 @@ union na_ofi_raw_addr {
     struct na_ofi_psm2_addr psm2;
     struct na_ofi_opx_addr opx;
     struct na_ofi_gni_addr gni;
-    union na_ofi_cxi_addr cxi;
+    struct na_ofi_cxi_addr cxi;
     struct na_ofi_str_addr str;
 };
 
@@ -527,7 +539,15 @@ struct na_ofi_addr {
     HG_QUEUE_ENTRY(na_ofi_addr) entry; /* Entry in addr pool        */
     struct na_ofi_class *class;        /* Class                     */
     fi_addr_t fi_addr;                 /* FI address                */
+    fi_addr_t fi_auth_key;             /* FI auth key               */
     hg_atomic_int32_t refcount;        /* Reference counter         */
+};
+
+/* Error address info */
+struct na_ofi_src_err {
+    union na_ofi_raw_addr addr; /* Source address */
+    size_t addrlen;             /* Address size */
+    fi_addr_t fi_auth_key;      /* Auth key if configured with FI_AV_AUTH_KEY */
 };
 
 /* Message buffer info */
@@ -732,7 +752,7 @@ struct na_ofi_domain {
     HG_LIST_ENTRY(na_ofi_domain) entry; /* Entry in domain list */
     const struct na_ofi_fabric *fabric; /* Associated fabric */
     struct na_ofi_map addr_map;         /* Address map */
-    union na_ofi_auth_key auth_key;     /* Auth key */
+    hg_hash_table_t *auth_key_map;      /* Auth key map (FI_AV_AUTH_KEY) */
     struct fid_domain *fi_domain;       /* Domain handle */
     struct fid_av *fi_av;               /* Address vector handle */
     char *name;                         /* Domain name */
@@ -743,6 +763,8 @@ struct na_ofi_domain {
     hg_atomic_int32_t *mr_reg_count; /* Number of MR registered */
     int32_t refcount;                /* Refcount of this domain */
     bool no_wait;                    /* Wait disabled on domain */
+    bool av_auth_key;                /* Use FI_AV_AUTH_KEY */
+    bool av_user_id;                 /* Use FI_AV_USER_ID */
     bool shared;                     /* Domain may be shared between classes */
 } HG_LOCK_CAPABILITY("domain");
 
@@ -770,6 +792,7 @@ struct na_ofi_info {
     int addr_format;               /* Address format */
     void *src_addr;                /* Native src addr */
     size_t src_addrlen;            /* Native src addr len */
+    size_t num_auth_keys;          /* Requested number of auth keys */
     bool use_hmem;                 /* Use FI_HMEM */
 };
 
@@ -810,9 +833,7 @@ struct na_ofi_class {
 /* Local Prototypes */
 /********************/
 
-#if !defined(_WIN32) &&                                                        \
-    FI_VERSION_GE(                                                             \
-        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 16))
+#if !defined(_WIN32) && FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 16))
 /**
  * Check if OFI log is enabled.
  */
@@ -899,7 +920,7 @@ na_ofi_str_to_opx(const char *str, struct na_ofi_opx_addr *opx_addr);
 static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr);
 static na_return_t
-na_ofi_str_to_cxi(const char *str, union na_ofi_cxi_addr *cxi_addr);
+na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr);
 static na_return_t
 na_ofi_str_to_str(const char *str, struct na_ofi_str_addr *str_addr);
 
@@ -923,7 +944,7 @@ na_ofi_opx_to_key(const struct na_ofi_opx_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr);
 static NA_INLINE uint64_t
-na_ofi_cxi_to_key(const union na_ofi_cxi_addr *addr);
+na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr);
 static NA_INLINE uint64_t
 na_ofi_str_to_key(const struct na_ofi_str_addr *addr);
 
@@ -953,14 +974,15 @@ na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
  */
 static na_return_t
 na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
-    const void *buf, size_t buf_size);
+    union na_ofi_auth_key *auth_key, const void *buf, size_t buf_size);
 
 /**
  * Lookup addr and insert key if not present.
  */
 static na_return_t
 na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
-    struct na_ofi_addr_key *addr_key, struct na_ofi_addr **na_ofi_addr_p);
+    struct na_ofi_addr_key *addr_key, fi_addr_t fi_auth_key,
+    struct na_ofi_addr **na_ofi_addr_p);
 
 /**
  * Key hash for hash table.
@@ -1000,7 +1022,7 @@ na_ofi_addr_map_lookup(
 static na_return_t
 na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
     struct na_ofi_map *na_ofi_map, struct na_ofi_addr_key *addr_key,
-    struct na_ofi_addr **na_ofi_addr_p);
+    fi_addr_t fi_auth_key, struct na_ofi_addr **na_ofi_addr_p);
 
 /**
  * Remove addr key from map.
@@ -1177,20 +1199,103 @@ na_ofi_cxi_find_svc_id(const char *domain_name, uint32_t *svc_id_p);
 static na_return_t
 na_ofi_cxi_find_vni(int idx, uint16_t *vni_p);
 
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+/**
+ * Parse auth key range.
+ */
+static na_return_t
+na_ofi_parse_auth_key_range(const char *str, enum na_ofi_prov_type prov_type,
+    union na_ofi_auth_key *base_key, size_t *auth_key_num_p);
+
+/**
+ * Parse CXI auth key range.
+ */
+static na_return_t
+na_ofi_parse_cxi_auth_key_range(
+    const char *str, struct cxi_auth_key *base_key, size_t *auth_key_num_p);
+
+/**
+ * Generate auth key using base range key.
+ */
+static na_return_t
+na_ofi_gen_auth_key(const union na_ofi_auth_key *base_key, int index,
+    enum na_ofi_prov_type prov_type, union na_ofi_auth_key *auth_key,
+    size_t *auth_key_size_p);
+
+/**
+ * Generate CXI auth key using base range key.
+ */
+static void
+na_ofi_gen_cxi_auth_key(const struct cxi_auth_key *base_key, int index,
+    struct cxi_auth_key *auth_key, size_t *auth_key_size_p);
+
+/**
+ * Insert auth key.
+ */
+static na_return_t
+na_ofi_auth_key_insert(struct na_ofi_domain *na_ofi_domain,
+    const union na_ofi_auth_key *auth_key, size_t auth_key_size);
+
+/**
+ * Lookup auth key from map.
+ */
+static NA_INLINE fi_addr_t
+na_ofi_auth_key_lookup(hg_hash_table_t *table, union na_ofi_auth_key *auth_key);
+
+/**
+ * Key hash for hash table.
+ */
+static NA_INLINE unsigned int
+na_ofi_auth_key_hash(hg_hash_table_key_t key);
+
+/**
+ * Hash CXI key for hash table.
+ */
+static NA_INLINE unsigned int
+na_ofi_cxi_auth_key_hash(const struct cxi_auth_key *key);
+
+/**
+ * Compare key.
+ */
+static NA_INLINE int
+na_ofi_auth_key_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2);
+
+/**
+ * Compare CXI keys.
+ */
+static NA_INLINE int
+na_ofi_cxi_auth_key_equal(
+    const struct cxi_auth_key *key1, const struct cxi_auth_key *key2);
+#endif
+
 /**
  * Open domain.
  */
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, enum na_traffic_class traffic_class, bool no_wait,
-    bool sep, bool shared, struct fi_info *fi_info,
-    struct na_ofi_domain **na_ofi_domain_p);
+    const void *auth_key, size_t num_auth_keys,
+    enum na_traffic_class traffic_class, bool no_wait, bool shared,
+    struct fi_info *fi_info, struct na_ofi_domain **na_ofi_domain_p);
 
 /**
  * Close domain.
  */
 static na_return_t
 na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
+
+/**
+ * Open AV.
+ */
+static na_return_t
+na_ofi_av_open(struct na_ofi_domain *na_ofi_domain,
+    enum na_ofi_prov_type prov_type, int addr_format, int num_auth_keys,
+    const union na_ofi_auth_key *base_auth_key);
+
+/**
+ * Close AV.
+ */
+na_return_t
+na_ofi_av_close(struct na_ofi_domain *na_ofi_domain);
 
 /**
  * Open endpoint.
@@ -1462,16 +1567,14 @@ na_ofi_cq_readfrom(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
  */
 static na_return_t
 na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
-    size_t *src_err_addrcount_p, void **src_err_addr_p,
-    size_t *src_err_addrlen_p);
+    struct na_ofi_src_err *src_err, size_t *actual_count_p);
 
 /**
  * Retrieve source address of unexpected messages.
  */
 static na_return_t
 na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
-    const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
-    void *src_err_addr, size_t src_err_addrlen,
+    fi_addr_t src_addr, struct na_ofi_src_err *src_err,
     struct na_ofi_addr **na_ofi_addr_p);
 
 /**
@@ -1485,9 +1588,8 @@ na_ofi_cq_process_fi_src_addr(struct na_ofi_class *na_ofi_class,
  * Retrieve source address of unexpected messages (FI_SOURCE_ERR supported).
  */
 static na_return_t
-na_ofi_cq_process_fi_src_err_addr(struct na_ofi_class *na_ofi_class,
-    void *src_err_addr, size_t src_err_addrlen,
-    struct na_ofi_addr **na_ofi_addr_p);
+na_ofi_cq_process_fi_src_err(struct na_ofi_class *na_ofi_class,
+    struct na_ofi_src_err *src_err, struct na_ofi_addr **na_ofi_addr_p);
 
 /**
  * Retrieve source address of unexpected messages (FI_SOURCE not supported).
@@ -1916,9 +2018,7 @@ static HG_LIST_HEAD(na_ofi_domain)
 static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
     HG_THREAD_MUTEX_INITIALIZER;
 
-#if !defined(_WIN32) &&                                                        \
-    FI_VERSION_GE(                                                             \
-        FI_VERSION(FI_MAJOR_VERSION, FI_MINOR_VERSION), FI_VERSION(1, 16))
+#if !defined(_WIN32) && FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 16))
 /* Custom log */
 static struct fid_logging na_ofi_log_fid_g = {.ops = NULL};
 static struct fi_ops_log na_ofi_import_log_ops_g = {
@@ -2221,7 +2321,7 @@ na_ofi_prov_addr_size(int addr_format)
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
-            return sizeof(union na_ofi_cxi_addr);
+            return sizeof(struct na_ofi_cxi_addr);
         case FI_ADDR_STR:
             return sizeof(struct na_ofi_str_addr);
         default:
@@ -2530,12 +2630,15 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_str_to_cxi(const char *str, union na_ofi_cxi_addr *cxi_addr)
+na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr)
 {
     na_return_t ret;
     int rc;
 
-    rc = sscanf(str, "%*[^:]://%" SCNx32, &cxi_addr->raw);
+    /* Make sure unused fields are set to 0 */
+    memset(cxi_addr, 0, sizeof(*cxi_addr));
+
+    rc = sscanf(str, "%*[^:]://%" SCNx32, (uint32_t *) cxi_addr);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Could not convert addr string to CXI addr format");
 
@@ -2656,9 +2759,9 @@ na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE uint64_t
-na_ofi_cxi_to_key(const union na_ofi_cxi_addr *addr)
+na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr)
 {
-    return (uint64_t) addr->raw;
+    return (uint64_t) (*(const uint32_t *) addr);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2704,7 +2807,7 @@ na_ofi_raw_addr_serialize_size(int addr_format)
         case FI_ADDR_GNI:
             return sizeof(struct na_ofi_gni_addr);
         case FI_ADDR_CXI:
-            return sizeof(union na_ofi_cxi_addr);
+            return sizeof(struct na_ofi_cxi_addr);
         case FI_ADDR_STR:
             return sizeof(struct na_ofi_str_addr);
         default:
@@ -2784,7 +2887,7 @@ na_ofi_raw_addr_serialize(int addr_format, void *buf, size_t buf_size,
             break;
         case FI_ADDR_CXI:
             NA_CHECK_SUBSYS_ERROR(addr,
-                buf_size < sizeof(union na_ofi_cxi_addr), error, ret,
+                buf_size < sizeof(struct na_ofi_cxi_addr), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(buf, &addr->cxi, sizeof(addr->cxi));
@@ -2810,7 +2913,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
-    const void *buf, size_t buf_size)
+    union na_ofi_auth_key *auth_key, const void *buf, size_t buf_size)
 {
     na_return_t ret;
 
@@ -2880,10 +2983,15 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
             break;
         case FI_ADDR_CXI:
             NA_CHECK_SUBSYS_ERROR(addr,
-                buf_size < sizeof(union na_ofi_cxi_addr), error, ret,
+                buf_size < sizeof(struct na_ofi_cxi_addr), error, ret,
                 NA_OVERFLOW, "Buffer size (%zu) too small to copy addr",
                 buf_size);
             memcpy(&addr->cxi, buf, sizeof(addr->cxi));
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+            auth_key->cxi_auth_key.vni = addr->cxi.vni;
+#else
+            (void) auth_key;
+#endif
             break;
         case FI_ADDR_STR:
             NA_CHECK_SUBSYS_ERROR(addr,
@@ -2906,7 +3014,8 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
-    struct na_ofi_addr_key *addr_key, struct na_ofi_addr **na_ofi_addr_p)
+    struct na_ofi_addr_key *addr_key, fi_addr_t fi_auth_key,
+    struct na_ofi_addr **na_ofi_addr_p)
 {
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
@@ -2914,7 +3023,8 @@ na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
     /* Lookup address */
     na_ofi_addr =
         na_ofi_addr_map_lookup(&na_ofi_class->domain->addr_map, addr_key);
-    if (na_ofi_addr == NULL) {
+    if (na_ofi_addr == NULL || ((fi_auth_key != FI_ADDR_NOTAVAIL) &&
+                                   (na_ofi_addr->fi_auth_key != fi_auth_key))) {
         na_return_t na_ret;
 
         NA_LOG_SUBSYS_DEBUG(
@@ -2922,7 +3032,8 @@ na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
 
         /* Insert new entry and create new address if needed */
         na_ret = na_ofi_addr_map_insert(na_ofi_class,
-            &na_ofi_class->domain->addr_map, addr_key, &na_ofi_addr);
+            &na_ofi_class->domain->addr_map, addr_key, fi_auth_key,
+            &na_ofi_addr);
         NA_CHECK_SUBSYS_ERROR(addr, na_ret != NA_SUCCESS && na_ret != NA_EXIST,
             error, ret, na_ret, "Could not insert new address");
     }
@@ -3005,10 +3116,12 @@ na_ofi_addr_map_lookup(
 static na_return_t
 na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
     struct na_ofi_map *na_ofi_map, struct na_ofi_addr_key *addr_key,
-    struct na_ofi_addr **na_ofi_addr_p)
+    fi_addr_t fi_auth_key, struct na_ofi_addr **na_ofi_addr_p)
 {
     struct na_ofi_addr *na_ofi_addr = NULL;
+    uint64_t flags = 0;
     na_return_t ret = NA_SUCCESS;
+    bool addr_map_exist = false;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ofi_map->lock);
@@ -3016,40 +3129,110 @@ na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
     /* Look up again to prevent race between lock release/acquire */
     na_ofi_addr = (struct na_ofi_addr *) hg_hash_table_lookup(
         na_ofi_map->key_map, (hg_hash_table_key_t) addr_key);
-    if (na_ofi_addr) {
-        ret = NA_EXIST; /* Entry already exists */
-        goto out;
+    if (na_ofi_addr != NULL) {
+        if ((fi_auth_key == FI_ADDR_NOTAVAIL) ||
+            (na_ofi_addr->fi_auth_key == fi_auth_key)) {
+            ret = NA_EXIST; /* Entry already exists */
+            goto out;
+        } else {
+            NA_LOG_SUBSYS_DEBUG(addr,
+                "auth key for FI addr %" PRIu64
+                " has changed, updating it to %" PRIu64,
+                na_ofi_addr->fi_addr, fi_auth_key);
+
+            /* If keys have changed, remove previously inserted address */
+            rc = fi_av_remove(
+                na_ofi_class->domain->fi_av, &na_ofi_addr->fi_addr, 1, 0);
+            NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
+                na_ofi_errno_to_na(-rc), "fi_av_remove() failed, rc: %d (%s)",
+                rc, fi_strerror(-rc));
+            addr_map_exist = true;
+        }
+    } else {
+        /* Allocate address */
+        ret = na_ofi_addr_create(na_ofi_class, addr_key, &na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, error, ret, "Could not allocate address");
     }
 
-    /* Allocate address */
-    ret = na_ofi_addr_create(na_ofi_class, addr_key, &na_ofi_addr);
-    NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not allocate address");
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    if (na_ofi_class->domain->av_auth_key) {
+        /* Inserted address will be bound to previously inserted auth key,
+         * if FI_ADDR_NOTAVAIL was passed, attempt to use base key
+         * TODO we may want to properly retrieve the base key */
+        if (fi_auth_key == FI_ADDR_NOTAVAIL) {
+            NA_LOG_SUBSYS_DEBUG(addr, "Using default auth key for addr");
+            na_ofi_addr->fi_auth_key = 0;
+        } else
+            na_ofi_addr->fi_auth_key = fi_auth_key;
+
+        flags |= FI_AUTH_KEY;
+        /* Input of fi_av_insert(), output will be actual fi_addr_t */
+        na_ofi_addr->fi_addr = na_ofi_addr->fi_auth_key;
+    } else if (na_ofi_class->domain->av_user_id) {
+        flags |= FI_AV_USER_ID;
+        /* Input of fi_av_insert(), output will be actual fi_addr_t */
+        na_ofi_addr->fi_addr = (fi_addr_t) na_ofi_addr;
+    }
+#endif
 
     /* Insert addr into AV if key not found */
     rc = fi_av_insert(na_ofi_class->domain->fi_av, &na_ofi_addr->addr_key.addr,
-        1, &na_ofi_addr->fi_addr, 0 /* flags */, NULL);
+        1, &na_ofi_addr->fi_addr, flags, NULL);
     NA_CHECK_SUBSYS_ERROR(addr, rc < 1, error, ret, na_ofi_errno_to_na(-rc),
         "fi_av_insert() failed, inserted: %d", rc);
+
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    if (na_ofi_class->domain->av_auth_key) {
+        size_t addrlen = sizeof(na_ofi_addr->addr_key.addr);
+
+        if (na_ofi_class->domain->av_user_id) {
+            /* With FI_AV_USER_ID and auth_keys, set user id as struct addr
+             * pointer. Addr pointer will be returned in
+             * fi_cq_readfrom::src_addr. */
+            rc = fi_av_set_user_id(na_ofi_class->domain->fi_av,
+                na_ofi_addr->fi_addr, (fi_addr_t) na_ofi_addr, 0);
+            NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
+                na_ofi_errno_to_na(-rc),
+                "fi_av_set_user_id() failed, rc: %d (%s)", rc,
+                fi_strerror(-rc));
+        }
+
+        /* For providers w/ auth keys, do a reverse lookup to ensure addr is
+         * fully populated */
+        rc = fi_av_lookup(na_ofi_class->domain->fi_av, na_ofi_addr->fi_addr,
+            &na_ofi_addr->addr_key.addr, &addrlen);
+        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
+            na_ofi_errno_to_na(-rc),
+            "fi_av_lookup() failed, rc: %d (%s), addrlen: %zu", rc,
+            fi_strerror(-rc), addrlen);
+    }
+#endif
 
     NA_LOG_SUBSYS_DEBUG(
         addr, "Inserted new addr, FI addr is %" PRIu64, na_ofi_addr->fi_addr);
 
-    /* Insert new value to secondary map to look up by FI addr when FI_SOURCE is
-     * used and prevent fi_av_lookup() followed by map lookup call */
-    if (na_ofi_map->fi_map != NULL) {
-        rc = hg_hash_table_insert(na_ofi_map->fi_map,
-            (hg_hash_table_key_t) &na_ofi_addr->fi_addr,
-            (hg_hash_table_value_t) na_ofi_addr);
-        NA_CHECK_SUBSYS_ERROR(
-            addr, rc == 0, out, ret, NA_NOMEM, "hg_hash_table_insert() failed");
-    }
+    /* Hash table entries should usually not exist unless we are just updating
+     * the corresponding auth_key for the address */
+    if (!addr_map_exist) {
+        /* Insert new value to secondary map to look up by FI addr when
+         * FI_SOURCE is used and prevent fi_av_lookup() followed by map lookup
+         * call */
+        if (na_ofi_map->fi_map != NULL) {
+            rc = hg_hash_table_insert(na_ofi_map->fi_map,
+                (hg_hash_table_key_t) &na_ofi_addr->fi_addr,
+                (hg_hash_table_value_t) na_ofi_addr);
+            NA_CHECK_SUBSYS_ERROR(addr, rc == 0, out, ret, NA_NOMEM,
+                "hg_hash_table_insert() failed");
+        }
 
-    /* Insert new value to primary map */
-    rc = hg_hash_table_insert(na_ofi_map->key_map,
-        (hg_hash_table_key_t) &na_ofi_addr->addr_key,
-        (hg_hash_table_value_t) na_ofi_addr);
-    NA_CHECK_SUBSYS_ERROR(
-        addr, rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+        /* Insert new value to primary map */
+        rc = hg_hash_table_insert(na_ofi_map->key_map,
+            (hg_hash_table_key_t) &na_ofi_addr->addr_key,
+            (hg_hash_table_value_t) na_ofi_addr);
+        NA_CHECK_SUBSYS_ERROR(addr, rc == 0, error, ret, NA_NOMEM,
+            "hg_hash_table_insert() failed");
+    }
 
 out:
     hg_thread_rwlock_release_wrlock(&na_ofi_map->lock);
@@ -3253,9 +3436,6 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     /* Generate completion event when it is safe to re-use buffer */
     hints->tx_attr->op_flags = FI_INJECT_COMPLETE;
 
-    /* all providers should support this */
-    hints->domain_attr->av_type = FI_AV_MAP;
-
     /* Resource management will be enabled for this provider domain. */
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
 
@@ -3287,6 +3467,12 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 
         /* add any additional caps that are particular to this provider */
         hints->caps |= na_ofi_prov_extra_caps[prov_type];
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+        /* Starting with libfabric 1.20, the cxi provider enhanced scalability
+         * of FI_SOURCE and supports FI_AV_USER_ID. */
+        if (prov_type == NA_OFI_PROV_CXI)
+            hints->caps |= FI_SOURCE | FI_SOURCE_ERR | FI_AV_USER_ID;
+#endif
 
         /* set default progress mode */
         hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
@@ -3304,6 +3490,19 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 
         /* Set requested thread mode */
         hints->domain_attr->threading = info->thread_mode;
+
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+        /* Ask for auth keys */
+        if ((na_ofi_prov_flags[prov_type] & NA_OFI_AV_AUTH_KEY) &&
+            (info->num_auth_keys > 0)) {
+            /* The CXI provider does not support FI_DIRECTED_RECV if
+             * max_ep_auth_key > 1 */
+            if (info->num_auth_keys > 1)
+                hints->caps &= ~FI_DIRECTED_RECV;
+            hints->domain_attr->max_ep_auth_key = info->num_auth_keys;
+            hints->domain_attr->auth_key_size = FI_AV_AUTH_KEY;
+        }
+#endif
 
         /* Ask for HMEM support */
         if (info->use_hmem && (na_ofi_prov_flags[prov_type] & NA_OFI_HMEM)) {
@@ -4246,7 +4445,8 @@ na_ofi_parse_cxi_auth_key(const char *str, const char *domain_name,
         &auth_key->vni, &idx);
     NA_CHECK_SUBSYS_ERROR(cls, rc != 2 && rc != 3, error, ret,
         NA_PROTONOSUPPORT,
-        "Invalid CXI auth key string (%s), format is \"svc_id:vni\"", str);
+        "Invalid CXI auth key string (%s), format is \"svc_id:vni<:idx>\"",
+        str);
 
     /* If zeros are passed for auth_key, try to find the missing bits */
     if (auth_key->svc_id == 0) {
@@ -4343,16 +4543,205 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+static na_return_t
+na_ofi_parse_auth_key_range(const char *str, enum na_ofi_prov_type prov_type,
+    union na_ofi_auth_key *base_key, size_t *auth_key_num_p)
+{
+    switch (prov_type) {
+        case NA_OFI_PROV_CXI:
+            return na_ofi_parse_cxi_auth_key_range(
+                str, &base_key->cxi_auth_key, auth_key_num_p);
+        case NA_OFI_PROV_NULL:
+        case NA_OFI_PROV_SOCKETS:
+        case NA_OFI_PROV_TCP:
+        case NA_OFI_PROV_TCP_RXM:
+        case NA_OFI_PROV_GNI:
+        case NA_OFI_PROV_PSM2:
+        case NA_OFI_PROV_OPX:
+        case NA_OFI_PROV_VERBS_RXM:
+        default:
+            NA_LOG_SUBSYS_ERROR(
+                fatal, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
+            return NA_PROTONOSUPPORT;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_parse_cxi_auth_key_range(
+    const char *str, struct cxi_auth_key *base_key, size_t *auth_key_num_p)
+{
+    uint16_t vni_max = 0;
+    na_return_t ret;
+    int rc;
+
+    memset(base_key, 0, sizeof(*base_key));
+
+    /* Keep CXI auth key using the following format svc_id:vni_min:vni_max */
+    rc = sscanf(str, "%" SCNu32 ":%" SCNu16 ":%" SCNu16, &base_key->svc_id,
+        &base_key->vni, &vni_max);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 2 && rc != 3, error, ret,
+        NA_PROTONOSUPPORT,
+        "Invalid CXI auth key range string (%s), format is "
+        "\"svc_id:vni_min<:vni_max>\"",
+        str);
+
+    if (base_key->svc_id == 0)
+        *auth_key_num_p = 1; /* Assume a single auth key */
+    else
+        *auth_key_num_p = (vni_max > base_key->vni)
+                              ? (size_t) (vni_max - base_key->vni + 1)
+                              : 1;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_gen_auth_key(const union na_ofi_auth_key *base_key, int index,
+    enum na_ofi_prov_type prov_type, union na_ofi_auth_key *auth_key,
+    size_t *auth_key_size_p)
+{
+    switch (prov_type) {
+        case NA_OFI_PROV_CXI:
+            na_ofi_gen_cxi_auth_key(&base_key->cxi_auth_key, index,
+                &auth_key->cxi_auth_key, auth_key_size_p);
+            return NA_SUCCESS;
+        case NA_OFI_PROV_NULL:
+        case NA_OFI_PROV_SOCKETS:
+        case NA_OFI_PROV_TCP:
+        case NA_OFI_PROV_TCP_RXM:
+        case NA_OFI_PROV_GNI:
+        case NA_OFI_PROV_PSM2:
+        case NA_OFI_PROV_OPX:
+        case NA_OFI_PROV_VERBS_RXM:
+        default:
+            NA_LOG_SUBSYS_ERROR(
+                fatal, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
+            return NA_PROTONOSUPPORT;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_gen_cxi_auth_key(const struct cxi_auth_key *base_key, int index,
+    struct cxi_auth_key *auth_key, size_t *auth_key_size_p)
+{
+    auth_key->svc_id = base_key->svc_id;
+    auth_key->vni = base_key->vni + (uint16_t) index;
+    *auth_key_size_p = sizeof(*auth_key);
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_auth_key_insert(struct na_ofi_domain *na_ofi_domain,
+    const union na_ofi_auth_key *auth_key, size_t auth_key_size)
+{
+    union na_ofi_auth_key *auth_key_p = NULL;
+    fi_addr_t fi_auth_key;
+    na_return_t ret;
+    int rc;
+
+    auth_key_p = calloc(1, sizeof(*auth_key_p));
+    NA_CHECK_SUBSYS_ERROR(cls, auth_key_p == NULL, error, ret, NA_NOMEM,
+        "Could not allocate auth_key");
+    memcpy(auth_key_p, auth_key, auth_key_size);
+
+    rc = fi_av_insert_auth_key(
+        na_ofi_domain->fi_av, auth_key_p, auth_key_size, &fi_auth_key, 0);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
+        "fi_av_insert_auth_key() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+    if (na_ofi_domain->av_user_id) {
+        /* With FI_AV_USER_ID and auth_keys, set user id as auth key index. Auth
+         * key index will be returned in fi_cq_err_entry::src_addr. */
+        rc = fi_av_set_user_id(
+            na_ofi_domain->fi_av, fi_auth_key, fi_auth_key, FI_AUTH_KEY);
+        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
+            na_ofi_errno_to_na(-rc), "fi_av_set_user_id() failed, rc: %d (%s)",
+            rc, fi_strerror(-rc));
+    }
+
+    NA_LOG_SUBSYS_DEBUG(
+        addr, "Inserted new auth key, FI addr is %" PRIu64, fi_auth_key);
+
+    rc = hg_hash_table_insert(na_ofi_domain->auth_key_map,
+        (hg_hash_table_key_t) auth_key_p, (hg_hash_table_value_t) fi_auth_key);
+    NA_CHECK_SUBSYS_ERROR(
+        addr, rc == 0, error, ret, NA_NOMEM, "hg_hash_table_insert() failed");
+
+    return NA_SUCCESS;
+
+error:
+    free(auth_key_p);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE fi_addr_t
+na_ofi_auth_key_lookup(hg_hash_table_t *table, union na_ofi_auth_key *auth_key)
+{
+    hg_hash_table_value_t value = NULL;
+
+    /* Lookup key */
+    value = hg_hash_table_lookup(table, (hg_hash_table_key_t) auth_key);
+
+    return (value == HG_HASH_TABLE_NULL) ? FI_ADDR_NOTAVAIL : (fi_addr_t) value;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE unsigned int
+na_ofi_auth_key_hash(hg_hash_table_key_t key)
+{
+    /* TODO if we have more providers we'll need to pass prov_type */
+    return na_ofi_cxi_auth_key_hash(
+        &((const union na_ofi_auth_key *) key)->cxi_auth_key);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE unsigned int
+na_ofi_cxi_auth_key_hash(const struct cxi_auth_key *key)
+{
+    return key->vni;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE int
+na_ofi_auth_key_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
+{
+    /* TODO if we have more providers we'll need to pass prov_type */
+    return na_ofi_cxi_auth_key_equal(
+        &((const union na_ofi_auth_key *) key1)->cxi_auth_key,
+        &((const union na_ofi_auth_key *) key2)->cxi_auth_key);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE int
+na_ofi_cxi_auth_key_equal(
+    const struct cxi_auth_key *key1, const struct cxi_auth_key *key2)
+{
+    /* ignore svc_id field */
+    return key1->vni == key2->vni;
+}
+
+#endif
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
-    const char *auth_key, enum na_traffic_class traffic_class, bool no_wait,
-    bool sep, bool shared, struct fi_info *fi_info,
-    struct na_ofi_domain **na_ofi_domain_p)
+    const void *auth_key, size_t num_auth_keys,
+    enum na_traffic_class traffic_class, bool no_wait, bool shared,
+    struct fi_info *fi_info, struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain = NULL;
     struct fi_domain_attr *domain_attr = fi_info->domain_attr;
-    struct fi_av_attr av_attr = {0};
-    hg_hash_table_equal_func_t map_key_equal_func;
+    union na_ofi_auth_key base_auth_key;
+    const union na_ofi_auth_key *base_auth_key_p = NULL;
     na_return_t ret;
     int rc;
 
@@ -4390,24 +4779,36 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         na, &na_ofi_domain->mr_reg_count, "mr_reg_count", "MR reg count");
 #endif
 
-    /* Init rw lock */
-    rc = hg_thread_rwlock_init(&na_ofi_domain->addr_map.lock);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM,
-        "hg_thread_rwlock_init() failed");
-
     /* Dup name */
     na_ofi_domain->name = strdup(domain_attr->name);
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain->name == NULL, error, ret,
         NA_NOMEM, "Could not dup domain name");
 
     /* Auth key */
-    if (auth_key && auth_key[0] != '\0') {
-        ret = na_ofi_parse_auth_key(auth_key, na_ofi_fabric->prov_type,
-            na_ofi_domain->name, &na_ofi_domain->auth_key,
-            &domain_attr->auth_key_size);
+    if (num_auth_keys > 1) {
+        na_ofi_domain->av_auth_key = true;
+        base_auth_key_p = (const union na_ofi_auth_key *) auth_key;
+    } else if (auth_key && ((const char *) auth_key)[0] != '\0') {
+        size_t auth_key_size;
+
+        ret = na_ofi_parse_auth_key((const char *) auth_key,
+            na_ofi_fabric->prov_type, na_ofi_domain->name, &base_auth_key,
+            &auth_key_size);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse auth key");
 
-        domain_attr->auth_key = (void *) &na_ofi_domain->auth_key;
+        /* If we're using FI_AV_AUTH_KEY, use same mechanism to handle single
+         * auth key in order to keep addr fields populated */
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+        if (na_ofi_prov_flags[na_ofi_fabric->prov_type] & NA_OFI_AV_AUTH_KEY) {
+            na_ofi_domain->av_auth_key = true;
+            base_auth_key_p = &base_auth_key;
+        } else {
+#endif
+            domain_attr->auth_key = (void *) &base_auth_key;
+            domain_attr->auth_key_size = auth_key_size;
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+        }
+#endif
     }
 
     /* Traffic class */
@@ -4459,47 +4860,15 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     ret = na_ofi_set_domain_ops(na_ofi_fabric->prov_type, na_ofi_domain);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not set domain ops");
 
-    /* Open fi address vector */
-    av_attr.type = FI_AV_MAP;
-    if (sep)
-        av_attr.rx_ctx_bits = NA_OFI_SEP_RX_CTX_BITS;
-    rc = fi_av_open(
-        na_ofi_domain->fi_domain, &av_attr, &na_ofi_domain->fi_av, NULL);
-    NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "fi_av_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    /* Check if we can use FI_AV_USER_ID */
+    na_ofi_domain->av_user_id = (fi_info->caps & FI_AV_USER_ID);
+#endif
 
-    /* Create primary addr hash-table */
-    switch ((int) fi_info->addr_format) {
-        case FI_SOCKADDR_IN6:
-            map_key_equal_func = na_ofi_addr_key_equal_sin6;
-            break;
-        case FI_SOCKADDR_IB:
-            map_key_equal_func = na_ofi_addr_key_equal_sib;
-            break;
-        case FI_SOCKADDR_IN:
-        case FI_ADDR_PSMX:
-        case FI_ADDR_PSMX2:
-        case FI_ADDR_OPX:
-        case FI_ADDR_GNI:
-        case FI_ADDR_CXI:
-        case FI_ADDR_STR:
-        default:
-            map_key_equal_func = na_ofi_addr_key_equal_default;
-            break;
-    }
-
-    na_ofi_domain->addr_map.key_map =
-        hg_hash_table_new(na_ofi_addr_key_hash, map_key_equal_func);
-    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.key_map == NULL, error,
-        ret, NA_NOMEM, "Could not allocate key map");
-
-    /* Create secondary hash-table to lookup by fi_addr if using FI_SOURCE */
-    if (na_ofi_prov_extra_caps[na_ofi_fabric->prov_type] & FI_SOURCE) {
-        na_ofi_domain->addr_map.fi_map =
-            hg_hash_table_new(na_ofi_fi_addr_hash, na_ofi_fi_addr_equal);
-        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL,
-            error, ret, NA_NOMEM, "Could not allocate FI addr map");
-    }
+    /* Open AV */
+    ret = na_ofi_av_open(na_ofi_domain, na_ofi_fabric->prov_type,
+        (int) fi_info->addr_format, (int) num_auth_keys, base_auth_key_p);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open AV");
 
 #ifndef _WIN32
     if (na_ofi_domain->shared) {
@@ -4516,16 +4885,10 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
 
 error:
     if (na_ofi_domain) {
-        if (na_ofi_domain->fi_av)
-            (void) fi_close(&na_ofi_domain->fi_av->fid);
+        (void) na_ofi_av_close(na_ofi_domain);
         if (na_ofi_domain->fi_domain)
             (void) fi_close(&na_ofi_domain->fi_domain->fid);
-        if (na_ofi_domain->addr_map.key_map)
-            hg_hash_table_free(na_ofi_domain->addr_map.key_map);
-        if (na_ofi_domain->addr_map.fi_map)
-            hg_hash_table_free(na_ofi_domain->addr_map.fi_map);
 
-        hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
         free(na_ofi_domain->name);
         free(na_ofi_domain);
     }
@@ -4560,13 +4923,8 @@ na_ofi_domain_close(
     NA_LOG_SUBSYS_DEBUG(cls, "Freeing domain");
 
     /* Close AV */
-    if (na_ofi_domain->fi_av) {
-        rc = fi_close(&na_ofi_domain->fi_av->fid);
-        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
-            na_ofi_errno_to_na(-rc), "fi_close() AV failed, rc: %d (%s)", rc,
-            fi_strerror(-rc));
-        na_ofi_domain->fi_av = NULL;
-    }
+    ret = na_ofi_av_close(na_ofi_domain);
+    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not close AV");
 
     /* Close domain */
     if (na_ofi_domain->fi_domain) {
@@ -4582,13 +4940,6 @@ na_ofi_domain_close(
     }
 #endif
 
-    if (na_ofi_domain->addr_map.key_map)
-        hg_hash_table_free(na_ofi_domain->addr_map.key_map);
-    if (na_ofi_domain->addr_map.fi_map)
-        hg_hash_table_free(na_ofi_domain->addr_map.fi_map);
-
-    hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
-
     free(na_ofi_domain->name);
     free(na_ofi_domain);
 
@@ -4602,6 +4953,146 @@ error:
     }
 #endif
 
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_av_open(struct na_ofi_domain *na_ofi_domain,
+    enum na_ofi_prov_type prov_type, int addr_format, int num_auth_keys,
+    const union na_ofi_auth_key *base_auth_key)
+{
+    struct fi_av_attr av_attr = {.type = FI_AV_UNSPEC};
+    hg_hash_table_equal_func_t map_key_equal_func;
+    na_return_t ret;
+    int rc;
+
+    /* Open fi address vector */
+    if (na_ofi_prov_flags[prov_type] & NA_OFI_SEP)
+        av_attr.rx_ctx_bits = NA_OFI_SEP_RX_CTX_BITS;
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    if (na_ofi_domain->av_auth_key && na_ofi_domain->av_user_id) {
+        NA_LOG_SUBSYS_DEBUG(cls, "Opening AV with FI_AV_USER_ID set");
+        av_attr.flags = FI_AV_USER_ID;
+    }
+#endif
+    rc = fi_av_open(
+        na_ofi_domain->fi_domain, &av_attr, &na_ofi_domain->fi_av, NULL);
+    NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
+        "fi_av_open() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    if (na_ofi_domain->av_auth_key) {
+        int i;
+
+        na_ofi_domain->auth_key_map =
+            hg_hash_table_new(na_ofi_auth_key_hash, na_ofi_auth_key_equal);
+        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->auth_key_map == NULL, error,
+            ret, NA_NOMEM, "Could not allocate auth key map");
+        hg_hash_table_register_free_functions(
+            na_ofi_domain->auth_key_map, free, NULL);
+
+        /* Insert a block of allowed auth keys, this must be done before the
+         * endpoint is enabled */
+        for (i = 0; i < num_auth_keys; i++) {
+            union na_ofi_auth_key auth_key;
+            size_t auth_key_size;
+
+            ret = na_ofi_gen_auth_key(
+                base_auth_key, i, prov_type, &auth_key, &auth_key_size);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, error, ret, "Could not generate auth key");
+
+            ret =
+                na_ofi_auth_key_insert(na_ofi_domain, &auth_key, auth_key_size);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, error, ret, "Could not insert auth key");
+        }
+    }
+#else
+    (void) num_auth_keys;
+    (void) base_auth_key;
+#endif
+
+    /* Create primary addr hash-table */
+    switch (addr_format) {
+        case FI_SOCKADDR_IN6:
+            map_key_equal_func = na_ofi_addr_key_equal_sin6;
+            break;
+        case FI_SOCKADDR_IB:
+            map_key_equal_func = na_ofi_addr_key_equal_sib;
+            break;
+        case FI_SOCKADDR_IN:
+        case FI_ADDR_PSMX:
+        case FI_ADDR_PSMX2:
+        case FI_ADDR_OPX:
+        case FI_ADDR_GNI:
+        case FI_ADDR_CXI:
+        case FI_ADDR_STR:
+        default:
+            map_key_equal_func = na_ofi_addr_key_equal_default;
+            break;
+    }
+
+    /* Init rw lock */
+    rc = hg_thread_rwlock_init(&na_ofi_domain->addr_map.lock);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM,
+        "hg_thread_rwlock_init() failed");
+
+    na_ofi_domain->addr_map.key_map =
+        hg_hash_table_new(na_ofi_addr_key_hash, map_key_equal_func);
+    NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.key_map == NULL, error,
+        ret, NA_NOMEM, "Could not allocate key map");
+
+    /* Create secondary hash-table to lookup by fi_addr if using FI_SOURCE and
+     * FI_AV_USER_ID is not available */
+    if ((na_ofi_prov_extra_caps[prov_type] & FI_SOURCE) &&
+        !na_ofi_domain->av_user_id) {
+        na_ofi_domain->addr_map.fi_map =
+            hg_hash_table_new(na_ofi_fi_addr_hash, na_ofi_fi_addr_equal);
+        NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL,
+            error, ret, NA_NOMEM, "Could not allocate FI addr map");
+    }
+
+    return NA_SUCCESS;
+
+error:
+    (void) na_ofi_av_close(na_ofi_domain);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_ofi_av_close(struct na_ofi_domain *na_ofi_domain)
+{
+    na_return_t ret;
+
+    /* Close AV */
+    if (na_ofi_domain->fi_av) {
+        int rc = fi_close(&na_ofi_domain->fi_av->fid);
+        NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret,
+            na_ofi_errno_to_na(-rc), "fi_close() AV failed, rc: %d (%s)", rc,
+            fi_strerror(-rc));
+        na_ofi_domain->fi_av = NULL;
+    }
+
+    if (na_ofi_domain->auth_key_map != NULL) {
+        hg_hash_table_free(na_ofi_domain->auth_key_map);
+        na_ofi_domain->auth_key_map = NULL;
+    }
+    if (na_ofi_domain->addr_map.fi_map != NULL) {
+        hg_hash_table_free(na_ofi_domain->addr_map.fi_map);
+        na_ofi_domain->addr_map.fi_map = NULL;
+    }
+    if (na_ofi_domain->addr_map.key_map != NULL) {
+        hg_hash_table_free(na_ofi_domain->addr_map.key_map);
+        na_ofi_domain->addr_map.key_map = NULL;
+        hg_thread_rwlock_destroy(&na_ofi_domain->addr_map.lock);
+    }
+
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -5011,7 +5502,7 @@ na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class)
 
     /* Lookup/insert self address so that we can use it to send to ourself */
     ret = na_ofi_addr_map_insert(na_ofi_class, &na_ofi_class->domain->addr_map,
-        &addr_key, &na_ofi_class->endpoint->src_addr);
+        &addr_key, FI_ADDR_NOTAVAIL, &na_ofi_class->endpoint->src_addr);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not insert src address");
 
     na_ofi_addr_ref_incr(na_ofi_class->endpoint->src_addr);
@@ -5137,6 +5628,10 @@ na_ofi_addr_reset(
 {
     /* One refcount for the caller to hold until addr_free */
     hg_atomic_init32(&na_ofi_addr->refcount, 1);
+
+    /* Set FI addrs to invalid values */
+    na_ofi_addr->fi_addr = FI_ADDR_NOTAVAIL;
+    na_ofi_addr->fi_auth_key = FI_ADDR_NOTAVAIL;
 
     /* Keep copy of the key */
     na_ofi_addr->addr_key = *addr_key;
@@ -5831,8 +6326,7 @@ na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
         poll, error, ret, "Could not read events from context CQ");
 
     if (unlikely(err_avail)) {
-        ret = na_ofi_cq_readerr(
-            na_ofi_context->eq->fi_cq, &cq_events[0], NULL, NULL, NULL);
+        ret = na_ofi_cq_readerr(na_ofi_context->eq->fi_cq, NULL, NULL, NULL);
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, error, ret, "Could not read error events from context CQ");
     }
@@ -5875,9 +6369,8 @@ na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
 {
     struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
     fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM];
-    char src_err_addr[NA_OFI_CQ_MAX_ERR_DATA_SIZE] = {0};
-    void *src_err_addr_ptr = NULL;
-    size_t src_err_addrlen = 0;
+    struct na_ofi_src_err src_err;
+    struct na_ofi_src_err *src_err_p = NULL;
     size_t i, actual_count = 0;
     bool err_avail = false;
     na_return_t ret;
@@ -5888,13 +6381,11 @@ na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
         poll, error, ret, "Could not read events from context CQ");
 
     if (unlikely(err_avail)) {
-        src_err_addr_ptr = src_err_addr;
-        src_err_addrlen = NA_OFI_CQ_MAX_ERR_DATA_SIZE;
-
-        ret = na_ofi_cq_readerr(na_ofi_context->eq->fi_cq, &cq_events[0],
-            &actual_count, &src_err_addr_ptr, &src_err_addrlen);
+        ret = na_ofi_cq_readerr(
+            na_ofi_context->eq->fi_cq, &cq_events[0], &src_err, &actual_count);
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, error, ret, "Could not read error events from context CQ");
+        src_err_p = &src_err;
     }
 
     for (i = 0; i < actual_count; i++) {
@@ -5907,8 +6398,8 @@ na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
 
         if (na_ofi_op_id->type == NA_CB_RECV_UNEXPECTED ||
             na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
-            ret = na_ofi_cq_process_src_addr(na_ofi_class, &cq_events[i],
-                src_addrs[i], src_err_addr_ptr, src_err_addrlen, &na_ofi_addr);
+            ret = na_ofi_cq_process_src_addr(
+                na_ofi_class, src_addrs[i], src_err_p, &na_ofi_addr);
             NA_CHECK_SUBSYS_NA_ERROR(
                 poll, error, ret, "Could not process src addr");
         }
@@ -5986,8 +6477,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
-    size_t *src_err_addrcount_p, void **src_err_addr_p,
-    size_t *src_err_addrlen_p)
+    struct na_ofi_src_err *src_err, size_t *actual_count_p)
 {
     struct fi_cq_err_entry cq_err;
     na_return_t ret = NA_SUCCESS;
@@ -5996,9 +6486,9 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
     memset(&cq_err, 0, sizeof(cq_err));
 
     /* Prevent provider from internally allocating resources */
-    if (src_err_addr_p != NULL) {
-        cq_err.err_data = *src_err_addr_p;
-        cq_err.err_data_size = *src_err_addrlen_p;
+    if (src_err != NULL) {
+        cq_err.err_data = &src_err->addr;
+        cq_err.err_data_size = sizeof(src_err->addr);
     }
 
     /* Read error entry */
@@ -6037,16 +6527,27 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
         } break;
 
         case FI_EADDRNOTAVAIL:
-            /* Most providers do not support FI_SOURCE_ERR, we should consider
-             * dropping support for FI_SOURCE_ERR */
-            NA_CHECK_SUBSYS_ERROR(op, src_err_addr_p = NULL, out, ret,
-                NA_PROTONOSUPPORT, "FI_SOURCE_ERR not supported by provider");
+            NA_CHECK_SUBSYS_ERROR(op, src_err == NULL || cq_event == NULL, out,
+                ret, NA_PROTONOSUPPORT,
+                "FI_EADDRNOTAVAIL reported, not supported");
+            NA_CHECK_SUBSYS_ERROR(op,
+                cq_err.err_data_size > sizeof(src_err->addr), out, ret,
+                NA_PROTONOSUPPORT, "err_data_size too large (%zu > %zu)",
+                cq_err.err_data_size, sizeof(src_err->addr));
 
             memcpy(cq_event, &cq_err, sizeof(struct fi_cq_tagged_entry));
-            /* Only one error event processed in that case */
-            *src_err_addrcount_p = 1;
-            *src_err_addr_p = cq_err.err_data;
-            *src_err_addrlen_p = cq_err.err_data_size;
+            /* provider should have copied err_data, emit warning if not */
+            if (cq_err.err_data != &src_err->addr) {
+                NA_LOG_SUBSYS_WARNING(op, "err_data was not copied");
+                memcpy(&src_err->addr, cq_err.err_data, cq_err.err_data_size);
+            }
+            src_err->addrlen = cq_err.err_data_size;
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+            src_err->fi_auth_key = cq_err.src_addr;
+#else
+            src_err->fi_auth_key = FI_ADDR_NOTAVAIL;
+#endif
+            *actual_count_p = 1;
             break;
 
         default:
@@ -6097,33 +6598,21 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_process_src_addr(struct na_ofi_class *na_ofi_class,
-    const struct fi_cq_tagged_entry *cq_event, fi_addr_t src_addr,
-    void *src_err_addr, size_t src_err_addrlen,
+    fi_addr_t src_addr, struct na_ofi_src_err *src_err,
     struct na_ofi_addr **na_ofi_addr_p)
 {
-    struct na_ofi_op_id *na_ofi_op_id =
-        container_of(cq_event->op_context, struct na_ofi_op_id, fi_ctx);
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
 
-    if (src_addr != FI_ADDR_NOTAVAIL) {
+    if (unlikely(src_err != NULL)) {
+        ret = na_ofi_cq_process_fi_src_err(na_ofi_class, src_err, &na_ofi_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not process FI src error addr");
+    } else {
         ret =
             na_ofi_cq_process_fi_src_addr(na_ofi_class, src_addr, &na_ofi_addr);
         NA_CHECK_SUBSYS_NA_ERROR(
             msg, error, ret, "Could not process FI src addr");
-    } else if (src_err_addr != NULL && src_err_addrlen != 0) {
-        ret = na_ofi_cq_process_fi_src_err_addr(
-            na_ofi_class, src_err_addr, src_err_addrlen, &na_ofi_addr);
-        NA_CHECK_SUBSYS_NA_ERROR(
-            msg, error, ret, "Could not process FI src error addr");
-    } else {
-        ret = na_ofi_cq_process_raw_src_addr(na_ofi_class,
-            (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED)
-                ? cq_event->buf
-                : na_ofi_op_id->info.msg.buf.ptr,
-            cq_event->len, &na_ofi_addr);
-        NA_CHECK_SUBSYS_NA_ERROR(
-            msg, error, ret, "Could not process raw src addr");
     }
 
     *na_ofi_addr_p = na_ofi_addr;
@@ -6152,8 +6641,11 @@ na_ofi_cq_process_fi_src_addr(struct na_ofi_class *na_ofi_class,
     NA_LOG_SUBSYS_DEBUG(
         addr, "Retrieving address for FI addr %" PRIu64, src_addr);
 
-    na_ofi_addr =
-        na_ofi_fi_addr_map_lookup(&na_ofi_class->domain->addr_map, &src_addr);
+    /* Bypass lookup if FI_AV_USER_ID is used */
+    na_ofi_addr = (na_ofi_class->domain->av_user_id)
+                      ? (struct na_ofi_addr *) src_addr
+                      : na_ofi_fi_addr_map_lookup(
+                            &na_ofi_class->domain->addr_map, &src_addr);
     NA_CHECK_SUBSYS_ERROR(addr, na_ofi_addr == NULL, error, ret, NA_NOENTRY,
         "No entry found for previously inserted src addr");
 
@@ -6169,20 +6661,12 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_process_fi_src_err_addr(struct na_ofi_class *na_ofi_class,
-    void *src_err_addr, size_t src_err_addrlen,
-    struct na_ofi_addr **na_ofi_addr_p)
+na_ofi_cq_process_fi_src_err(struct na_ofi_class *na_ofi_class,
+    struct na_ofi_src_err *src_err, struct na_ofi_addr **na_ofi_addr_p)
 {
-    struct na_ofi_addr_key addr_key;
+    struct na_ofi_addr_key addr_key = {.addr = src_err->addr};
     int addr_format = (int) na_ofi_class->fi_info->addr_format;
     na_return_t ret;
-
-    NA_CHECK_SUBSYS_ERROR(addr, src_err_addrlen > sizeof(addr_key.addr), error,
-        ret, NA_PROTONOSUPPORT,
-        "src addr len (%zu) greater than max supported (%zu)", src_err_addrlen,
-        sizeof(addr_key.addr));
-
-    memcpy(&addr_key.addr, src_err_addr, src_err_addrlen);
 
     /* Create key from addr for faster lookups */
     addr_key.val = na_ofi_raw_addr_to_key(addr_format, &addr_key.addr);
@@ -6190,7 +6674,8 @@ na_ofi_cq_process_fi_src_err_addr(struct na_ofi_class *na_ofi_class,
         NA_PROTONOSUPPORT, "Could not generate key from addr");
 
     /* Lookup key and create new addr if it does not exist */
-    ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, na_ofi_addr_p);
+    ret = na_ofi_addr_key_lookup(
+        na_ofi_class, &addr_key, src_err->fi_auth_key, na_ofi_addr_p);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
 
     NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
@@ -6209,9 +6694,12 @@ na_ofi_cq_process_raw_src_addr(struct na_ofi_class *na_ofi_class,
 {
     struct na_ofi_addr_key addr_key;
     int addr_format = (int) na_ofi_class->fi_info->addr_format;
+    union na_ofi_auth_key auth_key;
+    fi_addr_t fi_auth_key = FI_ADDR_NOTAVAIL;
     na_return_t ret;
 
-    ret = na_ofi_raw_addr_deserialize(addr_format, &addr_key.addr, buf, len);
+    ret = na_ofi_raw_addr_deserialize(
+        addr_format, &addr_key.addr, &auth_key, buf, len);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not deserialize address key");
 
@@ -6220,8 +6708,18 @@ na_ofi_cq_process_raw_src_addr(struct na_ofi_class *na_ofi_class,
     NA_CHECK_SUBSYS_ERROR(addr, addr_key.val == 0, error, ret,
         NA_PROTONOSUPPORT, "Could not generate key from addr");
 
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    if (na_ofi_class->domain->av_auth_key) {
+        fi_auth_key = na_ofi_auth_key_lookup(
+            na_ofi_class->domain->auth_key_map, &auth_key);
+        NA_CHECK_SUBSYS_ERROR(addr, fi_auth_key == FI_ADDR_NOTAVAIL, error, ret,
+            NA_NOENTRY, "Could not find auth key");
+    }
+#endif
+
     /* Lookup key and create new addr if it does not exist */
-    ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, na_ofi_addr_p);
+    ret = na_ofi_addr_key_lookup(
+        na_ofi_class, &addr_key, fi_auth_key, na_ofi_addr_p);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
 
     NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
@@ -6966,6 +7464,17 @@ na_ofi_check_protocol(const char *protocol_name)
     NA_CHECK_SUBSYS_ERROR(cls, type == NA_OFI_PROV_NULL, out, accept, false,
         "Protocol %s not supported", protocol_name);
 
+    /* Prevent < 1.20 builds to run with >= 1.20 runtimes */
+    NA_CHECK_SUBSYS_ERROR(fatal,
+        (type == NA_OFI_PROV_CXI) &&
+            FI_VERSION_GE(runtime_version, FI_VERSION(1, 20)) &&
+            FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 20)),
+        out, accept, false,
+        "runtime libfabric version (v%d.%d) is not compatible with compiled "
+        "version (v%d.%d) to use \"cxi\" provider",
+        FI_MAJOR(runtime_version), FI_MINOR(runtime_version),
+        FI_MAJOR(FI_COMPILE_VERSION), FI_MINOR(FI_COMPILE_VERSION));
+
 /* Only the sockets provider is currently supported on macOS */
 #ifdef __APPLE__
     NA_CHECK_SUBSYS_ERROR(fatal,
@@ -7014,6 +7523,7 @@ na_ofi_initialize(
     bool no_wait;
     char *domain_name = NULL;
     struct na_ofi_info info = NA_OFI_INFO_INITIALIZER;
+    union na_ofi_auth_key base_auth_key;
     struct na_loc_info *loc_info = NULL;
     na_return_t ret;
 #ifdef NA_OFI_HAS_MEM_POOL
@@ -7074,6 +7584,20 @@ na_ofi_initialize(
             cls, error, ret, "na_ofi_parse_hostname_info() failed");
     }
 
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    /* Parse auth key range info */
+    if ((na_ofi_prov_flags[prov_type] & NA_OFI_AV_AUTH_KEY) &&
+        na_init_info->auth_key && na_init_info->auth_key[0] != '\0') {
+        ret = na_ofi_parse_auth_key_range(na_init_info->auth_key, prov_type,
+            &base_auth_key, &info.num_auth_keys);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
+            "Could not parse auth key range (%s)", na_init_info->auth_key);
+
+        NA_LOG_SUBSYS_DEBUG(
+            cls, "Configuring with %zu auth key(s)", info.num_auth_keys);
+    }
+#endif
+
     /* Create new OFI class */
     na_ofi_class = na_ofi_class_alloc();
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_class == NULL, error, ret, NA_NOMEM,
@@ -7132,9 +7656,10 @@ na_ofi_initialize(
 
     /* Open domain */
     no_wait = na_init_info->progress_mode & NA_NO_BLOCK;
-    ret = na_ofi_domain_open(na_ofi_class->fabric, na_init_info->auth_key,
-        na_init_info->traffic_class, no_wait,
-        na_ofi_prov_flags[prov_type] & NA_OFI_SEP,
+    ret = na_ofi_domain_open(na_ofi_class->fabric,
+        (info.num_auth_keys > 1) ? (const void *) &base_auth_key
+                                 : (const void *) na_init_info->auth_key,
+        info.num_auth_keys, na_init_info->traffic_class, no_wait,
         na_ofi_prov_flags[prov_type] & NA_OFI_DOM_SHARED, na_ofi_class->fi_info,
         &na_ofi_class->domain);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
@@ -7510,8 +8035,11 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
     NA_CHECK_SUBSYS_ERROR(addr, addr_key.val == 0, error, ret,
         NA_PROTONOSUPPORT, "Could not generate key from addr");
 
-    /* Lookup key and create new addr if it does not exist */
-    ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, &na_ofi_addr);
+    /* Lookup key and create new addr if it does not exist.
+     * When using auth keys, peers must either share the same global key or use
+     * the same base key when using FI_AV_AUTH_KEY to be able to communicate. */
+    ret = na_ofi_addr_key_lookup(
+        na_ofi_class, &addr_key, FI_ADDR_NOTAVAIL, &na_ofi_addr);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not lookup address key for %s", name);
 
@@ -7640,14 +8168,16 @@ na_ofi_addr_deserialize(
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
+    union na_ofi_auth_key auth_key;
+    fi_addr_t fi_auth_key = FI_ADDR_NOTAVAIL;
     int addr_format = (int) na_ofi_class->fi_info->addr_format;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
 
 #ifdef NA_OFI_ADDR_OPT
     /* Deserialize raw address */
-    ret =
-        na_ofi_raw_addr_deserialize(addr_format, &addr_key.addr, buf, buf_size);
+    ret = na_ofi_raw_addr_deserialize(
+        addr_format, &addr_key.addr, &auth_key, buf, buf_size);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not deserialize address key");
 #else
@@ -7664,9 +8194,18 @@ na_ofi_addr_deserialize(
 
     /* Deserialize raw address */
     ret = na_ofi_raw_addr_deserialize(
-        addr_format, &addr_key.addr, buf_ptr, buf_size_left);
+        addr_format, &addr_key.addr, &auth_key, buf_ptr, buf_size_left);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not deserialize address key");
+#endif
+
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
+    if (na_ofi_class->domain->av_auth_key) {
+        fi_auth_key = na_ofi_auth_key_lookup(
+            na_ofi_class->domain->auth_key_map, &auth_key);
+        NA_CHECK_SUBSYS_ERROR(addr, fi_auth_key == FI_ADDR_NOTAVAIL, error, ret,
+            NA_NOENTRY, "Could not find auth key");
+    }
 #endif
 
     /* Create key from addr for faster lookups */
@@ -7675,7 +8214,8 @@ na_ofi_addr_deserialize(
         NA_PROTONOSUPPORT, "Could not generate key from addr");
 
     /* Lookup key and create new addr if it does not exist */
-    ret = na_ofi_addr_key_lookup(na_ofi_class, &addr_key, &na_ofi_addr);
+    ret = na_ofi_addr_key_lookup(
+        na_ofi_class, &addr_key, fi_auth_key, &na_ofi_addr);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address key");
 
     *addr_p = (na_addr_t *) na_ofi_addr;
@@ -8081,7 +8621,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
                              NA_OFI_SEP_RX_CTX_BITS)
                        : na_ofi_addr->fi_addr,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
-        .tag = tag};
+        .tag = tag,
+        .tag_mask = 0};
 
     ret = na_ofi_tag_recv(
         na_ofi_context->fi_rx, &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
@@ -8302,7 +8843,8 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
 
         rc = fi_mr_enable(na_ofi_mem_handle->fi_mr);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-            "fi_mr_enable() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+            "fi_mr_enable() failed, rc: %d (%s), mr_reg_count: %d", rc,
+            fi_strerror(-rc), mr_cnt);
     }
 
     /* Retrieve key */
