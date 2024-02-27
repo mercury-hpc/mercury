@@ -12,6 +12,11 @@ CTEST=ctest
 CTEST_SCRIPT=Testing/script/gh_script.cmake
 STEP=$1
 
+# workaround https://github.com/Homebrew/homebrew-core/issues/158759
+if [[ ${RUNNER_OS} == 'macOS' ]]; then
+  export CURL_SSL_BACKEND="SecureTransport"
+fi
+
 if [[ ${GITHUB_REF}  == 'refs/heads/master' ]] && [[ ${GITHUB_EVENT_NAME} == 'push' ]]; then
   DASHBOARD_MODEL="Continuous"
 else
