@@ -10,9 +10,20 @@
 
 #include "na_test_mpi.h"
 
+#ifdef HG_TEST_HAS_CXI
+#    include <libcxi/libcxi.h>
+#endif
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
+
+#ifdef HG_TEST_HAS_CXI
+struct na_test_cxi_info {
+    struct cxil_dev *dev;
+    struct cxi_svc_desc svc_desc;
+};
+#endif
 
 struct na_test_info {
     na_class_t *na_class;    /* Default NA class */
@@ -41,6 +52,9 @@ struct na_test_info {
     size_t buf_count;        /* Buffer count */
     bool verbose;            /* Verbose mode */
     struct na_test_mpi_info mpi_info;
+#ifdef HG_TEST_HAS_CXI
+    struct na_test_cxi_info cxi_info;
+#endif
     bool extern_init;    /* Extern init */
     bool use_threads;    /* Use threads */
     bool force_register; /* Force registration each iteration */

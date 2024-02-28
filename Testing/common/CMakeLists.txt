@@ -47,6 +47,26 @@ mark_as_advanced(MERCURY_TESTING_ENABLE_PARALLEL)
 # Detect <sys/prctl.h>
 check_include_files("sys/prctl.h" HG_TEST_HAS_SYSPRCTL_H)
 
+# CXI
+if(NA_USE_OFI)
+  option(NA_OFI_TESTING_USE_CXI
+    "Use CXI library for service configuration." OFF)
+  mark_as_advanced(NA_OFI_TESTING_USE_CXI)
+  if(NA_OFI_TESTING_USE_CXI)
+    find_package(CXI REQUIRED)
+    message(STATUS "CXI include directory: ${CXI_INCLUDE_DIRS}")
+    set(HG_TEST_HAS_CXI 1)
+    set(NA_TEST_COMMON_EXT_INCLUDE_DEPENDENCIES
+      ${NA_TEST_COMMON_EXT_INCLUDE_DEPENDENCIES}
+      ${CXI_INCLUDE_DIRS}
+    )
+    set(NA_TEST_COMMON_EXT_LIB_DEPENDENCIES
+      ${NA_TEST_COMMON_EXT_LIB_DEPENDENCIES}
+      ${CXI_LIBRARIES}
+    )
+  endif()
+endif()
+
 #------------------------------------------------------------------------------
 # Set up test options
 #------------------------------------------------------------------------------
@@ -120,7 +140,7 @@ endif()
 # Mercury test common
 add_library(mercury_test_common STATIC ${MERCURY_TEST_COMMON_SRCS}
   ${MERCURY_TEST_COMMON_PRIVATE_HEADERS})
-target_include_directories(na_test_common
+target_include_directories(mercury_test_common
   PUBLIC  "$<BUILD_INTERFACE:${MERCURY_TEST_COMMON_BUILD_INCLUDE_DEPENDENCIES}>"
 )
 target_include_directories(mercury_test_common
