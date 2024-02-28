@@ -56,6 +56,18 @@ na_test_parse_size(const char *str);
 static enum na_traffic_class
 na_test_tclass(const char *str);
 
+#ifdef HG_TEST_HAS_CXI
+static na_return_t
+na_test_alloc_svc(struct na_test_cxi_info *cxi_info, const char *init_str);
+
+static na_return_t
+na_test_print_svc(
+    const struct na_test_cxi_info *cxi_info, char *buf, size_t buf_size);
+
+static na_return_t
+na_test_free_svc(struct na_test_cxi_info *cxi_info);
+#endif
+
 static char *
 na_test_gen_config(struct na_test_info *na_test_info, unsigned int i);
 
@@ -277,6 +289,103 @@ na_test_tclass(const char *str)
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef HG_TEST_HAS_CXI
+static na_return_t
+na_test_alloc_svc(struct na_test_cxi_info *cxi_info, const char *init_str)
+{
+    struct cxi_svc_fail_info svc_fail_info = {};
+    uint16_t vni_min = 0, vni_max = 0;
+    na_return_t ret;
+    unsigned int i;
+    int rc;
+
+    rc = sscanf(init_str, "0:%" SCNu16 ":%" SCNu16, &vni_min, &vni_max);
+    NA_TEST_CHECK_ERROR(rc != 1 && rc != 2, error, ret, NA_PROTONOSUPPORT,
+        "Invalid CXI auth key range string (%s), format is "
+        "\"0:vni_min<:vni_max>\"",
+        init_str);
+
+    cxi_info->dev = NULL;
+
+    rc = cxil_open_device(0, &cxi_info->dev);
+    NA_TEST_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "cxil_open_device() failed (%d)", rc);
+
+    memset(&cxi_info->svc_desc, 0, sizeof(cxi_info->svc_desc));
+
+    cxi_info->svc_desc.restricted_vnis = 1;
+    cxi_info->svc_desc.enable = 1;
+    cxi_info->svc_desc.num_vld_vnis =
+        (vni_max > vni_min) ? vni_max - vni_min + 1 : 1;
+
+    for (i = 0; i < cxi_info->svc_desc.num_vld_vnis; i++)
+        cxi_info->svc_desc.vnis[i] = vni_min + i;
+
+    rc = cxil_alloc_svc(cxi_info->dev, &cxi_info->svc_desc, &svc_fail_info);
+    NA_TEST_CHECK_ERROR(rc <= 0, error, ret, NA_PROTOCOL_ERROR,
+        "cxil_alloc_svc() failed (%d)", rc);
+
+    cxi_info->svc_desc.svc_id = rc;
+
+    return NA_SUCCESS;
+
+error:
+    (void) na_test_free_svc(cxi_info);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_test_print_svc(
+    const struct na_test_cxi_info *cxi_info, char *buf, size_t buf_size)
+{
+    na_return_t ret;
+    int rc;
+
+    if (cxi_info->svc_desc.num_vld_vnis == 1)
+        rc = snprintf(buf, buf_size, "%" PRIu32 ":%" PRIu16,
+            cxi_info->svc_desc.svc_id, cxi_info->svc_desc.vnis[0]);
+    else
+        rc = snprintf(buf, buf_size, "%" PRIu32 ":%" PRIu16 ":%" PRIu16,
+            cxi_info->svc_desc.svc_id, cxi_info->svc_desc.vnis[0],
+            cxi_info->svc_desc.vnis[cxi_info->svc_desc.num_vld_vnis - 1]);
+    NA_TEST_CHECK_ERROR(rc < 0 || rc > (int) buf_size, error, ret, NA_OVERFLOW,
+        "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
+        buf_size);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_test_free_svc(struct na_test_cxi_info *cxi_info)
+{
+    na_return_t ret;
+
+    if (cxi_info->svc_desc.svc_id > 0) {
+        int rc = cxil_destroy_svc(cxi_info->dev, cxi_info->svc_desc.svc_id);
+        NA_TEST_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+            "cxil_destroy_svc() failed (%d)", rc);
+        cxi_info->svc_desc.svc_id = 0;
+    }
+
+    if (cxi_info->dev != NULL) {
+        cxil_close_device(cxi_info->dev);
+        cxi_info->dev = NULL;
+    }
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
 static char *
 na_test_gen_config(struct na_test_info *na_test_info, unsigned int i)
 {
@@ -470,6 +579,9 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
+#ifdef HG_TEST_HAS_CXI
+    char auth_key[64];
+#endif
     size_t i;
 
     if (!log_subsys) {
@@ -492,6 +604,17 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         na_test_info->use_threads, na_test_info->mpi_static);
     NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_mpi_init() failed");
 
+#ifdef HG_TEST_HAS_CXI
+    if (na_test_info->key != NULL) {
+        ret = na_test_alloc_svc(&na_test_info->cxi_info, na_test_info->key);
+        NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_alloc_svc() failed");
+
+        ret = na_test_print_svc(
+            &na_test_info->cxi_info, auth_key, sizeof(auth_key));
+        NA_TEST_CHECK_NA_ERROR(error, ret, "na_test_print_svc() failed");
+    }
+#endif
+
     if (na_test_info->max_classes == 0)
         na_test_info->max_classes = 1;
 
@@ -504,7 +627,12 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         if (na_test_info->mpi_info.rank == 0)
             printf("# Initializing NA in busy wait mode\n");
     }
+#ifdef HG_TEST_HAS_CXI
+    if (na_test_info->key != NULL)
+        na_init_info.auth_key = auth_key;
+#else
     na_init_info.auth_key = na_test_info->key;
+#endif
     if (na_test_info->max_contexts != 0)
         na_init_info.max_contexts = na_test_info->max_contexts;
     na_init_info.max_unexpected_size = (size_t) na_test_info->max_msg_size;
@@ -680,6 +808,9 @@ NA_Test_finalize(struct na_test_info *na_test_info)
         na_test_info->domain = NULL;
     }
     if (na_test_info->key != NULL) {
+#ifdef HG_TEST_HAS_CXI
+        (void) na_test_free_svc(&na_test_info->cxi_info);
+#endif
         free(na_test_info->key);
         na_test_info->key = NULL;
     }
