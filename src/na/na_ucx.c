@@ -276,6 +276,13 @@ static na_return_t
 na_ucs_status_to_na(ucs_status_t status);
 
 /**
+ * Resolves transport aliases.
+ */
+static na_return_t
+na_uct_get_transport_alias(
+    const char *protocol_name, char *alias, size_t alias_size);
+
+/**
  * Query UCT component.
  */
 static na_return_t
@@ -287,7 +294,7 @@ na_uct_component_query(uct_component_h component, const char *protocol_name,
  */
 static na_return_t
 na_uct_get_md_info(uct_component_h component, const char *md_name,
-    struct na_protocol_info **na_protocol_info_p);
+    const char *protocol_name, struct na_protocol_info **na_protocol_info_p);
 
 /**
  * Print debug info.
@@ -1040,6 +1047,59 @@ na_ucs_status_to_na(ucs_status_t status)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_uct_get_transport_alias(
+    const char *protocol_name, char *tl_name, size_t tl_name_size)
+{
+    char *delim;
+    size_t protocol_name_len = strlen(protocol_name);
+    na_return_t ret;
+
+    delim = strstr(protocol_name, "_");
+    NA_CHECK_SUBSYS_ERROR(cls, delim == NULL, error, ret, NA_PROTONOSUPPORT,
+        "No _ delimiter was found in %s", protocol_name);
+
+    /* more than one character, no alias needed, copy entire string */
+    if (strlen(delim + 1) > 1) {
+        NA_CHECK_SUBSYS_ERROR(cls, protocol_name_len >= tl_name_size, error,
+            ret, NA_OVERFLOW,
+            "Length of protocol_name (%zu) exceeds tl_name_size (%zu)",
+            protocol_name_len, tl_name_size);
+        strcpy(tl_name, protocol_name);
+    } else {
+        const char *suffix = NULL;
+        size_t delim_len = (size_t) (delim - protocol_name);
+        size_t suffix_len;
+
+        switch (delim[1]) {
+            case 'x':
+                suffix = "_mlx5";
+                break;
+            case 'v':
+                suffix = "_verbs";
+                break;
+            default:
+                NA_GOTO_SUBSYS_ERROR(cls, error, ret, NA_PROTONOSUPPORT,
+                    "invalid protocol name (%s)", protocol_name);
+        }
+        suffix_len = strlen(suffix);
+
+        NA_CHECK_SUBSYS_ERROR(cls, delim_len + suffix_len >= tl_name_size,
+            error, ret, NA_OVERFLOW,
+            "Length of transport alias (%zu) exceeds tl_name_size (%zu)",
+            delim_len + suffix_len, tl_name_size);
+        strncpy(tl_name, protocol_name, delim_len);
+        tl_name[delim_len] = '\0';
+        strcat(tl_name, suffix);
+    }
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_uct_component_query(uct_component_h component, const char *protocol_name,
     struct na_protocol_info **na_protocol_info_p)
 {
@@ -1066,12 +1126,9 @@ na_uct_component_query(uct_component_h component, const char *protocol_name,
         ucs_status_string(status));
 
     for (i = 0; i < component_attr.md_resource_count; i++) {
-        if (protocol_name != NULL &&
-            strcmp(protocol_name, component_attr.md_resources[i].md_name))
-            continue;
-
         ret = na_uct_get_md_info(component,
-            component_attr.md_resources[i].md_name, na_protocol_info_p);
+            component_attr.md_resources[i].md_name, protocol_name,
+            na_protocol_info_p);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not get resource info");
     }
@@ -1085,7 +1142,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_uct_get_md_info(uct_component_h component, const char *md_name,
-    struct na_protocol_info **na_protocol_info_p)
+    const char *protocol_name, struct na_protocol_info **na_protocol_info_p)
 {
     uct_md_config_t *md_config;
     uct_md_h md = NULL;
@@ -1116,6 +1173,15 @@ na_uct_get_md_info(uct_component_h component, const char *md_name,
         /* Skip non net resources (e.g., memory) */
         if (resources[i].dev_type != UCT_DEVICE_TYPE_NET)
             continue;
+
+        if (protocol_name != NULL) {
+            NA_LOG_SUBSYS_DEBUG(cls, "protocol_name=%s, tl_name=%s",
+                protocol_name, resources[i].tl_name);
+
+            if (strncmp(
+                    protocol_name, resources[i].tl_name, strlen(protocol_name)))
+                continue;
+        }
 
         entry = na_protocol_info_alloc(
             NA_UCX_CLASS_NAME, resources[i].tl_name, resources[i].dev_name);
@@ -2955,11 +3021,22 @@ na_ucx_get_protocol_info(
 {
     const char *protocol_name =
         (na_info != NULL) ? na_info->protocol_name : NULL;
+    char tl_name[UCT_TL_NAME_MAX];
     struct na_protocol_info *na_protocol_info = NULL;
     uct_component_h *components = NULL;
     unsigned i, num_components;
     ucs_status_t status;
     na_return_t ret;
+
+    /* parse protocol_name if provided */
+    if ((protocol_name != NULL) && (strstr(protocol_name, "_") != NULL)) {
+        ret =
+            na_uct_get_transport_alias(protocol_name, tl_name, sizeof(tl_name));
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret,
+            "Could not get protocol alias for %s", protocol_name);
+
+        protocol_name = tl_name;
+    }
 
     status = uct_query_components(&components, &num_components);
     NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
