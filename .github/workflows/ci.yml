@@ -121,6 +121,14 @@ jobs:
         run: |
           sudo sh -c "echo 32 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
           grep Huge /proc/meminfo
+
+      - name: Fix kernel mmap rnd bits
+        if: runner.os == 'Linux'
+        # Asan in llvm 14 provided in ubuntu 22.04 is incompatible with
+        # high-entropy ASLR in much newer kernels that GitHub runners are
+        # using leading to random crashes: https://reviews.llvm.org/D148280
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
       - name: Checkout source
         uses: actions/checkout@v3
         with:
