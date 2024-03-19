@@ -83,10 +83,6 @@ hg_log_init_subsys(bool level_set);
 static void
 hg_log_outlet_reset_all(void);
 
-/* Free all attached logs */
-static void
-hg_log_free_dlogs(void);
-
 /* Is log active */
 static int
 hg_log_outlet_active(const char *name);
@@ -168,7 +164,8 @@ hg_log_init(void)
 static void
 hg_log_finalize(void)
 {
-    hg_log_free_dlogs();
+    /* Deregister top outlet */
+    hg_log_outlet_deregister(&HG_LOG_OUTLET(HG_LOG_OUTLET_ROOT_NAME));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -217,28 +214,6 @@ hg_log_outlet_reset_all(void)
     /* Reset subsys */
     for (i = 0; i < HG_LOG_SUBSYS_MAX; i++)
         strcpy(hg_log_subsys_g[i], "\0");
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-hg_log_free_dlogs(void)
-{
-    struct hg_log_outlet *outlet;
-
-    /* Free logs if any was attached */
-    HG_QUEUE_FOREACH (outlet, &hg_log_outlets_g, entry) {
-        if (outlet->debug_log &&
-            !(outlet->parent && outlet->parent->debug_log)) {
-            if (outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
-                FILE *stream = hg_log_streams_g[outlet->level]
-                                   ? hg_log_streams_g[outlet->level]
-                                   : *hg_log_std_streams_g[outlet->level];
-                hg_dlog_dump_counters(
-                    outlet->debug_log, hg_log_func_g, stream, 0);
-            }
-            hg_dlog_free(outlet->debug_log);
-        }
-    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -495,7 +470,6 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
         hg_log_init();
     }
 #endif
-
     hg_log_outlet_update_level(hg_log_outlet);
 
     /* Inherit debug log if not set and parent has one */
@@ -505,6 +479,25 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 
     HG_QUEUE_PUSH_TAIL(&hg_log_outlets_g, hg_log_outlet, entry);
     hg_log_outlet->registered = true;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_log_outlet_deregister(struct hg_log_outlet *hg_log_outlet)
+{
+    if (hg_log_outlet->debug_log &&
+        !(hg_log_outlet->parent && hg_log_outlet->parent->debug_log)) {
+        if (hg_log_outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
+            FILE *stream = hg_log_streams_g[hg_log_outlet->level]
+                               ? hg_log_streams_g[hg_log_outlet->level]
+                               : *hg_log_std_streams_g[hg_log_outlet->level];
+            hg_dlog_dump_counters(
+                hg_log_outlet->debug_log, hg_log_func_g, stream, 0);
+        }
+        hg_dlog_free(hg_log_outlet->debug_log);
+    }
+    HG_QUEUE_REMOVE(&hg_log_outlets_g, hg_log_outlet, hg_log_outlet, entry);
+    hg_log_outlet->registered = false;
 }
 
 /*---------------------------------------------------------------------------*/

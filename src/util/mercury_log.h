@@ -38,6 +38,7 @@
 
 /* Constructor (used to initialize log outlets) */
 #define HG_UTIL_CONSTRUCTOR HG_ATTR_CONSTRUCTOR
+#define HG_UTIL_DESTRUCTOR  HG_ATTR_DESTRUCTOR
 
 /* Available log levels, additional log levels should be added to that list by
  * order of verbosity. Format is:
@@ -92,10 +93,17 @@
 
 /* HG_LOG_SUBSYS_REGISTER: register a name */
 #define HG_LOG_SUBSYS_REGISTER(name)                                           \
-    static void HG_UTIL_CAT(hg_log_outlet_, name)(void) HG_UTIL_CONSTRUCTOR;   \
-    static void HG_UTIL_CAT(hg_log_outlet_, name)(void)                        \
+    static void HG_UTIL_CAT(hg_log_outlet_reg_, name)(void)                    \
+        HG_UTIL_CONSTRUCTOR;                                                   \
+    static void HG_UTIL_CAT(hg_log_outlet_reg_, name)(void)                    \
     {                                                                          \
         hg_log_outlet_register(&HG_LOG_OUTLET(name));                          \
+    }                                                                          \
+    static void HG_UTIL_CAT(hg_log_outlet_dereg_, name)(void)                  \
+        HG_UTIL_DESTRUCTOR;                                                    \
+    static void HG_UTIL_CAT(hg_log_outlet_dereg_, name)(void)                  \
+    {                                                                          \
+        hg_log_outlet_deregister(&HG_LOG_OUTLET(name));                        \
     }                                                                          \
     /* Keep unused prototype to use semicolon at end of macro */               \
     void hg_log_outlet_##name##_unused(void)
@@ -384,6 +392,14 @@ hg_log_get_stream_debug(void);
  */
 HG_UTIL_PUBLIC void
 hg_log_outlet_register(struct hg_log_outlet *outlet);
+
+/**
+ * Deregister log outlet.
+ *
+ * \param outlet [IN]           log outlet
+ */
+HG_UTIL_PUBLIC void
+hg_log_outlet_deregister(struct hg_log_outlet *outlet);
 
 /**
  * Write log.
