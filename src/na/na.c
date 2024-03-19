@@ -556,6 +556,8 @@ na_plugin_close_all(struct na_plugin_entry *entries)
     for (i = 0, entry = &entries[0]; entry->ops != NULL;
          i++, entry = &entries[i])
         na_plugin_close(entry);
+
+    free(entries);
 }
 
 /*---------------------------------------------------------------------------*/
