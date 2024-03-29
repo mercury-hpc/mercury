@@ -24,6 +24,14 @@ extern "C" {
 #endif
 
 /**
+ * Return the last error.
+ *
+ * \return Most recent error or NULL if no error
+ */
+static HG_UTIL_INLINE const char *
+hg_dl_error(void);
+
+/**
  * Open a shared library object referenced by \file.
  *
  * \param file [IN]             library name
@@ -53,6 +61,17 @@ hg_dl_close(HG_DL_HANDLE handle);
  */
 static HG_UTIL_INLINE void *
 hg_dl_sym(HG_DL_HANDLE handle, const char *name);
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE const char *
+hg_dl_error(void)
+{
+#ifdef _WIN32
+    return "no last error known";
+#else
+    return dlerror();
+#endif
+}
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE HG_DL_HANDLE

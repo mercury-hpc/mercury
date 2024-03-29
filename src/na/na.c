@@ -587,7 +587,7 @@ na_plugin_open(
     NA_LOG_SUBSYS_DEBUG(cls, "Opening plugin %s", entry->path);
     entry->dl_handle = hg_dl_open(entry->path);
     NA_CHECK_SUBSYS_ERROR(cls, entry->dl_handle == NULL, error, ret, NA_NOENTRY,
-        "Could not open lib %s", entry->path);
+        "Could not open lib %s (%s)", entry->path, hg_dl_error());
 
     /* Retrieve plugin name from file name */
     rc = sscanf(file, NA_PLUGIN_SCN_NAME, plugin_name);
@@ -606,7 +606,7 @@ na_plugin_open(
     entry->ops = (const struct na_class_ops *) hg_dl_sym(
         entry->dl_handle, plugin_ops_name);
     NA_CHECK_SUBSYS_ERROR(cls, entry->ops == NULL, error, ret, NA_NOENTRY,
-        "Could not find symbol %s", plugin_ops_name);
+        "Could not find symbol %s (%s)", plugin_ops_name, hg_dl_error());
 
     return NA_SUCCESS;
 
