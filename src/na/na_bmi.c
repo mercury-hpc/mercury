@@ -66,17 +66,17 @@
 
 /* na_bmi_addr */
 struct na_bmi_addr {
-    HG_QUEUE_ENTRY(na_bmi_addr) entry; /* Pool of addresses */
-    BMI_addr_t bmi_addr;               /* BMI addr */
-    bool unexpected;                   /* From unexpected recv */
-    bool self;                         /* Boolean for self */
-    hg_atomic_int32_t ref_count;       /* Ref count */
+    STAILQ_ENTRY(na_bmi_addr) entry; /* Pool of addresses */
+    BMI_addr_t bmi_addr;             /* BMI addr */
+    bool unexpected;                 /* From unexpected recv */
+    bool self;                       /* Boolean for self */
+    hg_atomic_int32_t ref_count;     /* Ref count */
 };
 
 struct na_bmi_unexpected_info {
     struct BMI_unexpected_info info;
     struct na_bmi_addr *na_bmi_addr;
-    HG_QUEUE_ENTRY(na_bmi_unexpected_info) entry;
+    STAILQ_ENTRY(na_bmi_unexpected_info) entry;
 };
 
 struct na_bmi_mem_handle {
@@ -131,23 +131,23 @@ struct na_bmi_op_id {
     union {
         struct na_bmi_msg_info msg;
         struct na_bmi_rma_info rma;
-    } info;                             /* Op info                  */
-    HG_QUEUE_ENTRY(na_bmi_op_id) entry; /* Entry in queue           */
-    na_class_t *na_class;               /* NA class associated      */
-    na_context_t *context;              /* NA context associated    */
-    struct na_bmi_addr *na_bmi_addr;    /* Address associated       */
-    hg_atomic_int32_t status;           /* Operation status         */
+    } info;                          /* Op info                  */
+    TAILQ_ENTRY(na_bmi_op_id) entry; /* Entry in queue           */
+    na_class_t *na_class;            /* NA class associated      */
+    na_context_t *context;           /* NA context associated    */
+    struct na_bmi_addr *na_bmi_addr; /* Address associated       */
+    hg_atomic_int32_t status;        /* Operation status         */
 };
 
 /* Unexpected msg queue */
 struct na_bmi_unexpected_msg_queue {
-    HG_QUEUE_HEAD(na_bmi_unexpected_info) queue;
+    STAILQ_HEAD(, na_bmi_unexpected_info) queue;
     hg_thread_spin_t lock;
 };
 
 /* Op ID queue */
 struct na_bmi_op_queue {
-    HG_QUEUE_HEAD(na_bmi_op_id) queue;
+    TAILQ_HEAD(, na_bmi_op_id) queue;
     hg_thread_spin_t lock;
 };
 
@@ -159,7 +159,7 @@ struct na_bmi_map {
 
 /* Addr queue */
 struct na_bmi_addr_queue {
-    HG_QUEUE_HEAD(na_bmi_addr) queue;
+    STAILQ_HEAD(, na_bmi_addr) queue;
     hg_thread_spin_t lock;
 };
 
@@ -552,9 +552,9 @@ na_bmi_addr_map_insert(struct na_bmi_map *na_bmi_map, BMI_addr_t bmi_addr,
 
     /* Try to pick addr from pool */
     hg_thread_spin_lock(&addr_queue->lock);
-    na_bmi_addr = HG_QUEUE_FIRST(&addr_queue->queue);
+    na_bmi_addr = STAILQ_FIRST(&addr_queue->queue);
     if (na_bmi_addr) {
-        HG_QUEUE_POP_HEAD(&addr_queue->queue, entry);
+        STAILQ_REMOVE_HEAD(&addr_queue->queue, entry);
         hg_thread_spin_unlock(&addr_queue->lock);
     } else {
         hg_thread_spin_unlock(&addr_queue->lock);
@@ -586,7 +586,7 @@ error:
 
     if (na_bmi_addr) {
         hg_thread_spin_lock(&addr_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&addr_queue->queue, na_bmi_addr, entry);
+        STAILQ_INSERT_TAIL(&addr_queue->queue, na_bmi_addr, entry);
         hg_thread_spin_unlock(&addr_queue->lock);
     }
 
@@ -605,7 +605,7 @@ na_bmi_addr_map_remove(struct na_bmi_map *na_bmi_map,
             na_bmi_map->map, (hg_hash_table_key_t) &na_bmi_addr->bmi_addr);
 
         hg_thread_spin_lock(&addr_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&addr_queue->queue, na_bmi_addr, entry);
+        STAILQ_INSERT_TAIL(&addr_queue->queue, na_bmi_addr, entry);
         hg_thread_spin_unlock(&addr_queue->lock);
     }
     hg_thread_rwlock_release_wrlock(&na_bmi_map->lock);
@@ -832,9 +832,9 @@ na_bmi_process_msg_unexpected(struct na_bmi_op_queue *unexpected_op_queue,
 
     /* Pop op ID from queue */
     hg_thread_spin_lock(&unexpected_op_queue->lock);
-    na_bmi_op_id = HG_QUEUE_FIRST(&unexpected_op_queue->queue);
+    na_bmi_op_id = TAILQ_FIRST(&unexpected_op_queue->queue);
     if (likely(na_bmi_op_id)) {
-        HG_QUEUE_POP_HEAD(&unexpected_op_queue->queue, entry);
+        TAILQ_REMOVE(&unexpected_op_queue->queue, na_bmi_op_id, entry);
         hg_atomic_and32(&na_bmi_op_id->status, ~NA_BMI_OP_QUEUED);
     }
     hg_thread_spin_unlock(&unexpected_op_queue->lock);
@@ -873,7 +873,7 @@ na_bmi_process_msg_unexpected(struct na_bmi_op_queue *unexpected_op_queue,
          * unexpected queue so that we can treat it later when a
          * recv_unexpected is posted */
         hg_thread_spin_lock(&unexpected_msg_queue->lock);
-        HG_QUEUE_PUSH_TAIL(
+        STAILQ_INSERT_TAIL(
             &unexpected_msg_queue->queue, na_bmi_unexpected_info, entry);
         hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
@@ -1189,13 +1189,13 @@ na_bmi_initialize(
     NA_CHECK_ERROR(na_bmi_class == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA private data class");
 
-    HG_QUEUE_INIT(&na_bmi_class->unexpected_msg_queue.queue);
+    STAILQ_INIT(&na_bmi_class->unexpected_msg_queue.queue);
     hg_thread_spin_init(&na_bmi_class->unexpected_msg_queue.lock);
 
-    HG_QUEUE_INIT(&na_bmi_class->unexpected_op_queue.queue);
+    TAILQ_INIT(&na_bmi_class->unexpected_op_queue.queue);
     hg_thread_spin_init(&na_bmi_class->unexpected_op_queue.lock);
 
-    HG_QUEUE_INIT(&na_bmi_class->addr_queue.queue);
+    STAILQ_INIT(&na_bmi_class->addr_queue.queue);
     hg_thread_spin_init(&na_bmi_class->addr_queue.lock);
 
     /* Initialize mutex/cond */
@@ -1220,7 +1220,7 @@ na_bmi_initialize(
         ret = na_bmi_addr_create(0, false, false, &na_bmi_addr);
         NA_CHECK_NA_ERROR(error, ret, "Could not create address");
 
-        HG_QUEUE_PUSH_TAIL(&na_bmi_class->addr_queue.queue, na_bmi_addr, entry);
+        STAILQ_INSERT_TAIL(&na_bmi_class->addr_queue.queue, na_bmi_addr, entry);
     }
 
     /* Create addr hash-table */
@@ -1342,10 +1342,10 @@ error:
         hg_thread_mutex_destroy(&na_bmi_class->test_unexpected_mutex);
 
         /* Check that addr queue is empty */
-        while (!HG_QUEUE_IS_EMPTY(&na_bmi_class->addr_queue.queue)) {
+        while (!STAILQ_EMPTY(&na_bmi_class->addr_queue.queue)) {
             struct na_bmi_addr *na_bmi_addr =
-                HG_QUEUE_FIRST(&na_bmi_class->addr_queue.queue);
-            HG_QUEUE_POP_HEAD(&na_bmi_class->addr_queue.queue, entry);
+                STAILQ_FIRST(&na_bmi_class->addr_queue.queue);
+            STAILQ_REMOVE_HEAD(&na_bmi_class->addr_queue.queue, entry);
             na_bmi_addr_destroy(na_bmi_addr);
         }
 
@@ -1373,22 +1373,20 @@ na_bmi_finalize(na_class_t *na_class)
         goto done;
 
     /* Check that unexpected op queue is empty */
-    empty =
-        HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_op_queue.queue);
+    empty = TAILQ_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_op_queue.queue);
     NA_CHECK_ERROR(empty == false, done, ret, NA_BUSY,
         "Unexpected op queue should be empty");
 
     /* Check that unexpected message queue is empty */
-    empty =
-        HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.queue);
+    empty = STAILQ_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_msg_queue.queue);
     NA_CHECK_ERROR(empty == false, done, ret, NA_BUSY,
         "Unexpected msg queue should be empty");
 
     /* Check that addr queue is empty */
-    while (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->addr_queue.queue)) {
+    while (!STAILQ_EMPTY(&NA_BMI_CLASS(na_class)->addr_queue.queue)) {
         struct na_bmi_addr *na_bmi_addr =
-            HG_QUEUE_FIRST(&NA_BMI_CLASS(na_class)->addr_queue.queue);
-        HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->addr_queue.queue, entry);
+            STAILQ_FIRST(&NA_BMI_CLASS(na_class)->addr_queue.queue);
+        STAILQ_REMOVE_HEAD(&NA_BMI_CLASS(na_class)->addr_queue.queue, entry);
         na_bmi_addr_destroy(na_bmi_addr);
     }
 
@@ -1768,8 +1766,9 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Look for an unexpected message already received */
     hg_thread_spin_lock(&unexpected_msg_queue->lock);
-    na_bmi_unexpected_info = HG_QUEUE_FIRST(&unexpected_msg_queue->queue);
-    HG_QUEUE_POP_HEAD(&unexpected_msg_queue->queue, entry);
+    na_bmi_unexpected_info = STAILQ_FIRST(&unexpected_msg_queue->queue);
+    if (na_bmi_unexpected_info != NULL)
+        STAILQ_REMOVE_HEAD(&unexpected_msg_queue->queue, entry);
     hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
     if (unlikely(na_bmi_unexpected_info)) {
@@ -1797,7 +1796,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
         /* Nothing has been received yet so add op_id to progress queue */
         hg_thread_spin_lock(&unexpected_op_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&unexpected_op_queue->queue, na_bmi_op_id, entry);
+        TAILQ_INSERT_TAIL(&unexpected_op_queue->queue, na_bmi_op_id, entry);
         hg_atomic_or32(&na_bmi_op_id->status, NA_BMI_OP_QUEUED);
         hg_thread_spin_unlock(&unexpected_op_queue->lock);
     }
@@ -2339,8 +2338,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
 
             hg_thread_spin_lock(&op_queue->lock);
             if (hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_QUEUED) {
-                HG_QUEUE_REMOVE(
-                    &op_queue->queue, na_bmi_op_id, na_bmi_op_id, entry);
+                TAILQ_REMOVE(&op_queue->queue, na_bmi_op_id, entry);
                 hg_atomic_and32(&na_bmi_op_id->status, ~NA_BMI_OP_QUEUED);
                 canceled = true;
             }

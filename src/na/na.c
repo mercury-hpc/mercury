@@ -78,7 +78,7 @@ struct na_private_class {
 
 /* Completion queue */
 struct na_completion_queue {
-    HG_QUEUE_HEAD(na_cb_completion_data) queue; /* Completion queue */
+    STAILQ_HEAD(, na_cb_completion_data) queue; /* Completion queue */
     hg_thread_spin_t lock;                      /* Completion queue lock */
     hg_atomic_int32_t count;                    /* Number of entries */
 };
@@ -947,7 +947,7 @@ NA_Context_create_id(na_class_t *na_class, uint8_t id)
 
     /* Initialize backfill queue */
     backfill_queue = &na_private_context->backfill_queue;
-    HG_QUEUE_INIT(&backfill_queue->queue);
+    STAILQ_INIT(&backfill_queue->queue);
     hg_atomic_init32(&backfill_queue->count, 0);
     rc = hg_thread_spin_init(&backfill_queue->lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
@@ -1015,7 +1015,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     /* Check that backfill completion queue is empty now */
     backfill_queue = &na_private_context->backfill_queue;
     hg_thread_spin_lock(&backfill_queue->lock);
-    empty = HG_QUEUE_IS_EMPTY(&backfill_queue->queue);
+    empty = STAILQ_EMPTY(&backfill_queue->queue);
     hg_thread_spin_unlock(&backfill_queue->lock);
     NA_CHECK_SUBSYS_ERROR(ctx, empty == false, error, ret, NA_BUSY,
         "Completion queue should be empty");
@@ -1896,8 +1896,8 @@ NA_Trigger(
             if (hg_atomic_get32(&backfill_queue->count)) {
                 hg_thread_spin_lock(&backfill_queue->lock);
                 if (hg_atomic_get32(&backfill_queue->count)) {
-                    completion_data_p = HG_QUEUE_FIRST(&backfill_queue->queue);
-                    HG_QUEUE_POP_HEAD(&backfill_queue->queue, entry);
+                    completion_data_p = STAILQ_FIRST(&backfill_queue->queue);
+                    STAILQ_REMOVE_HEAD(&backfill_queue->queue, entry);
                     hg_atomic_decr32(&backfill_queue->count);
                 }
                 hg_thread_spin_unlock(&backfill_queue->lock);
@@ -2040,7 +2040,7 @@ na_cb_completion_add(
 
         /* Queue is full */
         hg_thread_spin_lock(&backfill_queue->lock);
-        HG_QUEUE_PUSH_TAIL(
+        STAILQ_INSERT_TAIL(
             &backfill_queue->queue, na_cb_completion_data, entry);
         hg_atomic_incr32(&backfill_queue->count);
         hg_thread_spin_unlock(&backfill_queue->lock);

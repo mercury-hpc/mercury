@@ -104,8 +104,8 @@ HG_LOG_OUTLET_DECL(HG_LOG_OUTLET_ROOT_NAME) = HG_LOG_OUTLET_INITIALIZER(
     HG_LOG_OUTLET_ROOT_NAME, HG_LOG_OFF, NULL, NULL);
 
 /* List of all registered outlets */
-static HG_QUEUE_HEAD(hg_log_outlet)
-    hg_log_outlets_g = HG_QUEUE_HEAD_INITIALIZER(hg_log_outlets_g);
+static STAILQ_HEAD(, hg_log_outlet) hg_log_outlets_g = STAILQ_HEAD_INITIALIZER(
+    hg_log_outlets_g);
 
 /* Default 'printf' log function */
 static hg_log_func_t hg_log_func_g = fprintf;
@@ -208,7 +208,7 @@ hg_log_outlet_reset_all(void)
     int i;
 
     /* Reset levels */
-    HG_QUEUE_FOREACH (outlet, &hg_log_outlets_g, entry)
+    STAILQ_FOREACH (outlet, &hg_log_outlets_g, entry)
         outlet->level = HG_LOG_LEVEL_NONE;
 
     /* Reset subsys */
@@ -257,7 +257,7 @@ hg_log_outlet_update_all(void)
 {
     struct hg_log_outlet *hg_log_outlet;
 
-    HG_QUEUE_FOREACH (hg_log_outlet, &hg_log_outlets_g, entry)
+    STAILQ_FOREACH (hg_log_outlet, &hg_log_outlets_g, entry)
         hg_log_outlet_update_level(hg_log_outlet);
 }
 
@@ -477,7 +477,7 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
         hg_log_outlet->parent->debug_log)
         hg_log_outlet->debug_log = hg_log_outlet->parent->debug_log;
 
-    HG_QUEUE_PUSH_TAIL(&hg_log_outlets_g, hg_log_outlet, entry);
+    STAILQ_INSERT_TAIL(&hg_log_outlets_g, hg_log_outlet, entry);
     hg_log_outlet->registered = true;
 }
 
@@ -496,7 +496,7 @@ hg_log_outlet_deregister(struct hg_log_outlet *hg_log_outlet)
         }
         hg_dlog_free(hg_log_outlet->debug_log);
     }
-    HG_QUEUE_REMOVE(&hg_log_outlets_g, hg_log_outlet, hg_log_outlet, entry);
+    STAILQ_REMOVE(&hg_log_outlets_g, hg_log_outlet, hg_log_outlet, entry);
     hg_log_outlet->registered = false;
 }
 

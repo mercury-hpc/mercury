@@ -16,7 +16,6 @@
 #include "mercury_hash_string.h"
 #include "mercury_hash_table.h"
 #include "mercury_inet.h"
-#include "mercury_list.h"
 #include "mercury_mem.h"
 #include "mercury_mem_pool.h"
 #include "mercury_thread.h"
@@ -534,12 +533,12 @@ struct na_ofi_addr_key {
 
 /* Address */
 struct na_ofi_addr {
-    struct na_ofi_addr_key addr_key;   /* Address key               */
-    HG_QUEUE_ENTRY(na_ofi_addr) entry; /* Entry in addr pool        */
-    struct na_ofi_class *class;        /* Class                     */
-    fi_addr_t fi_addr;                 /* FI address                */
-    fi_addr_t fi_auth_key;             /* FI auth key               */
-    hg_atomic_int32_t refcount;        /* Reference counter         */
+    struct na_ofi_addr_key addr_key; /* Address key               */
+    STAILQ_ENTRY(na_ofi_addr) entry; /* Entry in addr pool        */
+    struct na_ofi_class *class;      /* Class                     */
+    fi_addr_t fi_addr;               /* FI address                */
+    fi_addr_t fi_auth_key;           /* FI auth key               */
+    hg_atomic_int32_t refcount;      /* Reference counter         */
 };
 
 /* Error address info */
@@ -637,17 +636,17 @@ struct na_ofi_op_id {
         struct na_ofi_completion_multi multi; /* Multiple completions   */
     } completion_data_storage;                /* Completion data storage */
     union {
-        struct na_ofi_msg_info msg;     /* Msg info (tagged and non-tagged) */
-        struct na_ofi_rma_info rma;     /* RMA info */
-    } info;                             /* Op info                  */
-    HG_QUEUE_ENTRY(na_ofi_op_id) multi; /* Entry in multi queue     */
-    HG_QUEUE_ENTRY(na_ofi_op_id) retry; /* Entry in retry queue     */
-    struct fi_context fi_ctx[2];        /* Context handle           */
-    hg_time_t retry_deadline;           /* Retry deadline           */
-    hg_time_t retry_last;               /* Last retry time          */
-    struct na_ofi_class *na_ofi_class;  /* NA class associated      */
-    na_context_t *context;              /* NA context associated    */
-    struct na_ofi_addr *addr;           /* Address associated       */
+        struct na_ofi_msg_info msg;    /* Msg info (tagged and non-tagged) */
+        struct na_ofi_rma_info rma;    /* RMA info */
+    } info;                            /* Op info                  */
+    TAILQ_ENTRY(na_ofi_op_id) multi;   /* Entry in multi queue     */
+    TAILQ_ENTRY(na_ofi_op_id) retry;   /* Entry in retry queue     */
+    struct fi_context fi_ctx[2];       /* Context handle           */
+    hg_time_t retry_deadline;          /* Retry deadline           */
+    hg_time_t retry_last;              /* Last retry time          */
+    struct na_ofi_class *na_ofi_class; /* NA class associated      */
+    na_context_t *context;             /* NA context associated    */
+    struct na_ofi_addr *addr;          /* Address associated       */
     union {
         na_return_t (*msg)(
             struct fid_ep *, const struct na_ofi_msg_info *, void *);
@@ -666,7 +665,7 @@ struct na_ofi_op_id {
 
 /* Op ID queue */
 struct na_ofi_op_queue {
-    HG_QUEUE_HEAD(na_ofi_op_id) queue;
+    TAILQ_HEAD(, na_ofi_op_id) queue;
     hg_thread_spin_t lock;
 };
 
@@ -766,18 +765,18 @@ struct na_ofi_domain {
 
 /* Addr pool */
 struct na_ofi_addr_pool {
-    HG_QUEUE_HEAD(na_ofi_addr) queue;
+    STAILQ_HEAD(, na_ofi_addr) queue;
     hg_thread_spin_t lock;
 };
 
 /* Fabric */
 struct na_ofi_fabric {
-    HG_LIST_ENTRY(na_ofi_fabric) entry; /* Entry in fabric list */
-    struct fid_fabric *fi_fabric;       /* Fabric handle */
-    char *name;                         /* Fabric name */
-    char *prov_name;                    /* Provider name */
-    enum na_ofi_prov_type prov_type;    /* Provider type */
-    int32_t refcount;                   /* Refcount of this fabric */
+    SLIST_ENTRY(na_ofi_fabric) entry; /* Entry in fabric list */
+    struct fid_fabric *fi_fabric;     /* Fabric handle */
+    char *name;                       /* Fabric name */
+    char *prov_name;                  /* Provider name */
+    enum na_ofi_prov_type prov_type;  /* Provider type */
+    int32_t refcount;                 /* Refcount of this fabric */
 } HG_LOCK_CAPABILITY("fabric");
 
 /* Get info */
@@ -1999,8 +1998,8 @@ NA_PLUGIN const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
 };
 
 /* Fabric list */
-static HG_LIST_HEAD(na_ofi_fabric)
-    na_ofi_fabric_list_g = HG_LIST_HEAD_INITIALIZER(na_ofi_fabric);
+static SLIST_HEAD(,
+    na_ofi_fabric) na_ofi_fabric_list_g = SLIST_HEAD_INITIALIZER(na_ofi_fabric);
 
 /* Fabric list lock */
 static hg_thread_mutex_t na_ofi_fabric_list_mutex_g =
@@ -3975,7 +3974,7 @@ na_ofi_class_alloc(void)
     rc = hg_thread_spin_init(&na_ofi_class->addr_pool.lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
-    HG_QUEUE_INIT(&na_ofi_class->addr_pool.queue);
+    STAILQ_INIT(&na_ofi_class->addr_pool.queue);
 
     return na_ofi_class;
 
@@ -3994,10 +3993,10 @@ na_ofi_class_free(struct na_ofi_class *na_ofi_class)
 
 #ifdef NA_OFI_HAS_ADDR_POOL
     /* Free addresses */
-    while (!HG_QUEUE_IS_EMPTY(&na_ofi_class->addr_pool.queue)) {
+    while (!STAILQ_EMPTY(&na_ofi_class->addr_pool.queue)) {
         struct na_ofi_addr *na_ofi_addr =
-            HG_QUEUE_FIRST(&na_ofi_class->addr_pool.queue);
-        HG_QUEUE_POP_HEAD(&na_ofi_class->addr_pool.queue, entry);
+            STAILQ_FIRST(&na_ofi_class->addr_pool.queue);
+        STAILQ_REMOVE_HEAD(&na_ofi_class->addr_pool.queue, entry);
 
         na_ofi_addr_destroy(na_ofi_addr);
     }
@@ -4106,7 +4105,7 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
      * network.
      */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
-    HG_LIST_FOREACH (na_ofi_fabric, &na_ofi_fabric_list_g, entry)
+    SLIST_FOREACH (na_ofi_fabric, &na_ofi_fabric_list_g, entry)
         if ((strcmp(attr->name, na_ofi_fabric->name) == 0) &&
             (strcmp(attr->prov_name, na_ofi_fabric->prov_name) == 0))
             break;
@@ -4149,7 +4148,7 @@ na_ofi_fabric_open(enum na_ofi_prov_type prov_type, struct fi_fabric_attr *attr,
 #ifndef _WIN32
     /* Insert to global fabric list */
     hg_thread_mutex_lock(&na_ofi_fabric_list_mutex_g);
-    HG_LIST_INSERT_HEAD(&na_ofi_fabric_list_g, na_ofi_fabric, entry);
+    SLIST_INSERT_HEAD(&na_ofi_fabric_list_g, na_ofi_fabric, entry);
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
 #endif
 
@@ -4197,7 +4196,7 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric)
         na_ofi_fabric->fi_fabric = NULL;
     }
 #ifndef _WIN32
-    HG_LIST_REMOVE(na_ofi_fabric, entry);
+    SLIST_REMOVE(&na_ofi_fabric_list_g, na_ofi_fabric, na_ofi_fabric, entry);
     hg_thread_mutex_unlock(&na_ofi_fabric_list_mutex_g);
 #endif
 
@@ -5235,8 +5234,7 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     /* Valid only when not using SEP */
     if (na_ofi_endpoint->eq && na_ofi_endpoint->eq->retry_op_queue) {
         /* Check that unexpected op queue is empty */
-        bool empty =
-            HG_QUEUE_IS_EMPTY(&na_ofi_endpoint->eq->retry_op_queue->queue);
+        bool empty = TAILQ_EMPTY(&na_ofi_endpoint->eq->retry_op_queue->queue);
         NA_CHECK_SUBSYS_ERROR(ctx, empty == false, out, ret, NA_BUSY,
             "Retry op queue should be empty");
     }
@@ -5301,7 +5299,7 @@ na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
     na_ofi_eq->retry_op_queue = malloc(sizeof(*na_ofi_eq->retry_op_queue));
     NA_CHECK_SUBSYS_ERROR(ctx, na_ofi_eq->retry_op_queue == NULL, error, ret,
         NA_NOMEM, "Could not allocate retry_op_queue");
-    HG_QUEUE_INIT(&na_ofi_eq->retry_op_queue->queue);
+    TAILQ_INIT(&na_ofi_eq->retry_op_queue->queue);
     hg_thread_spin_init(&na_ofi_eq->retry_op_queue->lock);
 
     if (!no_wait) {
@@ -5531,9 +5529,9 @@ na_ofi_addr_pool_get(struct na_ofi_class *na_ofi_class)
     struct na_ofi_addr *na_ofi_addr = NULL;
 
     hg_thread_spin_lock(&na_ofi_class->addr_pool.lock);
-    na_ofi_addr = HG_QUEUE_FIRST(&na_ofi_class->addr_pool.queue);
+    na_ofi_addr = STAILQ_FIRST(&na_ofi_class->addr_pool.queue);
     if (na_ofi_addr) {
-        HG_QUEUE_POP_HEAD(&na_ofi_class->addr_pool.queue, entry);
+        STAILQ_REMOVE_HEAD(&na_ofi_class->addr_pool.queue, entry);
         hg_thread_spin_unlock(&na_ofi_class->addr_pool.lock);
     } else {
         hg_thread_spin_unlock(&na_ofi_class->addr_pool.lock);
@@ -5623,7 +5621,7 @@ na_ofi_addr_ref_decr(struct na_ofi_addr *na_ofi_addr)
 
         /* Push address back to addr pool */
         hg_thread_spin_lock(&addr_pool->lock);
-        HG_QUEUE_PUSH_TAIL(&addr_pool->queue, na_ofi_addr, entry);
+        STAILQ_INSERT_TAIL(&addr_pool->queue, na_ofi_addr, entry);
         hg_thread_spin_unlock(&addr_pool->lock);
 #else
         na_ofi_addr_destroy(na_ofi_addr);
@@ -6853,7 +6851,7 @@ na_ofi_cq_process_retries(
             hg_time_get_current_ms(&now);
 
         hg_thread_spin_lock(&op_queue->lock);
-        na_ofi_op_id = HG_QUEUE_FIRST(&op_queue->queue);
+        na_ofi_op_id = TAILQ_FIRST(&op_queue->queue);
         if (!na_ofi_op_id) {
             hg_thread_spin_unlock(&op_queue->lock);
             /* Queue is empty */
@@ -6880,7 +6878,7 @@ na_ofi_cq_process_retries(
 
         if (!skip_retry || canceled) {
             /* Dequeue OP ID */
-            HG_QUEUE_POP_HEAD(&op_queue->queue, retry);
+            TAILQ_REMOVE(&op_queue->queue, na_ofi_op_id, retry);
             hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
         } else {
             hg_thread_spin_unlock(&op_queue->lock);
@@ -6950,7 +6948,7 @@ na_ofi_cq_process_retries(
                 NA_LOG_SUBSYS_DEBUG(
                     op, "Re-pushing %p for retry", (void *) na_ofi_op_id);
                 /* Re-push op ID to retry queue */
-                HG_QUEUE_PUSH_TAIL(&op_queue->queue, na_ofi_op_id, retry);
+                TAILQ_INSERT_TAIL(&op_queue->queue, na_ofi_op_id, retry);
                 hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
             }
             hg_thread_spin_unlock(&op_queue->lock);
@@ -6996,7 +6994,7 @@ na_ofi_op_retry(struct na_ofi_context *na_ofi_context, unsigned int timeout_ms,
 
     /* Push op ID to retry queue */
     hg_thread_spin_lock(&retry_op_queue->lock);
-    HG_QUEUE_PUSH_TAIL(&retry_op_queue->queue, na_ofi_op_id, retry);
+    TAILQ_INSERT_TAIL(&retry_op_queue->queue, na_ofi_op_id, retry);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
     hg_thread_spin_unlock(&retry_op_queue->lock);
 }
@@ -7013,11 +7011,11 @@ na_ofi_op_retry_abort_addr(
         "Aborting all operations in retry queue to FI addr %" PRIu64, fi_addr);
 
     hg_thread_spin_lock(&op_queue->lock);
-    HG_QUEUE_FOREACH (na_ofi_op_id, &op_queue->queue, retry) {
+    TAILQ_FOREACH (na_ofi_op_id, &op_queue->queue, retry) {
         if (!na_ofi_op_id->addr || na_ofi_op_id->addr->fi_addr != fi_addr)
             continue;
 
-        HG_QUEUE_REMOVE(&op_queue->queue, na_ofi_op_id, na_ofi_op_id, retry);
+        TAILQ_REMOVE(&op_queue->queue, na_ofi_op_id, retry);
         NA_LOG_SUBSYS_DEBUG(op,
             "Aborting operation ID %p (%s) in retry queue to FI addr %" PRIu64,
             (void *) na_ofi_op_id, na_cb_type_to_string(na_ofi_op_id->type),
@@ -7092,8 +7090,7 @@ na_ofi_op_complete_multi(
             na_ofi_op_id->completion_data_storage.multi.completion_count);
 
         hg_thread_spin_lock(&multi_op_queue->lock);
-        HG_QUEUE_REMOVE(
-            &multi_op_queue->queue, na_ofi_op_id, na_ofi_op_id, multi);
+        TAILQ_REMOVE(&multi_op_queue->queue, na_ofi_op_id, multi);
         hg_atomic_decr32(
             &NA_OFI_CONTEXT(na_ofi_op_id->context)->multi_op_count);
         hg_thread_spin_unlock(&multi_op_queue->lock);
@@ -7647,7 +7644,7 @@ na_ofi_initialize(
         struct na_ofi_addr *na_ofi_addr = na_ofi_addr_alloc(na_ofi_class);
         NA_CHECK_SUBSYS_ERROR(cls, na_ofi_addr == NULL, error, ret, NA_NOMEM,
             "Could not create address");
-        HG_QUEUE_PUSH_TAIL(&na_ofi_class->addr_pool.queue, na_ofi_addr, entry);
+        STAILQ_INSERT_TAIL(&na_ofi_class->addr_pool.queue, na_ofi_addr, entry);
     }
 #endif
 
@@ -7784,7 +7781,7 @@ na_ofi_context_create(na_class_t *na_class, void **context_p, uint8_t id)
     rc = hg_thread_spin_init(&na_ofi_context->multi_op_queue.lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
         ctx, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
-    HG_QUEUE_INIT(&na_ofi_context->multi_op_queue.queue);
+    TAILQ_INIT(&na_ofi_context->multi_op_queue.queue);
 
     hg_atomic_incr32(&na_ofi_class->n_contexts);
 
@@ -7820,7 +7817,7 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
         bool empty;
 
         /* Check that retry op queue is empty */
-        empty = HG_QUEUE_IS_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
+        empty = TAILQ_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
         NA_CHECK_SUBSYS_ERROR(ctx, empty == false, out, ret, NA_BUSY,
             "Retry op queue should be empty");
 
@@ -7916,8 +7913,7 @@ na_ofi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
                 &NA_OFI_CONTEXT(na_ofi_op_id->context)->multi_op_queue;
 
             hg_thread_spin_lock(&multi_op_queue->lock);
-            HG_QUEUE_REMOVE(
-                &multi_op_queue->queue, na_ofi_op_id, na_ofi_op_id, multi);
+            TAILQ_REMOVE(&multi_op_queue->queue, na_ofi_op_id, multi);
             hg_atomic_decr32(
                 &NA_OFI_CONTEXT(na_ofi_op_id->context)->multi_op_count);
             hg_thread_spin_unlock(&multi_op_queue->lock);
@@ -8413,7 +8409,7 @@ na_ofi_msg_multi_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Add operation ID to context multi-op queue for tracking */
     hg_thread_spin_lock(&na_ofi_context->multi_op_queue.lock);
-    HG_QUEUE_PUSH_TAIL(
+    TAILQ_INSERT_TAIL(
         &na_ofi_context->multi_op_queue.queue, na_ofi_op_id, multi);
     hg_atomic_incr32(&na_ofi_context->multi_op_count);
     hg_thread_spin_unlock(&na_ofi_context->multi_op_queue.lock);
@@ -8441,8 +8437,7 @@ na_ofi_msg_multi_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 release:
     hg_thread_spin_lock(&na_ofi_context->multi_op_queue.lock);
-    HG_QUEUE_REMOVE(&na_ofi_context->multi_op_queue.queue, na_ofi_op_id,
-        na_ofi_op_id, multi);
+    TAILQ_REMOVE(&na_ofi_context->multi_op_queue.queue, na_ofi_op_id, multi);
     hg_atomic_decr32(&na_ofi_context->multi_op_count);
     hg_thread_spin_unlock(&na_ofi_context->multi_op_queue.lock);
     NA_OFI_OP_RELEASE(na_ofi_op_id);
@@ -8967,8 +8962,7 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
 
     /* Keep making progress if retry queue is not empty */
     hg_thread_spin_lock(&na_ofi_context->eq->retry_op_queue->lock);
-    retry_queue_empty =
-        HG_QUEUE_IS_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
+    retry_queue_empty = TAILQ_EMPTY(&na_ofi_context->eq->retry_op_queue->queue);
     hg_thread_spin_unlock(&na_ofi_context->eq->retry_op_queue->lock);
     if (!retry_queue_empty)
         return false;
@@ -9033,7 +9027,7 @@ na_ofi_progress(
             struct na_ofi_op_id *na_ofi_op_id;
 
             hg_thread_spin_lock(&na_ofi_context->multi_op_queue.lock);
-            HG_QUEUE_FOREACH (
+            TAILQ_FOREACH (
                 na_ofi_op_id, &na_ofi_context->multi_op_queue.queue, multi) {
                 unsigned int count = na_ofi_completion_multi_count(
                     &na_ofi_op_id->completion_data_storage.multi);
@@ -9105,8 +9099,7 @@ na_ofi_cancel(
 
         hg_thread_spin_lock(&op_queue->lock);
         if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_QUEUED) {
-            HG_QUEUE_REMOVE(
-                &op_queue->queue, na_ofi_op_id, na_ofi_op_id, retry);
+            TAILQ_REMOVE(&op_queue->queue, na_ofi_op_id, retry);
             hg_atomic_and32(&na_ofi_op_id->status, ~NA_OFI_OP_QUEUED);
             hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED);
             canceled = true;

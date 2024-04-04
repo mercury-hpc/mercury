@@ -110,6 +110,9 @@
 /* Define if has <sys/param.h> */
 #cmakedefine HG_UTIL_HAS_SYSPARAM_H
 
+/* Define if has <sys/queue.h> */
+#cmakedefine HG_UTIL_HAS_SYSQUEUE_H
+
 /* Define if has <sys/time.h> */
 #cmakedefine HG_UTIL_HAS_SYSTIME_H
 

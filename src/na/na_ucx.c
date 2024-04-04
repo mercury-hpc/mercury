@@ -12,7 +12,6 @@
 #include "mercury_hash_table.h"
 #include "mercury_mem.h"
 #include "mercury_mem_pool.h"
-#include "mercury_queue.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_thread_spin.h"
@@ -128,7 +127,7 @@
 
 /* Address */
 struct na_ucx_addr {
-    HG_QUEUE_ENTRY(na_ucx_addr) entry; /* Entry in addr pool */
+    STAILQ_ENTRY(na_ucx_addr) entry;   /* Entry in addr pool */
     struct sockaddr_storage ss_addr;   /* Sock addr */
     ucs_sock_addr_t addr_key;          /* Address key */
     struct na_ucx_class *na_ucx_class; /* NA UCX class */
@@ -203,22 +202,22 @@ struct na_ucx_op_id {
     union {
         struct na_ucx_msg_info msg;
         struct na_ucx_rma_info rma;
-    } info;                             /* Op info                  */
-    HG_QUEUE_ENTRY(na_ucx_op_id) entry; /* Entry in queue           */
-    na_context_t *context;              /* NA context associated    */
-    struct na_ucx_addr *addr;           /* Address associated       */
-    hg_atomic_int32_t status;           /* Operation status         */
+    } info;                          /* Op info                  */
+    TAILQ_ENTRY(na_ucx_op_id) entry; /* Entry in queue           */
+    na_context_t *context;           /* NA context associated    */
+    struct na_ucx_addr *addr;        /* Address associated       */
+    hg_atomic_int32_t status;        /* Operation status         */
 };
 
 /* Addr pool */
 struct na_ucx_addr_pool {
-    HG_QUEUE_HEAD(na_ucx_addr) queue;
+    STAILQ_HEAD(, na_ucx_addr) queue;
     hg_thread_spin_t lock;
 };
 
 /* Unexpected msg info */
 struct na_ucx_unexpected_info {
-    HG_QUEUE_ENTRY(na_ucx_unexpected_info) entry;
+    STAILQ_ENTRY(na_ucx_unexpected_info) entry;
     struct na_ucx_addr *na_ucx_addr;
     void *data;
     size_t length;
@@ -228,13 +227,13 @@ struct na_ucx_unexpected_info {
 
 /* Msg queue */
 struct na_ucx_unexpected_msg_queue {
-    HG_QUEUE_HEAD(na_ucx_unexpected_info) queue;
+    STAILQ_HEAD(, na_ucx_unexpected_info) queue;
     hg_thread_spin_t lock;
 };
 
 /* Op ID queue */
 struct na_ucx_op_queue {
-    HG_QUEUE_HEAD(na_ucx_op_id) queue;
+    TAILQ_HEAD(, na_ucx_op_id) queue;
     hg_thread_spin_t lock;
 };
 
@@ -1905,8 +1904,9 @@ na_ucp_am_recv(
 
     /* Look for an unexpected message already received */
     hg_thread_spin_lock(&unexpected_msg_queue->lock);
-    na_ucx_unexpected_info = HG_QUEUE_FIRST(&unexpected_msg_queue->queue);
-    HG_QUEUE_POP_HEAD(&unexpected_msg_queue->queue, entry);
+    na_ucx_unexpected_info = STAILQ_FIRST(&unexpected_msg_queue->queue);
+    if (na_ucx_unexpected_info != NULL)
+        STAILQ_REMOVE_HEAD(&unexpected_msg_queue->queue, entry);
     hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
     if (likely(na_ucx_unexpected_info == NULL)) {
@@ -1915,7 +1915,7 @@ na_ucp_am_recv(
 
         /* Nothing has been received yet so add op_id to progress queue */
         hg_thread_spin_lock(&unexpected_op_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&unexpected_op_queue->queue, na_ucx_op_id, entry);
+        TAILQ_INSERT_TAIL(&unexpected_op_queue->queue, na_ucx_op_id, entry);
         hg_atomic_or32(&na_ucx_op_id->status, NA_UCX_OP_QUEUED);
         hg_thread_spin_unlock(&unexpected_op_queue->lock);
     } else {
@@ -1978,9 +1978,9 @@ na_ucp_am_recv_cb(void *arg, const void *header, size_t header_length,
 
     /* Pop op ID from queue */
     hg_thread_spin_lock(&unexpected_op_queue->lock);
-    na_ucx_op_id = HG_QUEUE_FIRST(&unexpected_op_queue->queue);
+    na_ucx_op_id = TAILQ_FIRST(&unexpected_op_queue->queue);
     if (likely(na_ucx_op_id)) {
-        HG_QUEUE_POP_HEAD(&unexpected_op_queue->queue, entry);
+        TAILQ_REMOVE(&unexpected_op_queue->queue, na_ucx_op_id, entry);
         hg_atomic_and32(&na_ucx_op_id->status, ~NA_UCX_OP_QUEUED);
     }
     hg_thread_spin_unlock(&unexpected_op_queue->lock);
@@ -2025,7 +2025,7 @@ na_ucp_am_recv_cb(void *arg, const void *header, size_t header_length,
         /* Otherwise push the unexpected message into our unexpected queue so
          * that we can treat it later when a recv_unexpected is posted */
         hg_thread_spin_lock(&unexpected_msg_queue->lock);
-        HG_QUEUE_PUSH_TAIL(
+        STAILQ_INSERT_TAIL(
             &unexpected_msg_queue->queue, na_ucx_unexpected_info, entry);
         hg_thread_spin_unlock(&unexpected_msg_queue->lock);
 
@@ -2287,19 +2287,19 @@ na_ucx_class_alloc(void)
     rc = hg_thread_spin_init(&na_ucx_class->unexpected_op_queue.lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
-    HG_QUEUE_INIT(&na_ucx_class->unexpected_op_queue.queue);
+    TAILQ_INIT(&na_ucx_class->unexpected_op_queue.queue);
 
     /* Initialize unexpected msg queue */
     rc = hg_thread_spin_init(&na_ucx_class->unexpected_msg_queue.lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
-    HG_QUEUE_INIT(&na_ucx_class->unexpected_msg_queue.queue);
+    STAILQ_INIT(&na_ucx_class->unexpected_msg_queue.queue);
 
     /* Initialize addr pool */
     rc = hg_thread_spin_init(&na_ucx_class->addr_pool.lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
-    HG_QUEUE_INIT(&na_ucx_class->addr_pool.queue);
+    STAILQ_INIT(&na_ucx_class->addr_pool.queue);
 
     /* Create address map */
     na_ucx_class->addr_map.key_map =
@@ -2707,9 +2707,9 @@ na_ucx_addr_pool_get(struct na_ucx_class *na_ucx_class)
     struct na_ucx_addr *na_ucx_addr = NULL;
 
     hg_thread_spin_lock(&na_ucx_class->addr_pool.lock);
-    na_ucx_addr = HG_QUEUE_FIRST(&na_ucx_class->addr_pool.queue);
+    na_ucx_addr = STAILQ_FIRST(&na_ucx_class->addr_pool.queue);
     if (na_ucx_addr) {
-        HG_QUEUE_POP_HEAD(&na_ucx_class->addr_pool.queue, entry);
+        STAILQ_REMOVE_HEAD(&na_ucx_class->addr_pool.queue, entry);
         hg_thread_spin_unlock(&na_ucx_class->addr_pool.lock);
     } else {
         hg_thread_spin_unlock(&na_ucx_class->addr_pool.lock);
@@ -2832,7 +2832,7 @@ na_ucx_addr_ref_decr(struct na_ucx_addr *na_ucx_addr)
 
         /* Push address back to addr pool */
         hg_thread_spin_lock(&addr_pool->lock);
-        HG_QUEUE_PUSH_TAIL(&addr_pool->queue, na_ucx_addr, entry);
+        STAILQ_INSERT_TAIL(&addr_pool->queue, na_ucx_addr, entry);
         hg_thread_spin_unlock(&addr_pool->lock);
 #else
         na_ucx_addr_destroy(na_ucx_addr);
@@ -3241,7 +3241,7 @@ na_ucx_initialize(
     /* Create pool of addresses */
     for (i = 0; i < NA_UCX_ADDR_POOL_SIZE; i++) {
         struct na_ucx_addr *na_ucx_addr = na_ucx_addr_alloc(na_ucx_class);
-        HG_QUEUE_PUSH_TAIL(&na_ucx_class->addr_pool.queue, na_ucx_addr, entry);
+        STAILQ_INSERT_TAIL(&na_ucx_class->addr_pool.queue, na_ucx_addr, entry);
     }
 #endif
 
@@ -3309,11 +3309,11 @@ na_ucx_finalize(na_class_t *na_class)
     }
 
 #ifdef NA_UCX_HAS_ADDR_POOL
-    /* Free addresse pool */
-    while (!HG_QUEUE_IS_EMPTY(&na_ucx_class->addr_pool.queue)) {
+    /* Free address pool */
+    while (!STAILQ_EMPTY(&na_ucx_class->addr_pool.queue)) {
         struct na_ucx_addr *na_ucx_addr =
-            HG_QUEUE_FIRST(&na_ucx_class->addr_pool.queue);
-        HG_QUEUE_POP_HEAD(&na_ucx_class->addr_pool.queue, entry);
+            STAILQ_FIRST(&na_ucx_class->addr_pool.queue);
+        STAILQ_REMOVE_HEAD(&na_ucx_class->addr_pool.queue, entry);
         na_ucx_addr_destroy(na_ucx_addr);
     }
 #endif
@@ -4227,8 +4227,7 @@ na_ucx_cancel(
 
         hg_thread_spin_lock(&op_queue->lock);
         if (hg_atomic_get32(&na_ucx_op_id->status) & NA_UCX_OP_QUEUED) {
-            HG_QUEUE_REMOVE(
-                &op_queue->queue, na_ucx_op_id, na_ucx_op_id, entry);
+            TAILQ_REMOVE(&op_queue->queue, na_ucx_op_id, entry);
             hg_atomic_and32(&na_ucx_op_id->status, ~NA_UCX_OP_QUEUED);
             hg_atomic_or32(&na_ucx_op_id->status, NA_UCX_OP_CANCELED);
             canceled = true;
