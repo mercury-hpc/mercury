@@ -35,7 +35,7 @@ for which libfabric is either not available or not recommended to use.
 For both OFI and UCX plugins, please run the `hg_info` command for a list of
 available transports on the system.
 
-MPI, CCI and BMI plugins are deprecated and no longer supported.
+MPI and BMI plugins are deprecated and no longer supported.
 
 See the [plugin requirements](#plugin-requirements) section for
 plugin requirement details.
@@ -209,7 +209,6 @@ Below is a list of the most common questions.
 
 [mailing-lists]: http://mercury-hpc.github.io/help#mailing-lists
 [documentation]: http://mercury-hpc.github.io/documentation/
-[cci]: http://cci-forum.com/?page_id=46
 [libfabric]: https://github.com/ofiwg/libfabric
 [ucx]: https://openucx.readthedocs.io/en/master/running.html#ucx-build-and-install
 [github-ci-svg]: https://github.com/mercury-hpc/mercury/actions/workflows/ci.yml/badge.svg?branch=master

@@ -183,9 +183,6 @@ extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(bmi);
 #ifdef NA_HAS_MPI
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(mpi);
 #endif
-#ifdef NA_HAS_CCI
-extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(cci);
-#endif
 #ifdef NA_HAS_PSM
 extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(psm);
 #endif
