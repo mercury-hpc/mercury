@@ -17,11 +17,6 @@ if(NA_USE_MPI)
   mark_as_advanced(NA_MPI_TESTING_PROTOCOL)
 endif()
 
-if(NA_USE_CCI)
-  set(NA_CCI_TESTING_PROTOCOL "tcp" CACHE STRING "Protocol(s) used for testing (e.g., tcp;sm).")
-  mark_as_advanced(NA_CCI_TESTING_PROTOCOL)
-endif()
-
 if(NA_USE_OFI)
   set(NA_OFI_TESTING_PROTOCOL "sockets;tcp" CACHE STRING "Protocol(s) used for testing (e.g., sockets;psm2;verbs).")
   mark_as_advanced(NA_OFI_TESTING_PROTOCOL)

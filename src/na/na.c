@@ -185,9 +185,6 @@ static const struct na_class_ops *const na_plugin_static_g[] = {
 #ifdef NA_HAS_MPI
     &NA_PLUGIN_OPS(mpi),
 #endif
-#ifdef NA_HAS_CCI
-    &NA_PLUGIN_OPS(cci),
-#endif
 #ifdef NA_HAS_PSM
     &NA_PLUGIN_OPS(psm),
 #endif

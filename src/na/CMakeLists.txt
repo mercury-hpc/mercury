@@ -138,23 +138,6 @@ if(NA_USE_MPI)
   endif()
 endif()
 
-# CCI
-option(NA_USE_CCI "Use CCI." OFF)
-if(NA_USE_CCI)
-  find_package(CCI REQUIRED)
-  message(STATUS "CCI include directory: ${CCI_INCLUDE_DIR}")
-  set(NA_PLUGINS ${NA_PLUGINS} cci)
-  set(NA_HAS_CCI 1)
-  set(NA_INT_INCLUDE_DEPENDENCIES
-    ${NA_INT_INCLUDE_DEPENDENCIES}
-    ${CCI_INCLUDE_DIR}
-  )
-  set(NA_INT_LIB_DEPENDENCIES
-    ${NA_INT_LIB_DEPENDENCIES}
-    ${CCI_LIBRARIES}
-  )
-endif()
-
 # OFI
 option(NA_USE_OFI "Use libfabric plugin." OFF)
 if(NA_USE_OFI)
