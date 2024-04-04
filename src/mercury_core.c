@@ -12,11 +12,9 @@
 #include "mercury_error.h"
 #include "mercury_event.h"
 #include "mercury_hash_table.h"
-#include "mercury_list.h"
 #include "mercury_mem.h"
 #include "mercury_param.h"
 #include "mercury_poll.h"
-#include "mercury_queue.h"
 #include "mercury_thread_condition.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_pool.h"
@@ -200,7 +198,7 @@ enum hg_core_poll_type {
 
 /* Completion queue */
 struct hg_core_completion_queue {
-    HG_QUEUE_HEAD(hg_completion_entry) queue; /* Completion queue */
+    STAILQ_HEAD(, hg_completion_entry) queue; /* Completion queue */
     hg_thread_cond_t cond;                    /* Completion queue cond */
     hg_thread_mutex_t mutex;                  /* Completion queue mutex */
     hg_atomic_int32_t count;                  /* Number of entries */
@@ -208,8 +206,8 @@ struct hg_core_completion_queue {
 
 /* List of handles */
 struct hg_core_handle_list {
-    HG_LIST_HEAD(hg_core_private_handle) list; /* Handle list */
-    hg_thread_spin_t lock;                     /* Handle list lock */
+    LIST_HEAD(, hg_core_private_handle) list; /* Handle list */
+    hg_thread_spin_t lock;                    /* Handle list lock */
 };
 
 /* Handle create callback info */
@@ -323,8 +321,8 @@ struct hg_core_ops {
 struct hg_core_private_handle {
     struct hg_core_handle core_handle; /* Must remain as first field */
     struct hg_completion_entry hg_completion_entry; /* Completion queue entry */
-    HG_LIST_ENTRY(hg_core_private_handle) created;  /* Created list entry */
-    HG_LIST_ENTRY(hg_core_private_handle) pending;  /* Pending list entry */
+    LIST_ENTRY(hg_core_private_handle) created;     /* Created list entry */
+    LIST_ENTRY(hg_core_private_handle) pending;     /* Pending list entry */
     struct hg_core_header in_header;                /* Input header */
     struct hg_core_header out_header;               /* Output header */
     struct hg_core_handle_list *created_list;       /* Created list */
@@ -1471,7 +1469,7 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
     context->core_context.core_class = (struct hg_core_class *) hg_core_class;
     backfill_queue = &context->backfill_queue;
 
-    HG_QUEUE_INIT(&backfill_queue->queue);
+    STAILQ_INIT(&backfill_queue->queue);
     hg_atomic_init32(&backfill_queue->count, 0);
     rc = hg_thread_mutex_init(&backfill_queue->mutex);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
@@ -1494,13 +1492,13 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
         "hg_thread_mutex_init() failed");
     loopback_notify_mutex_init = HG_TRUE;
 
-    HG_LIST_INIT(&context->user_list.list);
+    LIST_INIT(&context->user_list.list);
     rc = hg_thread_spin_init(&context->user_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
     user_list_lock_init = HG_TRUE;
 
-    HG_LIST_INIT(&context->internal_list.list);
+    LIST_INIT(&context->internal_list.list);
     rc = hg_thread_spin_init(&context->internal_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
@@ -1732,7 +1730,7 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     /* Check that backfill completion queue is empty now */
     backfill_queue = &context->backfill_queue;
     hg_thread_mutex_lock(&backfill_queue->mutex);
-    empty = HG_QUEUE_IS_EMPTY(&backfill_queue->queue);
+    empty = STAILQ_EMPTY(&backfill_queue->queue);
     hg_thread_mutex_unlock(&backfill_queue->mutex);
     HG_CHECK_SUBSYS_ERROR(ctx, empty == HG_FALSE, error, ret, HG_BUSY,
         "Completion queue should be empty");
@@ -2132,10 +2130,10 @@ hg_core_context_check_handle_list(struct hg_core_handle_list *handle_list)
 
     hg_thread_spin_lock(&handle_list->lock);
 
-    if (HG_LIST_IS_EMPTY(&handle_list->list))
+    if (LIST_EMPTY(&handle_list->list))
         HG_GOTO_DONE(unlock, ret, HG_SUCCESS);
 
-    HG_LIST_FOREACH (hg_core_handle, &handle_list->list, created) {
+    LIST_FOREACH (hg_core_handle, &handle_list->list, created) {
         /* TODO ideally we'd want the upper layer to print that */
         if (hg_core_handle->core_handle.data)
             HG_LOG_SUBSYS_ERROR(ctx, "Handle (%p) was not destroyed",
@@ -2181,7 +2179,7 @@ hg_core_context_list_wait(struct hg_core_private_context *context,
 
         /* Make progress until list is empty */
         hg_thread_spin_lock(&handle_list->lock);
-        list_empty = HG_LIST_IS_EMPTY(&handle_list->list);
+        list_empty = LIST_EMPTY(&handle_list->list);
         hg_thread_spin_unlock(&handle_list->lock);
         if (list_empty)
             break;
@@ -2237,7 +2235,7 @@ hg_core_handle_pool_create(struct hg_core_private_context *context,
     HG_CHECK_SUBSYS_ERROR(ctx, hg_core_handle_pool == NULL, error, ret,
         HG_NOMEM, "Could not allocate handle pool");
 
-    HG_LIST_INIT(&hg_core_handle_pool->pending_list.list);
+    LIST_INIT(&hg_core_handle_pool->pending_list.list);
     rc = hg_thread_spin_init(&hg_core_handle_pool->pending_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
@@ -2278,11 +2276,11 @@ error:
     if (hg_core_handle_pool != NULL) {
         struct hg_core_private_handle *hg_core_handle;
 
-        hg_core_handle = HG_LIST_FIRST(&hg_core_handle_pool->pending_list.list);
+        hg_core_handle = LIST_FIRST(&hg_core_handle_pool->pending_list.list);
         while (hg_core_handle) {
             struct hg_core_private_handle *hg_core_handle_next =
-                HG_LIST_NEXT(hg_core_handle, pending);
-            HG_LIST_REMOVE(hg_core_handle, pending);
+                LIST_NEXT(hg_core_handle, pending);
+            LIST_REMOVE(hg_core_handle, pending);
 
             /* Prevent re-initialization */
             hg_core_handle->reuse = HG_FALSE;
@@ -2314,11 +2312,11 @@ hg_core_handle_pool_destroy(struct hg_core_handle_pool *hg_core_handle_pool)
     HG_LOG_DEBUG("Free handle pool (%p)", (void *) hg_core_handle_pool);
 
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-    hg_core_handle = HG_LIST_FIRST(&hg_core_handle_pool->pending_list.list);
+    hg_core_handle = LIST_FIRST(&hg_core_handle_pool->pending_list.list);
     while (hg_core_handle) {
         struct hg_core_private_handle *hg_core_handle_next =
-            HG_LIST_NEXT(hg_core_handle, pending);
-        HG_LIST_REMOVE(hg_core_handle, pending);
+            LIST_NEXT(hg_core_handle, pending);
+        LIST_REMOVE(hg_core_handle, pending);
 
         /* Prevent re-initialization */
         hg_core_handle->reuse = HG_FALSE;
@@ -2343,7 +2341,7 @@ hg_core_handle_pool_empty(struct hg_core_handle_pool *hg_core_handle_pool)
     hg_bool_t ret;
 
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-    ret = HG_LIST_IS_EMPTY(&hg_core_handle_pool->pending_list.list);
+    ret = LIST_EMPTY(&hg_core_handle_pool->pending_list.list);
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
 
     return ret;
@@ -2359,9 +2357,9 @@ hg_core_handle_pool_get(struct hg_core_handle_pool *hg_core_handle_pool,
 
     do {
         hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-        hg_core_handle = HG_LIST_FIRST(&hg_core_handle_pool->pending_list.list);
+        hg_core_handle = LIST_FIRST(&hg_core_handle_pool->pending_list.list);
         if (hg_core_handle != NULL) {
-            HG_LIST_REMOVE(hg_core_handle, pending);
+            LIST_REMOVE(hg_core_handle, pending);
             hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
             break;
         }
@@ -2449,7 +2447,7 @@ hg_core_handle_pool_insert(struct hg_core_private_context *context,
 
     /* Add handle to pending list */
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-    HG_LIST_INSERT_HEAD(
+    LIST_INSERT_HEAD(
         &hg_core_handle_pool->pending_list.list, hg_core_handle, pending);
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
 
@@ -2469,7 +2467,7 @@ error:
     if (hg_core_handle != NULL) {
         if (post) {
             hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-            HG_LIST_REMOVE(hg_core_handle, pending);
+            LIST_REMOVE(hg_core_handle, pending);
             hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
         }
         hg_core_handle->reuse = HG_FALSE;
@@ -2493,7 +2491,7 @@ hg_core_handle_pool_unpost(
     /* Check pending list and cancel posted handles */
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
 
-    HG_LIST_FOREACH (
+    LIST_FOREACH (
         hg_core_handle, &hg_core_handle_pool->pending_list.list, pending) {
         /* Cancel handle */
         ret = hg_core_cancel(hg_core_handle);
@@ -3390,7 +3388,7 @@ hg_core_alloc(struct hg_core_private_context *context, hg_bool_t user,
     hg_core_handle->created_list =
         (user) ? &context->user_list : &context->internal_list;
     hg_thread_spin_lock(&hg_core_handle->created_list->lock);
-    HG_LIST_INSERT_HEAD(
+    LIST_INSERT_HEAD(
         &hg_core_handle->created_list->list, hg_core_handle, created);
     hg_thread_spin_unlock(&hg_core_handle->created_list->lock);
 
@@ -3431,7 +3429,7 @@ hg_core_free(struct hg_core_private_handle *hg_core_handle)
 
     /* Remove handle from list */
     hg_thread_spin_lock(&hg_core_handle->created_list->lock);
-    HG_LIST_REMOVE(hg_core_handle, created);
+    LIST_REMOVE(hg_core_handle, created);
     hg_thread_spin_unlock(&hg_core_handle->created_list->lock);
 
     hg_core_header_request_finalize(&hg_core_handle->in_header);
@@ -3658,7 +3656,7 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle)
 
     /* Add handle back to pending list */
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-    HG_LIST_INSERT_HEAD(
+    LIST_INSERT_HEAD(
         &hg_core_handle_pool->pending_list.list, hg_core_handle, pending);
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
 
@@ -4373,7 +4371,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_core_handle_pool = context->handle_pool;
 #endif
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
-    HG_LIST_REMOVE(hg_core_handle, pending);
+    LIST_REMOVE(hg_core_handle, pending);
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
 
     if (callback_info->ret == NA_SUCCESS) {
@@ -4994,7 +4992,7 @@ hg_core_completion_add(struct hg_core_context *core_context,
 
         /* Queue is full */
         hg_thread_mutex_lock(&backfill_queue->mutex);
-        HG_QUEUE_PUSH_TAIL(&backfill_queue->queue, hg_completion_entry, entry);
+        STAILQ_INSERT_TAIL(&backfill_queue->queue, hg_completion_entry, entry);
         hg_atomic_incr32(&backfill_queue->count);
         hg_thread_mutex_unlock(&backfill_queue->mutex);
     }
@@ -5334,9 +5332,8 @@ hg_core_trigger(struct hg_core_private_context *context,
             if (hg_atomic_get32(&backfill_queue->count) > 0) {
                 hg_thread_mutex_lock(&backfill_queue->mutex);
                 if (hg_atomic_get32(&backfill_queue->count) > 0) {
-                    hg_completion_entry =
-                        HG_QUEUE_FIRST(&backfill_queue->queue);
-                    HG_QUEUE_POP_HEAD(&backfill_queue->queue, entry);
+                    hg_completion_entry = STAILQ_FIRST(&backfill_queue->queue);
+                    STAILQ_REMOVE_HEAD(&backfill_queue->queue, entry);
                     hg_atomic_decr32(&backfill_queue->count);
                 }
                 hg_thread_mutex_unlock(&backfill_queue->mutex);

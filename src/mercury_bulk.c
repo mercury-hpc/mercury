@@ -12,7 +12,6 @@
 #include "mercury_private.h"
 
 #include "mercury_atomic.h"
-#include "mercury_list.h"
 #include "mercury_thread_condition.h"
 #include "mercury_thread_spin.h"
 
@@ -192,12 +191,12 @@ typedef struct {
 /* HG Bulk op ID */
 struct hg_bulk_op_id {
     struct hg_completion_entry
-        hg_completion_entry;              /* Entry in completion queue */
-    struct hg_cb_info callback_info;      /* Callback info struct */
-    HG_LIST_ENTRY(hg_bulk_op_id) pending; /* Pending list entry */
-    struct hg_bulk_op_pool *op_pool;      /* Pool that op ID belongs to */
-    hg_cb_t callback;                     /* Pointer to function */
-    hg_bulk_na_op_id_t na_op_ids;         /* NA operations IDs */
+        hg_completion_entry;           /* Entry in completion queue */
+    struct hg_cb_info callback_info;   /* Callback info struct */
+    LIST_ENTRY(hg_bulk_op_id) pending; /* Pending list entry */
+    struct hg_bulk_op_pool *op_pool;   /* Pool that op ID belongs to */
+    hg_cb_t callback;                  /* Pointer to function */
+    hg_bulk_na_op_id_t na_op_ids;      /* NA operations IDs */
 #ifdef NA_HAS_SM
     hg_bulk_na_op_id_t na_sm_op_ids; /* NA SM operations IDs */
 #endif
@@ -214,13 +213,13 @@ struct hg_bulk_op_id {
 
 /* Pool of op IDs */
 struct hg_bulk_op_pool {
-    hg_thread_mutex_t extend_mutex;           /* To extend pool */
-    hg_thread_cond_t extend_cond;             /* To extend pool */
-    hg_core_context_t *core_context;          /* Context */
-    HG_LIST_HEAD(hg_bulk_op_id) pending_list; /* Pending op IDs */
-    hg_thread_spin_t pending_list_lock;       /* Pending list lock */
-    unsigned long count;                      /* Number of op IDs */
-    hg_bool_t extending;                      /* When extending the pool */
+    hg_thread_mutex_t extend_mutex;          /* To extend pool */
+    hg_thread_cond_t extend_cond;            /* To extend pool */
+    hg_core_context_t *core_context;         /* Context */
+    LIST_HEAD(, hg_bulk_op_id) pending_list; /* Pending op IDs */
+    hg_thread_spin_t pending_list_lock;      /* Pending list lock */
+    unsigned long count;                     /* Number of op IDs */
+    hg_bool_t extending;                     /* When extending the pool */
 };
 
 /* Wrapper on top of memcpy */
@@ -1727,7 +1726,7 @@ hg_bulk_op_destroy(struct hg_bulk_op_id *hg_bulk_op_id)
         hg_atomic_set32(&hg_bulk_op_id->status, HG_BULK_OP_COMPLETED);
 
         hg_thread_spin_lock(&hg_bulk_op_id->op_pool->pending_list_lock);
-        HG_LIST_INSERT_HEAD(
+        LIST_INSERT_HEAD(
             &hg_bulk_op_id->op_pool->pending_list, hg_bulk_op_id, pending);
         hg_thread_spin_unlock(&hg_bulk_op_id->op_pool->pending_list_lock);
     } else {
@@ -1775,7 +1774,7 @@ hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
     hg_thread_mutex_init(&hg_bulk_op_pool->extend_mutex);
     hg_thread_cond_init(&hg_bulk_op_pool->extend_cond);
     hg_bulk_op_pool->core_context = core_context;
-    HG_LIST_INIT(&hg_bulk_op_pool->pending_list);
+    LIST_INIT(&hg_bulk_op_pool->pending_list);
     hg_thread_spin_init(&hg_bulk_op_pool->pending_list_lock);
     hg_bulk_op_pool->count = init_count;
     hg_bulk_op_pool->extending = HG_FALSE;
@@ -1791,7 +1790,7 @@ hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
         hg_bulk_op_id->op_pool = hg_bulk_op_pool;
 
         hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
-        HG_LIST_INSERT_HEAD(
+        LIST_INSERT_HEAD(
             &hg_bulk_op_pool->pending_list, hg_bulk_op_id, pending);
         hg_thread_spin_unlock(&hg_bulk_op_pool->pending_list_lock);
     }
@@ -1820,12 +1819,12 @@ hg_bulk_op_pool_destroy(struct hg_bulk_op_pool *hg_bulk_op_pool)
 
     hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
 
-    hg_bulk_op_id = HG_LIST_FIRST(&hg_bulk_op_pool->pending_list);
+    hg_bulk_op_id = LIST_FIRST(&hg_bulk_op_pool->pending_list);
 
     while (hg_bulk_op_id) {
         struct hg_bulk_op_id *hg_bulk_op_id_next =
-            HG_LIST_NEXT(hg_bulk_op_id, pending);
-        HG_LIST_REMOVE(hg_bulk_op_id, pending);
+            LIST_NEXT(hg_bulk_op_id, pending);
+        LIST_REMOVE(hg_bulk_op_id, pending);
 
         /* Prevent re-initialization */
         hg_bulk_op_id->reuse = HG_FALSE;
@@ -1856,8 +1855,8 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
         unsigned int i;
 
         hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
-        if ((hg_bulk_op_id = HG_LIST_FIRST(&hg_bulk_op_pool->pending_list)))
-            HG_LIST_REMOVE(hg_bulk_op_id, pending);
+        if ((hg_bulk_op_id = LIST_FIRST(&hg_bulk_op_pool->pending_list)))
+            LIST_REMOVE(hg_bulk_op_id, pending);
         hg_thread_spin_unlock(&hg_bulk_op_pool->pending_list_lock);
 
         if (hg_bulk_op_id)
@@ -1886,7 +1885,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
             new_op_id->op_pool = hg_bulk_op_pool;
 
             hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
-            HG_LIST_INSERT_HEAD(
+            LIST_INSERT_HEAD(
                 &hg_bulk_op_pool->pending_list, new_op_id, pending);
             hg_thread_spin_unlock(&hg_bulk_op_pool->pending_list_lock);
         }

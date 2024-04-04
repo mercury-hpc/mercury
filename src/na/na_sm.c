@@ -14,10 +14,8 @@
 #include "mercury_atomic_queue.h"
 #include "mercury_event.h"
 #include "mercury_hash_table.h"
-#include "mercury_list.h"
 #include "mercury_mem.h"
 #include "mercury_poll.h"
-#include "mercury_queue.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_thread_spin.h"
@@ -281,7 +279,7 @@ enum na_sm_poll_type {
 /* Address */
 struct na_sm_addr {
     hg_thread_mutex_t resolve_lock;     /* Lock to resolve address */
-    HG_LIST_ENTRY(na_sm_addr) entry;    /* Entry in poll list */
+    LIST_ENTRY(na_sm_addr) entry;       /* Entry in poll list */
     struct na_sm_addr_key addr_key;     /* Address key */
     struct na_sm_endpoint *endpoint;    /* Endpoint */
     struct na_sm_region *shared_region; /* Shared-memory region */
@@ -300,7 +298,7 @@ struct na_sm_addr {
 
 /* Address list */
 struct na_sm_addr_list {
-    HG_LIST_HEAD(na_sm_addr) list;
+    LIST_HEAD(, na_sm_addr) list;
     hg_thread_spin_t lock;
 };
 
@@ -341,7 +339,7 @@ struct na_sm_msg_info {
 
 /* Unexpected msg info */
 struct na_sm_unexpected_info {
-    HG_QUEUE_ENTRY(na_sm_unexpected_info) entry;
+    STAILQ_ENTRY(na_sm_unexpected_info) entry;
     struct na_sm_addr *na_sm_addr;
     void *buf;
     size_t buf_size;
@@ -350,7 +348,7 @@ struct na_sm_unexpected_info {
 
 /* Unexpected msg queue */
 struct na_sm_unexpected_msg_queue {
-    HG_QUEUE_HEAD(na_sm_unexpected_info) queue;
+    STAILQ_HEAD(, na_sm_unexpected_info) queue;
     hg_thread_spin_t lock;
 };
 
@@ -364,17 +362,17 @@ struct na_sm_op_id {
     struct na_cb_completion_data completion_data; /* Completion data */
     union {
         struct na_sm_msg_info msg;
-    } info;                            /* Op info                  */
-    HG_QUEUE_ENTRY(na_sm_op_id) entry; /* Entry in queue           */
-    na_class_t *na_class;              /* NA class associated      */
-    na_context_t *context;             /* NA context associated    */
-    struct na_sm_addr *addr;           /* Address associated       */
-    hg_atomic_int32_t status;          /* Operation status         */
+    } info;                         /* Op info                  */
+    TAILQ_ENTRY(na_sm_op_id) entry; /* Entry in queue           */
+    na_class_t *na_class;           /* NA class associated      */
+    na_context_t *context;          /* NA context associated    */
+    struct na_sm_addr *addr;        /* Address associated       */
+    hg_atomic_int32_t status;       /* Operation status         */
 };
 
 /* Op ID queue */
 struct na_sm_op_queue {
-    HG_QUEUE_HEAD(na_sm_op_id) queue;
+    TAILQ_HEAD(, na_sm_op_id) queue;
     hg_thread_spin_t lock;
 };
 
@@ -2140,16 +2138,16 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
         addr_key.pid, addr_key.id);
 
     /* Initialize queues */
-    HG_QUEUE_INIT(&na_sm_endpoint->unexpected_msg_queue.queue);
+    STAILQ_INIT(&na_sm_endpoint->unexpected_msg_queue.queue);
     hg_thread_spin_init(&na_sm_endpoint->unexpected_msg_queue.lock);
 
-    HG_QUEUE_INIT(&na_sm_endpoint->unexpected_op_queue.queue);
+    TAILQ_INIT(&na_sm_endpoint->unexpected_op_queue.queue);
     hg_thread_spin_init(&na_sm_endpoint->unexpected_op_queue.lock);
 
-    HG_QUEUE_INIT(&na_sm_endpoint->expected_op_queue.queue);
+    TAILQ_INIT(&na_sm_endpoint->expected_op_queue.queue);
     hg_thread_spin_init(&na_sm_endpoint->expected_op_queue.lock);
 
-    HG_QUEUE_INIT(&na_sm_endpoint->retry_op_queue.queue);
+    TAILQ_INIT(&na_sm_endpoint->retry_op_queue.queue);
     hg_thread_spin_init(&na_sm_endpoint->retry_op_queue.lock);
 
     /* Initialize number of fds */
@@ -2157,7 +2155,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
     na_sm_endpoint->nofile_max = nofile_max;
 
     /* Initialize poll addr list */
-    HG_LIST_INIT(&na_sm_endpoint->poll_addr_list.list);
+    LIST_INIT(&na_sm_endpoint->poll_addr_list.list);
     hg_thread_spin_init(&na_sm_endpoint->poll_addr_list.lock);
 
     /* Create addr hash-table */
@@ -2287,7 +2285,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
     if (listen) {
         /* Add address to list of addresses to poll */
         hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-        HG_LIST_INSERT_HEAD(&na_sm_endpoint->poll_addr_list.list,
+        LIST_INSERT_HEAD(&na_sm_endpoint->poll_addr_list.list,
             na_sm_endpoint->source_addr, entry);
         hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
     }
@@ -2354,15 +2352,15 @@ na_sm_endpoint_close(struct na_sm_endpoint *na_sm_endpoint)
     bool empty;
 
     /* Check that poll addr list is empty */
-    empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
+    empty = LIST_EMPTY(&na_sm_endpoint->poll_addr_list.list);
     if (!empty) {
         struct na_sm_addr *na_sm_addr;
 
-        na_sm_addr = HG_LIST_FIRST(&na_sm_endpoint->poll_addr_list.list);
+        na_sm_addr = LIST_FIRST(&na_sm_endpoint->poll_addr_list.list);
         while (na_sm_addr) {
-            struct na_sm_addr *next = HG_LIST_NEXT(na_sm_addr, entry);
+            struct na_sm_addr *next = LIST_NEXT(na_sm_addr, entry);
 
-            HG_LIST_REMOVE(na_sm_addr, entry);
+            LIST_REMOVE(na_sm_addr, entry);
 
             /* Destroy remaining addresses */
             if (na_sm_addr != source_addr)
@@ -2370,28 +2368,28 @@ na_sm_endpoint_close(struct na_sm_endpoint *na_sm_endpoint)
             na_sm_addr = next;
         }
         /* Sanity check */
-        empty = HG_LIST_IS_EMPTY(&na_sm_endpoint->poll_addr_list.list);
+        empty = LIST_EMPTY(&na_sm_endpoint->poll_addr_list.list);
     }
     NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Poll addr list should be empty");
 
     /* Check that unexpected message queue is empty */
-    empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_msg_queue.queue);
+    empty = STAILQ_EMPTY(&na_sm_endpoint->unexpected_msg_queue.queue);
     NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Unexpected msg queue should be empty");
 
     /* Check that unexpected op queue is empty */
-    empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->unexpected_op_queue.queue);
+    empty = TAILQ_EMPTY(&na_sm_endpoint->unexpected_op_queue.queue);
     NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Unexpected op queue should be empty");
 
     /* Check that expected op queue is empty */
-    empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->expected_op_queue.queue);
+    empty = TAILQ_EMPTY(&na_sm_endpoint->expected_op_queue.queue);
     NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Expected op queue should be empty");
 
     /* Check that retry op queue is empty */
-    empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
+    empty = TAILQ_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
     NA_CHECK_SUBSYS_ERROR(cls, empty == false, done, ret, NA_BUSY,
         "Retry op queue should be empty");
 
@@ -2711,7 +2709,7 @@ na_sm_addr_ref_decr(struct na_sm_addr *na_sm_addr)
     if (resolved) {
         /* Remove address from list of addresses to poll */
         hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-        HG_LIST_REMOVE(na_sm_addr, entry);
+        LIST_REMOVE(na_sm_addr, entry);
         hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
     }
 
@@ -2820,8 +2818,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
 
     /* Add address to list of addresses to poll */
     hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-    HG_LIST_INSERT_HEAD(
-        &na_sm_endpoint->poll_addr_list.list, na_sm_addr, entry);
+    LIST_INSERT_HEAD(&na_sm_endpoint->poll_addr_list.list, na_sm_addr, entry);
     hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
 
     return NA_SUCCESS;
@@ -3705,7 +3702,7 @@ na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr)
 
     /* Check whether something is in one of the rx queues */
     hg_thread_spin_lock(&poll_addr_list->lock);
-    HG_LIST_FOREACH (poll_addr, &poll_addr_list->list, entry) {
+    LIST_FOREACH (poll_addr, &poll_addr_list->list, entry) {
         bool progressed_rx = false;
 
         hg_thread_spin_unlock(&poll_addr_list->lock);
@@ -3846,7 +3843,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
 
             /* Add address to list of addresses to poll */
             hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-            HG_LIST_INSERT_HEAD(
+            LIST_INSERT_HEAD(
                 &na_sm_endpoint->poll_addr_list.list, na_sm_addr, entry);
             hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
             break;
@@ -3857,7 +3854,7 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint,
 
             /* Find address from list of addresses to poll */
             hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-            HG_LIST_FOREACH (
+            LIST_FOREACH (
                 na_sm_addr, &na_sm_endpoint->poll_addr_list.list, entry) {
                 if ((na_sm_addr->queue_pair_idx == cmd_hdr.hdr.pair_idx) &&
                     (na_sm_addr->addr_key.pid == (pid_t) cmd_hdr.hdr.pid) &&
@@ -3978,9 +3975,9 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
 
     /* Pop op ID from queue */
     hg_thread_spin_lock(&unexpected_op_queue->lock);
-    na_sm_op_id = HG_QUEUE_FIRST(&unexpected_op_queue->queue);
+    na_sm_op_id = TAILQ_FIRST(&unexpected_op_queue->queue);
     if (likely(na_sm_op_id)) {
-        HG_QUEUE_POP_HEAD(&unexpected_op_queue->queue, entry);
+        TAILQ_REMOVE(&unexpected_op_queue->queue, na_sm_op_id, entry);
         hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
     }
     hg_thread_spin_unlock(&unexpected_op_queue->lock);
@@ -4044,7 +4041,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
         /* Otherwise push the unexpected message into our unexpected queue so
          * that we can treat it later when a recv_unexpected is posted */
         hg_thread_spin_lock(&unexpected_msg_queue->lock);
-        HG_QUEUE_PUSH_TAIL(
+        STAILQ_INSERT_TAIL(
             &unexpected_msg_queue->queue, na_sm_unexpected_info, entry);
         hg_thread_spin_unlock(&unexpected_msg_queue->lock);
     }
@@ -4068,11 +4065,10 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
 
     /* Try to match addr/tag */
     hg_thread_spin_lock(&expected_op_queue->lock);
-    HG_QUEUE_FOREACH (na_sm_op_id, &expected_op_queue->queue, entry) {
+    TAILQ_FOREACH (na_sm_op_id, &expected_op_queue->queue, entry) {
         if (na_sm_op_id->addr == poll_addr &&
             na_sm_op_id->info.msg.tag == msg_hdr.hdr.tag) {
-            HG_QUEUE_REMOVE(
-                &expected_op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
+            TAILQ_REMOVE(&expected_op_queue->queue, na_sm_op_id, entry);
             hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
             break;
         }
@@ -4119,7 +4115,7 @@ na_sm_process_retries(struct na_sm_endpoint *na_sm_endpoint)
 
     do {
         hg_thread_spin_lock(&op_queue->lock);
-        na_sm_op_id = HG_QUEUE_FIRST(&op_queue->queue);
+        na_sm_op_id = TAILQ_FIRST(&op_queue->queue);
         if (!na_sm_op_id) {
             hg_thread_spin_unlock(&op_queue->lock);
             /* Queue is empty */
@@ -4141,7 +4137,7 @@ na_sm_process_retries(struct na_sm_endpoint *na_sm_endpoint)
             hg_thread_spin_lock(&op_queue->lock);
             hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_RETRYING);
 
-            HG_QUEUE_REMOVE(&op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
+            TAILQ_REMOVE(&op_queue->queue, na_sm_op_id, entry);
             hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
             hg_thread_spin_unlock(&op_queue->lock);
 
@@ -4155,8 +4151,7 @@ na_sm_process_retries(struct na_sm_endpoint *na_sm_endpoint)
             hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_RETRYING);
 
             if (hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_CANCELED) {
-                HG_QUEUE_REMOVE(
-                    &op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
+                TAILQ_REMOVE(&op_queue->queue, na_sm_op_id, entry);
                 hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
                 canceled = true;
             }
@@ -4172,7 +4167,7 @@ na_sm_process_retries(struct na_sm_endpoint *na_sm_endpoint)
             hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_RETRYING);
             hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_ERRORED);
 
-            HG_QUEUE_REMOVE(&op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
+            TAILQ_REMOVE(&op_queue->queue, na_sm_op_id, entry);
             hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
             hg_thread_spin_unlock(&op_queue->lock);
 
@@ -4196,7 +4191,7 @@ na_sm_op_retry(struct na_sm_class *na_sm_class, struct na_sm_op_id *na_sm_op_id)
 
     /* Push op ID to retry queue */
     hg_thread_spin_lock(&retry_op_queue->lock);
-    HG_QUEUE_PUSH_TAIL(&retry_op_queue->queue, na_sm_op_id, entry);
+    TAILQ_INSERT_TAIL(&retry_op_queue->queue, na_sm_op_id, entry);
     hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_QUEUED);
     hg_thread_spin_unlock(&retry_op_queue->lock);
 }
@@ -4707,9 +4702,11 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Look for an unexpected message already received */
     hg_thread_spin_lock(&unexpected_msg_queue->lock);
-    na_sm_unexpected_info = HG_QUEUE_FIRST(&unexpected_msg_queue->queue);
-    HG_QUEUE_POP_HEAD(&unexpected_msg_queue->queue, entry);
+    na_sm_unexpected_info = STAILQ_FIRST(&unexpected_msg_queue->queue);
+    if (na_sm_unexpected_info != NULL)
+        STAILQ_REMOVE_HEAD(&unexpected_msg_queue->queue, entry);
     hg_thread_spin_unlock(&unexpected_msg_queue->lock);
+
     if (unlikely(na_sm_unexpected_info)) {
         /* Fill unexpected info */
         na_sm_op_id->completion_data.callback_info.info.recv_unexpected =
@@ -4736,7 +4733,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
         /* Nothing has been received yet so add op_id to progress queue */
         hg_thread_spin_lock(&unexpected_op_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&unexpected_op_queue->queue, na_sm_op_id, entry);
+        TAILQ_INSERT_TAIL(&unexpected_op_queue->queue, na_sm_op_id, entry);
         hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_QUEUED);
         hg_thread_spin_unlock(&unexpected_op_queue->lock);
     }
@@ -4800,7 +4797,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
      * never arrive before that call returns (not completes), simply add
      * op_id to queue */
     hg_thread_spin_lock(&expected_op_queue->lock);
-    HG_QUEUE_PUSH_TAIL(&expected_op_queue->queue, na_sm_op_id, entry);
+    TAILQ_INSERT_TAIL(&expected_op_queue->queue, na_sm_op_id, entry);
     hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_QUEUED);
     hg_thread_spin_unlock(&expected_op_queue->lock);
 
@@ -5057,7 +5054,7 @@ na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 
     /* Check whether something is in one of the rx queues */
     hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-    HG_LIST_FOREACH (na_sm_addr, &na_sm_endpoint->poll_addr_list.list, entry) {
+    LIST_FOREACH (na_sm_addr, &na_sm_endpoint->poll_addr_list.list, entry) {
         if (!na_sm_msg_queue_is_empty(na_sm_addr->rx_queue)) {
             hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
             return false;
@@ -5067,7 +5064,7 @@ na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 
     /* Check whether something is in the retry queue */
     hg_thread_spin_lock(&na_sm_endpoint->retry_op_queue.lock);
-    empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
+    empty = TAILQ_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
     hg_thread_spin_unlock(&na_sm_endpoint->retry_op_queue.lock);
     if (!empty)
         return false;
@@ -5177,8 +5174,7 @@ na_sm_cancel(
             /* If being retried by process_retries() in the meantime, we'll just
              * let it cancel there */
             if (!(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_RETRYING)) {
-                HG_QUEUE_REMOVE(
-                    &op_queue->queue, na_sm_op_id, na_sm_op_id, entry);
+                TAILQ_REMOVE(&op_queue->queue, na_sm_op_id, entry);
                 hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
                 canceled = true;
             }

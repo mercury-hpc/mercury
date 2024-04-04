@@ -151,6 +151,9 @@ check_include_files("sys/event.h" HG_UTIL_HAS_SYSEVENT_H)
 # Detect <sys/param.h>
 check_include_files("sys/param.h" HG_UTIL_HAS_SYSPARAM_H)
 
+# Detect <sys/queue.h>
+check_include_files("sys/queue.h" HG_UTIL_HAS_SYSQUEUE_H)
+
 # Atomics
 if(NOT WIN32)
   # Detect stdatomic
@@ -222,7 +225,6 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_inet.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem_pool.h
@@ -240,6 +242,13 @@ set(MERCURY_UTIL_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.h
 )
+
+if(NOT HG_UTIL_HAS_SYSQUEUE_H)
+  set(MERCURY_UTIL_PUBLIC_HEADERS
+    ${MERCURY_UTIL_PUBLIC_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/mercury_sys_queue.h
+  )
+endif()
 
 #------------------------------------------------------------------------------
 # Specify project private header files

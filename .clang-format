@@ -14,5 +14,5 @@ AlignAfterOpenBracket: DontAlign
 AlignConsecutiveMacros: true
 AlwaysBreakAfterReturnType: All
 SpaceAfterCStyleCast: true
-ForEachMacros: ['HG_QUEUE_FOREACH', 'HG_LIST_FOREACH']
+ForEachMacros: ['SLIST_FOREACH','LIST_FOREACH','STAILQ_FOREACH','TAILQ_FOREACH','TAILQ_FOREACH_REVERSE','CIRCLEQ_FOREACH','CIRCLEQ_FOREACH_REVERSE']
 ...

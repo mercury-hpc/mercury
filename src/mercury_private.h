@@ -62,7 +62,7 @@ struct hg_completion_entry {
         hg_core_handle_t hg_core_handle;
         struct hg_bulk_op_id *hg_bulk_op_id;
     } op_id;
-    HG_QUEUE_ENTRY(hg_completion_entry) entry;
+    STAILQ_ENTRY(hg_completion_entry) entry;
     hg_op_type_t op_type;
 };
 

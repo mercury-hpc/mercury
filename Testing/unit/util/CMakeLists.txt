@@ -48,11 +48,9 @@ set(MERCURY_util_tests
   atomic
   atomic_queue
   hash_table
-  list
   mem
   mem_pool
   poll
-  queue
   request
   thread
   thread_condition

@@ -28,7 +28,7 @@ struct na_cb_completion_data {
     na_plugin_cb_t plugin_callback;  /* Callback which will be called after
                                       * the user callback returns. */
     void *plugin_callback_args;      /* Argument to plugin_callback */
-    HG_QUEUE_ENTRY(na_cb_completion_data) entry; /* Completion queue entry */
+    STAILQ_ENTRY(na_cb_completion_data) entry; /* Completion queue entry */
 };
 
 /*****************/

@@ -51,7 +51,7 @@ hg_thread_pool_worker(void *args)
         hg_thread_mutex_lock(&pool->mutex);
 
         /* If not shutting down and nothing to do, worker sleeps */
-        while (!pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue)) {
+        while (!pool->shutdown && STAILQ_EMPTY(&pool->queue)) {
             int rc;
 
             pool->sleeping_worker_count++;
@@ -63,12 +63,12 @@ hg_thread_pool_worker(void *args)
             pool->sleeping_worker_count--;
         }
 
-        if (pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue))
+        if (pool->shutdown && STAILQ_EMPTY(&pool->queue))
             goto unlock;
 
         /* Grab our task */
-        work = HG_QUEUE_FIRST(&pool->queue);
-        HG_QUEUE_POP_HEAD(&pool->queue, entry);
+        work = STAILQ_FIRST(&pool->queue);
+        STAILQ_REMOVE_HEAD(&pool->queue, entry);
 
         /* Unlock */
         hg_thread_mutex_unlock(&pool->mutex);
@@ -102,7 +102,7 @@ hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool_ptr)
     priv_pool->pool.sleeping_worker_count = 0;
     priv_pool->thread_count = thread_count;
     priv_pool->threads = NULL;
-    HG_QUEUE_INIT(&priv_pool->pool.queue);
+    STAILQ_INIT(&priv_pool->pool.queue);
     priv_pool->pool.shutdown = 0;
 
     rc = hg_thread_mutex_init(&priv_pool->pool.mutex);

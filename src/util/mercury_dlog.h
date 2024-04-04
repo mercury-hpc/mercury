@@ -11,7 +11,7 @@
 #include "mercury_util_config.h"
 
 #include "mercury_atomic.h"
-#include "mercury_list.h"
+#include "mercury_queue.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 
@@ -39,8 +39,8 @@
 #define HG_DLOG_INITIALIZER(NAME, LE, LESIZE, LELOOP)                          \
     {                                                                          \
         HG_DLOG_STDMAGIC NAME, HG_THREAD_MUTEX_INITIALIZER,                    \
-            HG_LIST_HEAD_INITIALIZER(cnts32),                                  \
-            HG_LIST_HEAD_INITIALIZER(cnts64), LE, LESIZE, LELOOP, 0, 0, 0, 0   \
+            SLIST_HEAD_INITIALIZER(cnts32), SLIST_HEAD_INITIALIZER(cnts64),    \
+            LE, LESIZE, LELOOP, 0, 0, 0, 0                                     \
     }
 
 /*************************************/
@@ -63,20 +63,20 @@ struct hg_dlog_entry {
  * hg_dlog_dcount32: 32-bit debug counter in the dlog
  */
 struct hg_dlog_dcount32 {
-    const char *name;                  /* counter name (short) */
-    const char *descr;                 /* description of counter */
-    hg_atomic_int32_t c;               /* the counter itself */
-    HG_LIST_ENTRY(hg_dlog_dcount32) l; /* linkage */
+    const char *name;                /* counter name (short) */
+    const char *descr;               /* description of counter */
+    hg_atomic_int32_t c;             /* the counter itself */
+    SLIST_ENTRY(hg_dlog_dcount32) l; /* linkage */
 };
 
 /*
  * hg_dlog_dcount64: 64-bit debug counter in the dlog
  */
 struct hg_dlog_dcount64 {
-    const char *name;                  /* counter name (short) */
-    const char *descr;                 /* description of counter */
-    hg_atomic_int64_t c;               /* the counter itself */
-    HG_LIST_ENTRY(hg_dlog_dcount64) l; /* linkage */
+    const char *name;                /* counter name (short) */
+    const char *descr;               /* description of counter */
+    hg_atomic_int64_t c;             /* the counter itself */
+    SLIST_ENTRY(hg_dlog_dcount64) l; /* linkage */
 };
 
 /*
@@ -87,8 +87,8 @@ struct hg_dlog {
     hg_thread_mutex_t dlock;           /* lock for this data struct */
 
     /* counter lists */
-    HG_LIST_HEAD(hg_dlog_dcount32) cnts32; /* counter list */
-    HG_LIST_HEAD(hg_dlog_dcount64) cnts64; /* counter list */
+    SLIST_HEAD(, hg_dlog_dcount32) cnts32; /* counter list */
+    SLIST_HEAD(, hg_dlog_dcount64) cnts64; /* counter list */
 
     /* log */
     struct hg_dlog_entry *le; /* array of log entries */

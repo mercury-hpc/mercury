@@ -13,7 +13,6 @@
 #include "na_plugin.h"
 
 #include "mercury_inet.h"
-#include "mercury_list.h"
 #include "mercury_time.h"
 
 /*
@@ -204,10 +203,10 @@ struct na_psm_addr {
 #define PSM_ORG_DESER  2 /* address created via deserialize */
 #define PSM_ORG_RECV   3 /* address created by unexpectec recv */
 
-    psm_epid_t epid;              /* epid number for this address */
-    psm_epaddr_t epaddr;          /* opaque epaddr pointer for this address */
-    hg_atomic_int32_t nrefs;      /* ref count */
-    HG_LIST_ENTRY(na_psm_addr) q; /* linkage off of na_psm_class alist */
+    psm_epid_t epid;           /* epid number for this address */
+    psm_epaddr_t epaddr;       /* opaque epaddr pointer for this address */
+    hg_atomic_int32_t nrefs;   /* ref count */
+    LIST_ENTRY(na_psm_addr) q; /* linkage off of na_psm_class alist */
 };
 
 /*
@@ -259,9 +258,9 @@ struct na_psm_op_id {
     int completed;             /* op_id added to completion queue */
     int cancel;                /* op canceled */
     struct na_cb_completion_data completion_data; /* callback info here */
-    HG_LIST_ENTRY(na_psm_op_id) q; /* class busyops list (lock/w busy_lock) */
-    struct na_psm_subop datasub;   /* data transfer subop */
-    const void *datasub_buf;       /* buffer associated w/datasub */
+    LIST_ENTRY(na_psm_op_id) q;  /* class busyops list (lock/w busy_lock) */
+    struct na_psm_subop datasub; /* data transfer subop */
+    const void *datasub_buf;     /* buffer associated w/datasub */
 
     /* the following are only used for RMA put/get operations */
     hg_atomic_int32_t rma_refs;           /* rma complete when drop to 0 */
@@ -289,11 +288,11 @@ struct na_psm_mem_handle {
  * sending bulk handles over the network).
  */
 struct na_psm_local_mem_handle {
-    struct na_psm_mem_handle handle; /* embedded struct: must be first */
-    void *base;                      /* pointer to our memory */
-    size_t size;                     /* size of our memory */
-    uint8_t attr;                    /* protection */
-    HG_LIST_ENTRY(na_psm_local_mem_handle) q; /* linkage (off class) */
+    struct na_psm_mem_handle handle;       /* embedded struct: must be first */
+    void *base;                            /* pointer to our memory */
+    size_t size;                           /* size of our memory */
+    uint8_t attr;                          /* protection */
+    LIST_ENTRY(na_psm_local_mem_handle) q; /* linkage (off class) */
 };
 
 /*
@@ -326,16 +325,16 @@ struct na_psm_class {
     int prog_just_yield;    /* don't sleep, just yield */
     double prog_sleeptime;  /* sleep time (fp, in seconds) */
 
-    hg_thread_mutex_t alist_lock;    /* address list lock */
-    HG_LIST_HEAD(na_psm_addr) alist; /* address list (locked by above) */
+    hg_thread_mutex_t alist_lock;   /* address list lock */
+    LIST_HEAD(, na_psm_addr) alist; /* address list (locked by above) */
 
-    hg_thread_mutex_t busy_lock;        /* busy op list lock */
-    HG_LIST_HEAD(na_psm_op_id) busyops; /* busy ops list */
+    hg_thread_mutex_t busy_lock;       /* busy op list lock */
+    LIST_HEAD(, na_psm_op_id) busyops; /* busy ops list */
 
     hg_thread_mutex_t ipeek_lock; /* lock mq ipeek/test calls */
 
-    hg_thread_mutex_t lhand_lock;                 /* local handle lock */
-    HG_LIST_HEAD(na_psm_local_mem_handle) lhands; /* local handles */
+    hg_thread_mutex_t lhand_lock;                /* local handle lock */
+    LIST_HEAD(, na_psm_local_mem_handle) lhands; /* local handles */
     uint32_t lhand_seq; /* sequence number for local handles */
 
     struct na_psm_ucmsg ucmsgs[NA_PSM_UCMSG_COUNT]; /* fixed pool of ucmsgs */
@@ -506,7 +505,7 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid, int origin,
     toadd = NULL; /* only non-null if we malloc */
     found = 0;
     hg_thread_mutex_lock(&pc->alist_lock);
-    HG_LIST_FOREACH (naddr, &pc->alist, q) {
+    LIST_FOREACH (naddr, &pc->alist, q) {
         if (naddr->epid == epid) {
             found++;
             hg_atomic_incr32(&naddr->nrefs);
@@ -547,7 +546,7 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid, int origin,
      */
     hg_thread_mutex_lock(&pc->alist_lock);
     found = 0;
-    HG_LIST_FOREACH (naddr, &pc->alist, q) {
+    LIST_FOREACH (naddr, &pc->alist, q) {
         if (naddr->epid == epid) {
             found++;
             break;
@@ -560,7 +559,7 @@ na_psm_addr_lookup_epid(struct na_psm_class *pc, psm_epid_t epid, int origin,
     } else {                               /* safe to add to alist */
         psm_epaddr_setctxt(epaddr, toadd); /* set psm bck ptr */
         naddr = toadd;
-        HG_LIST_INSERT_HEAD(&pc->alist, naddr, q);
+        LIST_INSERT_HEAD(&pc->alist, naddr, q);
     }
     hg_thread_mutex_unlock(&pc->alist_lock);
 
@@ -596,9 +595,9 @@ na_psm_opid_setbusy(struct na_psm_class *pc, struct na_psm_op_id *pop, int v)
     }
 
     if (pop->busy == 0 && new_busy) { /* transition to busy */
-        HG_LIST_INSERT_HEAD(&pc->busyops, pop, q);
+        LIST_INSERT_HEAD(&pc->busyops, pop, q);
     } else if (pop->busy && new_busy == 0) { /* transition to unbusy */
-        HG_LIST_REMOVE(pop, q);
+        LIST_REMOVE(pop, q);
     }
 
     pop->busy = new_busy;
@@ -1168,7 +1167,7 @@ na_psm_progress_ucmsg(struct na_psm_class *pc, psm_mq_status_t *psmstat,
     /* use the token to find the target local memory handle being used */
     lh_base = NULL;
     hg_thread_mutex_lock(&pc->lhand_lock);
-    HG_LIST_FOREACH (lh, &pc->lhands, q) {
+    LIST_FOREACH (lh, &pc->lhands, q) {
         if (lh->handle.token == token) {
             /* copy key bits out so we can drop lhand_lock */
             lh_base = lh->base;
@@ -1412,19 +1411,19 @@ na_psm_initialize(
     pc->prog_sleeptime = 0.001;
 
     hg_thread_mutex_init(&pc->alist_lock); /* XXX: ignoring ret val */
-    HG_LIST_INIT(&pc->alist);
+    LIST_INIT(&pc->alist);
 
     hg_thread_mutex_lock(&pc->alist_lock);
-    HG_LIST_INSERT_HEAD(&pc->alist, &pc->self, q);
+    LIST_INSERT_HEAD(&pc->alist, &pc->self, q);
     hg_thread_mutex_unlock(&pc->alist_lock);
 
     hg_thread_mutex_init(&pc->busy_lock); /* XXX: ignoring ret val */
-    HG_LIST_INIT(&pc->busyops);
+    LIST_INIT(&pc->busyops);
 
     hg_thread_mutex_init(&pc->ipeek_lock); /* XXX: ignoring ret val */
 
     hg_thread_mutex_init(&pc->lhand_lock); /* XXX: ignoring ret val */
-    HG_LIST_INIT(&pc->lhands);
+    LIST_INIT(&pc->lhands);
     pc->lhand_seq = (uint32_t) random();
 
     /* post unexpected control recv buffers */
@@ -1486,7 +1485,7 @@ na_psm_finalize(na_class_t *na_class)
     /* verify that higher-level code has cleared out the busyops */
     hg_thread_mutex_lock(&pc->busy_lock);
     cnt = 0;
-    HG_LIST_FOREACH (pop, &pc->busyops, q) {
+    LIST_FOREACH (pop, &pc->busyops, q) {
         cnt++;
     }
     hg_thread_mutex_unlock(&pc->busy_lock);
@@ -1498,9 +1497,9 @@ na_psm_finalize(na_class_t *na_class)
 
     /* dispose of address list */
     hg_thread_mutex_lock(&pc->alist_lock);
-    while (!HG_LIST_IS_EMPTY(&pc->alist)) {
-        ap = HG_LIST_FIRST(&pc->alist);
-        HG_LIST_REMOVE(ap, q);
+    while (!LIST_EMPTY(&pc->alist)) {
+        ap = LIST_FIRST(&pc->alist);
+        LIST_REMOVE(ap, q);
         /* self is not malloc()ed, do not try and free it */
         if (ap->origin != PSM_ORG_SELF) {
             NA_LOG_DEBUG("free addr epid=%" PRIx64, ap->epid);
@@ -1513,9 +1512,9 @@ na_psm_finalize(na_class_t *na_class)
 
     /* dispose of all local memory handles */
     hg_thread_mutex_lock(&pc->lhand_lock);
-    while (!HG_LIST_IS_EMPTY(&pc->lhands)) {
-        lp = HG_LIST_FIRST(&pc->lhands);
-        HG_LIST_REMOVE(lp, q);
+    while (!LIST_EMPTY(&pc->lhands)) {
+        lp = LIST_FIRST(&pc->lhands);
+        LIST_REMOVE(lp, q);
     }
     hg_thread_mutex_unlock(&pc->lhand_lock);
     hg_thread_mutex_destroy(&pc->lhand_lock);
@@ -1972,7 +1971,7 @@ na_psm_mem_handle_create(na_class_t *na_class, void *buf, size_t buf_size,
     hg_thread_mutex_lock(&pc->lhand_lock);
     seq64 = pc->lhand_seq++;
     lp->handle.token = (seq64 << 32) | (random() & 0xffffffff);
-    HG_LIST_INSERT_HEAD(&pc->lhands, lp, q);
+    LIST_INSERT_HEAD(&pc->lhands, lp, q);
     hg_thread_mutex_unlock(&pc->lhand_lock);
 
     NA_LOG_DEBUG("mh=%p (buf=%p,sz=%d,at=%lu,tok=%" PRIx64 ")", (void *) lp,
@@ -1998,7 +1997,7 @@ na_psm_mem_handle_free(na_class_t *na_class, na_mem_handle_t *mem_handle)
     if (mh->is_local) {
         lp = (struct na_psm_local_mem_handle *) mh; /* embedded, so safe */
         hg_thread_mutex_lock(&pc->lhand_lock);
-        HG_LIST_REMOVE(lp, q);
+        LIST_REMOVE(lp, q);
         hg_thread_mutex_unlock(&pc->lhand_lock);
     }
 
