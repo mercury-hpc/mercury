@@ -13,7 +13,7 @@
 #include "na_plugin.h"
 
 #include "mercury_inet.h"
-#include "mercury_time.h"
+#include "mercury_thread.h"
 
 /*
  * this plugin uses the PSM API, but supports PSM2 (intel omnipath)
@@ -323,7 +323,6 @@ struct na_psm_class {
     /* progress params */
     int prog_peeks_per_try; /* #ipeeks to try before yield/sleep */
     int prog_just_yield;    /* don't sleep, just yield */
-    double prog_sleeptime;  /* sleep time (fp, in seconds) */
 
     hg_thread_mutex_t alist_lock;   /* address list lock */
     LIST_HEAD(, na_psm_addr) alist; /* address list (locked by above) */
@@ -1310,6 +1309,88 @@ finish: /* repost the buffer for future ucmsgs */
     }
 }
 
+/*
+ * na_psm_progress: progress network communication.
+ * note that PSM only provides the
+ * polling-style psm_mq_ipeek() interface to check for progress, so if
+ * we have other useful work we could be doing, we may want to yield or
+ * sleep some between polls to avoid burning off CPU cycles in the
+ * progress function that could be used elsewhere.
+ */
+static void
+na_psm_progress(struct na_psm_class *pc, unsigned int *count_p)
+{
+    int completed, lcv, op_idled;
+    struct na_psm_subop *subop;
+    struct na_psm_ucmsg *ucmsg;
+    psm_error_t perr;
+    psm_mq_req_t psmreq, orig_psmreq;
+    psm_mq_status_t psmstatus;
+    struct na_psm_op_id *pop;
+
+    /*
+     * we may collect a subop, a ucmsg, or a NULL context (if we
+     * complete an untracked PSM op).
+     */
+    completed = 0;
+    subop = NULL;
+    ucmsg = NULL;
+
+    /*
+     * hold ipeek lock to avoid ipeek/wait concurrency issue and
+     * to prevent ops to be canceled while we are collecting them.
+     */
+    hg_thread_mutex_lock(&pc->ipeek_lock);
+    for (lcv = 0; lcv < pc->prog_peeks_per_try; lcv++) {
+
+        perr = psm_mq_ipeek(pc->psm_mq, &psmreq, NULL); /* << poll here */
+        if (perr != PSM_OK) /* no psmreq available? */
+            continue;
+
+        /* test will NULL out psmreq, save a copy for handle sanity check */
+        orig_psmreq = psmreq;
+
+        /* collect req's status and retire it */
+        perr = psm_mq_test(&psmreq, &psmstatus);
+        if (perr != PSM_OK)
+            continue; /* shouldn't happen: ipeek returns done req */
+
+        if (psmstatus.context == NULL) /* untracked operation? */
+            break;
+
+        /* unexpected control message buffer? */
+        if (psmstatus.context >= (void *) &pc->ucmsgs[0] &&
+            psmstatus.context <= (void *) &pc->ucmsgs[NA_PSM_UCMSG_COUNT - 1]) {
+            ucmsg = psmstatus.context;
+            break;
+        }
+
+        /* must be a subop! */
+        subop = psmstatus.context;
+        if (subop->psm_handle != orig_psmreq) {
+            NA_LOG_ERROR("fail handle sanity check!");
+            /* keep going w/this subop, what else can we do? */
+        }
+        subop->psm_handle = NULL; /* want this w/ipeek lock held */
+        subop->psm_status = psmstatus;
+        pop = subop->owner;
+        op_idled = (na_psm_opid_setbusy(pc, pop, -1) == 0);
+        break;
+    }
+    hg_thread_mutex_unlock(&pc->ipeek_lock);
+
+    if (ucmsg)
+        na_psm_progress_ucmsg(pc, &psmstatus, ucmsg);
+    else if (subop)
+        completed = na_psm_progress_op(pop, subop, op_idled);
+
+    if (!completed && pc->prog_just_yield)
+        hg_thread_yield();
+
+    if (count_p != NULL)
+        *count_p = (unsigned int) completed;
+}
+
 /******************************************************************************
  * na_class_ops functions: exported to and called from the main mercury code
  */
@@ -1408,7 +1489,6 @@ na_psm_initialize(
      */
     pc->prog_peeks_per_try = 1;
     pc->prog_just_yield = 1;
-    pc->prog_sleeptime = 0.001;
 
     hg_thread_mutex_init(&pc->alist_lock); /* XXX: ignoring ret val */
     LIST_INIT(&pc->alist);
@@ -2409,120 +2489,17 @@ na_psm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 }
 
 /*
- * na_psm_progress: progress network communication.  return when we've
- * completed something or we timeout.   note that PSM only provides the
- * polling-style psm_mq_ipeek() interface to check for progress, so if
- * we have other useful work we could be doing, we may want to yield or
- * sleep some between polls to avoid burning off CPU cycles in the
- * progress function that could be used elsewhere.
+ * na_psm_poll
  */
 static na_return_t
-na_psm_progress(
-    na_class_t *na_class, na_context_t NA_UNUSED *context, unsigned int timeout)
+na_psm_poll(na_class_t *na_class, na_context_t NA_UNUSED *context,
+    unsigned int *count_p)
 {
-    struct na_psm_class *pc;
-    int completed, lcv, op_idled;
-    double timeoutsecs, delta, left;
-    hg_time_t tstart, tnow, tsleep;
-    struct na_psm_subop *subop;
-    struct na_psm_ucmsg *ucmsg;
-    psm_error_t perr;
-    psm_mq_req_t psmreq, orig_psmreq;
-    psm_mq_status_t psmstatus;
-    struct na_psm_op_id *pop;
+    struct na_psm_class *pc = na_class->plugin_class;
 
-    /* recover psm class and setup for looping... */
-    pc = na_class->plugin_class;
-    completed = 0;
-    if (timeout) {
-        timeoutsecs = timeout / 1000.0; /* cvt msec to sec (a double) */
-        hg_time_get_current_ms(&tstart);
-    }
+    na_psm_progress(pc, count_p);
 
-    do {
-        /*
-         * we may collect a subop, a ucmsg, or a NULL context (if we
-         * complete an untracked PSM op).
-         */
-        subop = NULL;
-        ucmsg = NULL;
-
-        /*
-         * hold ipeek lock to avoid ipeek/wait concurrency issue and
-         * to prevent ops to be canceled while we are collecting them.
-         */
-        hg_thread_mutex_lock(&pc->ipeek_lock);
-        for (lcv = 0; lcv < pc->prog_peeks_per_try; lcv++) {
-
-            perr = psm_mq_ipeek(pc->psm_mq, &psmreq, NULL); /* << poll here */
-            if (perr != PSM_OK) /* no psmreq available? */
-                continue;
-
-            /* test will NULL out psmreq, save a copy for handle sanity check */
-            orig_psmreq = psmreq;
-
-            /* collect req's status and retire it */
-            perr = psm_mq_test(&psmreq, &psmstatus);
-            if (perr != PSM_OK)
-                continue; /* shouldn't happen: ipeek returns done req */
-
-            if (psmstatus.context == NULL) /* untracked operation? */
-                break;
-
-            /* unexpected control message buffer? */
-            if (psmstatus.context >= (void *) &pc->ucmsgs[0] &&
-                psmstatus.context <=
-                    (void *) &pc->ucmsgs[NA_PSM_UCMSG_COUNT - 1]) {
-                ucmsg = psmstatus.context;
-                break;
-            }
-
-            /* must be a subop! */
-            subop = psmstatus.context;
-            if (subop->psm_handle != orig_psmreq) {
-                NA_LOG_ERROR("fail handle sanity check!");
-                /* keep going w/this subop, what else can we do? */
-            }
-            subop->psm_handle = NULL; /* want this w/ipeek lock held */
-            subop->psm_status = psmstatus;
-            pop = subop->owner;
-            op_idled = (na_psm_opid_setbusy(pc, pop, -1) == 0);
-            break;
-        }
-        hg_thread_mutex_unlock(&pc->ipeek_lock);
-
-        if (ucmsg) {
-            na_psm_progress_ucmsg(pc, &psmstatus, ucmsg);
-        } else if (subop) {
-            completed = na_psm_progress_op(pop, subop, op_idled);
-            if (completed)
-                break;
-        }
-
-        if (timeout) {
-            hg_time_get_current_ms(&tnow);
-            delta = hg_time_diff(tnow, tstart);
-            if (delta >= timeoutsecs)
-                break;
-            if (delta < 0.0) { /* unlikely timewarp */
-                NA_LOG_ERROR("timewarp, reset timeout");
-                tstart = tnow;
-                delta = 0.0;
-            }
-            if (pc->prog_just_yield) {
-                sched_yield();
-            } else {
-                left = timeoutsecs - delta;
-                if (left > pc->prog_sleeptime)
-                    left = pc->prog_sleeptime;
-                tsleep = hg_time_from_double(left);
-                hg_time_sleep(tsleep); /* XXX: assume this yields? */
-            }
-        }
-
-    } while (timeout);
-
-    return (completed) ? NA_SUCCESS : NA_TIMEOUT;
+    return NA_SUCCESS;
 }
 
 /*
@@ -2662,6 +2639,7 @@ const struct na_class_ops NA_PSM_PLUGIN_VARIABLE = {
     na_psm_get,                            /* get */
     NULL,                                  /* poll_get_fd */
     NULL,                                  /* poll_try_wait */
-    na_psm_progress,                       /* progress */
+    na_psm_poll,                           /* poll */
+    NULL,                                  /* poll_wait */
     na_psm_cancel                          /* cancel */
 };

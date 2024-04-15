@@ -162,6 +162,11 @@ static void
 na_plugin_close(struct na_plugin_entry *entry);
 #endif /* NA_HAS_DYNAMIC_PLUGINS */
 
+/* Busy wait using poll */
+static na_return_t
+na_poll_busy_wait(
+    na_class_t *na_class, na_context_t *context, unsigned int timeout_ms);
+
 /*******************/
 /* Local Variables */
 /*******************/
@@ -626,6 +631,37 @@ na_plugin_close(struct na_plugin_entry *entry)
 #endif /* NA_HAS_DYNAMIC_PLUGINS */
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_poll_busy_wait(
+    na_class_t *na_class, na_context_t *context, unsigned int timeout_ms)
+{
+    hg_time_t deadline, now = hg_time_from_ms(0);
+    na_return_t ret;
+
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
+
+    do {
+        unsigned int count = 0;
+
+        ret = na_class->ops->poll(na_class, context, &count);
+        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll");
+
+        if (count > 0)
+            return NA_SUCCESS;
+
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
+    } while (hg_time_less(now, deadline));
+
+    return NA_TIMEOUT;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 void
 NA_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 {
@@ -1046,6 +1082,23 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 
 error:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+unsigned int
+NA_Context_get_completion_count(const na_context_t *context)
+{
+    const struct na_private_context *na_private_context =
+        (const struct na_private_context *) context;
+
+    NA_CHECK_SUBSYS_ERROR_NORET(ctx, context == NULL, error, "NULL context");
+
+    return hg_atomic_queue_count(na_private_context->completion_queue) +
+           (unsigned int) hg_atomic_get32(
+               &na_private_context->backfill_queue.count);
+
+error:
+    return 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1717,35 +1770,29 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-bool
-NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
+na_return_t
+NA_Poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout_ms, unsigned int *count_p)
 {
-    struct na_private_context *na_private_context =
-        (struct na_private_context *) context;
+    unsigned int completion_count = NA_Context_get_completion_count(context);
+    unsigned int wait_timeout = timeout_ms;
+    na_return_t ret;
 
-    NA_CHECK_SUBSYS_ERROR_NORET(poll, na_class == NULL, error, "NULL NA class");
-    NA_CHECK_SUBSYS_ERROR_NORET(poll, context == NULL, error, "NULL context");
+    if (completion_count > 0)
+        wait_timeout = 0;
 
-    /* Do not try to wait if NA_NO_BLOCK is set */
-    if (na_class->progress_mode & NA_NO_BLOCK)
-        return false;
+    if (na_class->ops->poll_wait)
+        ret = na_class->ops->poll_wait(
+            na_class, context, wait_timeout, NULL /* unused */);
+    else
+        ret = na_poll_busy_wait(na_class, context, wait_timeout);
 
-    /* Something is in one of the completion queues */
-    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
-        hg_atomic_get32(&na_private_context->backfill_queue.count) > 0)
-        return false;
-
-    /* Check plugin try wait */
-    if (na_class->ops && na_class->ops->na_poll_try_wait)
-        return na_class->ops->na_poll_try_wait(na_class, context);
-
-    NA_LOG_SUBSYS_DEBUG(
-        poll_loop, "Safe to wait on context (%p)", (void *) context);
-
-    return true;
-
-error:
-    return false;
+    if ((ret == NA_TIMEOUT && completion_count > 0) || (ret == NA_SUCCESS)) {
+        if (count_p != NULL)
+            *count_p = NA_Context_get_completion_count(context);
+        return NA_SUCCESS;
+    } else
+        return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1767,11 +1814,6 @@ NA_Progress(
     NA_CHECK_SUBSYS_ERROR(poll, na_private_context == NULL, done, ret,
         NA_INVALID_ARG, "NULL context");
     progress_multi = &na_private_context->progress_multi;
-
-    NA_CHECK_SUBSYS_ERROR(poll, na_class->ops == NULL, done, ret,
-        NA_INVALID_ARG, "NULL NA class ops");
-    NA_CHECK_SUBSYS_ERROR(poll, na_class->ops->progress == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "progress plugin callback is not defined");
 
     NA_LOG_SUBSYS_DEBUG(poll_loop,
         "Entering progress on context (%p) for %u ms", (void *) context,
@@ -1820,18 +1862,9 @@ NA_Progress(
             remaining = 0;
     }
 
-    /* Something is in one of the completion queues */
-    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
-        hg_atomic_get32(&na_private_context->backfill_queue.count) > 0) {
-        ret = NA_SUCCESS; /* Progressed */
-        goto unlock;
-    }
+    ret = NA_Poll_wait(
+        na_class, context, (unsigned int) (remaining * 1000.0), NULL);
 
-    /* Try to make progress for remaining time */
-    ret = na_class->ops->progress(
-        na_class, context, (unsigned int) (remaining * 1000.0));
-
-unlock:
     do {
         old = hg_atomic_get32(&progress_multi->count);
         num = (old - 1) ^ (int32_t) NA_PROGRESS_LOCK;
@@ -1852,21 +1885,7 @@ na_return_t
 NA_Progress(
     na_class_t *na_class, na_context_t *context, unsigned int timeout_ms)
 {
-    struct na_private_context *na_private_context =
-        (struct na_private_context *) context;
-
-    NA_LOG_SUBSYS_DEBUG(poll_loop,
-        "Entering progress on context (%p) for %u ms", (void *) context,
-        timeout_ms);
-
-    /* Something is in one of the completion queues */
-    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
-        hg_atomic_get32(&na_private_context->backfill_queue.count) > 0) {
-        return NA_SUCCESS; /* Progressed */
-    }
-
-    /* Try to make progress for remaining time */
-    return na_class->ops->progress(na_class, context, timeout_ms);
+    return NA_Poll_wait(na_class, context, timeout_ms, NULL);
 }
 #endif
 

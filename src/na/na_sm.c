@@ -793,14 +793,15 @@ na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
  * Poll waiting for timeout milliseconds.
  */
 static na_return_t
-na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
-    unsigned int timeout, bool *progressed_ptr);
+na_sm_progress_wait(na_context_t *context,
+    struct na_sm_endpoint *na_sm_endpoint, unsigned int timeout,
+    unsigned int *count_p);
 
 /**
  * Poll without waiting.
  */
 static na_return_t
-na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr);
+na_sm_progress(struct na_sm_endpoint *na_sm_endpoint, unsigned int *count_p);
 
 /**
  * Progress on endpoint sock.
@@ -1066,10 +1067,14 @@ na_sm_poll_get_fd(na_class_t *na_class, na_context_t *context);
 static NA_INLINE bool
 na_sm_poll_try_wait(na_class_t *na_class, na_context_t *context);
 
-/* progress */
+/* poll */
 static na_return_t
-na_sm_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
+na_sm_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p);
+
+/* poll_wait */
+static na_return_t
+na_sm_poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, unsigned int *count_p);
 
 /* cancel */
 static na_return_t
@@ -1133,7 +1138,8 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     na_sm_get,                           /* get */
     na_sm_poll_get_fd,                   /* poll_get_fd */
     na_sm_poll_try_wait,                 /* poll_try_wait */
-    na_sm_progress,                      /* progress */
+    na_sm_poll,                          /* poll */
+    na_sm_poll_wait,                     /* poll_wait */
     na_sm_cancel                         /* cancel */
 };
 
@@ -3618,13 +3624,13 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
-    unsigned int timeout, bool *progressed_ptr)
+na_sm_progress_wait(na_context_t *context,
+    struct na_sm_endpoint *na_sm_endpoint, unsigned int timeout,
+    unsigned int *count_p)
 {
     struct hg_poll_event *events = NA_SM_CONTEXT(context)->events;
-    unsigned int nevents = 0, i;
-    bool progressed = false;
-    na_return_t ret = NA_SUCCESS;
+    unsigned int nevents = 0, count = 0, i;
+    na_return_t ret;
     int rc;
 
     /* Just wait on a single event, anything greater may increase
@@ -3632,13 +3638,13 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
      * if something is still in the queues */
     rc = hg_poll_wait(
         na_sm_endpoint->poll_set, timeout, NA_SM_MAX_EVENTS, events, &nevents);
-    NA_CHECK_SUBSYS_ERROR(poll, rc != HG_UTIL_SUCCESS, done, ret,
+    NA_CHECK_SUBSYS_ERROR(poll, rc != HG_UTIL_SUCCESS, error, ret,
         na_sm_errno_to_na(errno), "hg_poll_wait() failed");
 
     if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
         NA_LOG_SUBSYS_DEBUG(poll_loop, "Interrupted");
-        *progressed_ptr = false;
-        return ret;
+        *count_p = count;
+        return NA_SUCCESS;
     }
 
     /* Process events */
@@ -3652,7 +3658,7 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
                 NA_LOG_SUBSYS_DEBUG(poll_loop, "NA_SM_POLL_SOCK event");
                 ret = na_sm_progress_sock(na_sm_endpoint, &progressed_notify);
                 NA_CHECK_SUBSYS_NA_ERROR(
-                    poll, done, ret, "Could not progress sock");
+                    poll, error, ret, "Could not progress sock");
                 break;
             case NA_SM_POLL_TX_NOTIFY:
                 NA_LOG_SUBSYS_DEBUG(poll_loop, "NA_SM_POLL_TX_NOTIFY event");
@@ -3660,7 +3666,7 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
                     events[i].data.ptr, struct na_sm_addr, tx_poll_type);
                 ret = na_sm_progress_tx_notify(poll_addr, &progressed_notify);
                 NA_CHECK_SUBSYS_NA_ERROR(
-                    poll, done, ret, "Could not progress tx notify");
+                    poll, error, ret, "Could not progress tx notify");
                 break;
             case NA_SM_POLL_RX_NOTIFY:
                 NA_LOG_SUBSYS_DEBUG(poll_loop, "NA_SM_POLL_RX_NOTIFY event");
@@ -3669,35 +3675,37 @@ na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
 
                 ret = na_sm_progress_rx_notify(poll_addr, &progressed_notify);
                 NA_CHECK_SUBSYS_NA_ERROR(
-                    poll, done, ret, "Could not progress rx notify");
+                    poll, error, ret, "Could not progress rx notify");
 
                 ret = na_sm_progress_rx_queue(
                     na_sm_endpoint, poll_addr, &progressed_rx);
                 NA_CHECK_SUBSYS_NA_ERROR(
-                    poll, done, ret, "Could not progress rx queue");
+                    poll, error, ret, "Could not progress rx queue");
 
                 break;
             default:
-                NA_GOTO_SUBSYS_ERROR(poll, done, ret, NA_INVALID_ARG,
+                NA_GOTO_SUBSYS_ERROR(poll, error, ret, NA_INVALID_ARG,
                     "Operation type %d not supported",
                     *(enum na_sm_poll_type *) events[i].data.ptr);
         }
-        progressed |= (progressed_rx | progressed_notify);
+        count += (unsigned int) (progressed_rx | progressed_notify);
     }
 
-    *progressed_ptr = progressed;
+    *count_p = count;
 
-done:
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr)
+na_sm_progress(struct na_sm_endpoint *na_sm_endpoint, unsigned int *count_p)
 {
     struct na_sm_addr_list *poll_addr_list = &na_sm_endpoint->poll_addr_list;
     struct na_sm_addr *poll_addr;
-    bool progressed = false;
+    unsigned int count = 0;
     na_return_t ret = NA_SUCCESS;
 
     /* Check whether something is in one of the rx queues */
@@ -3711,7 +3719,7 @@ na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr)
             na_sm_progress_rx_queue(na_sm_endpoint, poll_addr, &progressed_rx);
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, done, ret, "Could not progress rx queue");
-        progressed |= progressed_rx;
+        count += (unsigned int) progressed_rx;
 
         hg_thread_spin_lock(&poll_addr_list->lock);
     }
@@ -3724,10 +3732,10 @@ na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, bool *progressed_ptr)
         ret = na_sm_progress_cmd_queue(na_sm_endpoint, &progressed_cmd);
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, done, ret, "Could not progress cmd queue");
-        progressed |= progressed_cmd;
+        count += (unsigned int) progressed_cmd;
     }
 
-    *progressed_ptr = progressed;
+    *count_p = count;
 
 done:
     return ret;
@@ -5074,8 +5082,42 @@ na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout_ms)
+na_sm_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p)
+{
+    struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
+    unsigned int count = 0;
+    na_return_t ret;
+
+    if (na_sm_endpoint->poll_set) {
+        /* Make blocking progress */
+        ret = na_sm_progress_wait(context, na_sm_endpoint, 0, &count);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            poll, error, ret, "Could not make blocking progress on context");
+    } else {
+        /* Make non-blocking progress */
+        ret = na_sm_progress(na_sm_endpoint, &count);
+        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
+            "Could not make non-blocking progress on context");
+    }
+
+    /* Process retries */
+    ret = na_sm_process_retries(&NA_SM_CLASS(na_class)->endpoint);
+    NA_CHECK_SUBSYS_NA_ERROR(
+        poll, error, ret, "Could not process retried msgs");
+
+    if (count_p != NULL)
+        *count_p = count;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout_ms, unsigned int *count_p)
 {
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     hg_time_t deadline, now = hg_time_from_ms(0);
@@ -5086,17 +5128,17 @@ na_sm_progress(
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     do {
-        bool progressed = false;
+        unsigned int count = 0;
 
         if (na_sm_endpoint->poll_set) {
             /* Make blocking progress */
-            ret = na_sm_poll_wait(context, na_sm_endpoint,
-                hg_time_to_ms(hg_time_subtract(deadline, now)), &progressed);
+            ret = na_sm_progress_wait(context, na_sm_endpoint,
+                hg_time_to_ms(hg_time_subtract(deadline, now)), &count);
             NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
                 "Could not make blocking progress on context");
         } else {
             /* Make non-blocking progress */
-            ret = na_sm_poll(na_sm_endpoint, &progressed);
+            ret = na_sm_progress(na_sm_endpoint, &count);
             NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret,
                 "Could not make non-blocking progress on context");
         }
@@ -5106,8 +5148,11 @@ na_sm_progress(
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, error, ret, "Could not process retried msgs");
 
-        if (progressed)
+        if (count > 0) {
+            if (count_p != NULL)
+                *count_p = count;
             return NA_SUCCESS;
+        }
 
         if (timeout_ms != 0)
             hg_time_get_current_ms(&now);

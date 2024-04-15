@@ -242,6 +242,11 @@ na_bmi_addr_destroy(struct na_bmi_addr *na_bmi_addr);
 static NA_INLINE bmi_msg_tag_t
 na_bmi_gen_rma_tag(na_class_t *na_class);
 
+/* progress */
+static na_return_t
+na_bmi_progress(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, unsigned int *count_p);
+
 /**
  * Progress unexpected messages.
  */
@@ -428,10 +433,14 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     size_t length, na_addr_t *remote_addr, uint8_t remote_id,
     na_op_id_t *op_id);
 
-/* progress */
+/* poll */
 static na_return_t
-na_bmi_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
+na_bmi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p);
+
+/* poll_wait */
+static na_return_t
+na_bmi_poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, unsigned int *count_p);
 
 /* cancel */
 static na_return_t
@@ -491,7 +500,8 @@ const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
     na_bmi_get,                           /* get */
     NULL,                                 /* poll_get_fd */
     NULL,                                 /* poll_try_wait */
-    na_bmi_progress,                      /* progress */
+    na_bmi_poll,                          /* poll */
+    na_bmi_poll_wait,                     /* poll_wait */
     na_bmi_cancel                         /* cancel */
 };
 
@@ -650,6 +660,43 @@ na_bmi_gen_rma_tag(na_class_t *na_class)
 
     /* Increment tag */
     return hg_atomic_incr32(&NA_BMI_CLASS(na_class)->rma_tag);
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_progress(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, unsigned int *count_p)
+{
+    unsigned int count = 0;
+    bool progressed = false;
+    na_return_t ret;
+
+    /* Try to make progress here from the BMI unexpected queue */
+    ret = na_bmi_progress_unexpected(
+        na_class, NA_BMI_CLASS(na_class), context, 0, &progressed);
+    NA_CHECK_NA_ERROR(error, ret, "Could not make unexpected progress");
+
+    if (progressed)
+        count++;
+
+    /* The rule is that the timeout should be passed to testcontext, and
+     * that testcontext will return if there is an unexpected message.
+     * (And, that as long as there are unexpected messages pending,
+     * testcontext will ignore the timeout and immediately return).
+     * [verified this in the source] */
+    ret = na_bmi_progress_expected(context, timeout, &progressed);
+    NA_CHECK_NA_ERROR(error, ret, "Could not make expected progress");
+
+    if (progressed)
+        count++;
+
+    if (count_p != NULL)
+        *count_p = count;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2258,45 +2305,39 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout)
+na_bmi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p)
 {
-    double remaining =
-        timeout / 1000.0; /* Convert timeout in ms into seconds */
+    return na_bmi_progress(na_class, context, 0, count_p);
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout_ms, unsigned int *count_p)
+{
+    hg_time_t deadline, now = hg_time_from_ms(0);
     na_return_t ret;
 
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
+
     do {
-        bool progressed = false;
-        hg_time_t t1, t2;
+        unsigned int count = 0;
 
-        if (timeout)
-            hg_time_get_current_ms(&t1);
-
-        /* Try to make progress here from the BMI unexpected queue */
-        ret = na_bmi_progress_unexpected(
-            na_class, NA_BMI_CLASS(na_class), context, 0, &progressed);
-        NA_CHECK_NA_ERROR(error, ret, "Could not make unexpected progress");
-
-        if (progressed)
-            return NA_SUCCESS;
-
-        /* The rule is that the timeout should be passed to testcontext, and
-         * that testcontext will return if there is an unexpected message.
-         * (And, that as long as there are unexpected messages pending,
-         * testcontext will ignore the timeout and immediately return).
-         * [verified this in the source] */
-        ret = na_bmi_progress_expected(
-            context, (unsigned int) (remaining * 1000.0), &progressed);
+        ret = na_bmi_progress(na_class, context,
+            hg_time_to_ms(hg_time_subtract(deadline, now)), &count);
         NA_CHECK_NA_ERROR(error, ret, "Could not make expected progress");
 
-        if (progressed)
+        if (count > 0) {
+            if (count_p != NULL)
+                *count_p = count;
             return NA_SUCCESS;
-
-        if (timeout) {
-            hg_time_get_current_ms(&t2);
-            remaining -= hg_time_diff(t2, t1);
         }
-    } while ((int) (remaining * 1000.0) > 0);
+
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
+    } while (hg_time_less(now, deadline));
 
     return NA_TIMEOUT;
 
