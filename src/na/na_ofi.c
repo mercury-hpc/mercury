@@ -315,9 +315,6 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_TAG_MASK       ((uint64_t) 0x0FFFFFFFF)
 #define NA_OFI_UNEXPECTED_TAG (NA_OFI_TAG_MASK + 1)
 
-/* Default OP multi CQ size */
-#define NA_OFI_OP_MULTI_CQ_SIZE (64)
-
 /* Number of CQ event provided for fi_cq_read() */
 #define NA_OFI_CQ_EVENT_NUM (16)
 /**
@@ -330,6 +327,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
  * Override default to 128k
  */
 #define NA_OFI_CQ_DEPTH (131072)
+
+/* Default OP multi CQ size */
+#define NA_OFI_OP_MULTI_CQ_SIZE (NA_OFI_CQ_EVENT_NUM * 4)
 
 /* Uncomment to register SGL regions */
 // #define NA_OFI_USE_REGV
@@ -813,7 +813,7 @@ struct na_ofi_class {
     na_return_t (*msg_recv_unexpected)(
         struct fid_ep *, const struct na_ofi_msg_info *, void *);
     na_return_t (*cq_poll)(
-        struct na_ofi_class *, struct na_ofi_context *, size_t *);
+        struct na_ofi_class *, struct na_ofi_context *, unsigned int *);
     unsigned long opt_features;    /* Optional feature flags   */
     hg_atomic_int32_t n_contexts;  /* Number of context        */
     unsigned int op_retry_timeout; /* Retry timeout            */
@@ -1529,40 +1529,47 @@ static NA_INLINE void
 na_ofi_rma_release(struct na_ofi_rma_info *rma_info);
 
 /**
+ * Check if we can process and store incoming multi-recv events.
+ */
+static bool
+na_ofi_cq_can_poll_multi(
+    struct na_ofi_op_queue *multi_op_queue, unsigned int *count_p);
+
+/**
  * Poll from CQ (FI_SOURCE not supported).
  */
 static na_return_t
 na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
-    struct na_ofi_context *na_ofi_context, size_t *actual_count_p);
+    struct na_ofi_context *na_ofi_context, unsigned int *count_p);
 
 /**
  * Poll from CQ (FI_SOURCE supported).
  */
 static na_return_t
 na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
-    struct na_ofi_context *na_ofi_context, size_t *actual_count_p);
+    struct na_ofi_context *na_ofi_context, unsigned int *count_p);
 
 /**
  * Read from CQ (FI_SOURCE not supported).
  */
 static na_return_t
 na_ofi_cq_read(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
-    size_t max_count, size_t *actual_count, bool *err_avail);
+    unsigned int max_count, unsigned int *count_p, bool *err_avail_p);
 
 /**
  * Read from CQ (FI_SOURCE supported).
  */
 static na_return_t
 na_ofi_cq_readfrom(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
-    size_t max_count, fi_addr_t *src_addrs, size_t *actual_count,
-    bool *err_avail);
+    unsigned int max_count, fi_addr_t *src_addrs, unsigned int *count_p,
+    bool *err_avail_p);
 
 /**
  * Read from error CQ.
  */
 static na_return_t
 na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
-    struct na_ofi_src_err *src_err, size_t *actual_count_p);
+    struct na_ofi_src_err *src_err, unsigned int *count_p);
 
 /**
  * Retrieve source address of unexpected messages.
@@ -1930,10 +1937,14 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context);
 static NA_INLINE bool
 na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context);
 
-/* progress */
+/* poll */
 static na_return_t
-na_ofi_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
+na_ofi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p);
+
+/* poll_wait */
+static na_return_t
+na_ofi_poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout, unsigned int *count_p);
 
 /* cancel */
 static na_return_t
@@ -1993,7 +2004,8 @@ NA_PLUGIN const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
     na_ofi_get,                            /* get */
     na_ofi_poll_get_fd,                    /* poll_get_fd */
     na_ofi_poll_try_wait,                  /* poll_try_wait */
-    na_ofi_progress,                       /* progress */
+    na_ofi_poll,                           /* poll */
+    na_ofi_poll_wait,                      /* poll_wait */
     na_ofi_cancel                          /* cancel */
 };
 
@@ -6246,17 +6258,46 @@ na_ofi_rma_release(struct na_ofi_rma_info *rma_info)
 }
 
 /*---------------------------------------------------------------------------*/
+static bool
+na_ofi_cq_can_poll_multi(
+    struct na_ofi_op_queue *multi_op_queue, unsigned int *count_p)
+{
+    unsigned int count = 0;
+    struct na_ofi_op_id *na_ofi_op_id;
+    bool ret = true;
+
+    hg_thread_spin_lock(&multi_op_queue->lock);
+    TAILQ_FOREACH (na_ofi_op_id, &multi_op_queue->queue, multi) {
+        struct na_ofi_completion_multi *completion_multi =
+            &na_ofi_op_id->completion_data_storage.multi;
+        unsigned int multi_count =
+            na_ofi_completion_multi_count(completion_multi);
+
+        count += multi_count;
+        if ((completion_multi->size - multi_count) < NA_OFI_CQ_EVENT_NUM) {
+            if (count_p != NULL)
+                *count_p = count;
+            ret = false; /* not enough space left in queue */
+            break;
+        }
+    }
+    hg_thread_spin_unlock(&multi_op_queue->lock);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
-    struct na_ofi_context *na_ofi_context, size_t *actual_count_p)
+    struct na_ofi_context *na_ofi_context, unsigned int *count_p)
 {
     struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
-    size_t i, actual_count = 0;
+    unsigned int i, count = 0;
     bool err_avail = false;
     na_return_t ret;
 
     ret = na_ofi_cq_read(na_ofi_context->eq->fi_cq, cq_events,
-        NA_OFI_CQ_EVENT_NUM, &actual_count, &err_avail);
+        NA_OFI_CQ_EVENT_NUM, &count, &err_avail);
     NA_CHECK_SUBSYS_NA_ERROR(
         poll, error, ret, "Could not read events from context CQ");
 
@@ -6266,7 +6307,7 @@ na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
             poll, error, ret, "Could not read error events from context CQ");
     }
 
-    for (i = 0; i < actual_count; i++) {
+    for (i = 0; i < count; i++) {
         struct na_ofi_op_id *na_ofi_op_id =
             container_of(cq_events[i].op_context, struct na_ofi_op_id, fi_ctx);
         struct na_ofi_addr *na_ofi_addr = NULL;
@@ -6289,7 +6330,7 @@ na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
         NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process event");
     }
 
-    *actual_count_p = actual_count;
+    *count_p = count;
 
     return NA_SUCCESS;
 
@@ -6300,30 +6341,30 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
-    struct na_ofi_context *na_ofi_context, size_t *actual_count_p)
+    struct na_ofi_context *na_ofi_context, unsigned int *count_p)
 {
     struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
     fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM];
     struct na_ofi_src_err src_err;
     struct na_ofi_src_err *src_err_p = NULL;
-    size_t i, actual_count = 0;
+    unsigned int i, count = 0;
     bool err_avail = false;
     na_return_t ret;
 
     ret = na_ofi_cq_readfrom(na_ofi_context->eq->fi_cq, cq_events,
-        NA_OFI_CQ_EVENT_NUM, src_addrs, &actual_count, &err_avail);
+        NA_OFI_CQ_EVENT_NUM, src_addrs, &count, &err_avail);
     NA_CHECK_SUBSYS_NA_ERROR(
         poll, error, ret, "Could not read events from context CQ");
 
     if (unlikely(err_avail)) {
         ret = na_ofi_cq_readerr(
-            na_ofi_context->eq->fi_cq, &cq_events[0], &src_err, &actual_count);
+            na_ofi_context->eq->fi_cq, &cq_events[0], &src_err, &count);
         NA_CHECK_SUBSYS_NA_ERROR(
             poll, error, ret, "Could not read error events from context CQ");
         src_err_p = &src_err;
     }
 
-    for (i = 0; i < actual_count; i++) {
+    for (i = 0; i < count; i++) {
         struct na_ofi_op_id *na_ofi_op_id =
             container_of(cq_events[i].op_context, struct na_ofi_op_id, fi_ctx);
         struct na_ofi_addr *na_ofi_addr = NULL;
@@ -6343,7 +6384,7 @@ na_ofi_cq_poll_fi_source(struct na_ofi_class *na_ofi_class,
         NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process event");
     }
 
-    *actual_count_p = actual_count;
+    *count_p = count;
 
     return NA_SUCCESS;
 
@@ -6354,21 +6395,21 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_read(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
-    size_t max_count, size_t *actual_count, bool *err_avail)
+    unsigned int max_count, unsigned int *count_p, bool *err_avail_p)
 {
     na_return_t ret;
     ssize_t rc;
 
     rc = fi_cq_read(cq, cq_events, max_count);
     if (rc > 0) { /* events available */
-        *actual_count = (size_t) rc;
-        *err_avail = false;
+        *count_p = (unsigned int) rc;
+        *err_avail_p = false;
     } else if (rc == -FI_EAGAIN) { /* no event available */
-        *actual_count = 0;
-        *err_avail = false;
+        *count_p = 0;
+        *err_avail_p = false;
     } else if (rc == -FI_EAVAIL) {
-        *actual_count = 0;
-        *err_avail = true;
+        *count_p = 0;
+        *err_avail_p = true;
     } else
         NA_GOTO_SUBSYS_ERROR(poll, error, ret, na_ofi_errno_to_na((int) -rc),
             "fi_cq_read() failed, rc: %zd (%s)", rc, fi_strerror((int) -rc));
@@ -6382,22 +6423,22 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_readfrom(struct fid_cq *cq, struct fi_cq_tagged_entry cq_events[],
-    size_t max_count, fi_addr_t *src_addrs, size_t *actual_count,
-    bool *err_avail)
+    unsigned int max_count, fi_addr_t *src_addrs, unsigned int *count_p,
+    bool *err_avail_p)
 {
     na_return_t ret;
     ssize_t rc;
 
     rc = fi_cq_readfrom(cq, cq_events, max_count, src_addrs);
     if (rc > 0) { /* events available */
-        *actual_count = (size_t) rc;
-        *err_avail = false;
+        *count_p = (unsigned int) rc;
+        *err_avail_p = false;
     } else if (rc == -FI_EAGAIN) { /* no event available */
-        *actual_count = 0;
-        *err_avail = false;
+        *count_p = 0;
+        *err_avail_p = false;
     } else if (rc == -FI_EAVAIL) {
-        *actual_count = 0;
-        *err_avail = true;
+        *count_p = 0;
+        *err_avail_p = true;
     } else
         NA_GOTO_SUBSYS_ERROR(poll, error, ret, na_ofi_errno_to_na((int) -rc),
             "fi_cq_readfrom() failed, rc: %zd (%s)", rc,
@@ -6412,7 +6453,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
-    struct na_ofi_src_err *src_err, size_t *actual_count_p)
+    struct na_ofi_src_err *src_err, unsigned int *count_p)
 {
     struct fi_cq_err_entry cq_err;
     na_return_t ret = NA_SUCCESS;
@@ -6482,7 +6523,7 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
 #else
             src_err->fi_auth_key = FI_ADDR_NOTAVAIL;
 #endif
-            *actual_count_p = 1;
+            *count_p = 1;
             break;
 
         default:
@@ -8989,11 +9030,47 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout_ms)
+na_ofi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
+    unsigned int count = 0;
+    na_return_t ret;
+
+    /* If we can't hold more than NA_OFI_CQ_EVENT_NUM entries do not attempt
+     * to read from CQ until NA_Trigger() has been called */
+    if ((hg_atomic_get32(&na_ofi_context->multi_op_count) > 0) &&
+        !na_ofi_cq_can_poll_multi(&na_ofi_context->multi_op_queue, count_p))
+        return NA_SUCCESS;
+
+    /* Read from CQ and process events */
+    ret = na_ofi_class->cq_poll(na_ofi_class, na_ofi_context, &count);
+    NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll context CQ");
+
+    /* Attempt to process retries */
+    ret = na_ofi_cq_process_retries(
+        na_ofi_context, na_ofi_class->op_retry_period);
+    NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process retries");
+
+    /* PSM2 is a user-level interface, to prevent busy-spin and allow
+     * other threads to be scheduled, we need to yield here. */
+    if ((na_ofi_class->fabric->prov_type == NA_OFI_PROV_PSM2) && (count == 0))
+        hg_thread_yield();
+
+    if (count_p != NULL)
+        *count_p = count;
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout_ms, unsigned int *count_p)
+{
     hg_time_t deadline, now = hg_time_from_ms(0);
     na_return_t ret;
 
@@ -9002,7 +9079,8 @@ na_ofi_progress(
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     do {
-        size_t actual_count = 0;
+        struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
+        unsigned int count = 0;
 
         if (timeout_ms != 0 && na_ofi_context->eq->fi_wait != NULL) {
             /* Wait in wait set if provider does not support wait on FDs */
@@ -9021,45 +9099,18 @@ na_ofi_progress(
                 fi_strerror(-rc));
         }
 
-        /* If we can't hold more than NA_OFI_CQ_EVENT_NUM entries do not attempt
-         * to read from CQ until NA_Trigger() has been called */
-        if (hg_atomic_get32(&na_ofi_context->multi_op_count) > 0) {
-            struct na_ofi_op_id *na_ofi_op_id;
+        ret = na_ofi_poll(na_class, context, &count);
+        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll");
 
-            hg_thread_spin_lock(&na_ofi_context->multi_op_queue.lock);
-            TAILQ_FOREACH (
-                na_ofi_op_id, &na_ofi_context->multi_op_queue.queue, multi) {
-                unsigned int count = na_ofi_completion_multi_count(
-                    &na_ofi_op_id->completion_data_storage.multi);
-                if ((NA_OFI_OP_MULTI_CQ_SIZE - count) < NA_OFI_CQ_EVENT_NUM) {
-                    hg_thread_spin_unlock(&na_ofi_context->multi_op_queue.lock);
-                    return NA_SUCCESS;
-                }
-            }
-            hg_thread_spin_unlock(&na_ofi_context->multi_op_queue.lock);
-        }
-
-        /* Read from CQ and process events */
-        ret =
-            na_ofi_class->cq_poll(na_ofi_class, na_ofi_context, &actual_count);
-        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll context CQ");
-
-        /* Attempt to process retries */
-        ret = na_ofi_cq_process_retries(
-            na_ofi_context, na_ofi_class->op_retry_period);
-        NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not process retries");
-
-        if (actual_count > 0)
+        if (count > 0) {
+            if (count_p != NULL)
+                *count_p = count;
             return NA_SUCCESS;
+        }
 
         if (timeout_ms != 0)
             hg_time_get_current_ms(&now);
     } while (hg_time_less(now, deadline));
-
-    /* PSM2 is a user-level interface, to prevent busy-spin and allow
-     * other threads to be scheduled, we need to yield here. */
-    if (na_ofi_class->fabric->prov_type == NA_OFI_PROV_PSM2)
-        hg_thread_yield();
 
     return NA_TIMEOUT;
 

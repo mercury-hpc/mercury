@@ -874,10 +874,9 @@ na_ucx_poll_get_fd(na_class_t *na_class, na_context_t *context);
 static NA_INLINE bool
 na_ucx_poll_try_wait(na_class_t *na_class, na_context_t *context);
 
-/* progress */
-static na_return_t
-na_ucx_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
+/* poll_wait */
+static NA_INLINE na_return_t
+na_ucx_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p);
 
 /* cancel */
 static na_return_t
@@ -937,7 +936,8 @@ NA_PLUGIN const struct na_class_ops NA_PLUGIN_OPS(ucx) = {
     na_ucx_get,                           /* get */
     na_ucx_poll_get_fd,                   /* poll_get_fd */
     na_ucx_poll_try_wait,                 /* poll_try_wait */
-    na_ucx_progress,                      /* progress */
+    na_ucx_poll,                          /* poll */
+    NULL,                                 /* poll_wait */
     na_ucx_cancel                         /* cancel */
 };
 
@@ -4172,25 +4172,16 @@ na_ucx_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
-na_ucx_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
-    unsigned int timeout_ms)
+static NA_INLINE na_return_t
+na_ucx_poll(na_class_t *na_class, na_context_t NA_UNUSED *context,
+    unsigned int *count_p)
 {
-    hg_time_t deadline, now = hg_time_from_ms(0);
+    unsigned int count =
+        ucp_worker_progress(NA_UCX_CLASS(na_class)->ucp_worker);
+    if (count_p != NULL)
+        *count_p = count;
 
-    if (timeout_ms != 0)
-        hg_time_get_current_ms(&now);
-    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
-
-    do {
-        if (ucp_worker_progress(NA_UCX_CLASS(na_class)->ucp_worker) != 0)
-            return NA_SUCCESS;
-
-        if (timeout_ms != 0)
-            hg_time_get_current_ms(&now);
-    } while (hg_time_less(now, deadline));
-
-    return NA_TIMEOUT;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/

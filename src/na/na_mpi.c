@@ -343,10 +343,9 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     size_t length, na_addr_t *remote_addr, uint8_t remote_id,
     na_op_id_t *op_id);
 
-/* progress */
+/* poll */
 static na_return_t
-na_mpi_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout);
+na_mpi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p);
 
 /* na_mpi_progress_unexpected */
 static na_return_t
@@ -434,7 +433,8 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     na_mpi_get,                           /* get */
     NULL,                                 /* poll_get_fd */
     NULL,                                 /* poll_try_wait */
-    na_mpi_progress,                      /* progress */
+    na_mpi_poll,                          /* poll */
+    NULL,                                 /* poll_wait */
     na_mpi_cancel                         /* cancel */
 };
 
@@ -1801,47 +1801,37 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_progress(
-    na_class_t *na_class, na_context_t *context, unsigned int timeout)
+na_mpi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p)
 {
-    double remaining =
-        timeout / 1000.0; /* Convert timeout in ms into seconds */
-    na_return_t ret = NA_SUCCESS;
+    unsigned int count = 0;
+    na_return_t ret;
 
-    do {
-        hg_time_t t1, t2;
-
-        if (timeout)
-            hg_time_get_current_ms(&t1);
-
-        /* Try to make unexpected progress */
-        ret = na_mpi_progress_unexpected(na_class, context, 0);
-        if (ret != NA_SUCCESS) {
-            if (ret != NA_TIMEOUT) {
-                NA_LOG_ERROR("Could not make unexpected progress");
-                goto done;
-            }
-        } else
-            break; /* Progressed */
-
-        /* Try to make expected progress */
-        ret = na_mpi_progress_expected(
-            na_class, context, (unsigned int) (remaining * 1000.0));
-        if (ret != NA_SUCCESS) {
-            if (ret != NA_TIMEOUT) {
-                NA_LOG_ERROR("Could not make expected progress");
-                goto done;
-            }
-        } else
-            break; /* Progressed */
-
-        if (timeout) {
-            hg_time_get_current_ms(&t2);
-            remaining -= hg_time_diff(t2, t1);
+    /* Try to make unexpected progress */
+    ret = na_mpi_progress_unexpected(na_class, context, 0);
+    if (ret != NA_SUCCESS) {
+        if (ret != NA_TIMEOUT) {
+            NA_LOG_ERROR("Could not make unexpected progress");
+            goto error;
         }
-    } while (remaining > 0);
+    } else
+        count++; /* Progressed */
 
-done:
+    /* Try to make expected progress */
+    ret = na_mpi_progress_expected(na_class, context, 0);
+    if (ret != NA_SUCCESS) {
+        if (ret != NA_TIMEOUT) {
+            NA_LOG_ERROR("Could not make expected progress");
+            goto error;
+        }
+    } else
+        count++; /* Progressed */
+
+    if (count_p != NULL)
+        *count_p = count;
+
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 

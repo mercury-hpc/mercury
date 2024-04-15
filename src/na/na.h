@@ -140,7 +140,8 @@ NA_Cleanup(void);
  * \return true if the features are supported, false otherwise
  */
 NA_PUBLIC bool
-NA_Has_opt_feature(na_class_t *na_class, unsigned long flags);
+NA_Has_opt_feature(
+    na_class_t *na_class, unsigned long flags) NA_WARN_UNUSED_RESULT;
 
 /**
  * Set the log level for NA. That setting is valid for all NA classes.
@@ -214,6 +215,17 @@ NA_PUBLIC na_return_t
 NA_Context_destroy(na_class_t *na_class, na_context_t *context);
 
 /**
+ * Get current number of completion entries in context's completion queue.
+ *
+ * \param context [IN]          pointer to context of execution
+ *
+ * \return non-negative integer or zero if no entries
+ */
+NA_PUBLIC unsigned int
+NA_Context_get_completion_count(
+    const na_context_t *context) NA_WARN_UNUSED_RESULT;
+
+/**
  * Allocate an operation ID for the higher level layer to save and
  * pass back to the NA layer rather than have the NA layer allocate operation
  * IDs all the time.
@@ -229,7 +241,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context);
  * \return valid pointer to operation ID or NULL
  */
 NA_PUBLIC na_op_id_t *
-NA_Op_create(na_class_t *na_class, unsigned long flags);
+NA_Op_create(na_class_t *na_class, unsigned long flags) NA_WARN_UNUSED_RESULT;
 
 /**
  * Destroy operation ID created with NA_Op_create().
@@ -312,7 +324,8 @@ NA_Addr_dup(na_class_t *na_class, na_addr_t *addr, na_addr_t **new_addr_p);
  * \return true if addresses are determined to be equal, false otherwise
  */
 NA_PUBLIC bool
-NA_Addr_cmp(na_class_t *na_class, na_addr_t *addr1, na_addr_t *addr2);
+NA_Addr_cmp(na_class_t *na_class, na_addr_t *addr1,
+    na_addr_t *addr2) NA_WARN_UNUSED_RESULT;
 
 /**
  * Test whether address is self or not.
@@ -323,7 +336,7 @@ NA_Addr_cmp(na_class_t *na_class, na_addr_t *addr1, na_addr_t *addr2);
  * \return true if self or false if not
  */
 static NA_INLINE bool
-NA_Addr_is_self(na_class_t *na_class, na_addr_t *addr);
+NA_Addr_is_self(na_class_t *na_class, na_addr_t *addr) NA_WARN_UNUSED_RESULT;
 
 /**
  * Convert an addr to a string (returned string includes the terminating
@@ -860,8 +873,7 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
  * \param na_class [IN/OUT]     pointer to NA class
  * \param context [IN/OUT]      pointer to context of execution
  *
- * \return Non-negative integer if supported, 0 if not implemented and negative
- * in case of error.
+ * \return Non-negative integer if supported and negative if not supported.
  */
 static NA_INLINE int
 NA_Poll_get_fd(
@@ -876,10 +888,46 @@ NA_Poll_get_fd(
  *
  * \return true if it is safe to block or false otherwise
  */
-NA_PUBLIC bool
-NA_Poll_try_wait(na_class_t *na_class, na_context_t *context);
+static NA_INLINE bool
+NA_Poll_try_wait(
+    na_class_t *na_class, na_context_t *context) NA_WARN_UNUSED_RESULT;
 
 /**
+ * Poll and progress communication by placing any completed events into the
+ * context's completion queue. Completed operations's callbacks can be triggered
+ * by a call to NA_Trigger().
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
+ * \param count_p [OUT]         number of entries in context completion queue
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+static NA_INLINE na_return_t
+NA_Poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p);
+
+/**
+ * Poll for timeout_ms and progress communication by placing any completed
+ * events into the context's completion queue. Completed operations's callbacks
+ * can be triggered by a call to NA_Trigger().
+ * Note that NA_Poll_wait() is provided for convenience and its use is in
+ * general discouraged. Users are instead encouraged to use NA_Poll() combined
+ * with epoll_wait() when available.
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
+ * \param timeout_ms [IN]       timeout (in milliseconds)
+ * \param count_p [OUT]         number of entries in context completion queue
+ *
+ * \return NA_SUCCESS if any completion occurs, NA_TIMEOUT if timeout_ms
+ * is reached without completions, corresponding NA error code otherwise
+ */
+NA_PUBLIC na_return_t
+NA_Poll_wait(na_class_t *na_class, na_context_t *context,
+    unsigned int timeout_ms, unsigned *count_p);
+
+/**
+ * (Deprecated in favor of NA_Poll()/NA_Poll_wait())
  * Try to progress communication for at most timeout until timeout is reached or
  * any completion has occurred.
  * Progress should not be considered as wait, in the sense that it cannot be
@@ -888,12 +936,14 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context);
  *
  * \param na_class [IN/OUT]     pointer to NA class
  * \param context [IN/OUT]      pointer to context of execution
- * \param timeout [IN]          timeout (in milliseconds)
+ * \param timeout_ms [IN]       timeout (in milliseconds)
  *
- * \return NA_SUCCESS if any completion has occurred / NA error code otherwise
+ * \return NA_SUCCESS if any completion occurs, NA_TIMEOUT if timeout_ms
+ * is reached without completions, corresponding NA error code otherwise
  */
 NA_PUBLIC na_return_t
-NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout);
+NA_Progress(
+    na_class_t *na_class, na_context_t *context, unsigned int timeout_ms);
 
 /**
  * Execute at most max_count callbacks.
@@ -1060,10 +1110,12 @@ struct na_class_ops {
         na_offset_t local_offset, na_mem_handle_t *remote_mem_handle,
         na_offset_t remote_offset, size_t length, na_addr_t *remote_addr,
         uint8_t remote_id, na_op_id_t *op_id);
-    int (*na_poll_get_fd)(na_class_t *na_class, na_context_t *context);
-    bool (*na_poll_try_wait)(na_class_t *na_class, na_context_t *context);
-    na_return_t (*progress)(
-        na_class_t *na_class, na_context_t *context, unsigned int timeout);
+    int (*poll_get_fd)(na_class_t *na_class, na_context_t *context);
+    bool (*poll_try_wait)(na_class_t *na_class, na_context_t *context);
+    na_return_t (*poll)(
+        na_class_t *na_class, na_context_t *context, unsigned int *count_p);
+    na_return_t (*poll_wait)(na_class_t *na_class, na_context_t *context,
+        unsigned int timeout_ms, unsigned int *count_p);
     na_return_t (*cancel)(
         na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 };
@@ -1262,9 +1314,35 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
 static NA_INLINE int
 NA_Poll_get_fd(na_class_t *na_class, na_context_t *context)
 {
-    return (na_class->ops->na_poll_get_fd)
-               ? na_class->ops->na_poll_get_fd(na_class, context)
+    return (na_class->ops->poll_get_fd)
+               ? na_class->ops->poll_get_fd(na_class, context)
                : -1;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE bool
+NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
+{
+    if ((na_class->progress_mode & NA_NO_BLOCK) ||
+        (NA_Context_get_completion_count(context) > 0))
+        return false;
+    if (na_class->ops && na_class->ops->poll_try_wait)
+        return na_class->ops->poll_try_wait(na_class, context);
+    return true;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_return_t
+NA_Poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p)
+{
+    if (na_class->ops->poll) {
+        na_return_t ret =
+            na_class->ops->poll(na_class, context, NULL /* unused */);
+        if (ret == NA_SUCCESS && count_p != NULL)
+            *count_p = NA_Context_get_completion_count(context);
+        return ret;
+    } else
+        return NA_OPNOTSUPPORTED;
 }
 
 #ifdef __cplusplus
