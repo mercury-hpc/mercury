@@ -144,7 +144,7 @@ hg_atomic_queue_pop_sc(struct hg_atomic_queue *hg_atomic_queue);
  * \return true if empty, false if not
  */
 static HG_UTIL_INLINE bool
-hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue);
+hg_atomic_queue_is_empty(const struct hg_atomic_queue *hg_atomic_queue);
 
 /**
  * Determine number of entries in a queue.
@@ -154,7 +154,7 @@ hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue);
  * \return Number of entries queued or 0 if none
  */
 static HG_UTIL_INLINE unsigned int
-hg_atomic_queue_count(struct hg_atomic_queue *hg_atomic_queue);
+hg_atomic_queue_count(const struct hg_atomic_queue *hg_atomic_queue);
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
@@ -253,7 +253,7 @@ hg_atomic_queue_pop_sc(struct hg_atomic_queue *hg_atomic_queue)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE bool
-hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue)
+hg_atomic_queue_is_empty(const struct hg_atomic_queue *hg_atomic_queue)
 {
     return (hg_atomic_get32(&hg_atomic_queue->cons_head) ==
             hg_atomic_get32(&hg_atomic_queue->prod_tail));
@@ -261,7 +261,7 @@ hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE unsigned int
-hg_atomic_queue_count(struct hg_atomic_queue *hg_atomic_queue)
+hg_atomic_queue_count(const struct hg_atomic_queue *hg_atomic_queue)
 {
     return ((hg_atomic_queue->prod_size +
                 (unsigned int) hg_atomic_get32(&hg_atomic_queue->prod_tail) -
