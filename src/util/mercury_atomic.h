@@ -102,7 +102,7 @@ hg_atomic_set32(hg_atomic_int32_t *ptr, int32_t value);
  * \return Value of the atomic integer
  */
 static HG_UTIL_INLINE int32_t
-hg_atomic_get32(hg_atomic_int32_t *ptr);
+hg_atomic_get32(const hg_atomic_int32_t *ptr);
 
 /**
  * Increment atomic value (32-bit integer).
@@ -197,7 +197,7 @@ hg_atomic_set64(hg_atomic_int64_t *ptr, int64_t value);
  * \return Value of the atomic integer
  */
 static HG_UTIL_INLINE int64_t
-hg_atomic_get64(hg_atomic_int64_t *ptr);
+hg_atomic_get64(const hg_atomic_int64_t *ptr);
 
 /**
  * Increment atomic value (64-bit integer).
@@ -301,7 +301,7 @@ hg_atomic_set32(hg_atomic_int32_t *ptr, int32_t value)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int32_t
-hg_atomic_get32(hg_atomic_int32_t *ptr)
+hg_atomic_get32(const hg_atomic_int32_t *ptr)
 {
     int32_t ret;
 
@@ -466,7 +466,7 @@ hg_atomic_set64(hg_atomic_int64_t *ptr, int64_t value)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int64_t
-hg_atomic_get64(hg_atomic_int64_t *ptr)
+hg_atomic_get64(const hg_atomic_int64_t *ptr)
 {
     int64_t ret;
 
