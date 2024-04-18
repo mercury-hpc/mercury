@@ -12,7 +12,6 @@
 
 #include "mercury_param.h"
 #include "mercury_poll.h"
-#include "mercury_request.h" /* For convenience */
 #include "mercury_time.h"
 
 #include <stdlib.h>
@@ -23,39 +22,37 @@
 /*************************************/
 
 struct na_perf_info {
-    struct na_test_info na_test_info;  /* NA test info */
-    na_class_t *na_class;              /* NA class */
-    na_context_t *context;             /* NA context */
-    hg_poll_set_t *poll_set;           /* Poll set */
-    hg_request_class_t *request_class; /* Request class */
-    na_addr_t *target_addr;            /* Target address */
-    void *msg_unexp_buf;               /* Expected msg buffer */
-    void *msg_exp_buf;                 /* Unexpected msg buffer */
-    void *msg_unexp_data;              /* Plugin data */
-    void *msg_exp_data;                /* Plugin data */
-    na_op_id_t *msg_unexp_op_id;       /* Msg unexpected op ID */
-    na_op_id_t *msg_exp_op_id;         /* Msg expected op ID */
-    void *rma_buf;                     /* RMA buffer */
-    void *verify_buf;                  /* Verify buffer */
-    na_mem_handle_t *local_handle;     /* Local handle */
-    na_mem_handle_t *remote_handle;    /* Remote handle */
-    na_mem_handle_t *verify_handle;    /* Local handle to verify buffer */
-    na_op_id_t **rma_op_ids;           /* RMA op IDs */
-    size_t msg_unexp_header_size;      /* Header size */
-    size_t msg_exp_header_size;        /* Header size */
-    size_t msg_unexp_size_max;         /* Max buffer size */
-    size_t msg_exp_size_max;           /* Max buffer size */
-    size_t rma_size_min;               /* Min buffer size */
-    size_t rma_size_max;               /* Max buffer size */
-    size_t rma_count;                  /* Buffer count */
-    hg_request_t *request;             /* Request */
-    int poll_fd;                       /* Poll fd */
+    struct na_test_info na_test_info; /* NA test info */
+    na_class_t *na_class;             /* NA class */
+    na_context_t *context;            /* NA context */
+    hg_poll_set_t *poll_set;          /* Poll set */
+    na_addr_t *target_addr;           /* Target address */
+    void *msg_unexp_buf;              /* Expected msg buffer */
+    void *msg_exp_buf;                /* Unexpected msg buffer */
+    void *msg_unexp_data;             /* Plugin data */
+    void *msg_exp_data;               /* Plugin data */
+    na_op_id_t *msg_unexp_op_id;      /* Msg unexpected op ID */
+    na_op_id_t *msg_exp_op_id;        /* Msg expected op ID */
+    void *rma_buf;                    /* RMA buffer */
+    void *verify_buf;                 /* Verify buffer */
+    na_mem_handle_t *local_handle;    /* Local handle */
+    na_mem_handle_t *remote_handle;   /* Remote handle */
+    na_mem_handle_t *verify_handle;   /* Local handle to verify buffer */
+    na_op_id_t **rma_op_ids;          /* RMA op IDs */
+    size_t msg_unexp_header_size;     /* Header size */
+    size_t msg_exp_header_size;       /* Header size */
+    size_t msg_unexp_size_max;        /* Max buffer size */
+    size_t msg_exp_size_max;          /* Max buffer size */
+    size_t rma_size_min;              /* Min buffer size */
+    size_t rma_size_max;              /* Max buffer size */
+    size_t rma_count;                 /* Buffer count */
+    int poll_fd;                      /* Poll fd */
 };
 
 struct na_perf_request_info {
-    int32_t expected_count; /* Expected count */
-    int32_t complete_count; /* Completed count */
-    hg_request_t *request;  /* Request */
+    int32_t expected_count;      /* Expected count */
+    int32_t complete_count;      /* Completed count */
+    hg_atomic_int32_t completed; /* Request */
 };
 
 /*****************/
@@ -81,6 +78,11 @@ struct na_perf_request_info {
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+na_return_t
+na_perf_request_wait(struct na_perf_info *info,
+    struct na_perf_request_info *request_info, unsigned int timeout_ms,
+    unsigned int *completed_p);
 
 void
 na_perf_request_complete(const struct na_cb_info *na_cb_info);

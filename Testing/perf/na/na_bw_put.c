@@ -37,14 +37,13 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
     /* Actual benchmark */
     for (i = 0; i < skip + (size_t) info->na_test_info.loop; i++) {
-        struct na_perf_request_info request_info = {.request = info->request,
+        struct na_perf_request_info request_info = {
+            .completed = HG_ATOMIC_VAR_INIT(0),
             .complete_count = 0,
             .expected_count = (int32_t) info->rma_count};
 
         if (i == skip)
             hg_time_get_current(&t1);
-
-        hg_request_reset(info->request);
 
         if (info->na_test_info.verify)
             memset(info->verify_buf, 0, buf_size);
@@ -73,11 +72,14 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
                 error, ret, "NA_Put() failed (%s)", NA_Error_to_string(ret));
         }
 
-        hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+        /* Wait for completion */
+        ret = na_perf_request_wait(info, &request_info, NA_MAX_IDLE_TIME, NULL);
+        NA_TEST_CHECK_NA_ERROR(error, ret, "na_perf_request_wait() failed (%s)",
+            NA_Error_to_string(ret));
 
         if (info->na_test_info.verify) {
             request_info.complete_count = 0;
-            hg_request_reset(info->request);
+            hg_atomic_init32(&request_info.completed, 0);
 
             /* Post gets */
             for (j = 0; j < info->rma_count; j++) {
@@ -90,7 +92,11 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
                     NA_Error_to_string(ret));
             }
 
-            hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+            /* Wait for completion */
+            ret = na_perf_request_wait(
+                info, &request_info, NA_MAX_IDLE_TIME, NULL);
+            NA_TEST_CHECK_NA_ERROR(error, ret,
+                "na_perf_request_wait() failed (%s)", NA_Error_to_string(ret));
 
             for (j = 0; j < info->rma_count; j++) {
                 ret = na_perf_verify_data(

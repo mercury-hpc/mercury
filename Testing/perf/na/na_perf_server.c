@@ -73,25 +73,37 @@ na_perf_loop(struct na_perf_info *info, na_perf_recv_op_t recv_op,
         error, ret, "%s() failed (%s)", recv_op_name, NA_Error_to_string(ret));
 
     /* Progress loop */
-    do {
-        unsigned int actual_count = 0;
+    while (!recv_info.done) {
+        unsigned int count = 0, actual_count = 0;
 
-        do {
-            ret = NA_Trigger(info->context, 1, &actual_count);
-            NA_TEST_CHECK_ERROR(recv_info.ret != NA_SUCCESS, error, ret,
-                recv_info.ret, "%s() failed (%s)", recv_op_name,
-                NA_Error_to_string(recv_info.ret));
-        } while ((ret == NA_SUCCESS) && actual_count);
-        NA_TEST_CHECK_ERROR_NORET(ret != NA_SUCCESS, error,
-            "NA_Trigger() failed (%s)", NA_Error_to_string(ret));
+        if (info->poll_set && NA_Poll_try_wait(info->na_class, info->context)) {
+            struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
+            unsigned int actual_events = 0;
+            int rc;
 
-        if (recv_info.done)
-            break;
+            NA_TEST_LOG_DEBUG("Waiting for 1000 ms");
 
-        ret = NA_Progress(info->na_class, info->context, 1000);
-    } while ((ret == NA_SUCCESS) || (ret == NA_TIMEOUT));
-    NA_TEST_CHECK_ERROR_NORET(ret != NA_SUCCESS && ret != NA_TIMEOUT, error,
-        "NA_Progress() failed (%s)", NA_Error_to_string(ret));
+            rc = hg_poll_wait(
+                info->poll_set, 1000, 1, &poll_event, &actual_events);
+            NA_TEST_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+                "hg_poll_wait() failed");
+        }
+
+        ret = NA_Poll(info->na_class, info->context, &count);
+        NA_TEST_CHECK_NA_ERROR(
+            error, ret, "NA_Poll() failed (%s)", NA_Error_to_string(ret));
+
+        if (count == 0)
+            continue;
+
+        ret = NA_Trigger(info->context, count, &actual_count);
+        NA_TEST_CHECK_NA_ERROR(
+            error, ret, "NA_Trigger() failed (%s)", NA_Error_to_string(ret));
+
+        NA_TEST_CHECK_ERROR(recv_info.ret != NA_SUCCESS, error, ret,
+            recv_info.ret, "%s() failed (%s)", recv_op_name,
+            NA_Error_to_string(recv_info.ret));
+    }
 
     return NA_SUCCESS;
 

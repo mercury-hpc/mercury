@@ -36,62 +36,67 @@
 /* Local Prototypes */
 /********************/
 
-static int
-na_perf_request_progress(unsigned int timeout, void *arg);
-
-static int
-na_perf_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
-
 /*******************/
 /* Local Variables */
 /*******************/
 
-/*---------------------------------------------------------------------------*/
-static int
-na_perf_request_progress(unsigned int timeout, void *arg)
+na_return_t
+na_perf_request_wait(struct na_perf_info *info,
+    struct na_perf_request_info *request_info, unsigned int timeout_ms,
+    unsigned int *completed_p)
 {
-    struct na_perf_info *na_perf_info = (struct na_perf_info *) arg;
-    unsigned int timeout_progress = 0;
-    int ret = HG_UTIL_SUCCESS;
+    hg_time_t deadline, now = hg_time_from_ms(0);
+    bool completed = false;
+    na_return_t ret;
 
-    /* Safe to block */
-    if (NA_Poll_try_wait(na_perf_info->na_class, na_perf_info->context))
-        timeout_progress = timeout;
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
-    if (na_perf_info->poll_set && timeout_progress > 0) {
-        struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
-        unsigned int actual_events = 0;
+    do {
+        unsigned int count = 0, actual_count = 0;
 
-        hg_poll_wait(na_perf_info->poll_set, timeout_progress, 1, &poll_event,
-            &actual_events);
-        if (actual_events == 0)
-            return HG_UTIL_FAIL;
+        if (info->poll_set && NA_Poll_try_wait(info->na_class, info->context)) {
+            struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
+            unsigned int actual_events = 0;
+            int rc;
 
-        timeout_progress = 0;
-    }
+            NA_TEST_LOG_DEBUG("Waiting for %u ms",
+                hg_time_to_ms(hg_time_subtract(deadline, now)));
 
-    /* Progress */
-    if (NA_Progress(na_perf_info->na_class, na_perf_info->context,
-            timeout_progress) != NA_SUCCESS)
-        ret = HG_UTIL_FAIL;
+            rc = hg_poll_wait(info->poll_set,
+                hg_time_to_ms(hg_time_subtract(deadline, now)), 1, &poll_event,
+                &actual_events);
+            NA_TEST_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+                "hg_poll_wait() failed");
+        }
 
-    return ret;
-}
+        ret = NA_Poll(info->na_class, info->context, &count);
+        NA_TEST_CHECK_NA_ERROR(
+            error, ret, "NA_Poll() failed (%s)", NA_Error_to_string(ret));
 
-/*---------------------------------------------------------------------------*/
-static int
-na_perf_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
-{
-    struct na_perf_info *na_perf_info = (struct na_perf_info *) arg;
-    unsigned int actual_count = 0;
-    int ret = HG_UTIL_SUCCESS;
+        if (count == 0)
+            continue;
 
-    (void) timeout;
+        ret = NA_Trigger(info->context, count, &actual_count);
+        NA_TEST_CHECK_NA_ERROR(
+            error, ret, "NA_Trigger() failed (%s)", NA_Error_to_string(ret));
 
-    if (NA_Trigger(na_perf_info->context, 1, &actual_count) != NA_SUCCESS)
-        ret = HG_UTIL_FAIL;
-    *flag = (actual_count) ? true : false;
+        if (hg_atomic_get32(&request_info->completed)) {
+            completed = true;
+            break;
+        }
 
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
+    } while (hg_time_less(now, deadline));
+
+    if (completed_p != NULL)
+        *completed_p = completed;
+
+    return NA_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -103,7 +108,7 @@ na_perf_request_complete(const struct na_cb_info *na_cb_info)
         (struct na_perf_request_info *) na_cb_info->arg;
 
     if ((++info->complete_count) == info->expected_count)
-        hg_request_complete(info->request);
+        hg_atomic_set32(&info->completed, (int32_t) true);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -152,11 +157,6 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
         NA_TEST_CHECK_ERROR(
             rc != 0, error, ret, NA_PROTOCOL_ERROR, "hg_poll_add() failed");
     }
-
-    info->request_class = hg_request_init(
-        na_perf_request_progress, na_perf_request_trigger, info);
-    NA_TEST_CHECK_ERROR(info->request_class == NULL, error, ret, NA_NOMEM,
-        "hg_request_init() failed");
 
     /* Lookup target addr */
     if (!listen) {
@@ -291,11 +291,6 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
     NA_TEST_CHECK_ERROR(info->msg_exp_op_id == NULL, error, ret, NA_NOMEM,
         "NA_Op_create() failed");
 
-    /* Create request */
-    info->request = hg_request_create(info->request_class);
-    NA_TEST_CHECK_ERROR(info->request == NULL, error, ret, NA_NOMEM,
-        "hg_request_create() failed");
-
     /* Create RMA operation IDs */
     info->rma_op_ids =
         (na_op_id_t **) malloc(sizeof(na_op_id_t *) * info->rma_count);
@@ -364,12 +359,6 @@ na_perf_cleanup(struct na_perf_info *info)
 
     if (info->poll_set != NULL)
         hg_poll_destroy(info->poll_set);
-
-    if (info->request != NULL)
-        hg_request_destroy(info->request);
-
-    if (info->request_class != NULL)
-        hg_request_finalize(info->request_class, NULL);
 
     if (info->context != NULL)
         NA_Context_destroy(info->na_class, info->context);
@@ -508,12 +497,11 @@ error:
 na_return_t
 na_perf_mem_handle_recv(struct na_perf_info *info, na_tag_t tag)
 {
-    struct na_perf_request_info request_info = {.request = info->request,
+    struct na_perf_request_info request_info = {
+        .completed = HG_ATOMIC_VAR_INIT(0),
         .complete_count = 0,
         .expected_count = (int32_t) 2};
     na_return_t ret;
-
-    hg_request_reset(info->request);
 
     /* Post recv */
     ret = NA_Msg_recv_expected(info->na_class, info->context,
@@ -531,7 +519,10 @@ na_perf_mem_handle_recv(struct na_perf_info *info, na_tag_t tag)
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_unexpected() failed (%s)",
         NA_Error_to_string(ret));
 
-    hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+    /* Wait for completion */
+    ret = na_perf_request_wait(info, &request_info, NA_MAX_IDLE_TIME, NULL);
+    NA_TEST_CHECK_NA_ERROR(error, ret, "na_perf_request_wait() failed (%s)",
+        NA_Error_to_string(ret));
 
     /* Retrieve handle */
     ret = NA_Mem_handle_deserialize(info->na_class, &info->remote_handle,
@@ -549,13 +540,11 @@ error:
 na_return_t
 na_perf_send_finalize(struct na_perf_info *info)
 {
-    struct na_perf_request_info request_info = {.request = info->request,
+    struct na_perf_request_info request_info = {
+        .completed = HG_ATOMIC_VAR_INIT(0),
         .complete_count = 0,
         .expected_count = (int32_t) 1};
     na_return_t ret;
-
-    /* Reset */
-    hg_request_reset(info->request);
 
     /* Post one-way msg send */
     ret = NA_Msg_send_unexpected(info->na_class, info->context,
@@ -565,7 +554,10 @@ na_perf_send_finalize(struct na_perf_info *info)
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_unexpected() failed (%s)",
         NA_Error_to_string(ret));
 
-    hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+    /* Wait for completion */
+    ret = na_perf_request_wait(info, &request_info, NA_MAX_IDLE_TIME, NULL);
+    NA_TEST_CHECK_NA_ERROR(error, ret, "na_perf_request_wait() failed (%s)",
+        NA_Error_to_string(ret));
 
     return NA_SUCCESS;
 

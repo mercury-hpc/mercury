@@ -31,13 +31,11 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip);
 static na_return_t
 na_perf_send_init(struct na_perf_info *info)
 {
-    struct na_perf_request_info request_info = {.request = info->request,
+    struct na_perf_request_info request_info = {
+        .completed = HG_ATOMIC_VAR_INIT(0),
         .complete_count = 0,
         .expected_count = (int32_t) 1};
     na_return_t ret;
-
-    /* Reset */
-    hg_request_reset(info->request);
 
     /* Post one-way msg send */
     ret = NA_Msg_send_unexpected(info->na_class, info->context,
@@ -47,7 +45,10 @@ na_perf_send_init(struct na_perf_info *info)
     NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Msg_send_unexpected() failed (%s)",
         NA_Error_to_string(ret));
 
-    hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+    /* Wait for completion */
+    ret = na_perf_request_wait(info, &request_info, NA_MAX_IDLE_TIME, NULL);
+    NA_TEST_CHECK_NA_ERROR(error, ret, "na_perf_request_wait() failed (%s)",
+        NA_Error_to_string(ret));
 
     return NA_SUCCESS;
 
@@ -65,14 +66,13 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
     /* Actual benchmark */
     for (i = 0; i < skip + (size_t) info->na_test_info.loop; i++) {
-        struct na_perf_request_info request_info = {.request = info->request,
+        struct na_perf_request_info request_info = {
+            .completed = HG_ATOMIC_VAR_INIT(0),
             .complete_count = 0,
             .expected_count = (int32_t) 2};
 
         if (i == skip)
             hg_time_get_current(&t1);
-
-        hg_request_reset(info->request);
 
         if (info->na_test_info.verify) {
             memset(info->msg_exp_buf, 0, buf_size);
@@ -100,7 +100,10 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
         NA_TEST_CHECK_NA_ERROR(error, ret,
             "NA_Msg_send_unexpected() failed (%s)", NA_Error_to_string(ret));
 
-        hg_request_wait(info->request, NA_MAX_IDLE_TIME, NULL);
+        /* Wait for completion */
+        ret = na_perf_request_wait(info, &request_info, NA_MAX_IDLE_TIME, NULL);
+        NA_TEST_CHECK_NA_ERROR(error, ret, "na_perf_request_wait() failed (%s)",
+            NA_Error_to_string(ret));
 
         if (info->na_test_info.verify) {
             ret = na_perf_verify_data(
