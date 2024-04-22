@@ -15,8 +15,8 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
-typedef hg_uint64_t hg_size_t; /* Size */
-typedef hg_uint64_t hg_id_t;   /* RPC ID */
+typedef uint64_t hg_size_t; /* Size */
+typedef uint64_t hg_id_t;   /* RPC ID */
 
 /* Checksum levels */
 typedef enum hg_checksum_level {
@@ -43,7 +43,7 @@ struct hg_init_info {
      * creation when the HG class is initialized with listen set to true.
      * A value of zero is equivalent to using the internal default value.
      * Default value is: 256 */
-    hg_uint32_t request_post_init;
+    uint32_t request_post_init;
 
     /* Controls the number of requests that are incrementally posted when the
      * initial number of requests is exhausted, a value of 0 means that only the
@@ -52,12 +52,12 @@ struct hg_init_info {
      * NA transport is responsible for queueing incoming requests. This value is
      * used only if \request_post_init is set to a non-zero value.
      * Default value is: 256 */
-    hg_uint32_t request_post_incr;
+    uint32_t request_post_incr;
 
     /* Controls whether the NA shared-memory interface should be automatically
      * used if/when the RPC target address shares the same node as its origin.
      * Default is: false */
-    hg_bool_t auto_sm;
+    bool auto_sm;
 
     /* Overrides the default info string used to initialize the NA shared-memory
      * interface when auto_sm is set to true (e.g., "foo-bar" will create
@@ -73,28 +73,28 @@ struct hg_init_info {
     /* Controls whether mercury should _NOT_ attempt to transfer small bulk data
      * along with the RPC request.
      * Default is: false */
-    hg_bool_t no_bulk_eager;
+    bool no_bulk_eager;
 
     /* Disable internal loopback interface that enables forwarding of RPC
      * requests to self addresses. Doing so will force traffic to be routed
      * through NA. For performance reasons, users should be cautious when using
      * that option.
      * Default is: false */
-    hg_bool_t no_loopback;
+    bool no_loopback;
 
     /* (Debug) Print stats at exit.
      * Default is: false */
-    hg_bool_t stats;
+    bool stats;
 
     /* Disable use of multi_recv when available and post separate buffers.
      * Default is: false */
-    hg_bool_t no_multi_recv;
+    bool no_multi_recv;
 
     /* Release input buffers as early as possible (usually after HG_Get_input())
      * as opposed to releasing them after a call to handle destroy. This may be
      * beneficial in cases where the RPC execution time is longer than usual.
      * Default is: false */
-    hg_bool_t release_input_early;
+    bool release_input_early;
 };
 
 /* Error return codes:
@@ -185,10 +185,10 @@ typedef enum {
     (struct hg_init_info)                                                      \
     {                                                                          \
         .na_init_info = NA_INIT_INFO_INITIALIZER, .na_class = NULL,            \
-        .request_post_init = 0, .request_post_incr = 0, .auto_sm = HG_FALSE,   \
+        .request_post_init = 0, .request_post_incr = 0, .auto_sm = false,      \
         .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
-        .no_bulk_eager = HG_FALSE, .no_loopback = HG_FALSE, .stats = HG_FALSE, \
-        .no_multi_recv = HG_FALSE, .release_input_early = HG_FALSE             \
+        .no_bulk_eager = false, .no_loopback = false, .stats = false,          \
+        .no_multi_recv = false, .release_input_early = false                   \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */

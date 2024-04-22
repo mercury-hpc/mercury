@@ -16,43 +16,43 @@
 
 #ifdef HG_HAS_CHECKSUMS
 HG_PACKED(union hg_core_header_hash {
-    hg_uint16_t header; /* Header checksum (16-bits checksum) */
-    hg_uint32_t pad;
+    uint16_t header; /* Header checksum (16-bits checksum) */
+    uint32_t pad;
 });
 
 HG_PACKED(struct hg_core_header_request {
-    hg_uint8_t hg;                  /* Mercury identifier */
-    hg_uint8_t protocol;            /* Version number */
-    hg_uint64_t id;                 /* RPC request identifier */
-    hg_uint8_t flags;               /* Flags */
-    hg_uint8_t cookie;              /* Cookie */
+    uint8_t hg;                     /* Mercury identifier */
+    uint8_t protocol;               /* Version number */
+    uint64_t id;                    /* RPC request identifier */
+    uint8_t flags;                  /* Flags */
+    uint8_t cookie;                 /* Cookie */
     union hg_core_header_hash hash; /* Hash */
     /* 128 bits here */
 });
 
 HG_PACKED(struct hg_core_header_response {
-    hg_int8_t ret_code;             /* Return code */
-    hg_uint8_t flags;               /* Flags */
-    hg_uint16_t cookie;             /* Cookie */
-    hg_uint64_t pad;                /* Pad */
+    int8_t ret_code;                /* Return code */
+    uint8_t flags;                  /* Flags */
+    uint16_t cookie;                /* Cookie */
+    uint64_t pad;                   /* Pad */
     union hg_core_header_hash hash; /* Hash */
     /* 128 bits here */
 });
 #else
 HG_PACKED(struct hg_core_header_request {
-    hg_uint8_t hg;       /* Mercury identifier */
-    hg_uint8_t protocol; /* Version number */
-    hg_uint64_t id;      /* RPC request identifier */
-    hg_uint8_t flags;    /* Flags */
-    hg_uint8_t cookie;   /* Cookie */
+    uint8_t hg;       /* Mercury identifier */
+    uint8_t protocol; /* Version number */
+    uint64_t id;      /* RPC request identifier */
+    uint8_t flags;    /* Flags */
+    uint8_t cookie;   /* Cookie */
     /* 96 bits here */
 });
 
 HG_PACKED(struct hg_core_header_response {
-    hg_int8_t ret_code; /* Return code */
-    hg_uint8_t flags;   /* Flags */
-    hg_uint16_t cookie; /* Cookie */
-    hg_uint64_t pad;    /* Pad */
+    int8_t ret_code; /* Return code */
+    uint8_t flags;   /* Flags */
+    uint16_t cookie; /* Cookie */
+    uint64_t pad;    /* Pad */
     /* 96 bits here */
 });
 #endif
@@ -136,7 +136,7 @@ hg_core_header_response_get_size(void)
  */
 HG_PRIVATE void
 hg_core_header_request_init(
-    struct hg_core_header *hg_core_header, hg_bool_t use_checksum);
+    struct hg_core_header *hg_core_header, bool use_checksum);
 
 /**
  * Initialize RPC response header.
@@ -147,7 +147,7 @@ hg_core_header_request_init(
  */
 HG_PRIVATE void
 hg_core_header_response_init(
-    struct hg_core_header *hg_core_header, hg_bool_t use_checksum);
+    struct hg_core_header *hg_core_header, bool use_checksum);
 
 /**
  * Finalize RPC request header.

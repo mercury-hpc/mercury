@@ -20,29 +20,29 @@
 struct hg_init_info_2_3 {
     struct na_init_info_4_0 na_init_info;
     na_class_t *na_class;
-    hg_uint32_t request_post_init;
-    hg_uint32_t request_post_incr;
-    hg_bool_t auto_sm;
+    uint32_t request_post_init;
+    uint32_t request_post_incr;
+    uint8_t auto_sm;
     const char *sm_info_string;
     hg_checksum_level_t checksum_level;
-    hg_bool_t no_bulk_eager;
-    hg_bool_t no_loopback;
-    hg_bool_t stats;
-    hg_bool_t no_multi_recv;
-    hg_bool_t release_input_early;
+    uint8_t no_bulk_eager;
+    uint8_t no_loopback;
+    uint8_t stats;
+    uint8_t no_multi_recv;
+    uint8_t release_input_early;
 };
 
 struct hg_init_info_2_2 {
     struct na_init_info_4_0 na_init_info;
     na_class_t *na_class;
-    hg_uint32_t request_post_init;
-    hg_uint32_t request_post_incr;
-    hg_bool_t auto_sm;
+    uint32_t request_post_init;
+    uint32_t request_post_incr;
+    uint8_t auto_sm;
     const char *sm_info_string;
     hg_checksum_level_t checksum_level;
-    hg_bool_t no_bulk_eager;
-    hg_bool_t no_loopback;
-    hg_bool_t stats;
+    uint8_t no_bulk_eager;
+    uint8_t no_loopback;
+    uint8_t stats;
 };
 
 /* Private callback type after completion of operations */
@@ -131,7 +131,7 @@ hg_core_context_get_bulk_op_pool(struct hg_core_context *core_context);
  */
 HG_PRIVATE void
 hg_core_completion_add(struct hg_core_context *core_context,
-    struct hg_completion_entry *hg_completion_entry, hg_bool_t loopback_notify);
+    struct hg_completion_entry *hg_completion_entry, bool loopback_notify);
 
 /**
  * Trigger callback from bulk op ID.
@@ -185,8 +185,8 @@ hg_init_info_dup_2_2(
         .no_bulk_eager = old_info->no_bulk_eager,
         .no_loopback = old_info->no_loopback,
         .stats = old_info->stats,
-        .no_multi_recv = HG_FALSE,
-        .release_input_early = HG_FALSE};
+        .no_multi_recv = false,
+        .release_input_early = false};
     na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
 }
 

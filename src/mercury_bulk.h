@@ -52,8 +52,8 @@ extern "C" {
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
-    const hg_size_t *buf_sizes, hg_uint8_t flags, hg_bulk_t *handle);
+HG_Bulk_create(hg_class_t *hg_class, uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, uint8_t flags, hg_bulk_t *handle);
 
 /**
  * Create an abstract bulk handle from specified memory segments.
@@ -76,9 +76,9 @@ HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_create_attr(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
-    const hg_size_t *buf_sizes, hg_uint8_t flags,
-    const struct hg_bulk_attr *attrs, hg_bulk_t *handle);
+HG_Bulk_create_attr(hg_class_t *hg_class, uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, uint8_t flags, const struct hg_bulk_attr *attrs,
+    hg_bulk_t *handle);
 
 /**
  * Free bulk handle.
@@ -146,7 +146,7 @@ HG_Bulk_get_addr(hg_bulk_t handle);
  *
  * \return valid context ID or 0 by default
  */
-HG_PUBLIC hg_uint8_t
+HG_PUBLIC uint8_t
 HG_Bulk_get_context_id(hg_bulk_t handle);
 
 /**
@@ -170,8 +170,8 @@ HG_Bulk_get_context_id(hg_bulk_t handle);
  */
 HG_PUBLIC hg_return_t
 HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
-    hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
-    hg_size_t *buf_sizes, hg_uint32_t *actual_count);
+    uint8_t flags, uint32_t max_count, void **buf_ptrs, hg_size_t *buf_sizes,
+    uint32_t *actual_count);
 
 /**
  * Get total size of data abstracted by bulk handle.
@@ -190,7 +190,7 @@ HG_Bulk_get_size(hg_bulk_t handle);
  *
  * \return Non-negative value
  */
-static HG_INLINE hg_uint32_t
+static HG_INLINE uint32_t
 HG_Bulk_get_segment_count(hg_bulk_t handle);
 
 /**
@@ -200,7 +200,7 @@ HG_Bulk_get_segment_count(hg_bulk_t handle);
  *
  * \return Non-negative value
  */
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 HG_Bulk_get_flags(hg_bulk_t handle);
 
 /**
@@ -322,7 +322,7 @@ HG_Bulk_bind_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
  */
 HG_PUBLIC hg_return_t
 HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, hg_addr_t origin_addr, hg_uint8_t origin_id,
+    hg_bulk_op_t op, hg_addr_t origin_addr, uint8_t origin_id,
     hg_bulk_t origin_handle, hg_size_t origin_offset, hg_bulk_t local_handle,
     hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id);
 
@@ -342,9 +342,9 @@ HG_Bulk_cancel(hg_op_id_t op_id);
 
 /* HG bulk descriptor info */
 struct hg_bulk_desc_info {
-    hg_size_t len;             /* Size of region */
-    hg_uint32_t segment_count; /* Segment count */
-    hg_uint8_t flags;          /* Flags of operation access */
+    hg_size_t len;          /* Size of region */
+    uint32_t segment_count; /* Segment count */
+    uint8_t flags;          /* Flags of operation access */
 };
 
 /*---------------------------------------------------------------------------*/
@@ -355,14 +355,14 @@ HG_Bulk_get_size(hg_bulk_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_uint32_t
+static HG_INLINE uint32_t
 HG_Bulk_get_segment_count(hg_bulk_t handle)
 {
     return ((struct hg_bulk_desc_info *) handle)->segment_count;
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 HG_Bulk_get_flags(hg_bulk_t handle)
 {
     return ((struct hg_bulk_desc_info *) handle)->flags;

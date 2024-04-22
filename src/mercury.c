@@ -46,8 +46,8 @@ struct hg_private_class {
     hg_return_t (*handle_create)(hg_handle_t, void *); /* handle_create */
     void *handle_create_arg;                           /* handle_create arg */
     hg_checksum_level_t checksum_level;                /* Checksum level */
-    hg_bool_t bulk_eager;                              /* Eager bulk proc */
-    hg_bool_t release_input_early;                     /* Release input early */
+    bool bulk_eager;                                   /* Eager bulk proc */
+    bool release_input_early;                          /* Release input early */
 };
 
 /* Info for function map */
@@ -77,7 +77,7 @@ struct hg_private_handle {
     hg_bulk_t out_extra_bulk;           /* Extra output bulk handle */
     hg_size_t in_extra_buf_size;        /* Extra input buffer size */
     hg_size_t out_extra_buf_size;       /* Extra output buffer size */
-    hg_bool_t use_checksums;            /* Handle uses checksums */
+    bool use_checksums;                 /* Handle uses checksums */
 };
 
 /* HG op id */
@@ -161,7 +161,7 @@ hg_get_struct(struct hg_private_handle *hg_handle,
 static hg_return_t
 hg_set_struct(struct hg_private_handle *hg_handle,
     const struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr,
-    hg_size_t *payload_size, hg_bool_t *more_data);
+    hg_size_t *payload_size, bool *more_data);
 
 /**
  * Free allocated members from input/output structure.
@@ -215,15 +215,40 @@ static const char *const hg_return_name[] = {HG_RETURN_VALUES};
 HG_LOG_OUTLET_DECL(HG_SUBSYS_NAME) = HG_LOG_OUTLET_INITIALIZER(
     HG_SUBSYS_NAME, HG_LOG_PASS, NULL, NULL);
 #else
-HG_LOG_SUBSYS_DECL_REGISTER(HG_SUBSYS_NAME, HG_LOG_OUTLET_ROOT_NAME);
+/* HG_LOG_DEBUG_LESIZE: default number of debug log entries. */
+#    define HG_LOG_DEBUG_LESIZE (256)
+
+/* Declare debug log for hg */
+static HG_LOG_DEBUG_DECL_LE(HG_SUBSYS_NAME, HG_LOG_DEBUG_LESIZE);
+static HG_LOG_DEBUG_DECL_DLOG(HG_SUBSYS_NAME) = HG_LOG_DLOG_INITIALIZER(
+    HG_SUBSYS_NAME, HG_LOG_DEBUG_LESIZE);
+
+HG_LOG_SUBSYS_DLOG_DECL_REGISTER(HG_SUBSYS_NAME, HG_LOG_OUTLET_ROOT_NAME);
 #endif
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(fatal, HG_SUBSYS_NAME, HG_LOG_ON);
 
 /* Specific log outlets */
-static HG_LOG_SUBSYS_DECL_REGISTER(cls, HG_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(ctx, HG_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(addr, HG_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(rpc, HG_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(poll, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(cls, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(ctx, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(addr, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(rpc, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(bulk, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(proc, HG_SUBSYS_NAME);
+HG_LOG_SUBSYS_DECL_REGISTER(poll, HG_SUBSYS_NAME);
+
+/* Off by default because of potientally excessive logs */
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(rpc_ref, HG_SUBSYS_NAME, HG_LOG_OFF);
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(poll_loop, HG_SUBSYS_NAME, HG_LOG_OFF);
+HG_LOG_SUBSYS_DECL_STATE_REGISTER(perf, HG_SUBSYS_NAME, HG_LOG_OFF);
+
+#ifndef _WIN32
+/* Declare debug log for stats */
+static HG_LOG_DEBUG_DECL_LE(diag, HG_LOG_DEBUG_LESIZE);
+static HG_LOG_DEBUG_DECL_DLOG(diag) = HG_LOG_DLOG_INITIALIZER(
+    diag, HG_LOG_DEBUG_LESIZE);
+
+HG_LOG_SUBSYS_DLOG_DECL_REGISTER(diag, HG_SUBSYS_NAME);
+#endif
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -255,7 +280,7 @@ hg_handle_create(struct hg_private_class *hg_class)
     hg_handle->handle.info.hg_class = (hg_class_t *) hg_class;
     hg_header_init(&hg_handle->hg_header, HG_UNDEF);
     if (hg_class->checksum_level > HG_CHECKSUM_RPC_HEADERS) {
-        hg_handle->use_checksums = HG_TRUE;
+        hg_handle->use_checksums = true;
         hash = HG_CRC32;
     } else
         hash = HG_NOHASH;
@@ -569,11 +594,11 @@ error:
 static hg_return_t
 hg_set_struct(struct hg_private_handle *hg_handle,
     const struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr,
-    hg_size_t *payload_size, hg_bool_t *more_data)
+    hg_size_t *payload_size, bool *more_data)
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
-    hg_uint8_t proc_flags = 0;
+    uint8_t proc_flags = 0;
     void *buf, **extra_buf;
     hg_size_t buf_size, *extra_buf_size;
     hg_bulk_t *extra_bulk;
@@ -738,7 +763,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         HG_CHECK_SUBSYS_ERROR(rpc, hg_proc_get_extra_buf(proc), error, ret,
             HG_OVERFLOW, "Extra bulk handle could not fit into buffer");
 
-        *more_data = HG_TRUE;
+        *more_data = true;
     }
 
     /* Encode header */
@@ -1025,14 +1050,14 @@ HG_Error_to_string(hg_return_t errnum)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init(const char *na_info_string, hg_bool_t na_listen)
+HG_Init(const char *na_info_string, uint8_t na_listen)
 {
     return HG_Init_opt2(na_info_string, na_listen, 0, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
+HG_Init_opt(const char *na_info_string, uint8_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     /* v2.2 is latest version for which init struct was not versioned */
@@ -1042,7 +1067,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init_opt2(const char *na_info_string, hg_bool_t na_listen,
+HG_Init_opt2(const char *na_info_string, uint8_t na_listen,
     unsigned int version, const struct hg_init_info *hg_init_info_p)
 {
     struct hg_private_class *hg_class = NULL;
@@ -1200,7 +1225,7 @@ HG_Context_create(hg_class_t *hg_class)
 
 /*---------------------------------------------------------------------------*/
 hg_context_t *
-HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
+HG_Context_create_id(hg_class_t *hg_class, uint8_t id)
 {
     struct hg_context *hg_context = NULL;
     hg_return_t ret;
@@ -1307,8 +1332,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id_p,
-    hg_bool_t *flag_p)
+HG_Registered_name(
+    hg_class_t *hg_class, const char *func_name, hg_id_t *id_p, uint8_t *flag_p)
 {
     struct hg_private_class *private_class =
         (struct hg_private_class *) hg_class;
@@ -1405,7 +1430,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p)
+HG_Registered(hg_class_t *hg_class, hg_id_t id, uint8_t *flag_p)
 {
     hg_return_t ret;
 
@@ -1425,7 +1450,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p,
+HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, uint8_t *flag_p,
     hg_proc_cb_t *in_proc_cb_p, hg_proc_cb_t *out_proc_cb_p)
 {
     struct hg_proc_info *hg_proc_info = NULL;
@@ -1507,7 +1532,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Registered_disable_response(
-    hg_class_t *hg_class, hg_id_t id, hg_bool_t disable)
+    hg_class_t *hg_class, hg_id_t id, uint8_t disable)
 {
     hg_return_t ret;
 
@@ -1524,7 +1549,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Registered_disabled_response(
-    hg_class_t *hg_class, hg_id_t id, hg_bool_t *disabled_p)
+    hg_class_t *hg_class, hg_id_t id, uint8_t *disabled_p)
 {
     hg_return_t ret;
 
@@ -1672,7 +1697,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_bool_t
+uint8_t
 HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2)
 {
     HG_CHECK_SUBSYS_ERROR_NORET(addr, hg_class == NULL, error, "NULL HG class");
@@ -2045,8 +2070,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         (struct hg_private_handle *) handle;
     const struct hg_proc_info *hg_proc_info = NULL;
     hg_size_t payload_size = 0;
-    hg_bool_t more_data = HG_FALSE;
-    hg_uint8_t flags = 0;
+    bool more_data = false;
+    uint8_t flags = 0;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(rpc, handle == HG_HANDLE_NULL, error, ret,
@@ -2094,8 +2119,8 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         (struct hg_private_handle *) handle;
     const struct hg_proc_info *hg_proc_info;
     hg_size_t payload_size;
-    hg_bool_t more_data = HG_FALSE;
-    hg_uint8_t flags = 0;
+    bool more_data = false;
+    uint8_t flags = 0;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(rpc, handle == HG_HANDLE_NULL, error, ret,

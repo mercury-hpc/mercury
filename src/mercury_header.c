@@ -18,8 +18,8 @@
 /****************/
 
 /* Convert values between host and network byte order */
-#define hg_header_proc_hg_uint32_t_enc(x) htonl(x & 0xffffffff)
-#define hg_header_proc_hg_uint32_t_dec(x) ntohl(x & 0xffffffff)
+#define hg_header_proc_uint32_t_enc(x) htonl(x & 0xffffffff)
+#define hg_header_proc_uint32_t_dec(x) ntohl(x & 0xffffffff)
 
 /* Proc type */
 #define HG_HEADER_PROC_TYPE(buf_ptr, data, type, op)                           \
@@ -86,35 +86,41 @@ hg_header_proc(
 #ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *header_hash = NULL;
     void *buf_ptr = buf;
+    hg_return_t ret;
 #endif
-    hg_return_t ret = HG_SUCCESS;
 
 #ifdef HG_HAS_CHECKSUMS
     switch (hg_header->op) {
         case HG_INPUT:
-            HG_CHECK_ERROR(buf_size < sizeof(struct hg_header_input), done, ret,
+            HG_CHECK_SUBSYS_ERROR(rpc,
+                buf_size < sizeof(struct hg_header_input), error, ret,
                 HG_INVALID_ARG, "Invalid buffer size");
             header_hash = &hg_header->msg.input.hash;
             break;
         case HG_OUTPUT:
-            HG_CHECK_ERROR(buf_size < sizeof(struct hg_header_output), done,
-                ret, HG_INVALID_ARG, "Invalid buffer size");
+            HG_CHECK_SUBSYS_ERROR(rpc,
+                buf_size < sizeof(struct hg_header_output), error, ret,
+                HG_INVALID_ARG, "Invalid buffer size");
             header_hash = &hg_header->msg.output.hash;
             break;
         default:
-            HG_GOTO_ERROR(done, ret, HG_INVALID_ARG, "Invalid header op");
+            HG_GOTO_SUBSYS_ERROR(
+                rpc, error, ret, HG_INVALID_ARG, "Invalid header op");
     }
 
     /* Checksum of user payload */
-    HG_HEADER_PROC_TYPE(buf_ptr, header_hash->payload, hg_uint32_t, op);
+    HG_HEADER_PROC_TYPE(buf_ptr, header_hash->payload, uint32_t, op);
 
-done:
+    return HG_SUCCESS;
+
+error:
+    return ret;
 #else
     (void) hg_header;
     (void) buf;
     (void) buf_size;
     (void) op;
-#endif
 
-    return ret;
+    return HG_SUCCESS;
+#endif
 }

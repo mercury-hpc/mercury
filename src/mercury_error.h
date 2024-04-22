@@ -16,6 +16,24 @@
 /* Default log outlet */
 extern HG_PRIVATE HG_LOG_OUTLET_DECL(hg);
 
+/* Fatal log outlet always 'on' by default */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(fatal);
+
+/* Specific outlets */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(cls);       /* Class */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(ctx);       /* Context */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(addr);      /* Addresses */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(rpc);       /* RPC */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(bulk);      /* Bulk */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(proc);      /* Proc */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(poll);      /* Poll */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(rpc_ref);   /* RPC ref */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(poll_loop); /* Progress loop */
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(perf);      /* Perf related log */
+#ifndef _WIN32
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(diag); /* Diagnostics */
+#endif
+
 /* Base log macros */
 #define HG_LOG_ERROR(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_SUBSYS_ERROR(subsys, ...)                                       \

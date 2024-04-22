@@ -93,7 +93,7 @@ HG_Free_na_protocol_info(struct na_protocol_info *na_protocol_info);
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_PUBLIC hg_class_t *
-HG_Init(const char *na_info_string, hg_bool_t na_listen);
+HG_Init(const char *na_info_string, uint8_t na_listen);
 
 /**
  * Initialize the Mercury layer with options provided by init_info.
@@ -111,7 +111,7 @@ HG_Init(const char *na_info_string, hg_bool_t na_listen);
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_PUBLIC hg_class_t *
-HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
+HG_Init_opt(const char *na_info_string, uint8_t na_listen,
     const struct hg_init_info *hg_init_info);
 
 /**
@@ -129,7 +129,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_PUBLIC hg_class_t *
-HG_Init_opt2(const char *na_info_string, hg_bool_t na_listen,
+HG_Init_opt2(const char *na_info_string, uint8_t na_listen,
     unsigned int version, const struct hg_init_info *hg_init_info);
 
 /**
@@ -215,9 +215,9 @@ HG_Class_get_protocol(const hg_class_t *hg_class);
  *
  * \param hg_class [IN]         pointer to HG class
  *
- * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
+ * \return true if listening or false if not, or not a valid class
  */
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 HG_Class_is_listening(const hg_class_t *hg_class);
 
 /**
@@ -344,7 +344,7 @@ HG_Context_create(hg_class_t *hg_class);
  * \return Pointer to HG context or NULL in case of failure
  */
 HG_PUBLIC hg_context_t *
-HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id);
+HG_Context_create_id(hg_class_t *hg_class, uint8_t id);
 
 /**
  * Destroy a context created by HG_Context_create(). If listening and
@@ -386,7 +386,7 @@ HG_Context_get_class(const hg_context_t *context);
  *
  * \return Non-negative integer (max value of 255) or 0 if no ID has been set
  */
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 HG_Context_get_id(const hg_context_t *context);
 
 /**
@@ -444,7 +444,7 @@ HG_Register_name(hg_class_t *hg_class, const char *func_name,
  */
 HG_PUBLIC hg_return_t
 HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id_p,
-    hg_bool_t *flag_p);
+    uint8_t *flag_p);
 
 /**
  * Dynamically register an RPC ID as well as the RPC callback executed when the
@@ -486,7 +486,7 @@ HG_Deregister(hg_class_t *hg_class, hg_id_t id);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p);
+HG_Registered(hg_class_t *hg_class, hg_id_t id, uint8_t *flag_p);
 
 /**
  * Indicate whether HG_Register() has been called, and if so return pointers
@@ -501,7 +501,7 @@ HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag_p,
+HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, uint8_t *flag_p,
     hg_proc_cb_t *in_proc_cb_p, hg_proc_cb_t *out_proc_cb_p);
 
 /**
@@ -548,7 +548,7 @@ HG_Registered_data(hg_class_t *hg_class, hg_id_t id);
  */
 HG_PUBLIC hg_return_t
 HG_Registered_disable_response(
-    hg_class_t *hg_class, hg_id_t id, hg_bool_t disable);
+    hg_class_t *hg_class, hg_id_t id, uint8_t disable);
 
 /**
  * Check if response is disabled for a given RPC ID
@@ -563,7 +563,7 @@ HG_Registered_disable_response(
  */
 HG_PUBLIC hg_return_t
 HG_Registered_disabled_response(
-    hg_class_t *hg_class, hg_id_t id, hg_bool_t *disabled_p);
+    hg_class_t *hg_class, hg_id_t id, uint8_t *disabled_p);
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
@@ -661,7 +661,7 @@ HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr_p);
  *
  * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
  */
-HG_PUBLIC hg_bool_t
+HG_PUBLIC uint8_t
 HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2);
 
 /**
@@ -742,7 +742,7 @@ HG_Ref_incr(hg_handle_t hg_handle);
  *
  * \return Non-negative value or negative if the handle is not valid
  */
-static HG_INLINE hg_int32_t
+static HG_INLINE int32_t
 HG_Ref_get(hg_handle_t handle);
 
 /**
@@ -952,7 +952,7 @@ HG_Get_output_extra_buf(
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Set_target_id(hg_handle_t handle, hg_uint8_t id);
+HG_Set_target_id(hg_handle_t handle, uint8_t id);
 
 /**
  * Forward a call to a local/remote target using an existing HG handle.
@@ -1093,7 +1093,7 @@ HG_Class_get_protocol(const hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 HG_Class_is_listening(const hg_class_t *hg_class)
 {
     return HG_Core_class_is_listening(hg_class->core_class);
@@ -1168,7 +1168,7 @@ HG_Context_get_class(const hg_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 HG_Context_get_id(const hg_context_t *context)
 {
     return HG_Core_context_get_id(context->core_context);
@@ -1197,7 +1197,7 @@ HG_Ref_incr(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_int32_t
+static HG_INLINE int32_t
 HG_Ref_get(hg_handle_t handle)
 {
     return HG_Core_ref_get(handle->core_handle);
@@ -1229,7 +1229,7 @@ HG_Get_data(hg_handle_t handle)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-HG_Set_target_id(hg_handle_t handle, hg_uint8_t id)
+HG_Set_target_id(hg_handle_t handle, uint8_t id)
 {
     handle->info.context_id = id;
 

@@ -16,7 +16,7 @@
 
 #ifdef HG_HAS_CHECKSUMS
 HG_PACKED(struct hg_header_hash {
-    hg_uint32_t payload; /* Payload checksum (32-bits checksum) */
+    uint32_t payload; /* Payload checksum (32-bits checksum) */
 });
 
 HG_PACKED(struct hg_header_input {
@@ -30,12 +30,12 @@ HG_PACKED(struct hg_header_output {
 });
 #else
 HG_PACKED(struct hg_header_input {
-    hg_uint32_t pad;
+    uint32_t pad;
     /* 128 bits here */
 });
 
 HG_PACKED(struct hg_header_output {
-    hg_uint32_t pad;
+    uint32_t pad;
     /* 128 bits here */
 });
 #endif
