@@ -29,7 +29,7 @@ struct hg_core_info {
     hg_core_context_t *context;  /* HG core context */
     hg_core_addr_t addr;         /* HG address at target/origin */
     hg_id_t id;                  /* RPC ID */
-    hg_uint8_t context_id;       /* Context ID at target/origin */
+    uint8_t context_id;          /* Context ID at target/origin */
 };
 
 /* Callback info structs */
@@ -117,7 +117,7 @@ HG_Core_free_na_protocol_info(struct na_protocol_info *na_protocol_info);
  * \return Pointer to HG core class or NULL in case of failure
  */
 HG_PUBLIC hg_core_class_t *
-HG_Core_init(const char *na_info_string, hg_bool_t na_listen);
+HG_Core_init(const char *na_info_string, uint8_t na_listen);
 
 /**
  * Initialize the Mercury layer with options provided by init_info.
@@ -134,7 +134,7 @@ HG_Core_init(const char *na_info_string, hg_bool_t na_listen);
  * \return Pointer to HG core class or NULL in case of failure
  */
 HG_PUBLIC hg_core_class_t *
-HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
+HG_Core_init_opt(const char *na_info_string, uint8_t na_listen,
     const struct hg_init_info *hg_init_info);
 
 /**
@@ -152,7 +152,7 @@ HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
  * \return Pointer to HG core class or NULL in case of failure
  */
 HG_PUBLIC hg_core_class_t *
-HG_Core_init_opt2(const char *na_info_string, hg_bool_t na_listen,
+HG_Core_init_opt2(const char *na_info_string, uint8_t na_listen,
     unsigned int version, const struct hg_init_info *hg_init_info);
 
 /**
@@ -220,9 +220,9 @@ HG_Core_class_get_protocol(const hg_core_class_t *hg_core_class);
  *
  * \param hg_core_class [IN]    pointer to HG core class
  *
- * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
+ * \return true if listening or false if not, or not a valid class
  */
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 HG_Core_class_is_listening(const hg_core_class_t *hg_core_class);
 
 /**
@@ -315,7 +315,7 @@ HG_Core_context_create(hg_core_class_t *hg_core_class);
  * \return Pointer to HG core context or NULL in case of failure
  */
 HG_PUBLIC hg_core_context_t *
-HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id);
+HG_Core_context_create_id(hg_core_class_t *hg_core_class, uint8_t id);
 
 /**
  * Destroy a context created by HG_Core_context_create().
@@ -366,7 +366,7 @@ HG_Core_context_get_na_sm(const hg_core_context_t *context);
  *
  * \return Non-negative integer (max value of 255) or 0 if no ID has been set
  */
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 HG_Core_context_get_id(const hg_core_context_t *context);
 
 /**
@@ -473,8 +473,7 @@ HG_Core_deregister(hg_core_class_t *hg_core_class, hg_id_t id);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Core_registered(
-    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag_p);
+HG_Core_registered(hg_core_class_t *hg_core_class, hg_id_t id, uint8_t *flag_p);
 
 /**
  * Register and associate user data to registered function. When
@@ -520,7 +519,7 @@ HG_Core_registered_data(hg_core_class_t *hg_core_class, hg_id_t id);
  */
 HG_PUBLIC hg_return_t
 HG_Core_registered_disable_response(
-    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t disable);
+    hg_core_class_t *hg_core_class, hg_id_t id, uint8_t disable);
 
 /**
  * Check if response is disabled for a given RPC ID
@@ -535,7 +534,7 @@ HG_Core_registered_disable_response(
  */
 HG_PUBLIC hg_return_t
 HG_Core_registered_disabled_response(
-    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *disabled_p);
+    hg_core_class_t *hg_core_class, hg_id_t id, uint8_t *disabled_p);
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
@@ -645,7 +644,7 @@ HG_Core_addr_dup(hg_core_addr_t addr, hg_core_addr_t *new_addr_p);
  *
  * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
  */
-HG_PUBLIC hg_bool_t
+HG_PUBLIC uint8_t
 HG_Core_addr_cmp(hg_core_addr_t addr1, hg_core_addr_t addr2);
 
 /**
@@ -653,9 +652,9 @@ HG_Core_addr_cmp(hg_core_addr_t addr1, hg_core_addr_t addr2);
  *
  * \param addr [IN]            pointer to abstract address
  *
- * \return HG_TRUE if address is self address, HG_FALSE otherwise
+ * \return true if address is self address, false otherwise
  */
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 HG_Core_addr_is_self(hg_core_addr_t addr);
 
 /**
@@ -774,7 +773,7 @@ HG_Core_ref_incr(hg_core_handle_t handle);
  *
  * \return Non-negative value or negative if the handle is not valid
  */
-HG_PUBLIC hg_int32_t
+HG_PUBLIC int32_t
 HG_Core_ref_get(hg_core_handle_t handle);
 
 /**
@@ -836,7 +835,7 @@ HG_Core_get_rpc_data(hg_core_handle_t handle);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Core_set_target_id(hg_core_handle_t handle, hg_uint8_t id);
+HG_Core_set_target_id(hg_core_handle_t handle, uint8_t id);
 
 /**
  * Get input buffer from handle that can be used for serializing/deserializing
@@ -897,7 +896,7 @@ HG_Core_get_output(
  */
 HG_PUBLIC hg_return_t
 HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
-    hg_uint8_t flags, hg_size_t payload_size);
+    uint8_t flags, hg_size_t payload_size);
 
 /**
  * Respond back to the origin. The output buffer, which can be used to encode
@@ -914,7 +913,7 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
  */
 HG_PUBLIC hg_return_t
 HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
-    hg_uint8_t flags, hg_size_t payload_size);
+    uint8_t flags, hg_size_t payload_size);
 
 /**
  * Try to progress RPC execution for at most timeout until timeout is reached or
@@ -980,7 +979,7 @@ struct hg_core_context {
 #endif
     void *data;                         /* User data */
     void (*data_free_callback)(void *); /* User data free callback */
-    hg_uint8_t id;                      /* Context ID */
+    uint8_t id;                         /* Context ID */
 };
 
 /* HG core addr */
@@ -990,7 +989,7 @@ struct hg_core_addr {
 #ifdef NA_HAS_SM
     na_addr_t *na_sm_addr; /* NA SM address */
 #endif
-    hg_bool_t is_self; /* Self address */
+    bool is_self; /* Self address */
 };
 
 /* HG core RPC registration info */
@@ -999,7 +998,7 @@ struct hg_core_rpc_info {
     void *data;                    /* User data */
     void (*free_callback)(void *); /* User data free callback */
     hg_id_t id;                    /* RPC ID */
-    hg_bool_t no_response;         /* RPC response not expected */
+    bool no_response;              /* RPC response not expected */
 };
 
 /* HG core handle */
@@ -1031,7 +1030,7 @@ HG_Core_class_get_protocol(const hg_core_class_t *hg_core_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 HG_Core_class_is_listening(const hg_core_class_t *hg_core_class)
 {
     return NA_Is_listening(hg_core_class->na_class);
@@ -1118,7 +1117,7 @@ HG_Core_context_get_na_sm(const hg_core_context_t *context)
 #endif
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 HG_Core_context_get_id(const hg_core_context_t *context)
 {
     return context->id;
@@ -1159,7 +1158,7 @@ HG_Core_addr_get_na_sm(hg_core_addr_t addr)
 #endif
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 HG_Core_addr_is_self(hg_core_addr_t addr)
 {
     return addr->is_self;
@@ -1199,7 +1198,7 @@ HG_Core_get_rpc_data(hg_core_handle_t handle)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-HG_Core_set_target_id(hg_core_handle_t handle, hg_uint8_t id)
+HG_Core_set_target_id(hg_core_handle_t handle, uint8_t id)
 {
     handle->info.context_id = id;
 

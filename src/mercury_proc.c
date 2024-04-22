@@ -30,9 +30,6 @@
 /* Local Variables */
 /*******************/
 
-/* Specific log outlets */
-static HG_LOG_SUBSYS_DECL_REGISTER(proc, hg);
-
 /*---------------------------------------------------------------------------*/
 hg_return_t
 hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc_p)
@@ -228,7 +225,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
     void *new_buf = NULL;
     ptrdiff_t current_pos;
-    hg_bool_t allocated = HG_FALSE;
+    bool allocated = false;
     hg_return_t ret;
 
     HG_CHECK_SUBSYS_ERROR(proc, proc == HG_PROC_NULL, error, ret,
@@ -247,7 +244,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     if (!hg_proc->extra_buf.buf) {
         /* Allocate buffer */
         new_buf = hg_mem_aligned_alloc(page_size, new_buf_size);
-        allocated = HG_TRUE;
+        allocated = true;
     } else
         new_buf = realloc(hg_proc->extra_buf.buf, new_buf_size);
     HG_CHECK_SUBSYS_ERROR(proc, new_buf == NULL, error, ret, HG_NOMEM,
@@ -266,7 +263,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
     hg_proc->extra_buf.size_left =
         hg_proc->extra_buf.size - (hg_size_t) current_pos;
-    hg_proc->extra_buf.is_mine = HG_TRUE;
+    hg_proc->extra_buf.is_mine = true;
 
     return HG_SUCCESS;
 
@@ -339,7 +336,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
+hg_proc_set_extra_buf_is_mine(hg_proc_t proc, uint8_t theirs)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
     hg_return_t ret;
@@ -349,7 +346,7 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
     HG_CHECK_SUBSYS_ERROR(proc, hg_proc->extra_buf.buf == NULL, error, ret,
         HG_INVALID_ARG, "Extra buf is not set");
 
-    hg_proc->extra_buf.is_mine = (hg_bool_t) (!theirs);
+    hg_proc->extra_buf.is_mine = (!theirs);
 
     return HG_SUCCESS;
 
@@ -450,22 +447,19 @@ hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size)
 
     /* Verify checksums */
     if (memcmp(hash, hg_proc->checksum_hash, hg_proc->checksum_size) != 0) {
-        if (hg_proc->checksum_size == sizeof(hg_uint16_t))
+        if (hg_proc->checksum_size == sizeof(uint16_t))
             HG_LOG_SUBSYS_ERROR(proc,
                 "checksum 0x%04X does not match (expected 0x%04X!)",
-                *(hg_uint16_t *) hg_proc->checksum_hash,
-                *(const hg_uint16_t *) hash);
-        else if (hg_proc->checksum_size == sizeof(hg_uint32_t))
+                *(uint16_t *) hg_proc->checksum_hash, *(const uint16_t *) hash);
+        else if (hg_proc->checksum_size == sizeof(uint32_t))
             HG_LOG_SUBSYS_ERROR(proc,
                 "checksum 0x%08X does not match (expected 0x%08X!)",
-                *(hg_uint32_t *) hg_proc->checksum_hash,
-                *(const hg_uint32_t *) hash);
-        else if (hg_proc->checksum_size == sizeof(hg_uint64_t))
+                *(uint32_t *) hg_proc->checksum_hash, *(const uint32_t *) hash);
+        else if (hg_proc->checksum_size == sizeof(uint64_t))
             HG_LOG_SUBSYS_ERROR(proc,
                 "checksum 0x%016" PRIx64
                 " does not match (expected 0x%016" PRIx64 "!)",
-                *(hg_uint64_t *) hg_proc->checksum_hash,
-                *(const hg_uint64_t *) hash);
+                *(uint64_t *) hg_proc->checksum_hash, *(const uint64_t *) hash);
         else
             HG_LOG_SUBSYS_ERROR(proc, "Checksums do not match (unknown size?)");
         return HG_CHECKSUM_ERROR;

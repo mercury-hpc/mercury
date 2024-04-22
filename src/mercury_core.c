@@ -134,14 +134,14 @@
 
 /* Saved init info */
 struct hg_core_init_info {
-    hg_uint32_t request_post_init;      /* Init request count */
-    hg_uint32_t request_post_incr;      /* Increment request count */
+    uint32_t request_post_init;         /* Init request count */
+    uint32_t request_post_incr;         /* Increment request count */
     hg_checksum_level_t checksum_level; /* Checksum level */
     uint8_t progress_mode;              /* Progress mode */
-    hg_bool_t loopback;                 /* Use loopback capability */
-    hg_bool_t na_ext_init;              /* NA externally initialized */
-    hg_bool_t multi_recv;               /* Use multi-recv capability */
-    hg_bool_t listen;                   /* Listening on incoming RPC requests */
+    bool loopback;                      /* Use loopback capability */
+    bool na_ext_init;                   /* NA externally initialized */
+    bool multi_recv;                    /* Use multi-recv capability */
+    bool listen;                        /* Listening on incoming RPC requests */
 };
 
 /* RPC map */
@@ -246,7 +246,7 @@ struct hg_core_handle_pool {
     struct hg_core_handle_list pending_list; /* Pending handle list */
     unsigned int count;                      /* Number of handles */
     unsigned int incr_count;                 /* Incremement count */
-    hg_bool_t extending;                     /* When extending the pool */
+    bool extending;                          /* When extending the pool */
 };
 
 #ifdef HG_HAS_MULTI_PROGRESS
@@ -284,7 +284,7 @@ struct hg_core_private_context {
     hg_atomic_int32_t multi_recv_op_count; /* Number of multi-recv posted */
     hg_atomic_int32_t n_handles;           /* Number of handles */
     hg_atomic_int32_t unposting;           /* Prevent re-posting handles */
-    hg_bool_t posted;                      /* Posted receives on context */
+    bool posted;                           /* Posted receives on context */
 };
 
 /* HG addr */
@@ -355,8 +355,8 @@ struct hg_core_private_handle {
     hg_atomic_int32_t flags;      /* Flags */
     enum hg_core_op_type op_type; /* Core operation type */
     hg_return_t ret;              /* Return code associated to handle */
-    hg_uint8_t cookie;            /* Cookie */
-    hg_bool_t reuse;              /* Re-use handle once ref_count is 0 */
+    uint8_t cookie;               /* Cookie */
+    bool reuse;                   /* Re-use handle once ref_count is 0 */
 };
 
 /* HG op id */
@@ -419,8 +419,8 @@ hg_core_proc_header_response(struct hg_core_handle *hg_core_handle,
  * Initialize class.
  */
 static hg_return_t
-hg_core_init(const char *na_info_string, hg_bool_t na_listen,
-    unsigned int version, const struct hg_init_info *hg_init_info,
+hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
+    const struct hg_init_info *hg_init_info,
     struct hg_core_private_class **class_p);
 
 /**
@@ -433,8 +433,8 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class);
  * Create context.
  */
 static hg_return_t
-hg_core_context_create(struct hg_core_private_class *hg_core_class,
-    hg_uint8_t id, struct hg_core_private_context **context_p);
+hg_core_context_create(struct hg_core_private_class *hg_core_class, uint8_t id,
+    struct hg_core_private_context **context_p);
 
 /**
  * Destroy context.
@@ -514,7 +514,7 @@ hg_core_handle_pool_destroy(struct hg_core_handle_pool *hg_core_handle_pool);
 /**
  * Pool is empty.
  */
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 hg_core_handle_pool_empty(struct hg_core_handle_pool *hg_core_handle_pool);
 
 /**
@@ -631,7 +631,7 @@ hg_core_addr_dup(struct hg_core_private_addr *hg_core_addr,
 /**
  * Compare two addresses.
  */
-static hg_bool_t
+static bool
 hg_core_addr_cmp(
     struct hg_core_private_addr *addr1, struct hg_core_private_addr *addr2);
 
@@ -647,13 +647,13 @@ hg_core_addr_to_string(
  */
 static hg_size_t
 hg_core_addr_get_serialize_size(
-    struct hg_core_private_addr *hg_core_addr, hg_uint8_t flags);
+    struct hg_core_private_addr *hg_core_addr, uint8_t flags);
 
 /**
  * Serialize core address.
  */
 static hg_return_t
-hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
+hg_core_addr_serialize(void *buf, hg_size_t buf_size, uint8_t flags,
     struct hg_core_private_addr *hg_core_addr);
 
 /**
@@ -690,7 +690,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle);
  * Allocate new handle.
  */
 static hg_return_t
-hg_core_alloc(struct hg_core_private_context *context, hg_bool_t user,
+hg_core_alloc(struct hg_core_private_context *context, bool user,
     struct hg_core_private_handle **hg_core_handle_p);
 
 /**
@@ -755,7 +755,7 @@ hg_core_release_input(struct hg_core_private_handle *hg_core_handle);
  */
 static hg_return_t
 hg_core_forward(struct hg_core_private_handle *hg_core_handle,
-    hg_core_cb_t callback, void *arg, hg_uint8_t flags, hg_size_t payload_size);
+    hg_core_cb_t callback, void *arg, uint8_t flags, hg_size_t payload_size);
 
 /**
  * Forward handle locally.
@@ -774,7 +774,7 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle);
  */
 static hg_return_t
 hg_core_respond(struct hg_core_private_handle *hg_core_handle,
-    hg_core_cb_t callback, void *arg, hg_uint8_t flags, hg_size_t payload_size,
+    hg_core_cb_t callback, void *arg, uint8_t flags, hg_size_t payload_size,
     hg_return_t ret_code);
 
 /**
@@ -887,7 +887,7 @@ hg_core_progress(
 /**
  * Determines when it is safe to block.
  */
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 hg_core_poll_try_wait(struct hg_core_private_context *context);
 
 /**
@@ -895,28 +895,28 @@ hg_core_poll_try_wait(struct hg_core_private_context *context);
  */
 static hg_return_t
 hg_core_poll_wait(struct hg_core_private_context *context,
-    unsigned int timeout_ms, hg_bool_t *progressed_p);
+    unsigned int timeout_ms, bool *progressed_p);
 
 /**
  * Poll context without blocking.
  */
 static hg_return_t
 hg_core_poll(struct hg_core_private_context *context, unsigned int timeout_ms,
-    hg_bool_t *progressed_p);
+    bool *progressed_p);
 
 /**
  * Make progress on NA layer.
  */
 static hg_return_t
 hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
-    unsigned int timeout_ms, hg_bool_t *progressed_p);
+    unsigned int timeout_ms, bool *progressed_p);
 
 /**
  * Completion queue notification callback.
  */
 static HG_INLINE hg_return_t
 hg_core_progress_loopback_notify(
-    struct hg_core_private_context *context, hg_bool_t *progressed_p);
+    struct hg_core_private_context *context, bool *progressed_p);
 
 /**
  * Trigger callbacks.
@@ -1001,45 +1001,6 @@ static const struct hg_core_ops hg_core_ops_self_g = {
     .forward = hg_core_forward_self,
     .respond = hg_core_respond_self,
     .trigger = hg_core_trigger_self};
-
-/* Default log outlets */
-#ifdef _WIN32
-static HG_LOG_SUBSYS_DECL_REGISTER(HG_CORE_SUBSYS_NAME, hg);
-#else
-/* HG_LOG_DEBUG_LESIZE: default number of debug log entries. */
-#    define HG_LOG_DEBUG_LESIZE (256)
-
-/* Declare debug log for hg */
-static HG_LOG_DEBUG_DECL_LE(HG_CORE_SUBSYS_NAME, HG_LOG_DEBUG_LESIZE);
-static HG_LOG_DEBUG_DECL_DLOG(HG_CORE_SUBSYS_NAME) = HG_LOG_DLOG_INITIALIZER(
-    HG_CORE_SUBSYS_NAME, HG_LOG_DEBUG_LESIZE);
-
-static HG_LOG_SUBSYS_DLOG_DECL_REGISTER(HG_CORE_SUBSYS_NAME, hg);
-#endif
-static HG_LOG_SUBSYS_DECL_STATE_REGISTER(fatal, HG_CORE_SUBSYS_NAME, HG_LOG_ON);
-
-/* Specific log outlets */
-static HG_LOG_SUBSYS_DECL_REGISTER(cls, HG_CORE_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(ctx, HG_CORE_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(addr, HG_CORE_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(rpc, HG_CORE_SUBSYS_NAME);
-static HG_LOG_SUBSYS_DECL_REGISTER(poll, HG_CORE_SUBSYS_NAME);
-
-/* Off by default because of potientally excessive logs */
-static HG_LOG_SUBSYS_DECL_REGISTER(rpc_ref, HG_CORE_SUBSYS_NAME);
-
-/* Off by default because of potientally excessive logs */
-static HG_LOG_SUBSYS_DECL_STATE_REGISTER(
-    poll_loop, HG_CORE_SUBSYS_NAME, HG_LOG_OFF);
-static HG_LOG_SUBSYS_DECL_STATE_REGISTER(perf, HG_CORE_SUBSYS_NAME, HG_LOG_OFF);
-
-#ifndef _WIN32
-/* Declare debug log for stats */
-static HG_LOG_DEBUG_DECL_LE(diag, HG_LOG_DEBUG_LESIZE);
-static HG_LOG_DEBUG_DECL_DLOG(diag) = HG_LOG_DLOG_INITIALIZER(
-    diag, HG_LOG_DEBUG_LESIZE);
-static HG_LOG_SUBSYS_DLOG_DECL_REGISTER(diag, HG_CORE_SUBSYS_NAME);
-#endif
 
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_DEBUG
@@ -1150,8 +1111,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_init(const char *na_info_string, hg_bool_t na_listen,
-    unsigned int version, const struct hg_init_info *hg_init_info_p,
+hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
+    const struct hg_init_info *hg_init_info_p,
     struct hg_core_private_class **class_p)
 {
     struct hg_init_info hg_init_info = HG_INIT_INFO_INITIALIZER;
@@ -1255,7 +1216,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     if (hg_init_info.na_class != NULL) {
         /* External NA class */
         hg_core_class->core_class.na_class = hg_init_info.na_class;
-        hg_core_class->init_info.na_ext_init = HG_TRUE;
+        hg_core_class->init_info.na_ext_init = true;
     } else {
         /* Initialize NA if not provided externally */
         hg_core_class->core_class.na_class = NA_Initialize_opt(na_info_string,
@@ -1443,18 +1404,16 @@ hg_core_bulk_decr(hg_core_class_t *hg_core_class)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_context_create(struct hg_core_private_class *hg_core_class,
-    hg_uint8_t id, struct hg_core_private_context **context_p)
+hg_core_context_create(struct hg_core_private_class *hg_core_class, uint8_t id,
+    struct hg_core_private_context **context_p)
 {
     struct hg_core_private_context *context = NULL;
     struct hg_core_completion_queue *backfill_queue = NULL;
     hg_return_t ret;
     int na_poll_fd, loopback_event = 0, rc;
-    hg_bool_t backfill_queue_mutex_init = HG_FALSE,
-              backfill_queue_cond_init = HG_FALSE,
-              loopback_notify_mutex_init = HG_FALSE,
-              user_list_lock_init = HG_FALSE,
-              internal_list_lock_init = HG_FALSE;
+    bool backfill_queue_mutex_init = false, backfill_queue_cond_init = false,
+         loopback_notify_mutex_init = false, user_list_lock_init = false,
+         internal_list_lock_init = false;
 #ifdef HG_HAS_MULTI_PROGRESS
     struct hg_core_progress_multi *progress_multi = NULL;
     bool progress_multi_mutex_init = false, progress_multi_cond_init = false;
@@ -1474,11 +1433,11 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
     rc = hg_thread_mutex_init(&backfill_queue->mutex);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_mutex_init() failed");
-    backfill_queue_mutex_init = HG_TRUE;
+    backfill_queue_mutex_init = true;
     rc = hg_thread_cond_init(&backfill_queue->cond);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_cond_init() failed");
-    backfill_queue_cond_init = HG_TRUE;
+    backfill_queue_cond_init = true;
 
     context->completion_queue =
         hg_atomic_queue_alloc(HG_CORE_ATOMIC_QUEUE_SIZE);
@@ -1490,19 +1449,19 @@ hg_core_context_create(struct hg_core_private_class *hg_core_class,
     rc = hg_thread_mutex_init(&context->loopback_notify.mutex);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_mutex_init() failed");
-    loopback_notify_mutex_init = HG_TRUE;
+    loopback_notify_mutex_init = true;
 
     LIST_INIT(&context->user_list.list);
     rc = hg_thread_spin_init(&context->user_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
-    user_list_lock_init = HG_TRUE;
+    user_list_lock_init = true;
 
     LIST_INIT(&context->internal_list.list);
     rc = hg_thread_spin_init(&context->internal_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
-    internal_list_lock_init = HG_TRUE;
+    internal_list_lock_init = true;
 
 #ifdef HG_HAS_MULTI_PROGRESS
     /* Initialize multi-progress lock */
@@ -1684,7 +1643,7 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     struct hg_core_progress_multi *progress_multi = NULL;
 #endif
     struct hg_core_completion_queue *backfill_queue = NULL;
-    hg_bool_t empty;
+    bool empty;
     hg_return_t ret;
     int rc;
 
@@ -1732,12 +1691,12 @@ hg_core_context_destroy(struct hg_core_private_context *context)
     hg_thread_mutex_lock(&backfill_queue->mutex);
     empty = STAILQ_EMPTY(&backfill_queue->queue);
     hg_thread_mutex_unlock(&backfill_queue->mutex);
-    HG_CHECK_SUBSYS_ERROR(ctx, empty == HG_FALSE, error, ret, HG_BUSY,
+    HG_CHECK_SUBSYS_ERROR(ctx, empty == false, error, ret, HG_BUSY,
         "Completion queue should be empty");
 
     /* Check that atomic completion queue is empty now */
     empty = hg_atomic_queue_is_empty(context->completion_queue);
-    HG_CHECK_SUBSYS_ERROR(ctx, empty == HG_FALSE, error, ret, HG_BUSY,
+    HG_CHECK_SUBSYS_ERROR(ctx, empty == false, error, ret, HG_BUSY,
         "Completion queue should be empty");
 
     /* Destroy pool of bulk op IDs */
@@ -1887,7 +1846,7 @@ hg_core_context_post(struct hg_core_private_context *context)
             ctx, error, ret, "Could not post multi-recv operations");
     }
 
-    context->posted = HG_TRUE;
+    context->posted = true;
 
     return HG_SUCCESS;
 
@@ -1963,7 +1922,7 @@ hg_core_context_unpost(
         hg_core_context_multi_recv_free(
             context, hg_core_class->core_class.na_class);
 
-    context->posted = HG_FALSE;
+    context->posted = false;
 
 error:
     return ret;
@@ -2220,8 +2179,8 @@ hg_core_handle_pool_create(struct hg_core_private_context *context,
     struct hg_core_handle_pool **hg_core_handle_pool_p)
 {
     struct hg_core_handle_pool *hg_core_handle_pool = NULL;
-    hg_bool_t pending_list_lock_init = HG_FALSE, extend_mutex_init = HG_FALSE,
-              extend_cond_init = HG_FALSE;
+    bool pending_list_lock_init = false, extend_mutex_init = false,
+         extend_cond_init = false;
     hg_return_t ret;
     unsigned int i;
     int rc;
@@ -2239,20 +2198,20 @@ hg_core_handle_pool_create(struct hg_core_private_context *context,
     rc = hg_thread_spin_init(&hg_core_handle_pool->pending_list.lock);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_spin_init() failed");
-    pending_list_lock_init = HG_TRUE;
+    pending_list_lock_init = true;
 
     rc = hg_thread_mutex_init(&hg_core_handle_pool->extend_mutex);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_mutex_init() failed");
-    extend_mutex_init = HG_TRUE;
+    extend_mutex_init = true;
     hg_thread_cond_init(&hg_core_handle_pool->extend_cond);
     HG_CHECK_SUBSYS_ERROR(ctx, rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
         "hg_thread_cond_init() failed");
-    extend_cond_init = HG_TRUE;
+    extend_cond_init = true;
 
     hg_core_handle_pool->count = init_count;
     hg_core_handle_pool->incr_count = incr_count;
-    hg_core_handle_pool->extending = HG_FALSE;
+    hg_core_handle_pool->extending = false;
     hg_core_handle_pool->context = context;
     hg_core_handle_pool->na_class = na_class;
     hg_core_handle_pool->na_context = na_context;
@@ -2283,7 +2242,7 @@ error:
             LIST_REMOVE(hg_core_handle, pending);
 
             /* Prevent re-initialization */
-            hg_core_handle->reuse = HG_FALSE;
+            hg_core_handle->reuse = false;
 
             /* Destroy handle */
             (void) hg_core_destroy(hg_core_handle);
@@ -2319,7 +2278,7 @@ hg_core_handle_pool_destroy(struct hg_core_handle_pool *hg_core_handle_pool)
         LIST_REMOVE(hg_core_handle, pending);
 
         /* Prevent re-initialization */
-        hg_core_handle->reuse = HG_FALSE;
+        hg_core_handle->reuse = false;
 
         /* Destroy handle */
         (void) hg_core_destroy(hg_core_handle);
@@ -2335,10 +2294,10 @@ hg_core_handle_pool_destroy(struct hg_core_handle_pool *hg_core_handle_pool)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 hg_core_handle_pool_empty(struct hg_core_handle_pool *hg_core_handle_pool)
 {
-    hg_bool_t ret;
+    bool ret;
 
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
     ret = LIST_EMPTY(&hg_core_handle_pool->pending_list.list);
@@ -2395,7 +2354,7 @@ hg_core_handle_pool_extend(struct hg_core_handle_pool *hg_core_handle_pool)
         hg_thread_mutex_unlock(&hg_core_handle_pool->extend_mutex);
         return HG_SUCCESS;
     }
-    hg_core_handle_pool->extending = HG_TRUE;
+    hg_core_handle_pool->extending = true;
     hg_thread_mutex_unlock(&hg_core_handle_pool->extend_mutex);
 
     /* Only a single thread can extend the pool */
@@ -2410,7 +2369,7 @@ hg_core_handle_pool_extend(struct hg_core_handle_pool *hg_core_handle_pool)
 
 unlock:
     hg_thread_mutex_lock(&hg_core_handle_pool->extend_mutex);
-    hg_core_handle_pool->extending = HG_FALSE;
+    hg_core_handle_pool->extending = false;
     hg_thread_cond_broadcast(&hg_core_handle_pool->extend_cond);
     hg_thread_mutex_unlock(&hg_core_handle_pool->extend_mutex);
 
@@ -2426,7 +2385,7 @@ hg_core_handle_pool_insert(struct hg_core_private_context *context,
     struct hg_core_private_handle *hg_core_handle = NULL;
     struct hg_core_private_addr *hg_core_addr = NULL;
     hg_return_t ret;
-    hg_bool_t post = HG_FALSE;
+    bool post = false;
 
     /* Create new handle */
     ret = hg_core_create(context, na_class, na_context, flags, &hg_core_handle);
@@ -2443,7 +2402,7 @@ hg_core_handle_pool_insert(struct hg_core_private_context *context,
     hg_core_handle->core_handle.info.addr = (hg_core_addr_t) hg_core_addr;
 
     /* Re-use handle on completion */
-    hg_core_handle->reuse = HG_TRUE;
+    hg_core_handle->reuse = true;
 
     /* Add handle to pending list */
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
@@ -2454,7 +2413,7 @@ hg_core_handle_pool_insert(struct hg_core_private_context *context,
     /* Handle is pre-posted only when muti-recv is off */
     if (!(flags & HG_CORE_HANDLE_MULTI_RECV)) {
         /* Handle will need to be posted */
-        post = HG_TRUE;
+        post = true;
 
         ret = hg_core_post(hg_core_handle);
         HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not post handle (%p)",
@@ -2470,7 +2429,7 @@ error:
             LIST_REMOVE(hg_core_handle, pending);
             hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
         }
-        hg_core_handle->reuse = HG_FALSE;
+        hg_core_handle->reuse = false;
         (void) hg_core_destroy(hg_core_handle);
     }
 
@@ -2719,7 +2678,7 @@ hg_core_addr_create(struct hg_core_private_class *hg_core_class,
 #ifdef NA_HAS_SM
     hg_core_addr->core_addr.na_sm_addr = NULL;
 #endif
-    hg_core_addr->core_addr.is_self = HG_FALSE;
+    hg_core_addr->core_addr.is_self = false;
 
     hg_atomic_init32(&hg_core_addr->ref_count, 1);
 
@@ -2825,7 +2784,7 @@ hg_core_addr_self(struct hg_core_private_class *hg_core_class,
 
     ret = hg_core_addr_create(hg_core_class, &hg_core_addr);
     HG_CHECK_SUBSYS_HG_ERROR(addr, error, ret, "Could not create HG core addr");
-    hg_core_addr->core_addr.is_self = HG_TRUE;
+    hg_core_addr->core_addr.is_self = true;
 
     /* Get NA address */
     na_ret = NA_Addr_self(
@@ -2922,28 +2881,28 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_bool_t
+static bool
 hg_core_addr_cmp(
     struct hg_core_private_addr *addr1, struct hg_core_private_addr *addr2)
 {
-    hg_bool_t ret = HG_TRUE;
+    bool ret = true;
 
     /* Cannot be separate classes */
     if (addr1->core_addr.core_class != addr2->core_addr.core_class)
-        return HG_FALSE;
+        return false;
 
     /* Self addresses are always equal */
     if (addr1->core_addr.is_self && addr2->core_addr.is_self)
-        return HG_TRUE;
+        return true;
 
     /* Compare NA addresses */
-    ret &= (hg_bool_t) NA_Addr_cmp(addr1->core_addr.core_class->na_class,
+    ret &= NA_Addr_cmp(addr1->core_addr.core_class->na_class,
         addr1->core_addr.na_addr, addr2->core_addr.na_addr);
 
 #ifdef NA_HAS_SM
     /* Compare NA SM addresses */
     if (addr1->core_addr.core_class->na_sm_class)
-        ret &= (hg_bool_t) NA_Addr_cmp(addr1->core_addr.core_class->na_sm_class,
+        ret &= NA_Addr_cmp(addr1->core_addr.core_class->na_sm_class,
             addr1->core_addr.na_sm_addr, addr2->core_addr.na_sm_addr);
 #endif
 
@@ -3029,7 +2988,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_size_t
 hg_core_addr_get_serialize_size(
-    struct hg_core_private_addr *hg_core_addr, hg_uint8_t flags)
+    struct hg_core_private_addr *hg_core_addr, uint8_t flags)
 {
     hg_size_t ret = sizeof(size_t);
 
@@ -3068,7 +3027,7 @@ hg_core_addr_get_serialize_size(
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
+hg_core_addr_serialize(void *buf, hg_size_t buf_size, uint8_t flags,
     struct hg_core_private_addr *hg_core_addr)
 {
     char *buf_ptr = (char *) buf;
@@ -3139,7 +3098,7 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
     struct hg_core_private_addr *hg_core_addr = NULL;
     const char *buf_ptr = (const char *) buf;
     hg_size_t buf_size_left = buf_size;
-    hg_bool_t is_self = HG_TRUE;
+    bool is_self = true;
     hg_return_t ret;
 
     /* Create new address */
@@ -3159,9 +3118,8 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
         buf_ptr += hg_core_addr->na_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_addr_serialize_size;
 
-        is_self &=
-            (hg_bool_t) NA_Addr_is_self(hg_core_class->core_class.na_class,
-                hg_core_addr->core_addr.na_addr);
+        is_self &= NA_Addr_is_self(hg_core_class->core_class.na_class,
+            hg_core_addr->core_addr.na_addr);
     }
 
 #ifdef NA_HAS_SM
@@ -3179,9 +3137,8 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
         buf_ptr += hg_core_addr->na_sm_addr_serialize_size;
         buf_size_left -= hg_core_addr->na_sm_addr_serialize_size;
         */
-        is_self &=
-            (hg_bool_t) NA_Addr_is_self(hg_core_class->core_class.na_class,
-                hg_core_addr->core_addr.na_addr);
+        is_self &= NA_Addr_is_self(hg_core_class->core_class.na_class,
+            hg_core_addr->core_addr.na_addr);
     }
 #endif
     hg_core_addr->core_addr.is_self = is_self;
@@ -3359,7 +3316,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_alloc(struct hg_core_private_context *context, hg_bool_t user,
+hg_core_alloc(struct hg_core_private_context *context, bool user,
     struct hg_core_private_handle **hg_core_handle_p)
 {
     hg_checksum_level_t checksum_level =
@@ -3853,7 +3810,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_forward(struct hg_core_private_handle *hg_core_handle,
-    hg_core_cb_t callback, void *arg, hg_uint8_t flags, hg_size_t payload_size)
+    hg_core_cb_t callback, void *arg, uint8_t flags, hg_size_t payload_size)
 {
     int32_t HG_DEBUG_LOG_USED ref_count;
     int32_t status;
@@ -3977,7 +3934,7 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->in_header.msg.request.id =
         hg_core_handle->core_handle.info.id;
     hg_core_handle->in_header.msg.request.flags =
-        (hg_uint8_t) (hg_atomic_get32(&hg_core_handle->flags) & 0xff);
+        (uint8_t) (hg_atomic_get32(&hg_core_handle->flags) & 0xff);
     /* Set the cookie as origin context ID, so that when the cookie is
      * unpacked by the target and assigned to HG info context_id, the NA
      * layer knows which context ID it needs to send the response to. */
@@ -4068,7 +4025,7 @@ error_send:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_respond(struct hg_core_private_handle *hg_core_handle,
-    hg_core_cb_t callback, void *arg, hg_uint8_t flags, hg_size_t payload_size,
+    hg_core_cb_t callback, void *arg, uint8_t flags, hg_size_t payload_size,
     hg_return_t ret_code)
 {
     int32_t HG_DEBUG_LOG_USED ref_count;
@@ -4187,12 +4144,12 @@ hg_core_respond_na(
     int32_t HG_DEBUG_LOG_USED expected_count;
     hg_return_t ret;
     na_return_t na_ret;
-    hg_bool_t ack_recv_posted = HG_FALSE;
+    bool ack_recv_posted = false;
 
     /* Set header */
-    hg_core_handle->out_header.msg.response.ret_code = (hg_int8_t) ret_code;
+    hg_core_handle->out_header.msg.response.ret_code = (int8_t) ret_code;
     hg_core_handle->out_header.msg.response.flags =
-        (hg_uint8_t) (hg_atomic_get32(&hg_core_handle->flags) & 0xff);
+        (uint8_t) (hg_atomic_get32(&hg_core_handle->flags) & 0xff);
     hg_core_handle->out_header.msg.response.cookie = hg_core_handle->cookie;
 
     /* Encode response header */
@@ -4210,8 +4167,8 @@ hg_core_respond_na(
 
     /* More data on output requires an ack once it is processed */
     if (hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_MORE_DATA) {
-        size_t buf_size = hg_core_handle->core_handle.na_out_header_offset +
-                          sizeof(hg_uint8_t);
+        size_t buf_size =
+            hg_core_handle->core_handle.na_out_header_offset + sizeof(uint8_t);
 
         HG_LOG_SUBSYS_WARNING(perf,
             "Allocating %zu byte(s) to send extra output data for handle %p",
@@ -4247,7 +4204,7 @@ hg_core_respond_na(
         HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
             (hg_return_t) na_ret, "Could not post recv for ack buffer (%s)",
             NA_Error_to_string(na_ret));
-        ack_recv_posted = HG_TRUE;
+        ack_recv_posted = true;
     }
 
     /* Mark handle as posted */
@@ -4428,7 +4385,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             rpc, "NA_CANCELED event on handle %p", (void *) hg_core_handle);
 
         /* Prevent re-initialization */
-        hg_core_handle->reuse = HG_FALSE;
+        hg_core_handle->reuse = false;
 
         /* Clean up handle */
         (void) hg_core_destroy(hg_core_handle);
@@ -4437,7 +4394,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             NA_Error_to_string(callback_info->ret));
 
         /* Prevent re-initialization */
-        hg_core_handle->reuse = HG_FALSE;
+        hg_core_handle->reuse = false;
 
         /* Clean up handle */
         (void) hg_core_destroy(hg_core_handle);
@@ -4484,7 +4441,7 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
                 "Multi-recv buffer %d has been consumed (%" PRId32
                 " operations completed)",
                 multi_recv_op->id, hg_atomic_get32(&multi_recv_op->op_count));
-            hg_atomic_set32(&multi_recv_op->last, HG_TRUE);
+            hg_atomic_set32(&multi_recv_op->last, true);
             hg_atomic_decr32(&context->multi_recv_op_count);
         }
         HG_CHECK_SUBSYS_WARNING(ctx,
@@ -4795,7 +4752,7 @@ hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret)
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
     na_return_t na_ret;
-    size_t buf_size = handle->na_out_header_offset + sizeof(hg_uint8_t);
+    size_t buf_size = handle->na_out_header_offset + sizeof(uint8_t);
 
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Aborting ack send");
 
@@ -4972,7 +4929,7 @@ hg_core_complete(struct hg_core_private_handle *hg_core_handle, hg_return_t ret)
 /*---------------------------------------------------------------------------*/
 void
 hg_core_completion_add(struct hg_core_context *core_context,
-    struct hg_completion_entry *hg_completion_entry, hg_bool_t loopback_notify)
+    struct hg_completion_entry *hg_completion_entry, bool loopback_notify)
 {
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) core_context;
@@ -5030,7 +4987,7 @@ hg_core_progress(
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     do {
-        hg_bool_t safe_wait = HG_FALSE, progressed = HG_FALSE;
+        bool safe_wait = false, progressed = false;
         unsigned int poll_timeout = 0;
 
         /* Bypass notifications if timeout_ms is 0 to prevent system calls
@@ -5041,7 +4998,7 @@ hg_core_progress(
             hg_thread_mutex_lock(&context->loopback_notify.mutex);
 
             if (hg_core_poll_try_wait(context)) {
-                safe_wait = HG_TRUE;
+                safe_wait = true;
                 poll_timeout = hg_time_to_ms(hg_time_subtract(deadline, now));
 
                 /* We need to be notified when doing blocking progress */
@@ -5082,37 +5039,37 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_bool_t
+static HG_INLINE bool
 hg_core_poll_try_wait(struct hg_core_private_context *context)
 {
     /* Something is in one of the completion queues */
     if (!hg_atomic_queue_is_empty(context->completion_queue) ||
         (hg_atomic_get32(&context->backfill_queue.count) > 0))
-        return HG_FALSE;
+        return false;
 
 #ifdef NA_HAS_SM
     if (context->core_context.core_class->na_sm_class &&
         !NA_Poll_try_wait(context->core_context.core_class->na_sm_class,
             context->core_context.na_sm_context))
-        return HG_FALSE;
+        return false;
 #endif
 
     if (!NA_Poll_try_wait(context->core_context.core_class->na_class,
             context->core_context.na_context))
-        return HG_FALSE;
+        return false;
 
-    return HG_TRUE;
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_poll_wait(struct hg_core_private_context *context,
-    unsigned int timeout_ms, hg_bool_t *progressed_p)
+    unsigned int timeout_ms, bool *progressed_p)
 {
     struct hg_poll_event poll_events[HG_CORE_MAX_EVENTS]; /* Poll events */
     unsigned int i, nevents;
     hg_return_t ret;
-    hg_bool_t progressed = HG_FALSE;
+    bool progressed = false;
     int rc;
 
     rc = hg_poll_wait(context->poll_set, timeout_ms, HG_CORE_MAX_EVENTS,
@@ -5126,13 +5083,13 @@ hg_core_poll_wait(struct hg_core_private_context *context,
 
     if (nevents == 1 && (poll_events[0].events & HG_POLLINTR)) {
         HG_LOG_SUBSYS_DEBUG(poll_loop, "Interrupted");
-        *progressed_p = HG_FALSE;
+        *progressed_p = false;
         return HG_SUCCESS;
     }
 
     /* Process events */
     for (i = 0; i < nevents; i++) {
-        hg_bool_t progressed_event = HG_FALSE;
+        bool progressed_event = false;
 
         switch (poll_events[i].data.u32) {
             case HG_CORE_POLL_LOOPBACK:
@@ -5183,11 +5140,11 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_poll(struct hg_core_private_context *context, unsigned int timeout_ms,
-    hg_bool_t *progressed_p)
+    bool *progressed_p)
 {
     struct hg_core_private_class *hg_core_class =
         HG_CORE_CONTEXT_CLASS(context);
-    hg_bool_t progressed = HG_FALSE, progressed_na = HG_FALSE;
+    bool progressed = false, progressed_na = false;
     unsigned int progress_timeout;
     hg_return_t ret;
 
@@ -5225,11 +5182,11 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
-    unsigned int timeout_ms, hg_bool_t *progressed_p)
+    unsigned int timeout_ms, bool *progressed_p)
 {
     hg_time_t deadline, now = hg_time_from_ms(0);
     unsigned int completed_count = 0;
-    hg_bool_t progressed = HG_FALSE;
+    bool progressed = false;
     hg_return_t ret;
 
     if (timeout_ms != 0)
@@ -5253,7 +5210,7 @@ hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
 
         /* Progressed */
         if (completed_count > 0) {
-            progressed = HG_TRUE;
+            progressed = true;
             break;
         }
 
@@ -5287,7 +5244,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_core_progress_loopback_notify(
-    struct hg_core_private_context *context, hg_bool_t *progressed_p)
+    struct hg_core_private_context *context, bool *progressed_p)
 {
     hg_return_t ret;
     int rc;
@@ -5298,7 +5255,7 @@ hg_core_progress_loopback_notify(
     HG_CHECK_SUBSYS_ERROR(poll, rc != HG_UTIL_SUCCESS, error, ret,
         HG_PROTOCOL_ERROR, "Could not get loopback event notification");
 
-    *progressed_p = (hg_bool_t) progressed;
+    *progressed_p = progressed;
 
     return HG_SUCCESS;
 
@@ -5657,7 +5614,7 @@ HG_Core_free_na_protocol_info(struct na_protocol_info *na_protocol_info)
 
 /*---------------------------------------------------------------------------*/
 hg_core_class_t *
-HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
+HG_Core_init(const char *na_info_string, uint8_t na_listen)
 {
     struct hg_core_private_class *hg_core_class;
     hg_return_t ret;
@@ -5679,7 +5636,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_core_class_t *
-HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
+HG_Core_init_opt(const char *na_info_string, uint8_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_core_private_class *hg_core_class;
@@ -5704,7 +5661,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_core_class_t *
-HG_Core_init_opt2(const char *na_info_string, hg_bool_t na_listen,
+HG_Core_init_opt2(const char *na_info_string, uint8_t na_listen,
     unsigned int version, const struct hg_init_info *hg_init_info)
 {
     struct hg_core_private_class *hg_core_class;
@@ -5801,7 +5758,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_core_context_t *
-HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
+HG_Core_context_create_id(hg_core_class_t *hg_core_class, uint8_t id)
 {
     struct hg_core_private_context *context;
     hg_return_t ret;
@@ -5965,8 +5922,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_registered(
-    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag_p)
+HG_Core_registered(hg_core_class_t *hg_core_class, hg_id_t id, uint8_t *flag_p)
 {
     struct hg_core_private_class *private_class =
         (struct hg_core_private_class *) hg_core_class;
@@ -5978,7 +5934,7 @@ HG_Core_registered(
         cls, flag_p == NULL, error, ret, HG_INVALID_ARG, "NULL flag pointer");
 
     *flag_p =
-        (hg_bool_t) (hg_core_map_lookup(&private_class->rpc_map, &id) != NULL);
+        (uint8_t) (hg_core_map_lookup(&private_class->rpc_map, &id) != NULL);
 
     return HG_SUCCESS;
 
@@ -6039,7 +5995,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_registered_disable_response(
-    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t disable)
+    hg_core_class_t *hg_core_class, hg_id_t id, uint8_t disable)
 {
     struct hg_core_private_class *private_class =
         (struct hg_core_private_class *) hg_core_class;
@@ -6064,7 +6020,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_registered_disabled_response(
-    hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *disabled_p)
+    hg_core_class_t *hg_core_class, hg_id_t id, uint8_t *disabled_p)
 {
     struct hg_core_private_class *private_class =
         (struct hg_core_private_class *) hg_core_class;
@@ -6131,7 +6087,7 @@ HG_Core_addr_lookup1(hg_core_context_t *context, hg_core_cb_t callback,
     hg_completion_entry->op_type = HG_ADDR;
     hg_completion_entry->op_id.hg_core_op_id = hg_core_op_id;
 
-    hg_core_completion_add(context, hg_completion_entry, HG_TRUE);
+    hg_core_completion_add(context, hg_completion_entry, true);
 
     return HG_SUCCESS;
 
@@ -6253,7 +6209,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_bool_t
+uint8_t
 HG_Core_addr_cmp(hg_core_addr_t addr1, hg_core_addr_t addr2)
 {
     if (addr1 == HG_CORE_ADDR_NULL && addr2 == HG_CORE_ADDR_NULL)
@@ -6526,13 +6482,13 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_int32_t
+int32_t
 HG_Core_ref_get(hg_core_handle_t handle)
 {
     HG_CHECK_SUBSYS_ERROR_NORET(
         rpc, handle == HG_CORE_HANDLE_NULL, error, "NULL HG core handle");
 
-    return (hg_int32_t) hg_atomic_get32(
+    return (int32_t) hg_atomic_get32(
         &((struct hg_core_private_handle *) handle)->ref_count);
 
 error:
@@ -6563,7 +6519,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
-    hg_uint8_t flags, hg_size_t payload_size)
+    uint8_t flags, hg_size_t payload_size)
 {
     hg_return_t ret;
 
@@ -6591,7 +6547,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
-    hg_uint8_t flags, hg_size_t payload_size)
+    uint8_t flags, hg_size_t payload_size)
 {
     hg_return_t ret;
 

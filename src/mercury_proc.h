@@ -22,14 +22,6 @@
 #        define xdr_uint32_t xdr_u_int32_t
 #        define xdr_uint64_t xdr_u_int64_t
 #    endif
-#    define xdr_hg_int8_t   xdr_int8_t
-#    define xdr_hg_uint8_t  xdr_uint8_t
-#    define xdr_hg_int16_t  xdr_int16_t
-#    define xdr_hg_uint16_t xdr_uint16_t
-#    define xdr_hg_int32_t  xdr_int32_t
-#    define xdr_hg_uint32_t xdr_uint32_t
-#    define xdr_hg_int64_t  xdr_int64_t
-#    define xdr_hg_uint64_t xdr_uint64_t
 #endif
 
 /*************************************/
@@ -283,7 +275,7 @@ hg_proc_get_op(hg_proc_t proc);
  * \return Non-negative flag value
  */
 static HG_INLINE void
-hg_proc_set_flags(hg_proc_t proc, hg_uint8_t flags);
+hg_proc_set_flags(hg_proc_t proc, uint8_t flags);
 
 /**
  * Get the flags associated to the processor.
@@ -292,7 +284,7 @@ hg_proc_set_flags(hg_proc_t proc, hg_uint8_t flags);
  *
  * \return Non-negative flag value
  */
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 hg_proc_get_flags(hg_proc_t proc);
 
 /**
@@ -398,11 +390,12 @@ hg_proc_get_extra_size(hg_proc_t proc);
  * after hg_proc_free())
  *
  * \param proc [IN]             abstract processor object
+ * \param mine [IN]             boolean
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
+hg_proc_set_extra_buf_is_mine(hg_proc_t proc, uint8_t mine);
 
 /**
  * Flush the proc after data has been encoded or decoded and finalize
@@ -454,7 +447,7 @@ hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_int8_t(hg_proc_t proc, void *data);
+hg_proc_int8_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -465,7 +458,7 @@ hg_proc_hg_int8_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_uint8_t(hg_proc_t proc, void *data);
+hg_proc_uint8_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -476,7 +469,7 @@ hg_proc_hg_uint8_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_int16_t(hg_proc_t proc, void *data);
+hg_proc_int16_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -487,7 +480,7 @@ hg_proc_hg_int16_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_uint16_t(hg_proc_t proc, void *data);
+hg_proc_uint16_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -498,7 +491,7 @@ hg_proc_hg_uint16_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_int32_t(hg_proc_t proc, void *data);
+hg_proc_int32_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -509,7 +502,7 @@ hg_proc_hg_int32_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_uint32_t(hg_proc_t proc, void *data);
+hg_proc_uint32_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -520,7 +513,7 @@ hg_proc_hg_uint32_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_int64_t(hg_proc_t proc, void *data);
+hg_proc_int64_t(hg_proc_t proc, void *data);
 
 /**
  * Generic processing routine.
@@ -531,7 +524,7 @@ hg_proc_hg_int64_t(hg_proc_t proc, void *data);
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-hg_proc_hg_uint64_t(hg_proc_t proc, void *data);
+hg_proc_uint64_t(hg_proc_t proc, void *data);
 
 /* Note: float types are not supported but can be built on top of the existing
  * proc routines; encoding floats using XDR could modify checksum */
@@ -548,23 +541,21 @@ hg_proc_hg_uint64_t(hg_proc_t proc, void *data);
 static HG_INLINE hg_return_t
 hg_proc_bytes(hg_proc_t proc, void *data, hg_size_t data_size);
 
-/**
- * For convenience map stdint types to hg types
- */
-#define hg_proc_int8_t   hg_proc_hg_int8_t
-#define hg_proc_uint8_t  hg_proc_hg_uint8_t
-#define hg_proc_int16_t  hg_proc_hg_int16_t
-#define hg_proc_uint16_t hg_proc_hg_uint16_t
-#define hg_proc_int32_t  hg_proc_hg_int32_t
-#define hg_proc_uint32_t hg_proc_hg_uint32_t
-#define hg_proc_int64_t  hg_proc_hg_int64_t
-#define hg_proc_uint64_t hg_proc_hg_uint64_t
-
 /* Map mercury common types */
-#define hg_proc_hg_bool_t hg_proc_hg_uint8_t
-#define hg_proc_hg_ptr_t  hg_proc_hg_uint64_t
-#define hg_proc_hg_size_t hg_proc_hg_uint64_t
-#define hg_proc_hg_id_t   hg_proc_hg_uint32_t
+#define hg_proc_hg_size_t hg_proc_uint64_t
+#define hg_proc_hg_id_t   hg_proc_uint32_t
+
+/* Deprecated hg types */
+#define hg_proc_hg_int8_t   hg_proc_int8_t
+#define hg_proc_hg_uint8_t  hg_proc_uint8_t
+#define hg_proc_hg_int16_t  hg_proc_int16_t
+#define hg_proc_hg_uint16_t hg_proc_uint16_t
+#define hg_proc_hg_int32_t  hg_proc_int32_t
+#define hg_proc_hg_uint32_t hg_proc_uint32_t
+#define hg_proc_hg_int64_t  hg_proc_int64_t
+#define hg_proc_hg_uint64_t hg_proc_uint64_t
+#define hg_proc_hg_bool_t   hg_proc_uint8_t
+#define hg_proc_hg_ptr_t    hg_proc_uint64_t
 
 /* Map hg_proc_raw/hg_proc_memcpy to hg_proc_bytes */
 #define hg_proc_memcpy hg_proc_raw
@@ -586,7 +577,7 @@ struct hg_proc_buf {
     void *buf_ptr;       /* Pointer to current position */
     hg_size_t size;      /* Total buffer size */
     hg_size_t size_left; /* Available size for user */
-    hg_bool_t is_mine;
+    bool is_mine;
 #ifdef HG_HAS_XDR
     XDR xdr;
 #endif
@@ -604,7 +595,7 @@ struct hg_proc {
     size_t checksum_size;              /* Checksum size */
 #endif
     hg_proc_op_t op;
-    hg_uint8_t flags;
+    uint8_t flags;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -623,13 +614,13 @@ hg_proc_get_op(hg_proc_t proc)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
-hg_proc_set_flags(hg_proc_t proc, hg_uint8_t flags)
+hg_proc_set_flags(hg_proc_t proc, uint8_t flags)
 {
     ((struct hg_proc *) proc)->flags = flags;
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_uint8_t
+static HG_INLINE uint8_t
 hg_proc_get_flags(hg_proc_t proc)
 {
     return ((struct hg_proc *) proc)->flags;
@@ -683,11 +674,11 @@ hg_proc_get_extra_size(hg_proc_t proc)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_int8_t(hg_proc_t proc, void *data)
+hg_proc_int8_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_int8_t, data, done, ret);
+    HG_PROC_TYPE(proc, int8_t, data, done, ret);
 
 done:
     return ret;
@@ -695,11 +686,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_uint8_t(hg_proc_t proc, void *data)
+hg_proc_uint8_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_uint8_t, data, done, ret);
+    HG_PROC_TYPE(proc, uint8_t, data, done, ret);
 
 done:
     return ret;
@@ -707,11 +698,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_int16_t(hg_proc_t proc, void *data)
+hg_proc_int16_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_int16_t, data, done, ret);
+    HG_PROC_TYPE(proc, int16_t, data, done, ret);
 
 done:
     return ret;
@@ -719,11 +710,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_uint16_t(hg_proc_t proc, void *data)
+hg_proc_uint16_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_uint16_t, data, done, ret);
+    HG_PROC_TYPE(proc, uint16_t, data, done, ret);
 
 done:
     return ret;
@@ -731,11 +722,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_int32_t(hg_proc_t proc, void *data)
+hg_proc_int32_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_int32_t, data, done, ret);
+    HG_PROC_TYPE(proc, int32_t, data, done, ret);
 
 done:
     return ret;
@@ -743,11 +734,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_uint32_t(hg_proc_t proc, void *data)
+hg_proc_uint32_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_uint32_t, data, done, ret);
+    HG_PROC_TYPE(proc, uint32_t, data, done, ret);
 
 done:
     return ret;
@@ -755,11 +746,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_int64_t(hg_proc_t proc, void *data)
+hg_proc_int64_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_int64_t, data, done, ret);
+    HG_PROC_TYPE(proc, int64_t, data, done, ret);
 
 done:
     return ret;
@@ -767,11 +758,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_proc_hg_uint64_t(hg_proc_t proc, void *data)
+hg_proc_uint64_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROC_TYPE(proc, hg_uint64_t, data, done, ret);
+    HG_PROC_TYPE(proc, uint64_t, data, done, ret);
 
 done:
     return ret;

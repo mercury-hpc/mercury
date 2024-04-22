@@ -28,7 +28,7 @@ struct hg_info {
     hg_context_t *context; /* HG context */
     hg_addr_t addr;        /* HG address at target/origin */
     hg_id_t id;            /* RPC ID */
-    hg_uint8_t context_id; /* Context ID at target/origin */
+    uint8_t context_id;    /* Context ID at target/origin */
 };
 
 /* Bulk attributes */
@@ -43,13 +43,13 @@ typedef enum hg_mem_type {
 
 struct hg_bulk_attr {
     hg_mem_type_t mem_type; /*!< Memory type */
-    hg_uint64_t device;     /*!< Optional device ID */
+    uint64_t device;        /*!< Optional device ID */
 };
 
 /**
  * Bulk transfer operators.
  */
-typedef enum {
+typedef enum hg_bulk_op {
     HG_BULK_PUSH, /*!< push data to origin */
     HG_BULK_PULL  /*!< pull data from origin */
 } hg_bulk_op_t;

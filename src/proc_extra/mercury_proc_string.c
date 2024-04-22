@@ -29,7 +29,7 @@
 hg_return_t
 hg_proc_hg_string_object_t(hg_proc_t proc, void *string)
 {
-    hg_uint64_t string_len = 0;
+    uint64_t string_len = 0;
     hg_return_t ret = HG_SUCCESS;
     hg_string_object_t *strobj = (hg_string_object_t *) string;
 
@@ -43,12 +43,10 @@ hg_proc_hg_string_object_t(hg_proc_t proc, void *string)
                 ret = hg_proc_bytes(proc, strobj->data, string_len);
                 if (ret != HG_SUCCESS)
                     goto done;
-                ret =
-                    hg_proc_hg_uint8_t(proc, (hg_uint8_t *) &strobj->is_const);
+                ret = hg_proc_uint8_t(proc, (uint8_t *) &strobj->is_const);
                 if (ret != HG_SUCCESS)
                     goto done;
-                ret =
-                    hg_proc_hg_uint8_t(proc, (hg_uint8_t *) &strobj->is_owned);
+                ret = hg_proc_uint8_t(proc, (uint8_t *) &strobj->is_owned);
                 if (ret != HG_SUCCESS)
                     goto done;
             }
@@ -69,15 +67,13 @@ hg_proc_hg_string_object_t(hg_proc_t proc, void *string)
                     strobj->data = NULL;
                     goto done;
                 }
-                ret =
-                    hg_proc_hg_uint8_t(proc, (hg_uint8_t *) &strobj->is_const);
+                ret = hg_proc_uint8_t(proc, (uint8_t *) &strobj->is_const);
                 if (ret != HG_SUCCESS) {
                     free(strobj->data);
                     strobj->data = NULL;
                     goto done;
                 }
-                ret =
-                    hg_proc_hg_uint8_t(proc, (hg_uint8_t *) &strobj->is_owned);
+                ret = hg_proc_uint8_t(proc, (uint8_t *) &strobj->is_owned);
                 if (ret != HG_SUCCESS) {
                     free(strobj->data);
                     strobj->data = NULL;

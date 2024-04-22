@@ -135,7 +135,7 @@ struct hg_context {
 
 /* HG bulk segment */
 struct hg_bulk_segment {
-    hg_ptr_t base; /* Address of the segment */
+    void *base;    /* Address of the segment */
     hg_size_t len; /* Size of the segment in bytes */
 };
 
@@ -178,8 +178,8 @@ struct hg_bulk {
     void *serialize_ptr;         /* Cached serialization buffer */
     hg_size_t serialize_size;    /* Cached serialization size */
     hg_atomic_int32_t ref_count; /* Reference count */
-    hg_uint8_t context_id;       /* Context ID (valid if bound to handle) */
-    hg_bool_t registered;        /* Handle was registered */
+    uint8_t context_id;          /* Context ID (valid if bound to handle) */
+    bool registered;             /* Handle was registered */
 };
 
 /* HG bulk NA op IDs (not a union as we re-use op IDs) */
@@ -207,8 +207,8 @@ struct hg_bulk_op_id {
     hg_atomic_int32_t ret_status;         /* Return status */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_atomic_int32_t ref_count;          /* Refcount */
-    hg_uint32_t op_count;                 /* Number of ongoing operations */
-    hg_bool_t reuse;                      /* Re-use op ID once ref_count is 0 */
+    uint32_t op_count;                    /* Number of ongoing operations */
+    bool reuse;                           /* Re-use op ID once ref_count is 0 */
 };
 
 /* Pool of op IDs */
@@ -219,13 +219,12 @@ struct hg_bulk_op_pool {
     LIST_HEAD(, hg_bulk_op_id) pending_list; /* Pending op IDs */
     hg_thread_spin_t pending_list_lock;      /* Pending list lock */
     unsigned long count;                     /* Number of op IDs */
-    hg_bool_t extending;                     /* When extending the pool */
+    bool extending;                          /* When extending the pool */
 };
 
 /* Wrapper on top of memcpy */
-typedef void (*hg_bulk_copy_op_t)(hg_ptr_t local_address,
-    hg_size_t local_offset, hg_ptr_t remote_address, hg_size_t remote_offset,
-    hg_size_t data_size);
+typedef void (*hg_bulk_copy_op_t)(void *local_address, hg_size_t local_offset,
+    void *remote_address, hg_size_t remote_offset, hg_size_t data_size);
 
 /* Wrapper on top of NA layer */
 typedef na_return_t (*na_bulk_op_t)(na_class_t *na_class, na_context_t *context,
@@ -242,8 +241,8 @@ typedef na_return_t (*na_bulk_op_t)(na_class_t *na_class, na_context_t *context,
  * Create handle.
  */
 static hg_return_t
-hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
-    const hg_size_t *lens, hg_uint8_t flags, const struct hg_bulk_attr *attrs,
+hg_bulk_create(hg_core_class_t *core_class, uint32_t count, void **bufs,
+    const hg_size_t *lens, uint8_t flags, const struct hg_bulk_attr *attrs,
     struct hg_bulk **hg_bulk_p);
 
 /**
@@ -257,15 +256,15 @@ hg_bulk_free(struct hg_bulk *hg_bulk);
  */
 static hg_return_t
 hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
-    na_class_t *na_class, struct hg_bulk_segment *segments, hg_uint32_t count,
-    hg_uint8_t flags, enum na_mem_type mem_type, uint64_t device);
+    na_class_t *na_class, struct hg_bulk_segment *segments, uint32_t count,
+    uint8_t flags, enum na_mem_type mem_type, uint64_t device);
 
 /**
  * Free NA memory descriptors.
  */
 static hg_return_t
 hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
-    na_class_t *na_class, hg_uint32_t count, bool registered);
+    na_class_t *na_class, uint32_t count, bool registered);
 
 /**
  * Register single segment.
@@ -295,21 +294,21 @@ hg_bulk_deregister(
  * Get serialize size.
  */
 static hg_size_t
-hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags);
+hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, uint8_t flags);
 
 /**
  * Get serialize size of NA memory descriptors.
  */
 static hg_size_t
 hg_bulk_get_serialize_size_mem_descs(
-    struct hg_bulk_na_mem_desc *na_mem_descs, hg_uint32_t count);
+    struct hg_bulk_na_mem_desc *na_mem_descs, uint32_t count);
 
 /**
  * Serialize bulk handle.
  */
 static hg_return_t
 hg_bulk_serialize(
-    void *buf, hg_size_t buf_size, hg_uint8_t flags, struct hg_bulk *hg_bulk);
+    void *buf, hg_size_t buf_size, uint8_t flags, struct hg_bulk *hg_bulk);
 
 /**
  * Serialize NA memory descriptors.
@@ -317,7 +316,7 @@ hg_bulk_serialize(
 static hg_return_t
 hg_bulk_serialize_mem_descs(na_class_t *na_class, char **buf_p,
     hg_size_t *buf_size_left_p, struct hg_bulk_na_mem_desc *na_mem_descs,
-    const struct hg_bulk_segment *segments, hg_uint32_t count);
+    const struct hg_bulk_segment *segments, uint32_t count);
 
 /**
  * Deserialize bulk handle.
@@ -332,22 +331,22 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
 static hg_return_t
 hg_bulk_deserialize_mem_descs(na_class_t *na_class, const char **buf_p,
     hg_size_t *buf_size_left_p, struct hg_bulk_na_mem_desc *na_mem_descs,
-    const struct hg_bulk_segment *segments, hg_uint32_t count);
+    const struct hg_bulk_segment *segments, uint32_t count);
 
 /**
  * Access bulk handle and get segment addresses/sizes.
  */
 static void
 hg_bulk_access(struct hg_bulk *hg_bulk, hg_size_t offset, hg_size_t size,
-    hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
-    hg_size_t *buf_sizes, hg_uint32_t *actual_count);
+    uint8_t flags, uint32_t max_count, void **buf_ptrs, hg_size_t *buf_sizes,
+    uint32_t *actual_count);
 
 /**
  * Get info for bulk transfer.
  */
 static HG_INLINE void
-hg_bulk_offset_translate(const struct hg_bulk_segment *segments,
-    hg_uint32_t count, hg_size_t offset, hg_uint32_t *segment_start_index,
+hg_bulk_offset_translate(const struct hg_bulk_segment *segments, uint32_t count,
+    hg_size_t offset, uint32_t *segment_start_index,
     hg_size_t *segment_start_offset);
 
 /**
@@ -375,7 +374,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
  */
 static hg_return_t
 hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, struct hg_core_addr *origin_addr, hg_uint8_t origin_id,
+    hg_bulk_op_t op, struct hg_core_addr *origin_addr, uint8_t origin_id,
     struct hg_bulk *hg_bulk_origin, hg_size_t origin_offset,
     struct hg_bulk *hg_bulk_local, hg_size_t local_offset, hg_size_t size,
     hg_op_id_t *op_id);
@@ -385,9 +384,9 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
  */
 static hg_return_t
 hg_bulk_transfer_self(hg_bulk_op_t op,
-    const struct hg_bulk_segment *origin_segments, hg_uint32_t origin_count,
+    const struct hg_bulk_segment *origin_segments, uint32_t origin_count,
     hg_size_t origin_offset, const struct hg_bulk_segment *local_segments,
-    hg_uint32_t local_count, hg_size_t local_offset, hg_size_t size,
+    uint32_t local_count, hg_size_t local_offset, hg_size_t size,
     struct hg_bulk_op_id *hg_bulk_op_id);
 
 /**
@@ -395,9 +394,9 @@ hg_bulk_transfer_self(hg_bulk_op_t op,
  */
 static void
 hg_bulk_transfer_segments_self(hg_bulk_copy_op_t copy_op,
-    const struct hg_bulk_segment *origin_segments, hg_uint32_t origin_count,
+    const struct hg_bulk_segment *origin_segments, uint32_t origin_count,
     hg_size_t origin_segment_start_index, hg_size_t origin_segment_start_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
     hg_size_t local_segment_start_index, hg_size_t local_segment_start_offset,
     hg_size_t size);
 
@@ -405,22 +404,22 @@ hg_bulk_transfer_segments_self(hg_bulk_copy_op_t copy_op,
  * Memcpy.
  */
 static HG_INLINE void
-hg_bulk_memcpy_put(hg_ptr_t local_address, hg_size_t local_offset,
-    hg_ptr_t remote_address, hg_size_t remote_offset, hg_size_t data_size)
+hg_bulk_memcpy_put(void *local_address, hg_size_t local_offset,
+    void *remote_address, hg_size_t remote_offset, hg_size_t data_size)
 {
-    memcpy((void *) (remote_address + remote_offset),
-        (const void *) (local_address + local_offset), data_size);
+    memcpy((char *) remote_address + remote_offset,
+        (const char *) local_address + local_offset, data_size);
 }
 
 /**
  * Memcpy.
  */
 static HG_INLINE void
-hg_bulk_memcpy_get(hg_ptr_t local_address, hg_size_t local_offset,
-    hg_ptr_t remote_address, hg_size_t remote_offset, hg_size_t data_size)
+hg_bulk_memcpy_get(void *local_address, hg_size_t local_offset,
+    void *remote_address, hg_size_t remote_offset, hg_size_t data_size)
 {
-    memcpy((void *) (local_address + local_offset),
-        (const void *) (remote_address + remote_offset), data_size);
+    memcpy((char *) local_address + local_offset,
+        (const char *) remote_address + remote_offset, data_size);
 }
 
 /**
@@ -428,22 +427,22 @@ hg_bulk_memcpy_get(hg_ptr_t local_address, hg_size_t local_offset,
  */
 static hg_return_t
 hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
-    hg_uint8_t origin_id, const struct hg_bulk_segment *origin_segments,
-    hg_uint32_t origin_count, na_mem_handle_t **origin_mem_handles,
-    hg_uint8_t origin_flags, hg_size_t origin_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
-    na_mem_handle_t **local_mem_handles, hg_uint8_t local_flags,
+    uint8_t origin_id, const struct hg_bulk_segment *origin_segments,
+    uint32_t origin_count, na_mem_handle_t **origin_mem_handles,
+    uint8_t origin_flags, hg_size_t origin_offset,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
+    na_mem_handle_t **local_mem_handles, uint8_t local_flags,
     hg_size_t local_offset, hg_size_t size,
     struct hg_bulk_op_id *hg_bulk_op_id);
 
 /**
  * Get number of required operations to transfer data.
  */
-static hg_uint32_t
+static uint32_t
 hg_bulk_transfer_get_op_count(const struct hg_bulk_segment *origin_segments,
-    hg_uint32_t origin_count, hg_size_t origin_segment_start_index,
+    uint32_t origin_count, hg_size_t origin_segment_start_index,
     hg_size_t origin_segment_start_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
     hg_size_t local_segment_start_index, hg_size_t local_segment_start_offset,
     hg_size_t size);
 
@@ -454,13 +453,13 @@ static hg_return_t
 hg_bulk_transfer_segments_na(na_class_t *na_class, na_context_t *na_context,
     na_bulk_op_t na_bulk_op, na_cb_t callback, void *arg,
     na_addr_t *origin_addr, uint8_t origin_id,
-    const struct hg_bulk_segment *origin_segments, hg_uint32_t origin_count,
+    const struct hg_bulk_segment *origin_segments, uint32_t origin_count,
     na_mem_handle_t **origin_mem_handles, hg_size_t origin_segment_start_index,
     hg_size_t origin_segment_start_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
     na_mem_handle_t **local_mem_handles, hg_size_t local_segment_start_index,
     hg_size_t local_segment_start_offset, hg_size_t size,
-    na_op_id_t *na_op_ids[], hg_uint32_t na_op_count);
+    na_op_id_t *na_op_ids[], uint32_t na_op_count);
 
 /**
  * NA_Put wrapper
@@ -502,8 +501,8 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info);
  * Complete operation ID.
  */
 static void
-hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_return_t ret,
-    hg_bool_t self_notify);
+hg_bulk_complete(
+    struct hg_bulk_op_id *hg_bulk_op_id, hg_return_t ret, bool self_notify);
 
 /**
  * Cancel operation ID.
@@ -515,13 +514,10 @@ hg_bulk_cancel(struct hg_bulk_op_id *hg_bulk_op_id);
 /* Local Variables */
 /*******************/
 
-/* Specific log outlets */
-static HG_LOG_SUBSYS_DECL_REGISTER(bulk, hg);
-
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
-    const hg_size_t *lens, hg_uint8_t flags, const struct hg_bulk_attr *attrs,
+hg_bulk_create(hg_core_class_t *core_class, uint32_t count, void **bufs,
+    const hg_size_t *lens, uint8_t flags, const struct hg_bulk_attr *attrs,
     struct hg_bulk **hg_bulk_p)
 {
     struct hg_bulk *hg_bulk = NULL;
@@ -559,7 +555,7 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
 
     /* Loop over the list of segments */
     if (!bufs) {
-        hg_uint32_t i;
+        uint32_t i;
 
         /* Allocate buffers internally if only lengths are provided */
         hg_bulk->desc.info.flags |= HG_BULK_ALLOC;
@@ -567,18 +563,18 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
             if (lens[i] == 0)
                 continue;
 
-            segments[i].base = (hg_ptr_t) calloc(1, lens[i]);
-            HG_CHECK_SUBSYS_ERROR(bulk, segments[i].base == (hg_ptr_t) NULL,
-                error, ret, HG_NOMEM, "Could not allocate segment");
+            segments[i].base = calloc(1, lens[i]);
+            HG_CHECK_SUBSYS_ERROR(bulk, segments[i].base == NULL, error, ret,
+                HG_NOMEM, "Could not allocate segment");
 
             segments[i].len = lens[i];
             hg_bulk->desc.info.len += lens[i];
         }
     } else {
-        hg_uint32_t i;
+        uint32_t i;
 
         for (i = 0; i < count; i++) {
-            segments[i].base = (hg_ptr_t) bufs[i];
+            segments[i].base = bufs[i];
             segments[i].len = lens[i];
             hg_bulk->desc.info.len += lens[i];
         }
@@ -655,7 +651,7 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
         }
 #endif
     }
-    hg_bulk->registered = HG_TRUE;
+    hg_bulk->registered = true;
     hg_core_bulk_incr(core_class);
 
     *hg_bulk_p = hg_bulk;
@@ -731,7 +727,7 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
 
     /* Free segments if we allocated them */
     if (hg_bulk->desc.info.flags & HG_BULK_ALLOC) {
-        hg_uint32_t i;
+        uint32_t i;
 
         for (i = 0; i < hg_bulk->desc.info.segment_count; i++)
             free((void *) segments[i].base);
@@ -752,13 +748,13 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
-    na_class_t *na_class, struct hg_bulk_segment *segments, hg_uint32_t count,
-    hg_uint8_t flags, enum na_mem_type mem_type, uint64_t device)
+    na_class_t *na_class, struct hg_bulk_segment *segments, uint32_t count,
+    uint8_t flags, enum na_mem_type mem_type, uint64_t device)
 {
     na_mem_handle_t **na_mem_handles;
     size_t *na_mem_serialize_sizes;
     hg_return_t ret;
-    hg_uint32_t i;
+    uint32_t i;
 
     if (count > HG_BULK_STATIC_MAX) {
         /* Allocate NA memory handles */
@@ -782,7 +778,7 @@ hg_bulk_create_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
 
     for (i = 0; i < count; i++) {
         /* Skip null segments */
-        if (segments[i].base == (hg_ptr_t) NULL)
+        if (segments[i].base == NULL)
             continue;
 
         /* Register segment */
@@ -802,7 +798,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
-    na_class_t *na_class, hg_uint32_t count, bool registered)
+    na_class_t *na_class, uint32_t count, bool registered)
 {
     na_mem_handle_t **na_mem_handles;
     hg_return_t ret;
@@ -814,7 +810,7 @@ hg_bulk_free_na_mem_descs(struct hg_bulk_na_mem_desc *na_mem_descs,
         na_mem_handles = na_mem_descs->handles.s;
 
     if (na_mem_handles) {
-        hg_uint32_t i;
+        uint32_t i;
 
         for (i = 0; i < count; i++) {
             if (na_mem_handles[i] == NULL)
@@ -867,7 +863,7 @@ hg_bulk_register(na_class_t *na_class, void *base, size_t len,
 {
     na_mem_handle_t *mem_handle = NULL;
     size_t serialize_size = 0;
-    hg_bool_t registered = HG_FALSE;
+    bool registered = false;
     hg_return_t ret;
     na_return_t na_ret;
 
@@ -882,7 +878,7 @@ hg_bulk_register(na_class_t *na_class, void *base, size_t len,
     HG_CHECK_SUBSYS_ERROR(bulk, na_ret != NA_SUCCESS, error, ret,
         (hg_return_t) na_ret, "NA_Mem_register() failed (%s)",
         NA_Error_to_string(na_ret));
-    registered = HG_TRUE;
+    registered = true;
 
     /* Cache serialize size */
     serialize_size = NA_Mem_handle_get_serialize_size(na_class, mem_handle);
@@ -914,7 +910,7 @@ hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
 {
     na_mem_handle_t *mem_handle = NULL;
     size_t serialize_size = 0;
-    hg_bool_t registered = HG_FALSE;
+    bool registered = false;
     hg_return_t ret;
     na_return_t na_ret;
 
@@ -930,7 +926,7 @@ hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
     HG_CHECK_SUBSYS_ERROR(bulk, na_ret != NA_SUCCESS, error, ret,
         (hg_return_t) na_ret, "NA_Mem_register() failed (%s)",
         NA_Error_to_string(na_ret));
-    registered = HG_TRUE;
+    registered = true;
 
     /* Cache serialize size */
     serialize_size = NA_Mem_handle_get_serialize_size(na_class, mem_handle);
@@ -979,7 +975,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_size_t
-hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
+hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, uint8_t flags)
 {
     struct hg_bulk_desc_info *desc_info = &hg_bulk->desc.info;
     hg_size_t ret = 0;
@@ -1023,7 +1019,7 @@ hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
         if (flags & HG_BULK_SM)
             addr_flags |= HG_CORE_SM;
 #endif
-        ret += sizeof(hg_uint8_t) + sizeof(hg_size_t) +
+        ret += sizeof(uint8_t) + sizeof(hg_size_t) +
                HG_Core_addr_get_serialize_size(hg_bulk->addr, addr_flags);
     }
 
@@ -1039,11 +1035,11 @@ hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
 /*---------------------------------------------------------------------------*/
 static hg_size_t
 hg_bulk_get_serialize_size_mem_descs(
-    struct hg_bulk_na_mem_desc *na_mem_descs, hg_uint32_t count)
+    struct hg_bulk_na_mem_desc *na_mem_descs, uint32_t count)
 {
     na_mem_handle_t **na_mem_handles;
     size_t *na_mem_serialize_sizes;
-    hg_uint32_t i;
+    uint32_t i;
     hg_size_t ret = 0;
 
     if (count > HG_BULK_STATIC_MAX) {
@@ -1067,7 +1063,7 @@ hg_bulk_get_serialize_size_mem_descs(
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_serialize(
-    void *buf, hg_size_t buf_size, hg_uint8_t flags, struct hg_bulk *hg_bulk)
+    void *buf, hg_size_t buf_size, uint8_t flags, struct hg_bulk *hg_bulk)
 {
     struct hg_bulk_segment *segments = HG_BULK_SEGMENTS(hg_bulk);
     char *buf_ptr = (char *) buf;
@@ -1202,13 +1198,13 @@ hg_bulk_serialize(
         buf_size_left -= serialize_size;
 
         /* Add context ID */
-        HG_BULK_ENCODE(error, ret, buf_ptr, buf_size_left, &hg_bulk->context_id,
-            hg_uint8_t);
+        HG_BULK_ENCODE(
+            error, ret, buf_ptr, buf_size_left, &hg_bulk->context_id, uint8_t);
     }
 
     /* Add the serialized data if eager mode is requested */
     if (desc_info.flags & HG_BULK_EAGER) {
-        hg_uint32_t i;
+        uint32_t i;
 
         HG_LOG_SUBSYS_DEBUG(bulk, "Serializing eager bulk data, %u segment(s)",
             desc_info.segment_count);
@@ -1231,12 +1227,12 @@ error:
 static hg_return_t
 hg_bulk_serialize_mem_descs(na_class_t *na_class, char **buf_p,
     hg_size_t *buf_size_left_p, struct hg_bulk_na_mem_desc *na_mem_descs,
-    const struct hg_bulk_segment *segments, hg_uint32_t count)
+    const struct hg_bulk_segment *segments, uint32_t count)
 {
     na_mem_handle_t **na_mem_handles;
     size_t *na_mem_serialize_sizes;
     hg_return_t ret;
-    hg_uint32_t i;
+    uint32_t i;
 
     if (count > HG_BULK_STATIC_MAX) {
         na_mem_handles = na_mem_descs->handles.d;
@@ -1254,7 +1250,7 @@ hg_bulk_serialize_mem_descs(na_class_t *na_class, char **buf_p,
         na_return_t na_ret;
 
         /* Skip null segments */
-        if (segments[i].base == (hg_ptr_t) NULL)
+        if (segments[i].base == NULL)
             continue;
 
         na_ret = NA_Mem_handle_serialize(
@@ -1290,7 +1286,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
 
     hg_bulk->core_class = core_class;
     hg_bulk->na_class = HG_Core_class_get_na(core_class);
-    hg_bulk->registered = HG_FALSE;
+    hg_bulk->registered = false;
     hg_atomic_init32(&hg_bulk->ref_count, 1);
 
     /* Descriptor info */
@@ -1330,7 +1326,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
     if (hg_bulk->desc.info.flags & HG_BULK_REGV ||
         (hg_bulk->desc.info.segment_count == 1)) {
         /* Always deserialize handle if HG_BULK_REGV is set */
-        if ((segments[0].base != (hg_ptr_t) NULL) ||
+        if ((segments[0].base != NULL) ||
             (hg_bulk->desc.info.flags & HG_BULK_REGV)) {
             na_return_t na_ret;
 
@@ -1406,13 +1402,13 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
         buf_size_left -= serialize_size;
 
         /* Get context ID */
-        HG_BULK_DECODE(error, ret, buf_ptr, buf_size_left, &hg_bulk->context_id,
-            hg_uint8_t);
+        HG_BULK_DECODE(
+            error, ret, buf_ptr, buf_size_left, &hg_bulk->context_id, uint8_t);
     }
 
     /* Get the serialized data */
     if (hg_bulk->desc.info.flags & HG_BULK_EAGER) {
-        hg_uint32_t i;
+        uint32_t i;
 
         HG_LOG_SUBSYS_DEBUG(bulk,
             "Deserializing eager bulk data, %u segment(s)",
@@ -1423,9 +1419,9 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
                 continue;
 
             /* Override base address to store data */
-            segments[i].base = (hg_ptr_t) calloc(1, segments[i].len);
-            HG_CHECK_SUBSYS_ERROR(bulk, segments[i].base == (hg_ptr_t) NULL,
-                error, ret, HG_NOMEM, "Could not allocate segment");
+            segments[i].base = calloc(1, segments[i].len);
+            HG_CHECK_SUBSYS_ERROR(bulk, segments[i].base == NULL, error, ret,
+                HG_NOMEM, "Could not allocate segment");
 
             HG_BULK_DECODE_ARRAY(error, ret, buf_ptr, buf_size_left,
                 (void *) segments[i].base, char, segments[i].len);
@@ -1453,12 +1449,12 @@ error:
 static hg_return_t
 hg_bulk_deserialize_mem_descs(na_class_t *na_class, const char **buf_p,
     hg_size_t *buf_size_left_p, struct hg_bulk_na_mem_desc *na_mem_descs,
-    const struct hg_bulk_segment *segments, hg_uint32_t count)
+    const struct hg_bulk_segment *segments, uint32_t count)
 {
     na_mem_handle_t **na_mem_handles;
     size_t *na_mem_serialize_sizes;
     hg_return_t ret;
-    hg_uint32_t i;
+    uint32_t i;
 
     if (count > HG_BULK_STATIC_MAX) {
         /* Allocate NA memory handles */
@@ -1488,7 +1484,7 @@ hg_bulk_deserialize_mem_descs(na_class_t *na_class, const char **buf_p,
         na_return_t na_ret;
 
         /* Skip null segments */
-        if (segments[i].base == (hg_ptr_t) NULL)
+        if (segments[i].base == NULL)
             continue;
 
         na_ret = NA_Mem_handle_deserialize(
@@ -1533,14 +1529,14 @@ hg_bulk_set_serialize_cached_ptr(
 /*---------------------------------------------------------------------------*/
 static void
 hg_bulk_access(struct hg_bulk *hg_bulk, hg_size_t offset, hg_size_t size,
-    hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
-    hg_size_t *buf_sizes, hg_uint32_t *actual_count)
+    uint8_t flags, uint32_t max_count, void **buf_ptrs, hg_size_t *buf_sizes,
+    uint32_t *actual_count)
 {
     struct hg_bulk_segment *segments = HG_BULK_SEGMENTS(hg_bulk);
-    hg_uint32_t segment_index;
+    uint32_t segment_index;
     hg_size_t segment_offset;
     hg_size_t remaining_size = size;
-    hg_uint32_t count = 0;
+    uint32_t count = 0;
 
     /* TODO use flags */
     (void) flags;
@@ -1549,7 +1545,7 @@ hg_bulk_access(struct hg_bulk *hg_bulk, hg_size_t offset, hg_size_t size,
         &segment_index, &segment_offset);
 
     while ((remaining_size > 0) && (count < max_count)) {
-        hg_ptr_t base;
+        void *base;
         hg_size_t len;
 
         /* Can only transfer smallest size */
@@ -1557,11 +1553,11 @@ hg_bulk_access(struct hg_bulk *hg_bulk, hg_size_t offset, hg_size_t size,
 
         /* Remaining size may be smaller */
         len = HG_BULK_MIN(remaining_size, len);
-        base = segments[segment_index].base + (hg_ptr_t) segment_offset;
+        base = (char *) segments[segment_index].base + segment_offset;
 
         /* Fill segments */
         if (buf_ptrs)
-            buf_ptrs[count] = (void *) base;
+            buf_ptrs[count] = base;
         if (buf_sizes)
             buf_sizes[count] = len;
         /*
@@ -1584,11 +1580,11 @@ hg_bulk_access(struct hg_bulk *hg_bulk, hg_size_t offset, hg_size_t size,
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
-hg_bulk_offset_translate(const struct hg_bulk_segment *segments,
-    hg_uint32_t count, hg_size_t offset, hg_uint32_t *segment_start_index,
+hg_bulk_offset_translate(const struct hg_bulk_segment *segments, uint32_t count,
+    hg_size_t offset, uint32_t *segment_start_index,
     hg_size_t *segment_start_offset)
 {
-    hg_uint32_t i, new_segment_start_index = 0;
+    uint32_t i, new_segment_start_index = 0;
     hg_size_t new_segment_offset = offset, next_offset = 0;
 
     /* Get start index and handle offset */
@@ -1682,7 +1678,7 @@ error:
 static void
 hg_bulk_op_destroy(struct hg_bulk_op_id *hg_bulk_op_id)
 {
-    hg_uint32_t i;
+    uint32_t i;
 
     if (hg_atomic_decr32(&hg_bulk_op_id->ref_count))
         return; /* Cannot free yet */
@@ -1777,7 +1773,7 @@ hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
     LIST_INIT(&hg_bulk_op_pool->pending_list);
     hg_thread_spin_init(&hg_bulk_op_pool->pending_list_lock);
     hg_bulk_op_pool->count = init_count;
-    hg_bulk_op_pool->extending = HG_FALSE;
+    hg_bulk_op_pool->extending = false;
 
     for (i = 0; i < init_count; i++) {
         struct hg_bulk_op_id *hg_bulk_op_id = NULL;
@@ -1786,7 +1782,7 @@ hg_bulk_op_pool_create(hg_core_context_t *core_context, unsigned int init_count,
         HG_CHECK_SUBSYS_HG_ERROR(
             bulk, error, ret, "Could not create bulk op ID");
 
-        hg_bulk_op_id->reuse = HG_TRUE;
+        hg_bulk_op_id->reuse = true;
         hg_bulk_op_id->op_pool = hg_bulk_op_pool;
 
         hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
@@ -1827,7 +1823,7 @@ hg_bulk_op_pool_destroy(struct hg_bulk_op_pool *hg_bulk_op_pool)
         LIST_REMOVE(hg_bulk_op_id, pending);
 
         /* Prevent re-initialization */
-        hg_bulk_op_id->reuse = HG_FALSE;
+        hg_bulk_op_id->reuse = false;
 
         /* Destroy op IDs */
         hg_bulk_op_destroy(hg_bulk_op_id);
@@ -1870,7 +1866,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
             hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
             continue;
         }
-        hg_bulk_op_pool->extending = HG_TRUE;
+        hg_bulk_op_pool->extending = true;
         hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
 
         /* Only a single thread can extend the pool */
@@ -1881,7 +1877,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
             HG_CHECK_SUBSYS_HG_ERROR(
                 bulk, error, ret, "Could not create bulk op ID");
 
-            new_op_id->reuse = HG_TRUE;
+            new_op_id->reuse = true;
             new_op_id->op_pool = hg_bulk_op_pool;
 
             hg_thread_spin_lock(&hg_bulk_op_pool->pending_list_lock);
@@ -1892,7 +1888,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
         hg_bulk_op_pool->count *= 2;
 
         hg_thread_mutex_lock(&hg_bulk_op_pool->extend_mutex);
-        hg_bulk_op_pool->extending = HG_FALSE;
+        hg_bulk_op_pool->extending = false;
         hg_thread_cond_broadcast(&hg_bulk_op_pool->extend_cond);
         hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
     } while (!hg_bulk_op_id);
@@ -1903,7 +1899,7 @@ hg_bulk_op_pool_get(struct hg_bulk_op_pool *hg_bulk_op_pool,
 
 error:
     hg_thread_mutex_lock(&hg_bulk_op_pool->extend_mutex);
-    hg_bulk_op_pool->extending = HG_FALSE;
+    hg_bulk_op_pool->extending = false;
     hg_thread_cond_broadcast(&hg_bulk_op_pool->extend_cond);
     hg_thread_mutex_unlock(&hg_bulk_op_pool->extend_mutex);
 
@@ -1913,7 +1909,7 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, struct hg_core_addr *origin_addr, hg_uint8_t origin_id,
+    hg_bulk_op_t op, struct hg_core_addr *origin_addr, uint8_t origin_id,
     struct hg_bulk *hg_bulk_origin, hg_size_t origin_offset,
     struct hg_bulk *hg_bulk_local, hg_size_t local_offset, hg_size_t size,
     hg_op_id_t *op_id)
@@ -1922,8 +1918,8 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
         HG_BULK_SEGMENTS(hg_bulk_origin);
     const struct hg_bulk_segment *local_segments =
         HG_BULK_SEGMENTS(hg_bulk_local);
-    hg_uint32_t origin_count = hg_bulk_origin->desc.info.segment_count,
-                local_count = hg_bulk_local->desc.info.segment_count;
+    uint32_t origin_count = hg_bulk_origin->desc.info.segment_count,
+             local_count = hg_bulk_local->desc.info.segment_count;
     uint8_t origin_flags = hg_bulk_origin->desc.info.flags;
     uint8_t local_flags = hg_bulk_local->desc.info.flags;
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
@@ -1973,7 +1969,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
 
     if (size == 0) {
         /* Complete immediately */
-        hg_bulk_complete(hg_bulk_op_id, HG_SUCCESS, HG_TRUE);
+        hg_bulk_complete(hg_bulk_op_id, HG_SUCCESS, true);
     } else if (HG_Core_addr_is_self(origin_addr) ||
                ((origin_flags & HG_BULK_EAGER) && (op != HG_BULK_PUSH))) {
         hg_bulk_op_id->na_class = NULL;
@@ -2040,12 +2036,12 @@ error:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_transfer_self(hg_bulk_op_t op,
-    const struct hg_bulk_segment *origin_segments, hg_uint32_t origin_count,
+    const struct hg_bulk_segment *origin_segments, uint32_t origin_count,
     hg_size_t origin_offset, const struct hg_bulk_segment *local_segments,
-    hg_uint32_t local_count, hg_size_t local_offset, hg_size_t size,
+    uint32_t local_count, hg_size_t local_offset, hg_size_t size,
     struct hg_bulk_op_id *hg_bulk_op_id)
 {
-    hg_uint32_t origin_segment_start_index = 0, local_segment_start_index = 0;
+    uint32_t origin_segment_start_index = 0, local_segment_start_index = 0;
     hg_size_t origin_segment_start_offset = 0, local_segment_start_offset = 0;
     hg_bulk_copy_op_t copy_op;
     hg_return_t ret;
@@ -2081,7 +2077,7 @@ hg_bulk_transfer_self(hg_bulk_op_t op,
         size);
 
     /* Complete immediately */
-    hg_bulk_complete(hg_bulk_op_id, HG_SUCCESS, HG_TRUE);
+    hg_bulk_complete(hg_bulk_op_id, HG_SUCCESS, true);
 
     return HG_SUCCESS;
 
@@ -2092,9 +2088,9 @@ error:
 /*---------------------------------------------------------------------------*/
 static void
 hg_bulk_transfer_segments_self(hg_bulk_copy_op_t copy_op,
-    const struct hg_bulk_segment *origin_segments, hg_uint32_t origin_count,
+    const struct hg_bulk_segment *origin_segments, uint32_t origin_count,
     hg_size_t origin_segment_start_index, hg_size_t origin_segment_start_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
     hg_size_t local_segment_start_index, hg_size_t local_segment_start_offset,
     hg_size_t size)
 {
@@ -2145,11 +2141,11 @@ hg_bulk_transfer_segments_self(hg_bulk_copy_op_t copy_op,
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
-    hg_uint8_t origin_id, const struct hg_bulk_segment *origin_segments,
-    hg_uint32_t origin_count, na_mem_handle_t **origin_mem_handles,
-    hg_uint8_t origin_flags, hg_size_t origin_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
-    na_mem_handle_t **local_mem_handles, hg_uint8_t local_flags,
+    uint8_t origin_id, const struct hg_bulk_segment *origin_segments,
+    uint32_t origin_count, na_mem_handle_t **origin_mem_handles,
+    uint8_t origin_flags, hg_size_t origin_offset,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
+    na_mem_handle_t **local_mem_handles, uint8_t local_flags,
     hg_size_t local_offset, hg_size_t size, struct hg_bulk_op_id *hg_bulk_op_id)
 {
     hg_bulk_na_op_id_t *hg_bulk_na_op_ids;
@@ -2192,8 +2188,7 @@ hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
             (hg_return_t) na_ret, "Could not transfer data (%s)",
             NA_Error_to_string(na_ret));
     } else {
-        hg_uint32_t origin_segment_start_index = 0,
-                    local_segment_start_index = 0;
+        uint32_t origin_segment_start_index = 0, local_segment_start_index = 0;
         hg_size_t origin_segment_start_offset = 0,
                   local_segment_start_offset = 0;
         na_op_id_t **na_op_ids;
@@ -2263,11 +2258,11 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_uint32_t
+static uint32_t
 hg_bulk_transfer_get_op_count(const struct hg_bulk_segment *origin_segments,
-    hg_uint32_t origin_count, hg_size_t origin_segment_start_index,
+    uint32_t origin_count, hg_size_t origin_segment_start_index,
     hg_size_t origin_segment_start_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
     hg_size_t local_segment_start_index, hg_size_t local_segment_start_offset,
     hg_size_t size)
 {
@@ -2276,7 +2271,7 @@ hg_bulk_transfer_get_op_count(const struct hg_bulk_segment *origin_segments,
     hg_size_t origin_segment_offset = origin_segment_start_offset;
     hg_size_t local_segment_offset = local_segment_start_offset;
     hg_size_t remaining_size = size;
-    hg_uint32_t count = 0;
+    uint32_t count = 0;
 
     while (remaining_size > 0 && origin_segment_index < origin_count &&
            local_segment_index < local_count) {
@@ -2321,20 +2316,20 @@ static hg_return_t
 hg_bulk_transfer_segments_na(na_class_t *na_class, na_context_t *na_context,
     na_bulk_op_t na_bulk_op, na_cb_t callback, void *arg,
     na_addr_t *origin_addr, uint8_t origin_id,
-    const struct hg_bulk_segment *origin_segments, hg_uint32_t origin_count,
+    const struct hg_bulk_segment *origin_segments, uint32_t origin_count,
     na_mem_handle_t **origin_mem_handles, hg_size_t origin_segment_start_index,
     hg_size_t origin_segment_start_offset,
-    const struct hg_bulk_segment *local_segments, hg_uint32_t local_count,
+    const struct hg_bulk_segment *local_segments, uint32_t local_count,
     na_mem_handle_t **local_mem_handles, hg_size_t local_segment_start_index,
     hg_size_t local_segment_start_offset, hg_size_t size,
-    na_op_id_t *na_op_ids[], hg_uint32_t na_op_count)
+    na_op_id_t *na_op_ids[], uint32_t na_op_count)
 {
     hg_size_t origin_segment_index = origin_segment_start_index;
     hg_size_t local_segment_index = local_segment_start_index;
     hg_size_t origin_segment_offset = origin_segment_start_offset;
     hg_size_t local_segment_offset = local_segment_start_offset;
     hg_size_t remaining_size = size;
-    hg_uint32_t count = 0;
+    uint32_t count = 0;
     hg_return_t ret;
 
     while (remaining_size > 0 && origin_segment_index < origin_count &&
@@ -2421,18 +2416,17 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
 
     /* When all NA transfers that correspond to the bulk operation complete,
      * complete the bulk operation. */
-    if ((hg_uint32_t) hg_atomic_incr32(&hg_bulk_op_id->op_completed_count) ==
+    if ((uint32_t) hg_atomic_incr32(&hg_bulk_op_id->op_completed_count) ==
         hg_bulk_op_id->op_count) {
         hg_bulk_complete(hg_bulk_op_id,
-            (hg_return_t) hg_atomic_get32(&hg_bulk_op_id->ret_status),
-            HG_FALSE);
+            (hg_return_t) hg_atomic_get32(&hg_bulk_op_id->ret_status), false);
     }
 }
 
 /*---------------------------------------------------------------------------*/
 static void
 hg_bulk_complete(
-    struct hg_bulk_op_id *hg_bulk_op_id, hg_return_t ret, hg_bool_t self_notify)
+    struct hg_bulk_op_id *hg_bulk_op_id, hg_return_t ret, bool self_notify)
 {
     /* Mark op id as completed */
     hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_COMPLETED);
@@ -2519,8 +2513,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
-    const hg_size_t *buf_sizes, hg_uint8_t flags, hg_bulk_t *handle)
+HG_Bulk_create(hg_class_t *hg_class, uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, uint8_t flags, hg_bulk_t *handle)
 {
     struct hg_bulk_attr attrs = {.mem_type = HG_MEM_TYPE_HOST, .device = 0};
     hg_return_t ret;
@@ -2560,9 +2554,9 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_create_attr(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
-    const hg_size_t *buf_sizes, hg_uint8_t flags,
-    const struct hg_bulk_attr *attrs, hg_bulk_t *handle)
+HG_Bulk_create_attr(hg_class_t *hg_class, uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, uint8_t flags, const struct hg_bulk_attr *attrs,
+    hg_bulk_t *handle)
 {
     hg_return_t ret;
 
@@ -2677,7 +2671,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_uint8_t
+uint8_t
 HG_Bulk_get_context_id(hg_bulk_t handle)
 {
     HG_CHECK_ERROR_NORET(
@@ -2692,8 +2686,8 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
-    hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
-    hg_size_t *buf_sizes, hg_uint32_t *actual_count)
+    uint8_t flags, uint32_t max_count, void **buf_ptrs, hg_size_t *buf_sizes,
+    uint32_t *actual_count)
 {
     hg_return_t ret;
 
@@ -2728,8 +2722,8 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, unsigned long flags)
     HG_LOG_SUBSYS_DEBUG(bulk,
         "Serialize size with flags eager=%d, sm=%d, is %" PRIu64
         " bytes for bulk handle (%p)",
-        (flags & HG_BULK_EAGER) ? HG_TRUE : HG_FALSE,
-        (flags & HG_BULK_SM) ? HG_TRUE : HG_FALSE, ret, (void *) handle);
+        (flags & HG_BULK_EAGER) ? true : false,
+        (flags & HG_BULK_SM) ? true : false, ret, (void *) handle);
 
     return ret;
 
@@ -2749,8 +2743,8 @@ HG_Bulk_serialize(
 
     HG_LOG_SUBSYS_DEBUG(bulk,
         "Serializing bulk handle (%p) with flags eager=%d, sm=%d",
-        (void *) handle, (flags & HG_BULK_EAGER) ? HG_TRUE : HG_FALSE,
-        (flags & HG_BULK_SM) ? HG_TRUE : HG_FALSE);
+        (void *) handle, (flags & HG_BULK_EAGER) ? true : false,
+        (flags & HG_BULK_SM) ? true : false);
 
     ret = hg_bulk_serialize(
         buf, buf_size, flags & 0xff, (struct hg_bulk *) handle);
@@ -2910,7 +2904,7 @@ error:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, hg_addr_t origin_addr, hg_uint8_t origin_id,
+    hg_bulk_op_t op, hg_addr_t origin_addr, uint8_t origin_id,
     hg_bulk_t origin_handle, hg_size_t origin_offset, hg_bulk_t local_handle,
     hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id)
 {

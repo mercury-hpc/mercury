@@ -24,24 +24,22 @@
 #define HG_CORE_HEADER_CHECKSUM "crc16"
 
 /* Convert values between host and network byte order */
-#define hg_core_header_proc_hg_uint8_t_enc(x)  (x & 0xff)
-#define hg_core_header_proc_hg_uint8_t_dec(x)  (x & 0xff)
-#define hg_core_header_proc_hg_uint16_t_enc(x) htons(x & 0xffff)
-#define hg_core_header_proc_hg_uint16_t_dec(x) ntohs(x & 0xffff)
-#define hg_core_header_proc_hg_uint32_t_enc(x) htonl(x & 0xffffffff)
-#define hg_core_header_proc_hg_uint32_t_dec(x) ntohl(x & 0xffffffff)
-#define hg_core_header_proc_hg_uint64_t_enc(x)                                 \
-    (((hg_uint64_t) htonl(x & 0xffffffff) << 32) |                             \
-        htonl((hg_uint32_t) (x >> 32)))
-#define hg_core_header_proc_hg_uint64_t_dec(x)                                 \
-    (((hg_uint64_t) ntohl(x & 0xffffffff) << 32) |                             \
-        ntohl((hg_uint32_t) (x >> 32)))
+#define hg_core_header_proc_uint8_t_enc(x)  (x & 0xff)
+#define hg_core_header_proc_uint8_t_dec(x)  (x & 0xff)
+#define hg_core_header_proc_uint16_t_enc(x) htons(x & 0xffff)
+#define hg_core_header_proc_uint16_t_dec(x) ntohs(x & 0xffff)
+#define hg_core_header_proc_uint32_t_enc(x) htonl(x & 0xffffffff)
+#define hg_core_header_proc_uint32_t_dec(x) ntohl(x & 0xffffffff)
+#define hg_core_header_proc_uint64_t_enc(x)                                    \
+    (((uint64_t) htonl(x & 0xffffffff) << 32) | htonl((uint32_t) (x >> 32)))
+#define hg_core_header_proc_uint64_t_dec(x)                                    \
+    (((uint64_t) ntohl(x & 0xffffffff) << 32) | ntohl((uint32_t) (x >> 32)))
 
 /* Signed values */
-#define hg_core_header_proc_hg_int8_t_enc(x)                                   \
-    (hg_int8_t) hg_core_header_proc_hg_uint8_t_enc((hg_uint8_t) x)
-#define hg_core_header_proc_hg_int8_t_dec(x)                                   \
-    (hg_int8_t) hg_core_header_proc_hg_uint8_t_dec((hg_uint8_t) x)
+#define hg_core_header_proc_int8_t_enc(x)                                      \
+    (int8_t) hg_core_header_proc_uint8_t_enc((uint8_t) x)
+#define hg_core_header_proc_int8_t_dec(x)                                      \
+    (int8_t) hg_core_header_proc_uint8_t_dec((uint8_t) x)
 
 /* Update checksum */
 #ifdef HG_HAS_CHECKSUMS
@@ -92,7 +90,7 @@ HG_Error_to_string(hg_return_t errnum);
 /*---------------------------------------------------------------------------*/
 void
 hg_core_header_request_init(
-    struct hg_core_header *hg_core_header, hg_bool_t use_checksum)
+    struct hg_core_header *hg_core_header, bool use_checksum)
 {
 #ifdef HG_HAS_CHECKSUMS
     /* Create a new checksum (CRC16) */
@@ -108,7 +106,7 @@ hg_core_header_request_init(
 /*---------------------------------------------------------------------------*/
 void
 hg_core_header_response_init(
-    struct hg_core_header *hg_core_header, hg_bool_t use_checksum)
+    struct hg_core_header *hg_core_header, bool use_checksum)
 {
 #ifdef HG_HAS_CHECKSUMS
     /* Create a new checksum (CRC16) */
@@ -180,10 +178,10 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 {
     void *buf_ptr = buf;
     struct hg_core_header_request *header = &hg_core_header->msg.request;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
 
-    HG_CHECK_ERROR(buf_size < sizeof(struct hg_core_header_request), done, ret,
-        HG_INVALID_ARG, "Invalid buffer size");
+    HG_CHECK_SUBSYS_ERROR(rpc, buf_size < sizeof(struct hg_core_header_request),
+        error, ret, HG_INVALID_ARG, "Invalid buffer size");
 
 #ifdef HG_HAS_CHECKSUMS
     /* Reset header checksum first */
@@ -192,37 +190,35 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 #endif
 
     /* HG byte */
-    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->hg, hg_uint8_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->hg, uint8_t, op);
 
     /* Protocol */
-    HG_CORE_HEADER_PROC(
-        hg_core_header, buf_ptr, header->protocol, hg_uint8_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->protocol, uint8_t, op);
 
     /* RPC ID */
-    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->id, hg_uint64_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->id, uint64_t, op);
 
     /* Flags */
-    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, hg_uint8_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, uint8_t, op);
 
     /* Cookie */
-    HG_CORE_HEADER_PROC(
-        hg_core_header, buf_ptr, header->cookie, hg_uint8_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->cookie, uint8_t, op);
 
 #ifdef HG_HAS_CHECKSUMS
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL) {
         /* Checksum of header */
         mchecksum_get(hg_core_header->checksum, &header->hash.header,
-            sizeof(hg_uint16_t), MCHECKSUM_FINALIZE);
+            sizeof(uint16_t), MCHECKSUM_FINALIZE);
 
         if (op == HG_ENCODE) {
             HG_CORE_HEADER_PROC_TYPE(
-                buf_ptr, header->hash.header, hg_uint16_t, op);
+                buf_ptr, header->hash.header, uint16_t, op);
         } else { /* HG_DECODE */
-            hg_uint16_t h_hash_header = 0;
+            uint16_t h_hash_header = 0;
 
-            HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, hg_uint16_t, op);
-            HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
-                HG_CHECKSUM_ERROR,
+            HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, uint16_t, op);
+            HG_CHECK_SUBSYS_ERROR(rpc, header->hash.header != h_hash_header,
+                error, ret, HG_CHECKSUM_ERROR,
                 "checksum 0x%04" PRIx16 " does not match (expected 0x%04" PRIx16
                 "!)",
                 header->hash.header, h_hash_header);
@@ -230,7 +226,9 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     }
 #endif
 
-done:
+    return HG_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -241,9 +239,10 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 {
     void *buf_ptr = buf;
     struct hg_core_header_response *header = &hg_core_header->msg.response;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
 
-    HG_CHECK_ERROR(buf_size < sizeof(struct hg_core_header_response), done, ret,
+    HG_CHECK_SUBSYS_ERROR(rpc,
+        buf_size < sizeof(struct hg_core_header_response), error, ret,
         HG_OVERFLOW, "Invalid buffer size");
 
 #ifdef HG_HAS_CHECKSUMS
@@ -253,31 +252,29 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 #endif
 
     /* Return code */
-    HG_CORE_HEADER_PROC(
-        hg_core_header, buf_ptr, header->ret_code, hg_int8_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->ret_code, int8_t, op);
 
     /* Flags */
-    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, hg_uint8_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, uint8_t, op);
 
     /* Cookie */
-    HG_CORE_HEADER_PROC(
-        hg_core_header, buf_ptr, header->cookie, hg_uint16_t, op);
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->cookie, uint16_t, op);
 
 #ifdef HG_HAS_CHECKSUMS
     if (hg_core_header->checksum != MCHECKSUM_OBJECT_NULL) {
         /* Checksum of header */
         mchecksum_get(hg_core_header->checksum, &header->hash.header,
-            sizeof(hg_uint16_t), MCHECKSUM_FINALIZE);
+            sizeof(uint16_t), MCHECKSUM_FINALIZE);
 
         if (op == HG_ENCODE) {
             HG_CORE_HEADER_PROC_TYPE(
-                buf_ptr, header->hash.header, hg_uint16_t, op);
+                buf_ptr, header->hash.header, uint16_t, op);
         } else { /* HG_DECODE */
-            hg_uint16_t h_hash_header = 0;
+            uint16_t h_hash_header = 0;
 
-            HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, hg_uint16_t, op);
-            HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
-                HG_CHECKSUM_ERROR,
+            HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, uint16_t, op);
+            HG_CHECK_SUBSYS_ERROR(rpc, header->hash.header != h_hash_header,
+                error, ret, HG_CHECKSUM_ERROR,
                 "checksum 0x%04" PRIx16 " does not match (expected 0x%04" PRIx16
                 "!)",
                 header->hash.header, h_hash_header);
@@ -285,7 +282,9 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     }
 #endif
 
-done:
+    return HG_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -294,19 +293,21 @@ hg_return_t
 hg_core_header_request_verify(const struct hg_core_header *hg_core_header)
 {
     const struct hg_core_header_request *header = &hg_core_header->msg.request;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
 
     /* Must match HG */
-    HG_CHECK_ERROR(
+    HG_CHECK_SUBSYS_ERROR(rpc,
         (((header->hg >> 1) & 'H') != 'H') || (((header->hg) & 'G') != 'G'),
-        done, ret, HG_PROTOCOL_ERROR, "Invalid HG byte");
+        error, ret, HG_PROTOCOL_ERROR, "Invalid HG byte");
 
-    HG_CHECK_ERROR(header->protocol != HG_CORE_PROTOCOL_VERSION, done, ret,
-        HG_PROTONOSUPPORT,
+    HG_CHECK_SUBSYS_ERROR(rpc, header->protocol != HG_CORE_PROTOCOL_VERSION,
+        error, ret, HG_PROTONOSUPPORT,
         "Invalid protocol version, using %" PRIx8 ", expected %x",
         header->protocol, HG_CORE_PROTOCOL_VERSION);
 
-done:
+    return HG_SUCCESS;
+
+error:
     return ret;
 }
 
@@ -316,10 +317,9 @@ hg_core_header_response_verify(const struct hg_core_header *hg_core_header)
 {
     const struct hg_core_header_response *header =
         &hg_core_header->msg.response;
-    hg_return_t ret = HG_SUCCESS;
 
-    HG_CHECK_WARNING(header->ret_code, "Response return code: %s",
+    HG_CHECK_SUBSYS_WARNING(rpc, header->ret_code, "Response return code: %s",
         HG_Error_to_string((hg_return_t) header->ret_code));
 
-    return ret;
+    return HG_SUCCESS;
 }
