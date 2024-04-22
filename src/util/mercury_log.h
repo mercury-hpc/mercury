@@ -111,11 +111,11 @@
 /* HG_LOG_SUBSYS_DECL_REGISTER: declare and register a log outlet. */
 #ifdef _WIN32
 #    define HG_LOG_SUBSYS_DECL_REGISTER(name, parent_name)                     \
-        struct hg_log_outlet HG_LOG_OUTLET(name) =                             \
+        HG_LOG_OUTLET_DECL(name) =                                             \
             HG_LOG_OUTLET_SUBSYS_INITIALIZER(name, parent_name)
 #else
 #    define HG_LOG_SUBSYS_DECL_REGISTER(name, parent_name)                     \
-        struct hg_log_outlet HG_LOG_OUTLET(name) =                             \
+        HG_LOG_OUTLET_DECL(name) =                                             \
             HG_LOG_OUTLET_SUBSYS_INITIALIZER(name, parent_name);               \
         HG_LOG_SUBSYS_REGISTER(name)
 #endif
@@ -124,11 +124,11 @@
  * enforce an init state. */
 #ifdef _WIN32
 #    define HG_LOG_SUBSYS_DECL_STATE_REGISTER(name, parent_name, state)        \
-        struct hg_log_outlet HG_LOG_OUTLET(name) =                             \
+        HG_LOG_OUTLET_DECL(name) =                                             \
             HG_LOG_OUTLET_SUBSYS_STATE_INITIALIZER(name, parent_name, state)
 #else
 #    define HG_LOG_SUBSYS_DECL_STATE_REGISTER(name, parent_name, state)        \
-        struct hg_log_outlet HG_LOG_OUTLET(name) =                             \
+        HG_LOG_OUTLET_DECL(name) =                                             \
             HG_LOG_OUTLET_SUBSYS_STATE_INITIALIZER(name, parent_name, state);  \
         HG_LOG_SUBSYS_REGISTER(name)
 #endif
