@@ -4,6 +4,23 @@ This is a preview release of the v2.4.0 release.
 
 ## New features
 
+<span style="color:blue">Added in rc2</span>
+
+- __[NA OFI]__
+    - Add support for `FI_AV_AUTH_KEY` (requires libfabric >= 1.20)
+        - Add runtime check for cxi provider version
+        - Setting multiple auth keys disables `FI_DIRECTED_RECV`
+        - Separate opening of AV and auth key insertion
+        - Parse auth key range when `FI_AV_AUTH_KEY` is available
+        - Encode/decode auth key when serializing addrs
+    - Add support for `FI_AV_USER_ID`
+    - Clean up handling of `FI_SOURCE_ERR`
+    - Remove support of `FI_SOURCE` w/o `FI_SOURCE_ERR`
+    - Add support for new CXI address format
+
+---
+<span style="color:blue">Added in rc1</span>
+
 - __[NA]__
     - Add init info version compatibility wrappers
     - Bump NA version to v4.1.0
@@ -18,6 +35,23 @@ This is a preview release of the v2.4.0 release.
     - Support selection of traffic classes (single class per NA class)
 
 ## Bug fixes
+
+<span style="color:blue">Added in rc2</span>
+
+- __[HG Util]__
+    - Use destructor to free log outlets
+- __[NA]__
+    - Fix missing free of dynamic plugin entries
+- __[NA UCX]__
+    - Fix `hg_info` not filtering protocol   
+        - Allow `na_ucx_get_protocol_info()` to resolve ucx tl name aliases
+- __[NA OFI]__
+    - Fix shm provider flags
+- __[NA Test]__
+    - Remove could not find MPI message
+
+---
+<span style="color:blue">Added in rc1</span>
 
 - __[HG Util]__
     - Add missing prototype to `hg_atomic_fence()` definition
