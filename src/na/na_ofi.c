@@ -228,7 +228,7 @@
       FI_ADDR_CXI,                                                             \
       FI_PROGRESS_MANUAL,                                                      \
       FI_PROTO_CXI,                                                            \
-      FI_MULTI_RECV,                                                           \
+      FI_SOURCE | FI_SOURCE_ERR | FI_MULTI_RECV,                               \
       NA_OFI_WAIT_FD | NA_OFI_LOC_INFO | NA_OFI_HMEM | NA_OFI_AV_AUTH_KEY      \
     )                                                                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0, 0)
@@ -1288,8 +1288,8 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
  */
 static na_return_t
 na_ofi_av_open(struct na_ofi_domain *na_ofi_domain,
-    enum na_ofi_prov_type prov_type, int addr_format, int num_auth_keys,
-    const union na_ofi_auth_key *base_auth_key);
+    enum na_ofi_prov_type prov_type, const struct fi_info *fi_info,
+    int num_auth_keys, const union na_ofi_auth_key *base_auth_key);
 
 /**
  * Close AV.
@@ -3471,7 +3471,11 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
         /* Starting with libfabric 1.20, the cxi provider enhanced scalability
          * of FI_SOURCE and supports FI_AV_USER_ID. */
         if (prov_type == NA_OFI_PROV_CXI)
-            hints->caps |= FI_SOURCE | FI_SOURCE_ERR | FI_AV_USER_ID;
+            hints->caps |= FI_AV_USER_ID;
+#else
+        /* With older versions of Slingshot, disable FI_SOURCE. */
+        if (prov_type == NA_OFI_PROV_CXI)
+            hints->caps &= ~FI_SOURCE & ~FI_SOURCE_ERR;
 #endif
 
         /* set default progress mode */
@@ -4870,8 +4874,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
 #endif
 
     /* Open AV */
-    ret = na_ofi_av_open(na_ofi_domain, na_ofi_fabric->prov_type,
-        (int) fi_info->addr_format, (int) num_auth_keys, base_auth_key_p);
+    ret = na_ofi_av_open(na_ofi_domain, na_ofi_fabric->prov_type, fi_info,
+        (int) num_auth_keys, base_auth_key_p);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open AV");
 
 #ifndef _WIN32
@@ -4963,8 +4967,8 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_av_open(struct na_ofi_domain *na_ofi_domain,
-    enum na_ofi_prov_type prov_type, int addr_format, int num_auth_keys,
-    const union na_ofi_auth_key *base_auth_key)
+    enum na_ofi_prov_type prov_type, const struct fi_info *fi_info,
+    int num_auth_keys, const union na_ofi_auth_key *base_auth_key)
 {
     struct fi_av_attr av_attr = {.type = FI_AV_UNSPEC};
     hg_hash_table_equal_func_t map_key_equal_func;
@@ -5019,7 +5023,7 @@ na_ofi_av_open(struct na_ofi_domain *na_ofi_domain,
 #endif
 
     /* Create primary addr hash-table */
-    switch (addr_format) {
+    switch ((int) fi_info->addr_format) {
         case FI_SOCKADDR_IN6:
             map_key_equal_func = na_ofi_addr_key_equal_sin6;
             break;
@@ -5050,8 +5054,7 @@ na_ofi_av_open(struct na_ofi_domain *na_ofi_domain,
 
     /* Create secondary hash-table to lookup by fi_addr if using FI_SOURCE and
      * FI_AV_USER_ID is not available */
-    if ((na_ofi_prov_extra_caps[prov_type] & FI_SOURCE) &&
-        !na_ofi_domain->av_user_id) {
+    if ((fi_info->caps & FI_SOURCE_ERR) && !na_ofi_domain->av_user_id) {
         na_ofi_domain->addr_map.fi_map =
             hg_hash_table_new(na_ofi_fi_addr_hash, na_ofi_fi_addr_equal);
         NA_CHECK_SUBSYS_ERROR(addr, na_ofi_domain->addr_map.fi_map == NULL,
@@ -6637,8 +6640,7 @@ na_ofi_cq_process_fi_src_addr(struct na_ofi_class *na_ofi_class,
 
     NA_CHECK_SUBSYS_ERROR(addr, src_addr == FI_ADDR_NOTAVAIL, error, ret,
         NA_INVALID_ARG, "Invalid FI addr (%" PRIu64 ")", src_addr);
-    NA_CHECK_SUBSYS_ERROR(addr,
-        !(na_ofi_prov_extra_caps[na_ofi_class->fabric->prov_type] & FI_SOURCE),
+    NA_CHECK_SUBSYS_ERROR(addr, !(na_ofi_class->fi_info->caps & FI_SOURCE),
         error, ret, NA_PROTOCOL_ERROR,
         "Provider should not be using FI_SOURCE");
 
@@ -7639,15 +7641,7 @@ na_ofi_initialize(
             NA_PROTONOSUPPORT, "FI_MULTI_RECV is not supported by provider");
         na_ofi_class->opt_features |= NA_OPT_MULTI_RECV;
     }
-    if (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE) {
-        NA_CHECK_SUBSYS_ERROR(cls, !(na_ofi_class->fi_info->caps & FI_SOURCE),
-            error, ret, NA_PROTONOSUPPORT,
-            "FI_SOURCE is not supported by provider");
-        NA_CHECK_SUBSYS_ERROR(cls,
-            (na_ofi_prov_extra_caps[prov_type] & FI_SOURCE_ERR) &&
-                !(na_ofi_class->fi_info->caps & FI_SOURCE_ERR),
-            error, ret, NA_PROTONOSUPPORT,
-            "FI_SOURCE_ERR is not supported by provider");
+    if (na_ofi_class->fi_info->caps & FI_SOURCE_ERR) {
         na_ofi_class->cq_poll = na_ofi_cq_poll_fi_source;
     } else
         na_ofi_class->cq_poll = na_ofi_cq_poll_no_source;
@@ -8248,8 +8242,7 @@ na_ofi_msg_get_max_expected_size(const na_class_t *na_class)
 static NA_INLINE size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
-    if (!(na_ofi_prov_extra_caps[NA_OFI_CLASS(na_class)->fabric->prov_type] &
-            FI_SOURCE_ERR))
+    if (!(NA_OFI_CLASS(na_class)->fi_info->caps & FI_SOURCE_ERR))
         return na_ofi_raw_addr_serialize_size(
             (int) NA_OFI_CLASS(na_class)->fi_info->addr_format);
 
@@ -8343,8 +8336,7 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, size_t buf_size)
 {
     /* For providers that don't support FI_SOURCE_ERR, insert the msg header
      * to piggyback the source address for unexpected message. */
-    if (!(na_ofi_prov_extra_caps[NA_OFI_CLASS(na_class)->fabric->prov_type] &
-            FI_SOURCE_ERR))
+    if (!(NA_OFI_CLASS(na_class)->fi_info->caps & FI_SOURCE_ERR))
         return na_ofi_raw_addr_serialize(
             (int) NA_OFI_CLASS(na_class)->fi_info->addr_format, buf, buf_size,
             &NA_OFI_CLASS(na_class)->endpoint->src_addr->addr_key.addr);
