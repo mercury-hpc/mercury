@@ -136,7 +136,7 @@ hg_core_completion_add(struct hg_core_context *core_context,
 /**
  * Trigger callback from bulk op ID.
  */
-HG_PRIVATE hg_return_t
+HG_PRIVATE void
 hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id);
 
 /**

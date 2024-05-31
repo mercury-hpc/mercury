@@ -2160,6 +2160,25 @@ error:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Cancel(hg_handle_t handle)
+{
+    hg_return_t ret;
+
+    HG_CHECK_SUBSYS_ERROR(rpc, handle == HG_HANDLE_NULL, error, ret,
+        HG_INVALID_ARG, "NULL HG handle");
+
+    ret = HG_Core_cancel(handle->core_handle);
+    HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not cancel handle (%s)",
+        HG_Error_to_string(ret));
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Progress(hg_context_t *context, unsigned int timeout)
 {
     hg_return_t ret;
@@ -2193,24 +2212,5 @@ HG_Trigger(hg_context_t *context, unsigned int timeout, unsigned int max_count,
         HG_Error_to_string(ret));
 
 done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
-HG_Cancel(hg_handle_t handle)
-{
-    hg_return_t ret;
-
-    HG_CHECK_SUBSYS_ERROR(rpc, handle == HG_HANDLE_NULL, error, ret,
-        HG_INVALID_ARG, "NULL HG handle");
-
-    ret = HG_Core_cancel(handle->core_handle);
-    HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not cancel handle (%s)",
-        HG_Error_to_string(ret));
-
-    return HG_SUCCESS;
-
-error:
     return ret;
 }
