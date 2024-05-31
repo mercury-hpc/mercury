@@ -164,7 +164,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
-hg_poll_get_fd(hg_poll_set_t *poll_set)
+hg_poll_get_fd(const hg_poll_set_t *poll_set)
 {
 #if defined(_WIN32)
     /* TODO */

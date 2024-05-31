@@ -75,7 +75,7 @@ hg_poll_destroy(hg_poll_set_t *poll_set);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_PUBLIC int
-hg_poll_get_fd(hg_poll_set_t *poll_set);
+hg_poll_get_fd(const hg_poll_set_t *poll_set);
 
 /**
  * Add file descriptor to poll set.
