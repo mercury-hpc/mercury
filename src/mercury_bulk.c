@@ -2485,30 +2485,20 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+void
 hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
 {
-    hg_return_t ret;
-
     /* Execute callback */
     if (hg_bulk_op_id->callback)
         hg_bulk_op_id->callback(&hg_bulk_op_id->callback_info);
 
     /* Decrement ref_count */
-    ret = hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.origin_handle);
-    HG_CHECK_SUBSYS_HG_ERROR(bulk, error, ret, "Could not free origin handle");
-
-    ret = hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.local_handle);
-    HG_CHECK_SUBSYS_HG_ERROR(bulk, error, ret, "Could not free local handle");
+    (void) hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.origin_handle);
+    (void) hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.local_handle);
 
     /* Release bulk op ID (can be released after callback execution since
      * op IDs are managed internally) */
     hg_bulk_op_destroy(hg_bulk_op_id);
-
-    return HG_SUCCESS;
-
-error:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
