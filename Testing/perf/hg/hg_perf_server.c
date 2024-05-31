@@ -114,22 +114,33 @@ hg_perf_loop(struct hg_perf_class_info *info)
 {
     hg_return_t ret;
 
-    do {
-        unsigned int actual_count = 0;
+    while (!info->done) {
+        unsigned int count = 0, actual_count = 0;
 
-        do {
-            ret = HG_Trigger(info->context, 0, 1, &actual_count);
-        } while ((ret == HG_SUCCESS) && actual_count);
-        HG_TEST_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
-            "HG_Trigger() failed (%s)", HG_Error_to_string(ret));
+        if (info->poll_set && !HG_Event_ready(info->context)) {
+            struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
+            unsigned int actual_events = 0;
+            int rc;
 
-        if (info->done)
-            break;
+            HG_TEST_LOG_DEBUG("Waiting for 1000 ms");
 
-        ret = HG_Progress(info->context, 1000);
-    } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
-    HG_TEST_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
-        "HG_Progress() failed (%s)", HG_Error_to_string(ret));
+            rc = hg_poll_wait(
+                info->poll_set, 1000, 1, &poll_event, &actual_events);
+            HG_TEST_CHECK_ERROR(rc != 0, error, ret, HG_PROTOCOL_ERROR,
+                "hg_poll_wait() failed");
+        }
+
+        ret = HG_Event_progress(info->context, &count);
+        HG_TEST_CHECK_HG_ERROR(
+            error, ret, "HG_Progress() failed (%s)", HG_Error_to_string(ret));
+
+        if (count == 0)
+            continue;
+
+        ret = HG_Event_trigger(info->context, count, &actual_count);
+        HG_TEST_CHECK_HG_ERROR(
+            error, ret, "HG_Trigger() failed (%s)", HG_Error_to_string(ret));
+    }
 
     return HG_SUCCESS;
 

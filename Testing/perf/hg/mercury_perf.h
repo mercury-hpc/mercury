@@ -12,7 +12,7 @@
 
 #include "mercury_bulk.h"
 #include "mercury_param.h"
-#include "mercury_request.h" /* For convenience */
+#include "mercury_poll.h"
 #include "mercury_time.h"
 
 #include <stdlib.h>
@@ -38,11 +38,11 @@ struct hg_perf_info {
 };
 
 struct hg_perf_class_info {
-    hg_class_t *hg_class;              /* HG class */
-    hg_context_t *context;             /* HG context */
-    hg_request_class_t *request_class; /* Request class */
-    hg_addr_t *target_addrs;           /* Target addresses */
-    hg_handle_t *handles;              /* Handles */
+    hg_class_t *hg_class;    /* HG class */
+    hg_context_t *context;   /* HG context */
+    hg_poll_set_t *poll_set; /* Poll set */
+    hg_addr_t *target_addrs; /* Target addresses */
+    hg_handle_t *handles;    /* Handles */
     void *rpc_buf;
     void *rpc_verify_buf;
     void **bulk_bufs;
@@ -54,7 +54,7 @@ struct hg_perf_class_info {
     size_t buf_size_max;
     hg_bulk_t *local_bulk_handles;
     hg_bulk_t *remote_bulk_handles;
-    hg_request_t *request; /* Request */
+    int wait_fd; /* Wait fd */
     int class_id;
     bool done;
     bool verify;
@@ -62,9 +62,9 @@ struct hg_perf_class_info {
 };
 
 struct hg_perf_request {
-    int32_t expected_count; /* Expected count */
-    int32_t complete_count; /* Completed count */
-    hg_request_t *request;  /* Request */
+    int32_t expected_count;      /* Expected count */
+    int32_t complete_count;      /* Completed count */
+    hg_atomic_int32_t completed; /* Request */
 };
 
 struct hg_perf_bulk_init_info {
@@ -99,6 +99,14 @@ struct hg_perf_bulk_info {
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+hg_return_t
+hg_perf_request_wait(struct hg_perf_class_info *info,
+    struct hg_perf_request *request, unsigned int timeout_ms,
+    unsigned int *completed_p);
+
+hg_return_t
+hg_perf_request_complete(const struct hg_cb_info *hg_cb_info);
 
 hg_return_t
 hg_perf_init(int argc, char *argv[], bool listen, struct hg_perf_info *info);
@@ -136,9 +144,6 @@ hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
 void
 hg_perf_print_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t);
-
-hg_return_t
-hg_perf_request_complete(const struct hg_cb_info *hg_cb_info);
 
 hg_return_t
 hg_perf_send_done(struct hg_perf_class_info *info);
