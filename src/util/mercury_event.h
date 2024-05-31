@@ -87,7 +87,7 @@ hg_event_set(int fd)
 static HG_UTIL_INLINE int
 hg_event_set(int fd)
 {
-    return (eventfd_write(fd, 1) == 0) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+    return eventfd_write(fd, 1); /* 0 on success / -1 on failure */
 }
 #    else
 static HG_UTIL_INLINE int
@@ -132,14 +132,10 @@ hg_event_get(int fd, bool *signaled)
 {
     eventfd_t count = 0;
 
-    if ((eventfd_read(fd, &count) == 0) && count)
-        *signaled = true;
-    else {
-        if (errno == EAGAIN)
-            *signaled = false;
-        else
-            return HG_UTIL_FAIL;
-    }
+    if ((eventfd_read(fd, &count) < 0) && (errno != EAGAIN))
+        return HG_UTIL_FAIL;
+
+    *signaled = (bool) count;
 
     return HG_UTIL_SUCCESS;
 }
