@@ -52,12 +52,6 @@ struct iovec {
 /* Local Prototypes */
 /********************/
 
-static int
-hg_perf_request_progress(unsigned int timeout, void *arg);
-
-static int
-hg_perf_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
-
 static hg_return_t
 hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
     struct hg_perf_class_info *info, hg_class_t *hg_class, bool listen);
@@ -115,32 +109,76 @@ hg_perf_done_cb(hg_handle_t handle);
 /* Local Variables */
 /*******************/
 
-/*---------------------------------------------------------------------------*/
-static int
-hg_perf_request_progress(unsigned int timeout, void *arg)
+hg_return_t
+hg_perf_request_wait(struct hg_perf_class_info *info,
+    struct hg_perf_request *request, unsigned int timeout_ms,
+    unsigned int *completed_p)
 {
-    struct hg_perf_class_info *info = (struct hg_perf_class_info *) arg;
+    hg_time_t deadline, now = hg_time_from_ms(0);
+    bool completed = false;
+    hg_return_t ret;
 
-    if (HG_Progress(info->context, timeout) != HG_SUCCESS)
-        return HG_UTIL_FAIL;
+    if (timeout_ms != 0)
+        hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
-    return HG_UTIL_SUCCESS;
+    do {
+        unsigned int count = 0, actual_count = 0;
+
+        if (info->poll_set && !HG_Event_ready(info->context)) {
+            struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
+            unsigned int actual_events = 0;
+            int rc;
+
+            HG_TEST_LOG_DEBUG("Waiting for %u ms",
+                hg_time_to_ms(hg_time_subtract(deadline, now)));
+
+            rc = hg_poll_wait(info->poll_set,
+                hg_time_to_ms(hg_time_subtract(deadline, now)), 1, &poll_event,
+                &actual_events);
+            HG_TEST_CHECK_ERROR(rc != 0, error, ret, HG_PROTOCOL_ERROR,
+                "hg_poll_wait() failed");
+        }
+
+        ret = HG_Event_progress(info->context, &count);
+        HG_TEST_CHECK_HG_ERROR(
+            error, ret, "HG_Progress() failed (%s)", HG_Error_to_string(ret));
+
+        if (count == 0)
+            continue;
+
+        ret = HG_Event_trigger(info->context, count, &actual_count);
+        HG_TEST_CHECK_HG_ERROR(
+            error, ret, "HG_Trigger() failed (%s)", HG_Error_to_string(ret));
+
+        if (hg_atomic_get32(&request->completed)) {
+            completed = true;
+            break;
+        }
+
+        if (timeout_ms != 0)
+            hg_time_get_current_ms(&now);
+    } while (hg_time_less(now, deadline));
+
+    if (completed_p != NULL)
+        *completed_p = completed;
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static int
-hg_perf_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
+hg_return_t
+hg_perf_request_complete(const struct hg_cb_info *hg_cb_info)
 {
-    struct hg_perf_class_info *info = (struct hg_perf_class_info *) arg;
-    unsigned int count = 0;
+    struct hg_perf_request *info = (struct hg_perf_request *) hg_cb_info->arg;
 
-    if (HG_Trigger(info->context, timeout, 1, &count) != HG_SUCCESS)
-        return HG_UTIL_FAIL;
+    if ((++info->complete_count) == info->expected_count)
+        hg_atomic_set32(&info->completed, (int32_t) true);
 
-    if (flag)
-        *flag = (count > 0) ? true : false;
-
-    return HG_UTIL_SUCCESS;
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -216,8 +254,20 @@ hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
         "HG_Context_create() failed");
     (void) HG_Context_set_data(info->context, info, NULL);
 
-    info->request_class = hg_request_init(
-        hg_perf_request_progress, hg_perf_request_trigger, info);
+    info->wait_fd = HG_Event_get_wait_fd(info->context);
+    if (info->wait_fd > 0) {
+        struct hg_poll_event poll_event = {
+            .events = HG_POLLIN, .data.ptr = NULL};
+        int rc;
+
+        info->poll_set = hg_poll_create();
+        HG_TEST_CHECK_ERROR(info->poll_set == NULL, error, ret, HG_NOMEM,
+            "hg_poll_create() failed");
+
+        rc = hg_poll_add(info->poll_set, info->wait_fd, &poll_event);
+        HG_TEST_CHECK_ERROR(
+            rc != 0, error, ret, HG_PROTOCOL_ERROR, "hg_poll_add() failed");
+    }
 
     /* Check that sizes are power of 2 */
     info->buf_size_min = hg_test_info->na_test_info.buf_size_min;
@@ -307,10 +357,6 @@ hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
         }
     }
 
-    info->request = hg_request_create(info->request_class);
-    HG_TEST_CHECK_ERROR(info->request == NULL, error, ret, HG_NOMEM,
-        "hg_request_create() failed");
-
     return HG_SUCCESS;
 
 error:
@@ -355,11 +401,11 @@ hg_perf_class_cleanup(struct hg_perf_class_info *info)
         free(info->target_addrs);
     }
 
-    if (info->request != NULL)
-        hg_request_destroy(info->request);
+    if (info->wait_fd > 0)
+        hg_poll_remove(info->poll_set, info->wait_fd);
 
-    if (info->request_class)
-        hg_request_finalize(info->request_class, NULL);
+    if (info->poll_set != NULL)
+        hg_poll_destroy(info->poll_set);
 
     if (info->context)
         HG_Context_destroy(info->context);
@@ -521,9 +567,9 @@ hg_perf_rpc_buf_init(
         size_t i;
 
         for (i = 0; i < info->target_addr_max; i++) {
-            struct hg_perf_request args = {.expected_count = 1,
+            struct hg_perf_request request = {.expected_count = 1,
                 .complete_count = 0,
-                .request = info->request};
+                .completed = HG_ATOMIC_VAR_INIT(0)};
             unsigned int completed = 0;
 
             ret = HG_Reset(info->handles[0], info->target_addrs[i],
@@ -531,15 +577,17 @@ hg_perf_rpc_buf_init(
             HG_TEST_CHECK_HG_ERROR(
                 error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
 
-            hg_request_reset(info->request);
-
             /* Forward call to target addr */
             ret = HG_Forward(
-                info->handles[0], hg_perf_request_complete, &args, NULL);
+                info->handles[0], hg_perf_request_complete, &request, NULL);
             HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Forward() failed (%s)",
                 HG_Error_to_string(ret));
 
-            hg_request_wait(info->request, HG_PERF_TIMEOUT_MAX, &completed);
+            ret = hg_perf_request_wait(
+                info, &request, HG_PERF_TIMEOUT_MAX, &completed);
+            HG_TEST_CHECK_HG_ERROR(error, ret,
+                "hg_perf_request_wait() failed (%s)", HG_Error_to_string(ret));
+
             if (!completed) {
                 HG_TEST_LOG_WARNING(
                     "Canceling finalize, no response from server");
@@ -548,7 +596,11 @@ hg_perf_rpc_buf_init(
                 HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Cancel() failed (%s)",
                     HG_Error_to_string(ret));
 
-                hg_request_wait(info->request, HG_PERF_TIMEOUT_MAX, &completed);
+                ret = hg_perf_request_wait(
+                    info, &request, HG_PERF_TIMEOUT_MAX, &completed);
+                HG_TEST_CHECK_HG_ERROR(error, ret,
+                    "hg_perf_request_wait() failed (%s)",
+                    HG_Error_to_string(ret));
             }
         }
     }
@@ -580,9 +632,10 @@ hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
            comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
     hg_uint8_t bulk_flags =
         (bulk_op == HG_BULK_PULL) ? HG_BULK_READ_ONLY : HG_BULK_WRITE_ONLY;
-    struct hg_perf_request args = {.expected_count = (int32_t) info->handle_max,
+    struct hg_perf_request request = {
+        .expected_count = (int32_t) info->handle_max,
         .complete_count = 0,
-        .request = info->request};
+        .completed = HG_ATOMIC_VAR_INIT(0)};
     unsigned int completed = 0;
     hg_return_t ret;
     size_t i;
@@ -590,8 +643,6 @@ hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
     ret = hg_perf_bulk_buf_alloc(info, bulk_flags, bulk_op == HG_BULK_PULL);
     HG_TEST_CHECK_HG_ERROR(error, ret, "hg_perf_bulk_buf_alloc() failed (%s)",
         HG_Error_to_string(ret));
-
-    hg_request_reset(info->request);
 
     for (i = 0; i < info->handle_max; i++) {
         size_t handle_global_id = comm_rank + i * comm_size,
@@ -617,12 +668,14 @@ hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
 
         /* Forward call to target addr */
         ret = HG_Forward(
-            info->handles[i], hg_perf_request_complete, &args, &bulk_info);
+            info->handles[i], hg_perf_request_complete, &request, &bulk_info);
         HG_TEST_CHECK_HG_ERROR(
             error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
     }
 
-    hg_request_wait(info->request, HG_PERF_TIMEOUT_MAX, &completed);
+    ret = hg_perf_request_wait(info, &request, HG_PERF_TIMEOUT_MAX, &completed);
+    HG_TEST_CHECK_HG_ERROR(error, ret, "hg_perf_request_wait() failed (%s)",
+        HG_Error_to_string(ret));
     if (!completed) {
         HG_TEST_LOG_WARNING("Canceling finalize, no response from server");
 
@@ -632,7 +685,10 @@ hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
                 error, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
         }
 
-        hg_request_wait(info->request, HG_PERF_TIMEOUT_MAX, &completed);
+        ret = hg_perf_request_wait(
+            info, &request, HG_PERF_TIMEOUT_MAX, &completed);
+        HG_TEST_CHECK_HG_ERROR(error, ret, "hg_perf_request_wait() failed (%s)",
+            HG_Error_to_string(ret));
     }
 
     return HG_SUCCESS;
@@ -763,18 +819,6 @@ hg_perf_print_bw(const struct hg_test_info *hg_test_info,
 
     printf("%-*zu%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, avg_bw, NWIDTH,
         NDIGITS, avg_time);
-}
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
-hg_perf_request_complete(const struct hg_cb_info *hg_cb_info)
-{
-    struct hg_perf_request *info = (struct hg_perf_request *) hg_cb_info->arg;
-
-    if ((++info->complete_count) == info->expected_count)
-        hg_request_complete(info->request);
-
-    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1070,7 +1114,7 @@ hg_perf_bulk_common(hg_handle_t handle, hg_bulk_op_t op)
     /* Initialize request */
     *request = (struct hg_perf_request){.complete_count = 0,
         .expected_count = (int32_t) info->bulk_count,
-        .request = NULL};
+        .completed = HG_ATOMIC_VAR_INIT(0)};
 
     /* Post bulk push */
     for (i = 0; i < info->bulk_count; i++) {
@@ -1184,8 +1228,9 @@ hg_perf_send_done(struct hg_perf_class_info *info)
     size_t i;
 
     for (i = 0; i < info->target_addr_max; i++) {
-        struct hg_perf_request args = {
-            .expected_count = 1, .complete_count = 0, .request = info->request};
+        struct hg_perf_request request = {.expected_count = 1,
+            .complete_count = 0,
+            .completed = HG_ATOMIC_VAR_INIT(0)};
         unsigned int completed = 0;
 
         ret = HG_Reset(
@@ -1193,15 +1238,16 @@ hg_perf_send_done(struct hg_perf_class_info *info)
         HG_TEST_CHECK_HG_ERROR(
             error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
 
-        hg_request_reset(info->request);
-
         /* Forward call to target addr */
-        ret =
-            HG_Forward(info->handles[0], hg_perf_request_complete, &args, NULL);
+        ret = HG_Forward(
+            info->handles[0], hg_perf_request_complete, &request, NULL);
         HG_TEST_CHECK_HG_ERROR(
             error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
-        hg_request_wait(info->request, HG_PERF_TIMEOUT_MAX, &completed);
+        ret = hg_perf_request_wait(
+            info, &request, HG_PERF_TIMEOUT_MAX, &completed);
+        HG_TEST_CHECK_HG_ERROR(error, ret, "hg_perf_request_wait() failed (%s)",
+            HG_Error_to_string(ret));
         if (!completed) {
             HG_TEST_LOG_WARNING("Canceling finalize, no response from server");
 
@@ -1209,7 +1255,10 @@ hg_perf_send_done(struct hg_perf_class_info *info)
             HG_TEST_CHECK_HG_ERROR(
                 error, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
 
-            hg_request_wait(info->request, HG_PERF_TIMEOUT_MAX, &completed);
+            ret = hg_perf_request_wait(
+                info, &request, HG_PERF_TIMEOUT_MAX, &completed);
+            HG_TEST_CHECK_HG_ERROR(error, ret,
+                "hg_perf_request_wait() failed (%s)", HG_Error_to_string(ret));
         }
     }
 

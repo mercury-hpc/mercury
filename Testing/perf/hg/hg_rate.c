@@ -51,10 +51,10 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
 
     /* Warm up for RPC */
     for (i = 0; i < skip + (size_t) hg_test_info->na_test_info.loop; i++) {
-        struct hg_perf_request args = {
+        struct hg_perf_request request = {
             .expected_count = (int32_t) info->handle_max,
             .complete_count = 0,
-            .request = info->request};
+            .completed = HG_ATOMIC_VAR_INIT(0)};
         unsigned int j;
 
         if (i == skip) {
@@ -63,16 +63,16 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
             hg_time_get_current(&t1);
         }
 
-        hg_request_reset(info->request);
-
         for (j = 0; j < info->handle_max; j++) {
-            ret = HG_Forward(
-                info->handles[j], hg_perf_request_complete, &args, &in_struct);
+            ret = HG_Forward(info->handles[j], hg_perf_request_complete,
+                &request, &in_struct);
             HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Forward() failed (%s)",
                 HG_Error_to_string(ret));
         }
 
-        hg_request_wait(info->request, HG_MAX_IDLE_TIME, NULL);
+        ret = hg_perf_request_wait(info, &request, HG_MAX_IDLE_TIME, NULL);
+        HG_TEST_CHECK_HG_ERROR(error, ret, "hg_perf_request_wait() failed (%s)",
+            HG_Error_to_string(ret));
 
         if (info->verify && info->bidir) {
             for (j = 0; j < info->handle_max; j++) {
