@@ -18,37 +18,40 @@
 extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(na);
 
 /* Fatal log outlet always 'on' by default */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(fatal);
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(fatal, na);
 
 /* Specific outlets */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(cls);       /* Class */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(ctx);       /* Context */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(op);        /* Operations */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(addr);      /* Addresses */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(msg);       /* Messages */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(mem);       /* Memory */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(rma);       /* RMA */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(poll);      /* Progress */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(poll_loop); /* Progress loop */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(ip);        /* IP res */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(perf); /* Perf related log */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(cls, na); /* Class */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(ctx, na); /* Context */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(op, na);  /* Operations */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(addr, na); /* Addresses */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(msg, na);  /* Messages */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(mem, na);  /* Memory */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(rma, na);  /* RMA */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(poll, na); /* Progress */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(
+    poll_loop, na); /* Progress loop */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(ip, na); /* IP res */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(
+    perf, na); /* Perf related log */
 
 /* Plugin specific log (must be declared here to prevent contructor issues) */
-extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_DECL(libfabric); /* Libfabric log */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(
+    libfabric, na); /* Libfabric log */
 
 /* Base log macros */
 #define NA_LOG_ERROR(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define NA_LOG_SUBSYS_ERROR(subsys, ...)                                       \
-    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+    HG_LOG_SUBSYS_WRITE(subsys, na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define NA_LOG_WARNING(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #define NA_LOG_SUBSYS_WARNING(subsys, ...)                                     \
-    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
+    HG_LOG_SUBSYS_WRITE(subsys, na, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef NA_HAS_DEBUG
 #    define NA_LOG_DEBUG(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #    define NA_LOG_SUBSYS_DEBUG(subsys, ...)                                   \
-        HG_LOG_WRITE(subsys, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
+        HG_LOG_SUBSYS_WRITE(subsys, na, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #    define NA_LOG_SUBSYS_DEBUG_EXT(subsys, header, ...)                       \
-        HG_LOG_WRITE_DEBUG_EXT(subsys, header, __VA_ARGS__)
+        HG_LOG_SUBSYS_WRITE_DEBUG_EXT(subsys, na, header, __VA_ARGS__)
 #else
 #    define NA_LOG_DEBUG(...)            (void) 0
 #    define NA_LOG_SUBSYS_DEBUG(...)     (void) 0

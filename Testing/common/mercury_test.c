@@ -53,7 +53,7 @@ extern const struct na_test_opt na_test_opt_g[];
 HG_LOG_OUTLET_DECL(hg_test) = HG_LOG_OUTLET_INITIALIZER(
     hg_test, HG_LOG_PASS, NULL, NULL);
 #else
-HG_LOG_SUBSYS_DECL_REGISTER(hg_test, HG_LOG_OUTLET_ROOT_NAME);
+HG_LOG_DECL_REGISTER(hg_test);
 #endif
 
 /*---------------------------------------------------------------------------*/

@@ -2100,7 +2100,7 @@ na_ofi_log_enabled(const struct fi_provider NA_UNUSED *prov,
     uint64_t NA_UNUSED flags)
 {
     /* We do not filter on libfabric subsystems at the moment */
-    return HG_LOG_OUTLET(libfabric).level >= na_ofi_log_level_to_hg(level);
+    return HG_LOG_OUTLET(na_libfabric).level >= na_ofi_log_level_to_hg(level);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2108,7 +2108,7 @@ static void
 na_ofi_log(const struct fi_provider *prov, enum fi_log_level level,
     enum fi_log_subsys subsys, const char *func, int line, const char *msg)
 {
-    HG_LOG_WRITE_FUNC(libfabric, na_ofi_log_level_to_hg(level), prov->name,
+    HG_LOG_WRITE_FUNC(na_libfabric, na_ofi_log_level_to_hg(level), prov->name,
         na_ofi_log_subsys_g[subsys], (unsigned int) line, func, true, "%s",
         msg);
 }
