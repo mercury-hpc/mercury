@@ -31,7 +31,8 @@
 #endif
 
 /* Cat macro */
-#define HG_UTIL_CAT(x, y) x##y
+#define HG_UTIL_CAT(x, y)  x##y
+#define HG_UTIL_CATU(x, y) x##_##y
 
 /* Stringify macro */
 #define HG_UTIL_STRINGIFY(x) #x
@@ -63,10 +64,14 @@
 #define HG_LOG_OUTLET_ROOT_NAME hg_all
 
 /* HG_LOG_OUTLET: global variable name of log outlet. */
-#define HG_LOG_OUTLET(name) HG_UTIL_CAT(name, _log_outlet_g)
+#define HG_LOG_OUTLET(name) HG_UTIL_CATU(name, log_outlet_g)
 
 /* HG_LOG_OUTLET_DECL: declare an outlet. */
 #define HG_LOG_OUTLET_DECL(name) struct hg_log_outlet HG_LOG_OUTLET(name)
+
+/* HG_LOG_OUTLET_SUBSYS_DECL: declare an outlet. */
+#define HG_LOG_OUTLET_SUBSYS_DECL(name, parent_name)                           \
+    struct hg_log_outlet HG_LOG_OUTLET(HG_UTIL_CATU(parent_name, name))
 
 /*
  * HG_LOG_OUTLET_INITIALIZER: initializer for a log in a global variable.
@@ -91,46 +96,77 @@
 #define HG_LOG_OUTLET_SUBSYS_STATE_INITIALIZER(name, parent_name, state)       \
     HG_LOG_OUTLET_INITIALIZER(name, state, &HG_LOG_OUTLET(parent_name), NULL)
 
-/* HG_LOG_SUBSYS_REGISTER: register a name */
-#define HG_LOG_SUBSYS_REGISTER(name)                                           \
-    static void HG_UTIL_CAT(hg_log_outlet_reg_, name)(void)                    \
+/* HG_LOG_REGISTER: register a name */
+#define HG_LOG_REGISTER(name)                                                  \
+    static void HG_UTIL_CATU(hg_log_outlet_reg, name)(void)                    \
         HG_UTIL_CONSTRUCTOR;                                                   \
-    static void HG_UTIL_CAT(hg_log_outlet_reg_, name)(void)                    \
+    static void HG_UTIL_CATU(hg_log_outlet_reg, name)(void)                    \
     {                                                                          \
         hg_log_outlet_register(&HG_LOG_OUTLET(name));                          \
     }                                                                          \
-    static void HG_UTIL_CAT(hg_log_outlet_dereg_, name)(void)                  \
+    static void HG_UTIL_CATU(hg_log_outlet_dereg, name)(void)                  \
         HG_UTIL_DESTRUCTOR;                                                    \
-    static void HG_UTIL_CAT(hg_log_outlet_dereg_, name)(void)                  \
+    static void HG_UTIL_CATU(hg_log_outlet_dereg, name)(void)                  \
     {                                                                          \
         hg_log_outlet_deregister(&HG_LOG_OUTLET(name));                        \
     }                                                                          \
     /* Keep unused prototype to use semicolon at end of macro */               \
     void hg_log_outlet_##name##_unused(void)
 
+/* HG_LOG_SUBSYS_REGISTER: register a name */
+#define HG_LOG_SUBSYS_REGISTER(name, parent_name)                              \
+    static void HG_UTIL_CATU(hg_log_outlet_reg, name)(void)                    \
+        HG_UTIL_CONSTRUCTOR;                                                   \
+    static void HG_UTIL_CATU(hg_log_outlet_reg, name)(void)                    \
+    {                                                                          \
+        hg_log_outlet_register(                                                \
+            &HG_LOG_OUTLET(HG_UTIL_CATU(parent_name, name)));                  \
+    }                                                                          \
+    static void HG_UTIL_CATU(hg_log_outlet_dereg, name)(void)                  \
+        HG_UTIL_DESTRUCTOR;                                                    \
+    static void HG_UTIL_CATU(hg_log_outlet_dereg, name)(void)                  \
+    {                                                                          \
+        hg_log_outlet_deregister(                                              \
+            &HG_LOG_OUTLET(HG_UTIL_CATU(parent_name, name)));                  \
+    }                                                                          \
+    /* Keep unused prototype to use semicolon at end of macro */               \
+    void hg_log_outlet_##parent_name##_##name##_unused(void)
+
+/* HG_LOG_DECL_REGISTER: declare and register a log outlet. */
+#ifdef _WIN32
+#    define HG_LOG_DECL_REGISTER(name)                                         \
+        HG_LOG_OUTLET_DECL(name) =                                             \
+            HG_LOG_OUTLET_SUBSYS_INITIALIZER(name, HG_LOG_OUTLET_ROOT_NAME);
+#else
+#    define HG_LOG_DECL_REGISTER(name)                                         \
+        HG_LOG_OUTLET_DECL(name) =                                             \
+            HG_LOG_OUTLET_SUBSYS_INITIALIZER(name, HG_LOG_OUTLET_ROOT_NAME);   \
+        HG_LOG_REGISTER(name)
+#endif
+
 /* HG_LOG_SUBSYS_DECL_REGISTER: declare and register a log outlet. */
 #ifdef _WIN32
 #    define HG_LOG_SUBSYS_DECL_REGISTER(name, parent_name)                     \
-        HG_LOG_OUTLET_DECL(name) =                                             \
+        HG_LOG_OUTLET_SUBSYS_DECL(name, parent_name) =                         \
             HG_LOG_OUTLET_SUBSYS_INITIALIZER(name, parent_name)
 #else
 #    define HG_LOG_SUBSYS_DECL_REGISTER(name, parent_name)                     \
-        HG_LOG_OUTLET_DECL(name) =                                             \
+        HG_LOG_OUTLET_SUBSYS_DECL(name, parent_name) =                         \
             HG_LOG_OUTLET_SUBSYS_INITIALIZER(name, parent_name);               \
-        HG_LOG_SUBSYS_REGISTER(name)
+        HG_LOG_SUBSYS_REGISTER(name, parent_name)
 #endif
 
 /* HG_LOG_SUBSYS_DECL_STATE_REGISTER: declare and register a log outlet and
  * enforce an init state. */
 #ifdef _WIN32
 #    define HG_LOG_SUBSYS_DECL_STATE_REGISTER(name, parent_name, state)        \
-        HG_LOG_OUTLET_DECL(name) =                                             \
+        HG_LOG_OUTLET_SUBSYS_DECL(name, parent_name) =                         \
             HG_LOG_OUTLET_SUBSYS_STATE_INITIALIZER(name, parent_name, state)
 #else
 #    define HG_LOG_SUBSYS_DECL_STATE_REGISTER(name, parent_name, state)        \
-        HG_LOG_OUTLET_DECL(name) =                                             \
+        HG_LOG_OUTLET_SUBSYS_DECL(name, parent_name) =                         \
             HG_LOG_OUTLET_SUBSYS_STATE_INITIALIZER(name, parent_name, state);  \
-        HG_LOG_SUBSYS_REGISTER(name)
+        HG_LOG_SUBSYS_REGISTER(name, parent_name)
 #endif
 
 /* Log macro */
@@ -188,20 +224,26 @@
 #define HG_LOG_WRITE(name, log_level, ...)                                     \
     HG_LOG_WRITE_FUNC(name, log_level, NULL, __FILE__, __LINE__, __func__,     \
         false, __VA_ARGS__)
+#define HG_LOG_SUBSYS_WRITE(name, parent_name, log_level, ...)                 \
+    HG_LOG_WRITE_FUNC(HG_UTIL_CATU(parent_name, name), log_level, NULL,        \
+        __FILE__, __LINE__, __func__, false, __VA_ARGS__)
 
 #define HG_LOG_WRITE_DEBUG_EXT(name, header, ...)                              \
     HG_LOG_WRITE_FUNC_DEBUG_EXT(                                               \
         name, header, NULL, __FILE__, __LINE__, __func__, false, __VA_ARGS__)
+#define HG_LOG_SUBSYS_WRITE_DEBUG_EXT(name, parent_name, header, ...)          \
+    HG_LOG_WRITE_FUNC_DEBUG_EXT(HG_UTIL_CATU(parent_name, name), header, NULL, \
+        __FILE__, __LINE__, __func__, false, __VA_ARGS__)
 
 /**
  * Additional macros for debug log support.
  */
 
 /* HG_LOG_DEBUG_DLOG: global variable name of debug log. */
-#define HG_LOG_DEBUG_DLOG(name) HG_UTIL_CAT(name, _dlog_g)
+#define HG_LOG_DEBUG_DLOG(name) HG_UTIL_CATU(name, dlog_g)
 
 /* HG_LOG_DEBUG_LE: global variable name of debug log entries. */
-#define HG_LOG_DEBUG_LE(name) HG_UTIL_CAT(name, _dlog_entries_g)
+#define HG_LOG_DEBUG_LE(name) HG_UTIL_CATU(name, dlog_entries_g)
 
 /* HG_LOG_DEBUG_DECL_DLOG: declare new debug log. */
 #define HG_LOG_DEBUG_DECL_DLOG(name) struct hg_dlog HG_LOG_DEBUG_DLOG(name)
@@ -220,12 +262,19 @@
     HG_LOG_OUTLET_INITIALIZER(name, HG_LOG_PASS, &HG_LOG_OUTLET(parent_name),  \
         &HG_LOG_DEBUG_DLOG(name))
 
+/* HG_LOG_DLOG_DECL_REGISTER: declare and register a log outlet with
+ * debug log. */
+#define HG_LOG_DLOG_DECL_REGISTER(name)                                        \
+    struct hg_log_outlet HG_LOG_OUTLET(name) =                                 \
+        HG_LOG_OUTLET_SUBSYS_DLOG_INITIALIZER(name, HG_LOG_OUTLET_ROOT_NAME);  \
+    HG_LOG_REGISTER(name)
+
 /* HG_LOG_SUBSYS_DLOG_DECL_REGISTER: declare and register a log outlet with
  * debug log. */
 #define HG_LOG_SUBSYS_DLOG_DECL_REGISTER(name, parent_name)                    \
-    struct hg_log_outlet HG_LOG_OUTLET(name) =                                 \
+    struct hg_log_outlet HG_LOG_OUTLET(HG_UTIL_CATU(parent_name, name)) =      \
         HG_LOG_OUTLET_SUBSYS_DLOG_INITIALIZER(name, parent_name);              \
-    HG_LOG_SUBSYS_REGISTER(name)
+    HG_LOG_SUBSYS_REGISTER(name, parent_name)
 
 /* HG_LOG_ADD_COUNTER32: add 32-bit debug log counter */
 #define HG_LOG_ADD_COUNTER32(name, counter_ptr, counter_name, counter_desc)    \

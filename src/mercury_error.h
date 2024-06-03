@@ -17,34 +17,34 @@
 extern HG_PRIVATE HG_LOG_OUTLET_DECL(hg);
 
 /* Fatal log outlet always 'on' by default */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(fatal);
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(fatal, hg);
 
 /* Specific outlets */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(cls);       /* Class */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(ctx);       /* Context */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(addr);      /* Addresses */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(rpc);       /* RPC */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(bulk);      /* Bulk */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(proc);      /* Proc */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(poll);      /* Poll */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(rpc_ref);   /* RPC ref */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(poll_loop); /* Progress loop */
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(perf);      /* Perf related log */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(cls, hg);       /* Class */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(ctx, hg);       /* Context */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(addr, hg);      /* Addresses */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(rpc, hg);       /* RPC */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(bulk, hg);      /* Bulk */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(proc, hg);      /* Proc */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(poll, hg);      /* Poll */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(rpc_ref, hg);   /* RPC ref */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(poll_loop, hg); /* Progress loop */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(perf, hg); /* Perf related log */
 #ifndef _WIN32
-extern HG_PRIVATE HG_LOG_OUTLET_DECL(diag); /* Diagnostics */
+extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(diag, hg); /* Diagnostics */
 #endif
 
 /* Base log macros */
 #define HG_LOG_ERROR(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_SUBSYS_ERROR(subsys, ...)                                       \
-    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+    HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_WARNING(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #define HG_LOG_SUBSYS_WARNING(subsys, ...)                                     \
-    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
+    HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef HG_HAS_DEBUG
 #    define HG_LOG_DEBUG(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #    define HG_LOG_SUBSYS_DEBUG(subsys, ...)                                   \
-        HG_LOG_WRITE(subsys, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
+        HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #    define HG_LOG_DEBUG(...)        (void) 0
 #    define HG_LOG_SUBSYS_DEBUG(...) (void) 0

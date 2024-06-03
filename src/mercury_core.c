@@ -1064,19 +1064,19 @@ hg_core_counters_init(struct hg_core_counters *hg_core_counters)
 {
     /* TODO we could revert the linked list to avoid registration in reverse
      * order */
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->bulk_count, "bulk_count",
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->bulk_count, "bulk_count",
         "Bulk transfers (inc. extra bulks)");
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->rpc_resp_extra_count,
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_resp_extra_count,
         "rpc_resp_extra_count", "RPCs with extra bulk response");
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->rpc_req_extra_count,
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_req_extra_count,
         "rpc_req_extra_count", "RPCs with extra bulk request");
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->rpc_resp_recv_count,
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_resp_recv_count,
         "rpc_resp_recv_count", "RPC responses received");
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->rpc_resp_sent_count,
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_resp_sent_count,
         "rpc_resp_sent_count", "RPC responses sent");
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->rpc_req_recv_count,
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_req_recv_count,
         "rpc_req_recv_count", "RPC requests received");
-    HG_LOG_ADD_COUNTER64(diag, &hg_core_counters->rpc_req_sent_count,
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_req_sent_count,
         "rpc_req_sent_count", "RPC requests sent");
 }
 #endif
