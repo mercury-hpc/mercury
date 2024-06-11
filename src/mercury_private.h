@@ -167,7 +167,8 @@ hg_init_info_dup_2_3(
         .no_loopback = old_info->no_loopback,
         .stats = old_info->stats,
         .no_multi_recv = old_info->no_multi_recv,
-        .release_input_early = old_info->release_input_early};
+        .release_input_early = old_info->release_input_early,
+        .no_overflow = false};
     na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
 }
 
@@ -186,7 +187,8 @@ hg_init_info_dup_2_2(
         .no_loopback = old_info->no_loopback,
         .stats = old_info->stats,
         .no_multi_recv = false,
-        .release_input_early = false};
+        .release_input_early = false,
+        .no_overflow = false};
     na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
 }
 

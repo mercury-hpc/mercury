@@ -95,6 +95,11 @@ struct hg_init_info {
      * beneficial in cases where the RPC execution time is longer than usual.
      * Default is: false */
     bool release_input_early;
+
+    /* Disable use of overflow buffers when RPC message size is above the eager
+     * message size threshold.
+     * Default is: false */
+    bool no_overflow;
 };
 
 /* Error return codes:
@@ -188,7 +193,8 @@ typedef enum {
         .request_post_init = 0, .request_post_incr = 0, .auto_sm = false,      \
         .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
         .no_bulk_eager = false, .no_loopback = false, .stats = false,          \
-        .no_multi_recv = false, .release_input_early = false                   \
+        .no_multi_recv = false, .release_input_early = false,                  \
+        .no_overflow = false                                                   \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */

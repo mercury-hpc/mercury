@@ -48,6 +48,7 @@ struct hg_private_class {
     hg_checksum_level_t checksum_level;                /* Checksum level */
     bool bulk_eager;                                   /* Eager bulk proc */
     bool release_input_early;                          /* Release input early */
+    bool no_overflow;                                  /* No overflow buffer */
 };
 
 /* Info for function map */
@@ -716,6 +717,12 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         HG_GOTO_SUBSYS_ERROR(rpc, error, ret, HG_OVERFLOW,
             "Arguments overflow is not supported with XDR");
 #endif
+        HG_CHECK_SUBSYS_ERROR(rpc,
+            HG_HANDLE_CLASS(&hg_handle->handle)->no_overflow, error, ret,
+            HG_OVERFLOW,
+            "Argument overflow detected and overflow mechanism was disabled, "
+            "please increase eager message size or reduce payload size");
+
         /* Create a bulk descriptor only of the size that is used */
         *extra_buf = hg_proc_get_extra_buf(proc);
         *extra_buf_size = hg_proc_get_size_used(proc);
@@ -1109,6 +1116,9 @@ HG_Init_opt2(const char *na_info_string, uint8_t na_listen,
 
     /* Release input early */
     hg_class->release_input_early = hg_init_info.release_input_early;
+
+    /* No overflow buffer */
+    hg_class->no_overflow = hg_init_info.no_overflow;
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt2(na_info_string, na_listen, version, hg_init_info_p);
