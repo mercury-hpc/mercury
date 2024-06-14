@@ -4463,6 +4463,8 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
         hg_core_handle->multi_recv_op = multi_recv_op;
         hg_atomic_incr32(&multi_recv_op->op_count);
         hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_MULTI_RECV);
+        /* Prevent from reposting multi-recv buffer until done with handle */
+        hg_atomic_incr32(&multi_recv_op->ref_count);
 
         if (na_cb_info_multi_recv_unexpected->last) {
             HG_LOG_SUBSYS_DEBUG(rpc,
@@ -4470,15 +4472,18 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
                 " operations completed)",
                 multi_recv_op->id, hg_atomic_get32(&multi_recv_op->op_count));
             hg_atomic_set32(&multi_recv_op->last, true);
-            hg_atomic_decr32(&context->multi_recv_op_count);
+            if (hg_atomic_decr32(&context->multi_recv_op_count) == 0) {
+                int i;
+                HG_LOG_SUBSYS_WARNING(ctx,
+                    "All multi-recv buffers have been consumed, consider "
+                    "increasing request_post_init init info in order to "
+                    "increase initial buffer sizes");
+                for (i = 0; i < HG_CORE_MULTI_RECV_OP_MAX; i++)
+                    HG_LOG_SUBSYS_WARNING(ctx,
+                        "Multi-recv buffer %d held by %d handles", i,
+                        hg_atomic_get32(&context->multi_recv_ops[i].ref_count));
+            }
         }
-        HG_CHECK_SUBSYS_WARNING(ctx,
-            hg_atomic_get32(&context->multi_recv_op_count) == 0,
-            "All multi-recv buffers have been consumed, consider increasing "
-            "request_post_init init info in order to increase buffer sizes");
-
-        /* Prevent from reposting multi-recv buffer until done with handle */
-        hg_atomic_incr32(&multi_recv_op->ref_count);
 
         /* Fill unexpected info */
         hg_core_handle->na_addr = na_cb_info_multi_recv_unexpected->source;
