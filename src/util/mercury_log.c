@@ -389,6 +389,13 @@ hg_log_name_to_level(const char *log_level)
 }
 
 /*---------------------------------------------------------------------------*/
+const char *
+hg_log_level_to_string(enum hg_log_level level)
+{
+    return hg_log_level_name_g[level];
+}
+
+/*---------------------------------------------------------------------------*/
 void
 hg_log_set_func(hg_log_func_t log_func)
 {
@@ -506,6 +513,20 @@ hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
     const char *module, const char *file, unsigned int line, const char *func,
     bool no_return, const char *format, ...)
 {
+    va_list ap;
+
+    va_start(ap, format);
+    hg_log_vwrite(hg_log_outlet, log_level, module, file, line, func, no_return,
+        format, ap);
+    va_end(ap);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_log_vwrite(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
+    const char *module, const char *file, unsigned int line, const char *func,
+    bool no_return, const char *format, va_list ap)
+{
     char buf[HG_LOG_BUF_MAX];
     FILE *stream = NULL;
     const char *level_name = NULL;
@@ -513,7 +534,6 @@ hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
     const char *color = hg_log_colors_g[log_level];
 #endif
     hg_time_t tv;
-    va_list ap;
 
     if (!(log_level > HG_LOG_LEVEL_NONE && log_level < HG_LOG_LEVEL_MAX))
         return;
@@ -530,9 +550,7 @@ hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
     color = hg_log_colors_g[log_level];
 #endif
 
-    va_start(ap, format);
     vsnprintf(buf, HG_LOG_BUF_MAX, format, ap);
-    va_end(ap);
 
 #ifdef HG_UTIL_HAS_LOG_COLOR
     /* Print using logging function */
