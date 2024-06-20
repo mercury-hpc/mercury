@@ -41,6 +41,9 @@
 /* Alignment */
 #define NA_ALIGNED(x, a) HG_ATTR_ALIGNED(x, a)
 
+/* Check format arguments */
+#define NA_PRINTF(_fmt, _firstarg) HG_ATTR_PRINTF(_fmt, _firstarg)
+
 /* Packed */
 #define NA_PACKED(x) HG_ATTR_PACKED(x)
 

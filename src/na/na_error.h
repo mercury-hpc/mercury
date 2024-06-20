@@ -38,6 +38,7 @@ extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(
 /* Plugin specific log (must be declared here to prevent contructor issues) */
 extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(
     libfabric, na); /* Libfabric log */
+extern NA_PLUGIN_VISIBILITY HG_LOG_OUTLET_SUBSYS_DECL(ucx, na); /* UCX log */
 
 /* Base log macros */
 #define NA_LOG_ERROR(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)

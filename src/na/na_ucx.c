@@ -17,6 +17,7 @@
 #include "mercury_thread_spin.h"
 
 #include <ucp/api/ucp.h>
+#include <ucs/debug/log_def.h>
 #include <uct/api/uct.h> /* To query component info */
 
 #include <stdalign.h>
@@ -267,6 +268,34 @@ enum na_ucp_type { NA_UCP_CONFIG, NA_UCP_CONTEXT, NA_UCP_WORKER };
 /*---------------------------------------------------------------------------*/
 /* NA UCP helpers                                                            */
 /*---------------------------------------------------------------------------*/
+
+/**
+ * Import/close UCX log.
+ */
+static void
+na_ucs_log_import(void) NA_CONSTRUCTOR;
+static void
+na_ucs_log_close(void) NA_DESTRUCTOR;
+
+/**
+ * Print UCX log.
+ */
+static ucs_log_func_rc_t
+na_ucs_log_func(const char *file, unsigned line, const char *function,
+    ucs_log_level_t level, const ucs_log_component_config_t *comp_conf,
+    const char *message, va_list ap) NA_PRINTF(6, 0);
+
+/**
+ * Convert UCX log level to HG log level.
+ */
+static enum hg_log_level
+na_ucs_log_level_to_hg(ucs_log_level_t level);
+
+/**
+ * Convert HG log level to UCX log level string.
+ */
+static const char *
+na_ucs_log_level_to_string(enum hg_log_level level);
 
 /**
  * Convert UCX status to NA return values.
@@ -1045,6 +1074,79 @@ na_ucs_status_to_na(ucs_status_t status)
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+na_ucs_log_import(void)
+{
+    ucs_log_push_handler(na_ucs_log_func);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ucs_log_close(void)
+{
+    ucs_log_pop_handler();
+}
+
+/*---------------------------------------------------------------------------*/
+static ucs_log_func_rc_t
+na_ucs_log_func(const char *file, unsigned line, const char *function,
+    ucs_log_level_t level, const ucs_log_component_config_t *comp_conf,
+    const char *message, va_list ap)
+{
+    HG_LOG_VWRITE_FUNC(na_ucx, na_ucs_log_level_to_hg(level), comp_conf->name,
+        file, line, function, false, message, ap);
+
+    return UCS_LOG_FUNC_RC_STOP;
+}
+
+/*---------------------------------------------------------------------------*/
+static enum hg_log_level
+na_ucs_log_level_to_hg(ucs_log_level_t level)
+{
+    switch (level) {
+        case UCS_LOG_LEVEL_FATAL:
+        case UCS_LOG_LEVEL_ERROR:
+            return HG_LOG_LEVEL_ERROR;
+        case UCS_LOG_LEVEL_WARN:
+            return HG_LOG_LEVEL_WARNING;
+        case UCS_LOG_LEVEL_DIAG:
+        case UCS_LOG_LEVEL_INFO:
+        case UCS_LOG_LEVEL_DEBUG:
+        case UCS_LOG_LEVEL_TRACE:
+        case UCS_LOG_LEVEL_TRACE_REQ:
+        case UCS_LOG_LEVEL_TRACE_DATA:
+        case UCS_LOG_LEVEL_TRACE_ASYNC:
+        case UCS_LOG_LEVEL_TRACE_FUNC:
+        case UCS_LOG_LEVEL_TRACE_POLL:
+            return HG_LOG_LEVEL_DEBUG;
+        case UCS_LOG_LEVEL_LAST:
+        case UCS_LOG_LEVEL_PRINT:
+        default:
+            return HG_LOG_LEVEL_MAX;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static const char *
+na_ucs_log_level_to_string(enum hg_log_level level)
+{
+    switch (level) {
+        case HG_LOG_LEVEL_ERROR:
+            return "error";
+        case HG_LOG_LEVEL_WARNING:
+            return "warn";
+        case HG_LOG_LEVEL_MIN_DEBUG:
+            return "trace";
+        case HG_LOG_LEVEL_DEBUG:
+            return "debug";
+        case HG_LOG_LEVEL_NONE:
+        case HG_LOG_LEVEL_MAX:
+        default:
+            return "";
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_uct_get_transport_alias(
     const char *protocol_name, char *tl_name, size_t tl_name_size)
@@ -1262,6 +1364,15 @@ na_ucp_config_init(
     /* Disable backtrace by default */
     if (getenv("UCX_HANDLE_ERRORS") == NULL) {
         status = ucp_config_modify(config, "HANDLE_ERRORS", "none");
+        NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
+            na_ucs_status_to_na(status), "ucp_config_modify() failed (%s)",
+            ucs_status_string(status));
+    }
+
+    /* Set matching log level by default */
+    if (getenv("UCX_LOG_LEVEL") == NULL) {
+        status = ucp_config_modify(config, "LOG_LEVEL",
+            na_ucs_log_level_to_string(hg_log_get_level()));
         NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, error, ret,
             na_ucs_status_to_na(status), "ucp_config_modify() failed (%s)",
             ucs_status_string(status));
