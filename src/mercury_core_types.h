@@ -42,17 +42,24 @@ struct hg_init_info {
     /* Controls the initial number of requests that are posted on context
      * creation when the HG class is initialized with listen set to true.
      * A value of zero is equivalent to using the internal default value.
-     * Default value is: 256 */
+     * Default value is: 512 */
     uint32_t request_post_init;
 
     /* Controls the number of requests that are incrementally posted when the
      * initial number of requests is exhausted, a value of 0 means that only the
      * initial number of requests will be re-used after they complete. Note that
      * if the number of requests that are posted reaches 0, the underlying
-     * NA transport is responsible for queueing incoming requests. This value is
-     * used only if \request_post_init is set to a non-zero value.
-     * Default value is: 256 */
-    uint32_t request_post_incr;
+     * NA transport is responsible for queueing incoming requests.
+     * A value of -1 indicates no increment.
+     * Default value is: 512 */
+    int32_t request_post_incr;
+
+    /* Controls the number of multi-recv buffers that are posted. Incrementing
+     * this value may be beneficial in cases where RPC handles remain in use for
+     * longer periods of time and release_input_early is not set, preventing
+     * existing buffers from being reposted.
+     * Default value is: 4 */
+    unsigned int multi_recv_op_max;
 
     /* Controls whether the NA shared-memory interface should be automatically
      * used if/when the RPC target address shares the same node as its origin.
@@ -190,11 +197,11 @@ typedef enum {
     (struct hg_init_info)                                                      \
     {                                                                          \
         .na_init_info = NA_INIT_INFO_INITIALIZER, .na_class = NULL,            \
-        .request_post_init = 0, .request_post_incr = 0, .auto_sm = false,      \
-        .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
-        .no_bulk_eager = false, .no_loopback = false, .stats = false,          \
-        .no_multi_recv = false, .release_input_early = false,                  \
-        .no_overflow = false                                                   \
+        .request_post_init = 0, .request_post_incr = 0,                        \
+        .multi_recv_op_max = 0, .auto_sm = false, .sm_info_string = NULL,      \
+        .checksum_level = HG_CHECKSUM_NONE, .no_bulk_eager = false,            \
+        .no_loopback = false, .stats = false, .no_multi_recv = false,          \
+        .release_input_early = false, .no_overflow = false                     \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */

@@ -159,7 +159,8 @@ hg_init_info_dup_2_3(
 {
     *new_info = (struct hg_init_info){.na_class = old_info->na_class,
         .request_post_init = old_info->request_post_init,
-        .request_post_incr = old_info->request_post_incr,
+        .request_post_incr = (int32_t) old_info->request_post_incr,
+        .multi_recv_op_max = 0,
         .auto_sm = old_info->auto_sm,
         .sm_info_string = old_info->sm_info_string,
         .checksum_level = old_info->checksum_level,
@@ -179,7 +180,8 @@ hg_init_info_dup_2_2(
 {
     *new_info = (struct hg_init_info){.na_class = old_info->na_class,
         .request_post_init = old_info->request_post_init,
-        .request_post_incr = old_info->request_post_incr,
+        .request_post_incr = (int32_t) old_info->request_post_incr,
+        .multi_recv_op_max = 0,
         .auto_sm = old_info->auto_sm,
         .sm_info_string = old_info->sm_info_string,
         .checksum_level = old_info->checksum_level,
