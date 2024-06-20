@@ -181,6 +181,16 @@
                     line, func, no_return, __VA_ARGS__);                       \
         } while (0)
 
+#    define HG_LOG_VWRITE_FUNC(                                                \
+        name, log_level, module, file, line, func, no_return, message, ap)     \
+        do {                                                                   \
+            if (!HG_LOG_OUTLET(name).registered)                               \
+                hg_log_outlet_register(&HG_LOG_OUTLET(name));                  \
+            if (HG_LOG_OUTLET(name).level >= log_level)                        \
+                hg_log_vwrite(&HG_LOG_OUTLET(name), log_level, module, file,   \
+                    line, func, no_return, message, ap);                       \
+        } while (0)
+
 #    define HG_LOG_WRITE_FUNC_DEBUG_EXT(                                       \
         name, header, module, file, line, func, no_return, ...)                \
         do {                                                                   \
@@ -206,6 +216,19 @@
             if (HG_LOG_OUTLET(name).level >= log_level)                        \
                 hg_log_write(&HG_LOG_OUTLET(name), log_level, module, file,    \
                     line, func, no_return, __VA_ARGS__);                       \
+        } while (0)
+
+#    define HG_LOG_VWRITE_FUNC(                                                \
+        name, log_level, module, file, line, func, no_return, message, ap)     \
+        do {                                                                   \
+            if (log_level == HG_LOG_LEVEL_DEBUG &&                             \
+                HG_LOG_OUTLET(name).level >= HG_LOG_LEVEL_MIN_DEBUG &&         \
+                HG_LOG_OUTLET(name).debug_log)                                 \
+                hg_dlog_addlog(HG_LOG_OUTLET(name).debug_log, file, line,      \
+                    func, NULL, NULL);                                         \
+            if (HG_LOG_OUTLET(name).level >= log_level)                        \
+                hg_log_vwrite(&HG_LOG_OUTLET(name), log_level, module, file,   \
+                    line, func, no_return, message, ap);                       \
         } while (0)
 
 #    define HG_LOG_WRITE_FUNC_DEBUG_EXT(                                       \
@@ -371,6 +394,16 @@ HG_UTIL_PUBLIC enum hg_log_level
 hg_log_name_to_level(const char *log_level);
 
 /**
+ * Convert log level to a string.
+ *
+ * \param log_level [IN]        log level
+ *
+ * \return string
+ */
+HG_UTIL_PUBLIC const char *
+hg_log_level_to_string(enum hg_log_level level);
+
+/**
  * Set the logging function.
  *
  * \param log_func [IN]         pointer to function
@@ -466,6 +499,23 @@ HG_UTIL_PUBLIC void
 hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
     const char *module, const char *file, unsigned int line, const char *func,
     bool no_return, const char *format, ...) HG_UTIL_PRINTF(8, 9);
+
+/**
+ * Write log (va_list version).
+ *
+ * \param outlet [IN]           log outlet
+ * \param log_level [IN]        log level
+ * \param module [IN]           optional module name
+ * \param file [IN]             file name
+ * \param line [IN]             line number
+ * \param func [IN]             function name
+ * \param no_return [IN]        prevent line return
+ * \param format [IN]           string format
+ */
+HG_UTIL_PUBLIC void
+hg_log_vwrite(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
+    const char *module, const char *file, unsigned int line, const char *func,
+    bool no_return, const char *format, va_list ap) HG_UTIL_PRINTF(8, 0);
 
 /*********************/
 /* Public Variables */
