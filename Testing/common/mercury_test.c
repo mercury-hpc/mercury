@@ -66,6 +66,8 @@ hg_test_usage(const char *execname)
     printf("    -m, --memory        Use shared-memory with local targets\n");
     printf("    -t, --threads       Number of server threads\n");
     printf("    -B, --bidirectional Bidirectional communication\n");
+    printf("    -u, --mrecv-ops     Number of multi-recv ops (server only)\n");
+    printf("    -i, --post-init     Number of handles posted (server only)\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -99,6 +101,14 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
                 break;
             case 'B': /* bidirectional */
                 hg_test_info->bidirectional = HG_TRUE;
+                break;
+            case 'u': /* multi_recv_op_max */
+                hg_test_info->multi_recv_op_max =
+                    (unsigned int) atoi(na_test_opt_arg_g);
+                break;
+            case 'i': /* request_post_init */
+                hg_test_info->request_post_init =
+                    (unsigned int) atoi(na_test_opt_arg_g);
                 break;
             default:
                 break;
@@ -214,6 +224,10 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         /* Multi-recv */
         hg_init_info.no_multi_recv = hg_test_info->na_test_info.no_multi_recv;
+        hg_init_info.multi_recv_op_max = hg_test_info->multi_recv_op_max;
+
+        /* Post init */
+        hg_init_info.request_post_init = hg_test_info->request_post_init;
 
         /* Init HG with init options */
         hg_test_info->hg_classes[i] =
