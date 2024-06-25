@@ -4,6 +4,52 @@ This is a preview release of the v2.4.0 release.
 
 ## New features
 
+<span style="color:blue">Added in rc3</span>
+
+- __[HG]__
+    - Add `multi_recv_op_max` init parameter
+        - This allows users to control number of multi-recv buffers posted (libfabric plugin only)
+    - Add `no_overflow` init option to prevent use of overflow buffers
+    - Improve multi-recv buffer warning messages
+    - Add `HG_Event_get_wait_fd()` to retrieve internal wait object
+    - Add `HG_Event_ready()` / `HG_Event_progress()` / `HG_Event_trigger()` to support wait fd progress model
+        - Simplify progress mechanism and remove use of internal timers
+        - Always make NA progress when `HG_Event_progress()` is called
+        - Update HG progress to use new NA progress routines
+    - Add missing `HG_WARN_UNUSED_RESULT` to HG calls
+    - Switch to using standard types and align with NA
+        - Keep some `uint8_t` instances instead of `hg_bool_t` for ABI compatibility
+- __[NA]__
+    - Add `NA_Poll()` and `NA_Poll_wait()` routines
+    - Deprecate `NA_Progress()` in favor of poll routines
+    - Add `NA_Context_get_completion_count()` to retrieve size of completion queue
+    - Update plugins to use new `poll` and `poll_wait` callbacks
+        - `poll_wait` plugin callback remains for compatibility
+    - Fix documentation of `NA_Poll_get_fd()`
+    - Add missing `NA_WARN_UNUSED_RESULT` qualifiers
+    - Bump NA version to 5.0.0
+    - Remove deprecated CCI plugin
+    - Return last known error when plugin loading fails
+- __[NA OFI]__
+    - Remove unused `NA_OFI_DOM_SHARED` flag
+    - Always use `FI_SOURCE` and `FI_SOURCE_ERR` when both are supported
+- __[NA UCX]__
+    - Add `ucx` log outlet and redirect UCX log
+        - Use default HG log level if `UCX_LOG_LEVEL` is not set
+- __[HG Util]__
+    - Add `hg_log_vwrite()` to write log from `va_list`
+    - Add `hg_log_level_to_string()`
+    - Clean up `mercury_event` code and add `const` qualifier to `hg_poll_get_fd()`
+    - Add `const` on atomic gets
+    - Switch to using `sys/queue.h` directly
+    - Remove `HG_QUEUE` and `HG_LIST` definitions
+    - Add `hg_dl_error()` to return last error
+- __[HG/NA Perf Test]__
+    - Add `-u` option to control number of multi-recv ops (server only)
+    - Add `-i` option to control number of handles posted (server only)
+    - Update to use new HG/NA progress routines and remove use of `hg_request`
+
+---
 <span style="color:blue">Added in rc2</span>
 
 - __[NA OFI]__
@@ -25,17 +71,31 @@ This is a preview release of the v2.4.0 release.
     - Add init info version compatibility wrappers
     - Bump NA version to v4.1.0
     - Add support for `traffic_class` init info (only supported by ofi plugin)
+- __[NA OFI]__
+    - Attempt to distribute multi-NIC domains based on selected CPU ID
+    - Support selection of traffic classes (single class per NA class)
 - __[HG/NA Perf Test]__
     - Add `-f`/`--hostfile` option to select hostfile to write to / read from
     - Add `-T`/`--tclass` option to select trafic class
     - Autodetect MPI implementation in perf utilities
         - MPI can now be autodetected and dynamically loaded in utilities, even if `MERCURY_TESTING_ENABLE_PARALLEL` was turned off. If `MERCURY_TESTING_ENABLE_PARALLEL` is turned on, tests remain manually linked against MPI as they used to be.
-- __[NA OFI]__
-    - Attempt to distribute multi-NIC domains based on selected CPU ID
-    - Support selection of traffic classes (single class per NA class)
 
 ## Bug fixes
 
+<span style="color:blue">Added in rc3</span>
+
+- __[HG]__
+    - Fix behavior of `request_post_incr` init parameter
+        - `request_post_incr` cannot be disabled (set to -1) with multi-recv
+- __[HG Util]__
+    - Fix mercury log to correctly generate outlet names
+    - Fix log outlets to use prefixed subsys name
+    - Fix use of macros in debug log
+- __[CMake]__
+    - Fix cmake_minimum_required() warning
+    - Update kwsys and mchecksum dependencies
+
+---
 <span style="color:blue">Added in rc2</span>
 
 - __[HG Util]__
