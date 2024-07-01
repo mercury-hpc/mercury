@@ -257,6 +257,26 @@ static HG_INLINE hg_class_t *
 hg_proc_get_class(hg_proc_t proc);
 
 /**
+ * Associate an HG handle with the processor.
+ *
+ * \param proc [IN]             abstract processor object
+ * \param handle [IN]           HG handle
+ *
+ */
+static HG_INLINE void
+hg_proc_set_handle(hg_proc_t proc, hg_handle_t handle);
+
+/**
+ * Get the HG handle associated to the processor.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return HG handle
+ */
+static HG_INLINE hg_handle_t
+hg_proc_get_handle(hg_proc_t proc);
+
+/**
  * Get the operation type associated to the processor.
  *
  * \param proc [IN]             abstract processor object
@@ -588,6 +608,7 @@ struct hg_proc {
     struct hg_proc_buf proc_buf;
     struct hg_proc_buf extra_buf;
     hg_class_t *hg_class; /* HG class */
+    hg_handle_t handle;   /* HG handle */
     struct hg_proc_buf *current_buf;
 #ifdef HG_HAS_CHECKSUMS
     struct mchecksum_object *checksum; /* Checksum */
@@ -603,6 +624,20 @@ static HG_INLINE hg_class_t *
 hg_proc_get_class(hg_proc_t proc)
 {
     return ((struct hg_proc *) proc)->hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_proc_set_handle(hg_proc_t proc, hg_handle_t handle)
+{
+    ((struct hg_proc *) proc)->handle = handle;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_handle_t
+hg_proc_get_handle(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->handle;
 }
 
 /*---------------------------------------------------------------------------*/
