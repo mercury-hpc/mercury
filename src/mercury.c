@@ -289,9 +289,11 @@ hg_handle_create(struct hg_private_class *hg_class)
     /* CRC32 is enough for small size buffers */
     ret = hg_proc_create((hg_class_t *) hg_class, hash, &hg_handle->in_proc);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Cannot create HG proc");
+    hg_proc_set_handle(hg_handle->in_proc, &hg_handle->handle);
 
     ret = hg_proc_create((hg_class_t *) hg_class, hash, &hg_handle->out_proc);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Cannot create HG proc");
+    hg_proc_set_handle(hg_handle->out_proc, &hg_handle->handle);
 
     return hg_handle;
 
