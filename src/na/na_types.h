@@ -76,15 +76,12 @@ struct na_init_info {
      * used. */
     size_t max_expected_size;
 
-    /* Preferred address format. Default is NA_ADDR_UNSPEC. */
-    enum na_addr_format addr_format;
-
-    /* Preferred traffic class. Default is NA_TC_UNSPEC */
-    enum na_traffic_class traffic_class;
-
     /* Progress mode flag. Setting NA_NO_BLOCK will force busy-spin on progress
      * and remove any wait/notification calls. */
     uint8_t progress_mode;
+
+    /* Preferred address format. Default is NA_ADDR_UNSPEC. */
+    enum na_addr_format addr_format;
 
     /* Maximum number of contexts that are expected to be created. */
     uint8_t max_contexts;
@@ -96,6 +93,22 @@ struct na_init_info {
 
     /* Request support for tranfers to/from memory devices (e.g., GPU, etc).
      * Default is: false. */
+    bool request_mem_device;
+
+    /* Preferred traffic class. Default is NA_TC_UNSPEC */
+    enum na_traffic_class traffic_class;
+};
+
+/* Previous versions of init info to keep compatiblity with older versions */
+struct na_init_info_4_0 {
+    const char *ip_subnet;
+    const char *auth_key;
+    size_t max_unexpected_size;
+    size_t max_expected_size;
+    uint8_t progress_mode;
+    enum na_addr_format addr_format;
+    uint8_t max_contexts;
+    uint8_t thread_mode;
     bool request_mem_device;
 };
 
@@ -253,9 +266,21 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
         .auth_key = NULL,                                                      \
         .max_unexpected_size = 0,                                              \
         .max_expected_size = 0,                                                \
-        .addr_format = NA_ADDR_UNSPEC,                                         \
-        .traffic_class = NA_TC_UNSPEC,                                         \
         .progress_mode = 0,                                                    \
+        .addr_format = NA_ADDR_UNSPEC,                                         \
+        .max_contexts = 1,                                                     \
+        .thread_mode = 0,                                                      \
+        .request_mem_device = false,                                           \
+        .traffic_class = NA_TC_UNSPEC})
+
+/* NA init info initializer */
+#define NA_INIT_INFO_INITIALIZER_4_0                                           \
+    ((struct na_init_info_4_0){.ip_subnet = NULL,                              \
+        .auth_key = NULL,                                                      \
+        .max_unexpected_size = 0,                                              \
+        .max_expected_size = 0,                                                \
+        .progress_mode = 0,                                                    \
+        .addr_format = NA_ADDR_UNSPEC,                                         \
         .max_contexts = 1,                                                     \
         .thread_mode = 0,                                                      \
         .request_mem_device = false})

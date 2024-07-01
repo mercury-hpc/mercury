@@ -157,10 +157,10 @@ static HG_INLINE void
 hg_init_info_dup_2_3(
     struct hg_init_info *new_info, const struct hg_init_info_2_3 *old_info)
 {
-    *new_info = (struct hg_init_info){.na_class = old_info->na_class,
+    *new_info = (struct hg_init_info){.na_init_info = old_info->na_init_info,
+        .na_class = old_info->na_class,
         .request_post_init = old_info->request_post_init,
         .request_post_incr = (int32_t) old_info->request_post_incr,
-        .multi_recv_op_max = 0,
         .auto_sm = old_info->auto_sm,
         .sm_info_string = old_info->sm_info_string,
         .checksum_level = old_info->checksum_level,
@@ -169,8 +169,9 @@ hg_init_info_dup_2_3(
         .stats = old_info->stats,
         .no_multi_recv = old_info->no_multi_recv,
         .release_input_early = old_info->release_input_early,
-        .no_overflow = false};
-    na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
+        .traffic_class = NA_TC_UNSPEC,
+        .no_overflow = false,
+        .multi_recv_op_max = 0};
 }
 
 /*---------------------------------------------------------------------------*/
@@ -178,10 +179,10 @@ static HG_INLINE void
 hg_init_info_dup_2_2(
     struct hg_init_info *new_info, const struct hg_init_info_2_2 *old_info)
 {
-    *new_info = (struct hg_init_info){.na_class = old_info->na_class,
+    *new_info = (struct hg_init_info){.na_init_info = old_info->na_init_info,
+        .na_class = old_info->na_class,
         .request_post_init = old_info->request_post_init,
         .request_post_incr = (int32_t) old_info->request_post_incr,
-        .multi_recv_op_max = 0,
         .auto_sm = old_info->auto_sm,
         .sm_info_string = old_info->sm_info_string,
         .checksum_level = old_info->checksum_level,
@@ -190,8 +191,9 @@ hg_init_info_dup_2_2(
         .stats = old_info->stats,
         .no_multi_recv = false,
         .release_input_early = false,
-        .no_overflow = false};
-    na_init_info_dup_4_0(&new_info->na_init_info, &old_info->na_init_info);
+        .traffic_class = NA_TC_UNSPEC,
+        .no_overflow = false,
+        .multi_recv_op_max = 0};
 }
 
 #ifdef __cplusplus

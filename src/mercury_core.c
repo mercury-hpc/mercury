@@ -1164,12 +1164,20 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
     struct hg_core_private_class **class_p)
 {
     struct hg_init_info hg_init_info = HG_INIT_INFO_INITIALIZER;
+    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
+    unsigned int na_version = NA_VERSION(NA_VERSION_MAJOR, NA_VERSION_MINOR);
+    struct na_init_info *na_init_info_p = NULL;
     struct hg_core_private_class *hg_core_class = NULL;
 #ifdef NA_HAS_SM
     const char *na_class_name;
 #endif
     hg_return_t ret;
     int rc;
+
+    /* Prevent newer versions */
+    HG_CHECK_SUBSYS_ERROR(cls,
+        HG_VERSION_LT(HG_VERSION(HG_VERSION_MAJOR, HG_VERSION_MINOR), version),
+        error, ret, HG_INVALID_ARG, "API version cannot be newer than library");
 
     /* Create new HG class */
     hg_core_class =
@@ -1203,11 +1211,13 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
             "API version cannot be 0");
         HG_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
             HG_MAJOR(version), HG_MINOR(version));
+        na_init_info_p = &na_init_info;
 
         /* Get init info and overwrite defaults */
-        if (HG_VERSION_GE(version, HG_VERSION(2, 4)))
+        if (HG_VERSION_GE(version, HG_VERSION(2, 4))) {
             hg_init_info = *hg_init_info_p;
-        else if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
+            na_init_info.traffic_class = hg_init_info.traffic_class;
+        } else if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
             hg_init_info_dup_2_3(&hg_init_info,
                 (const struct hg_init_info_2_3 *) hg_init_info_p);
         else
@@ -1271,8 +1281,8 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
         hg_core_class->init_info.na_ext_init = true;
     } else {
         /* Initialize NA if not provided externally */
-        hg_core_class->core_class.na_class = NA_Initialize_opt(na_info_string,
-            hg_core_class->init_info.listen, &hg_init_info.na_init_info);
+        hg_core_class->core_class.na_class = NA_Initialize_opt2(na_info_string,
+            hg_core_class->init_info.listen, na_version, na_init_info_p);
         HG_CHECK_SUBSYS_ERROR(cls, hg_core_class->core_class.na_class == NULL,
             error, ret, HG_NA_ERROR,
             "Could not initialize NA class (info_string=%s, listen=%d)",
@@ -1325,8 +1335,9 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
             info_string_p = "na+sm";
 
         /* Initialize NA SM first so that tmp directories are created */
-        hg_core_class->core_class.na_sm_class = NA_Initialize_opt(info_string_p,
-            hg_core_class->init_info.listen, &hg_init_info.na_init_info);
+        hg_core_class->core_class.na_sm_class =
+            NA_Initialize_opt2(info_string_p, hg_core_class->init_info.listen,
+                na_version, na_init_info_p);
         HG_CHECK_SUBSYS_ERROR(cls,
             hg_core_class->core_class.na_sm_class == NULL, error, ret,
             HG_NA_ERROR,

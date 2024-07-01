@@ -32,7 +32,7 @@ typedef enum hg_checksum_level {
  */
 struct hg_init_info {
     /* NA init info struct, see na_types.h for documentation */
-    struct na_init_info na_init_info;
+    struct na_init_info_4_0 na_init_info;
 
     /* Optional NA class that can be used for initializing an HG class. Using
      * that option makes the init string passed to HG_Init() ignored.
@@ -54,17 +54,10 @@ struct hg_init_info {
      * Default value is: 512 */
     int32_t request_post_incr;
 
-    /* Controls the number of multi-recv buffers that are posted. Incrementing
-     * this value may be beneficial in cases where RPC handles remain in use for
-     * longer periods of time and release_input_early is not set, preventing
-     * existing buffers from being reposted.
-     * Default value is: 4 */
-    unsigned int multi_recv_op_max;
-
     /* Controls whether the NA shared-memory interface should be automatically
      * used if/when the RPC target address shares the same node as its origin.
      * Default is: false */
-    bool auto_sm;
+    uint8_t auto_sm;
 
     /* Overrides the default info string used to initialize the NA shared-memory
      * interface when auto_sm is set to true (e.g., "foo-bar" will create
@@ -80,33 +73,43 @@ struct hg_init_info {
     /* Controls whether mercury should _NOT_ attempt to transfer small bulk data
      * along with the RPC request.
      * Default is: false */
-    bool no_bulk_eager;
+    uint8_t no_bulk_eager;
 
     /* Disable internal loopback interface that enables forwarding of RPC
      * requests to self addresses. Doing so will force traffic to be routed
      * through NA. For performance reasons, users should be cautious when using
      * that option.
      * Default is: false */
-    bool no_loopback;
+    uint8_t no_loopback;
 
     /* (Debug) Print stats at exit.
      * Default is: false */
-    bool stats;
+    uint8_t stats;
 
     /* Disable use of multi_recv when available and post separate buffers.
      * Default is: false */
-    bool no_multi_recv;
+    uint8_t no_multi_recv;
 
     /* Release input buffers as early as possible (usually after HG_Get_input())
      * as opposed to releasing them after a call to handle destroy. This may be
      * beneficial in cases where the RPC execution time is longer than usual.
      * Default is: false */
-    bool release_input_early;
+    uint8_t release_input_early;
+
+    /* Preferred traffic class. Default is NA_TC_UNSPEC */
+    enum na_traffic_class traffic_class;
 
     /* Disable use of overflow buffers when RPC message size is above the eager
      * message size threshold.
      * Default is: false */
     bool no_overflow;
+
+    /* Controls the number of multi-recv buffers that are posted. Incrementing
+     * this value may be beneficial in cases where RPC handles remain in use for
+     * longer periods of time and release_input_early is not set, preventing
+     * existing buffers from being reposted.
+     * Default value is: 4 */
+    unsigned int multi_recv_op_max;
 };
 
 /* Error return codes:
@@ -196,12 +199,12 @@ typedef enum {
 #define HG_INIT_INFO_INITIALIZER                                               \
     (struct hg_init_info)                                                      \
     {                                                                          \
-        .na_init_info = NA_INIT_INFO_INITIALIZER, .na_class = NULL,            \
-        .request_post_init = 0, .request_post_incr = 0,                        \
-        .multi_recv_op_max = 0, .auto_sm = false, .sm_info_string = NULL,      \
-        .checksum_level = HG_CHECKSUM_NONE, .no_bulk_eager = false,            \
-        .no_loopback = false, .stats = false, .no_multi_recv = false,          \
-        .release_input_early = false, .no_overflow = false                     \
+        .na_init_info = NA_INIT_INFO_INITIALIZER_4_0, .na_class = NULL,        \
+        .request_post_init = 0, .request_post_incr = 0, .auto_sm = false,      \
+        .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
+        .no_bulk_eager = false, .no_loopback = false, .stats = false,          \
+        .no_multi_recv = false, .release_input_early = false,                  \
+        .no_overflow = false, .multi_recv_op_max = 0                           \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */

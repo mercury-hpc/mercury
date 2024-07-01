@@ -767,9 +767,9 @@ na_class_t *
 NA_Initialize_opt(const char *info_string, bool listen,
     const struct na_init_info *na_init_info)
 {
-    /* Keep as latest version until info struct is modified */
-    return NA_Initialize_opt2(info_string, listen,
-        NA_VERSION(NA_VERSION_MAJOR, NA_VERSION_MINOR), na_init_info);
+    /* v4.0 is latest version for which init struct was not versioned */
+    return NA_Initialize_opt2(
+        info_string, listen, NA_VERSION(4, 0), na_init_info);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -802,7 +802,7 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
             NA_MAJOR(version), NA_MINOR(version));
 
         /* Get init info and overwrite defaults */
-        if (NA_VERSION_GE(version, NA_VERSION(4, 1)))
+        if (NA_VERSION_GE(version, NA_VERSION(5, 0)))
             na_info->na_init_info = *na_init_info;
         else
             na_init_info_dup_4_0(&na_info->na_init_info,
