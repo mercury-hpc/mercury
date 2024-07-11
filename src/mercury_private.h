@@ -171,7 +171,8 @@ hg_init_info_dup_2_3(
         .release_input_early = old_info->release_input_early,
         .traffic_class = NA_TC_UNSPEC,
         .no_overflow = false,
-        .multi_recv_op_max = 0};
+        .multi_recv_op_max = 0,
+        .multi_recv_copy_threshold = 0};
 }
 
 /*---------------------------------------------------------------------------*/
@@ -193,7 +194,8 @@ hg_init_info_dup_2_2(
         .release_input_early = false,
         .traffic_class = NA_TC_UNSPEC,
         .no_overflow = false,
-        .multi_recv_op_max = 0};
+        .multi_recv_op_max = 0,
+        .multi_recv_copy_threshold = 0};
 }
 
 #ifdef __cplusplus

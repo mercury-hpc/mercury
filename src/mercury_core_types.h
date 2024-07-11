@@ -110,6 +110,13 @@ struct hg_init_info {
      * existing buffers from being reposted.
      * Default value is: 4 */
     unsigned int multi_recv_op_max;
+
+    /* Controls when we should start copying data in an effort to release
+     * multi-recv buffers. Copy will occur when at most
+     * multi_recv_copy_threshold buffers remain. Value should not exceed
+     * multi_recv_op_max.
+     * Default value is: 0 (never copy) */
+    unsigned int multi_recv_copy_threshold;
 };
 
 /* Error return codes:
@@ -204,7 +211,8 @@ typedef enum {
         .sm_info_string = NULL, .checksum_level = HG_CHECKSUM_NONE,            \
         .no_bulk_eager = false, .no_loopback = false, .stats = false,          \
         .no_multi_recv = false, .release_input_early = false,                  \
-        .no_overflow = false, .multi_recv_op_max = 0                           \
+        .no_overflow = false, .multi_recv_op_max = 0,                          \
+        .multi_recv_copy_threshold = 0                                         \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
