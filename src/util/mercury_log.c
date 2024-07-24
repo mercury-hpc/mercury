@@ -493,7 +493,8 @@ void
 hg_log_outlet_deregister(struct hg_log_outlet *hg_log_outlet)
 {
     if (hg_log_outlet->debug_log &&
-        !(hg_log_outlet->parent && hg_log_outlet->parent->debug_log)) {
+        !(hg_log_outlet->parent &&
+            hg_log_outlet->parent->debug_log == hg_log_outlet->debug_log)) {
         if (hg_log_outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
             FILE *stream = hg_log_streams_g[hg_log_outlet->level]
                                ? hg_log_streams_g[hg_log_outlet->level]
