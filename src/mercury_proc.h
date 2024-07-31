@@ -597,7 +597,7 @@ struct hg_proc_buf {
     void *buf_ptr;       /* Pointer to current position */
     hg_size_t size;      /* Total buffer size */
     hg_size_t size_left; /* Available size for user */
-    bool is_mine;
+    uint8_t is_mine;
 #ifdef HG_HAS_XDR
     XDR xdr;
 #endif
@@ -608,7 +608,6 @@ struct hg_proc {
     struct hg_proc_buf proc_buf;
     struct hg_proc_buf extra_buf;
     hg_class_t *hg_class; /* HG class */
-    hg_handle_t handle;   /* HG handle */
     struct hg_proc_buf *current_buf;
 #ifdef HG_HAS_CHECKSUMS
     struct mchecksum_object *checksum; /* Checksum */
@@ -617,6 +616,7 @@ struct hg_proc {
 #endif
     hg_proc_op_t op;
     uint8_t flags;
+    hg_handle_t handle; /* HG handle */
 };
 
 /*---------------------------------------------------------------------------*/
