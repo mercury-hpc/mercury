@@ -1083,7 +1083,7 @@ struct hg_core_addr {
 #ifdef NA_HAS_SM
     na_addr_t *na_sm_addr; /* NA SM address */
 #endif
-    bool is_self; /* Self address */
+    uint8_t is_self; /* Self address */
 };
 
 /* HG core RPC registration info */
@@ -1092,7 +1092,7 @@ struct hg_core_rpc_info {
     void *data;                    /* User data */
     void (*free_callback)(void *); /* User data free callback */
     hg_id_t id;                    /* RPC ID */
-    bool no_response;              /* RPC response not expected */
+    uint8_t no_response;           /* RPC response not expected */
 };
 
 /* HG core handle */
@@ -1255,7 +1255,7 @@ HG_Core_addr_get_na_sm(hg_core_addr_t addr)
 static HG_INLINE bool
 HG_Core_addr_is_self(hg_core_addr_t addr)
 {
-    return addr->is_self;
+    return (bool) addr->is_self;
 }
 
 /*---------------------------------------------------------------------------*/
