@@ -4,6 +4,14 @@ This is a preview release of the v2.4.0 release.
 
 ## New features
 
+<span style="color:blue">Added in rc4</span>
+
+- __[HG]__
+    - Add `multi_recv_copy_threshold` init parameter
+        - Use this new parameter to fallback to memcpy to prevent starvation of multi-recv buffers
+    - Associate handle to HG proc
+        - `hg_proc_get_handle()` can be used to retrieve handle within proc functions
+
 <span style="color:blue">Added in rc3</span>
 
 - __[HG]__
@@ -81,6 +89,17 @@ This is a preview release of the v2.4.0 release.
         - MPI can now be autodetected and dynamically loaded in utilities, even if `MERCURY_TESTING_ENABLE_PARALLEL` was turned off. If `MERCURY_TESTING_ENABLE_PARALLEL` is turned on, tests remain manually linked against MPI as they used to be.
 
 ## Bug fixes
+
+<span style="color:blue">Added in rc4</span>
+
+- __[HG]__
+    - Fix couple of type changes introduced in rc1 that could have broken ABI
+    - Fix shared-memory path that was previously disabled in conjunction with libfabric transports that use the multi-recv capability
+- __[HG util]__
+    - Fix `dlog_free` not called when parent/child have separate dlogs
+- __[HG/NA]__
+    - Fix init info changes made in previous rcs to prevent ABI breakage 
+    - HG NA init info is fixed to v4.0 for now and duplicates tclass info
 
 <span style="color:blue">Added in rc3</span>
 
