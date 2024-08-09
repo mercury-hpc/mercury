@@ -923,6 +923,12 @@ static void
 hg_core_completion_trigger(struct hg_completion_entry *hg_completion_entry);
 
 /**
+ * Check for events on loopback and if it is safe to wait.
+ */
+static HG_INLINE bool
+hg_core_event_ready_loopback(struct hg_core_private_context *context);
+
+/**
  * Make progress.
  */
 static hg_return_t
@@ -5238,6 +5244,22 @@ hg_core_completion_trigger(struct hg_completion_entry *hg_completion_entry)
 }
 
 /*---------------------------------------------------------------------------*/
+static HG_INLINE bool
+hg_core_event_ready_loopback(struct hg_core_private_context *context)
+{
+    if (context->loopback_notify.event > 0) {
+        /* We will need to notify the event if we're waiting */
+        hg_atomic_cas32(&context->loopback_notify.must_notify, 0, 1);
+        if (hg_core_completion_count(context) > 0) {
+            hg_atomic_cas32(&context->loopback_notify.must_notify, 1, 0);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_progress_wait(
     struct hg_core_private_context *context, unsigned int timeout_ms)
@@ -7022,21 +7044,27 @@ error:
 
 /*---------------------------------------------------------------------------*/
 bool
-HG_Core_event_ready_loopback(hg_core_context_t *context)
+HG_Core_event_ready(hg_core_context_t *context)
 {
     struct hg_core_private_context *private_context =
         (struct hg_core_private_context *) context;
 
-    if (private_context->loopback_notify.event > 0) {
-        /* We will need to notify the event if we're waiting */
-        hg_atomic_cas32(&private_context->loopback_notify.must_notify, 0, 1);
-        if (hg_core_completion_count(private_context) > 0) {
-            hg_atomic_cas32(
-                &private_context->loopback_notify.must_notify, 1, 0);
-            return true;
-        }
-    }
+    HG_CHECK_SUBSYS_ERROR_NORET(
+        poll, context == NULL, error, "NULL HG core context");
 
+    if (hg_core_completion_count(private_context) > 0)
+        return true;
+#ifdef NA_HAS_SM
+    if ((context->core_class->na_sm_class != NULL) &&
+        !NA_Poll_try_wait(
+            context->core_class->na_sm_class, context->na_sm_context))
+        return true;
+#endif
+    if (!NA_Poll_try_wait(context->core_class->na_class, context->na_context))
+        return true;
+    return hg_core_event_ready_loopback(private_context);
+
+error:
     return false;
 }
 
