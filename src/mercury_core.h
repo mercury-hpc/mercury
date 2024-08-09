@@ -1010,19 +1010,8 @@ HG_Core_event_get_wait_fd(
  *
  * \return true if there is already work to be progressed or false otherwise
  */
-static HG_INLINE bool
-HG_Core_event_ready(hg_core_context_t *context) HG_WARN_UNUSED_RESULT;
-
-/**
- * Used to signal when it is safe to block on the file descriptor of the
- * context's wait object or if there is already work that can be progressed.
- *
- * \param context [IN/OUT]      pointer to HG core context
- *
- * \return true if there is already work to be progressed or false otherwise
- */
 HG_PUBLIC bool
-HG_Core_event_ready_loopback(hg_core_context_t *context) HG_WARN_UNUSED_RESULT;
+HG_Core_event_ready(hg_core_context_t *context) HG_WARN_UNUSED_RESULT;
 
 /**
  * Progress communication by placing any completed RPC events into the
@@ -1330,23 +1319,6 @@ HG_Core_get_output(
     *out_buf_size_p = handle->out_buf_size - header_offset;
 
     return HG_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-static HG_INLINE bool
-HG_Core_event_ready(hg_core_context_t *context)
-{
-    if (HG_Core_context_get_completion_count(context) > 0)
-        return true;
-#ifdef NA_HAS_SM
-    if ((context->core_class->na_sm_class != NULL) &&
-        !NA_Poll_try_wait(
-            context->core_class->na_sm_class, context->na_sm_context))
-        return true;
-#endif
-    if (!NA_Poll_try_wait(context->core_class->na_class, context->na_context))
-        return true;
-    return HG_Core_event_ready_loopback(context);
 }
 
 #ifdef __cplusplus
