@@ -1126,7 +1126,13 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
             break;
         case NA_CB_SEND_UNEXPECTED:
         case NA_CB_SEND_EXPECTED:
+            break;
         case NA_CB_RECV_EXPECTED:
+            if (callback_info->ret != NA_SUCCESS)
+                callback_info->info.recv_expected.actual_buf_size = 0;
+            else
+                callback_info->info.recv_expected.actual_buf_size =
+                    (size_t) na_bmi_op_id->info.msg.actual_buf_size;
             break;
         case NA_CB_PUT:
         case NA_CB_GET:

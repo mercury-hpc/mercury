@@ -183,6 +183,15 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
     int event_id;
     int open_ret;
     hg_return_t ret = HG_SUCCESS;
+    hg_size_t payload_size = HG_Get_input_payload_size(handle);
+    size_t expected_string_payload_size =
+        strlen(HG_TEST_RPC_PATH) + sizeof(uint64_t) + 3;
+
+    HG_TEST_CHECK_ERROR(
+        payload_size != sizeof(rpc_handle_t) + expected_string_payload_size,
+        done, ret, HG_FAULT,
+        "invalid input payload size (%" PRId64 "), expected (%zu)",
+        payload_size, sizeof(rpc_handle_t) + expected_string_payload_size);
 
     /* Get input buffer */
     ret = HG_Get_input(handle, &in_struct);
@@ -209,6 +218,11 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
     ret = HG_Respond(handle, NULL, NULL, &out_struct);
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
+
+    payload_size = HG_Get_output_payload_size(handle);
+    HG_TEST_CHECK_ERROR(payload_size != sizeof(rpc_open_out_t), done, ret,
+        HG_FAULT, "invalid output payload size (%" PRId64 "), expected (%zu)",
+        payload_size, sizeof(rpc_open_out_t));
 
 done:
     ret = HG_Destroy(handle);

@@ -2275,6 +2275,8 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
                 ret = NA_SIZE_ERROR;
                 goto done;
             }
+            callback_info->info.recv_expected.actual_buf_size =
+                (size_t) na_mpi_op_id->info.recv_expected.actual_size;
             break;
         case NA_CB_PUT:
             /* Transfer is now done so free RMA info */

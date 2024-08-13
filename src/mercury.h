@@ -785,6 +785,16 @@ static HG_INLINE void *
 HG_Get_data(hg_handle_t handle) HG_WARN_UNUSED_RESULT;
 
 /**
+ * Retrieve input payload size from a given handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Non-negative value or zero if no payload or the handle is not valid
+ */
+HG_PUBLIC hg_size_t
+HG_Get_input_payload_size(hg_handle_t handle);
+
+/**
  * Get input from handle (requires registration of input proc to deserialize
  * parameters). Input must be freed using HG_Free_input().
  *
@@ -816,6 +826,16 @@ HG_Get_input(hg_handle_t handle, void *in_struct);
  */
 HG_PUBLIC hg_return_t
 HG_Free_input(hg_handle_t handle, void *in_struct);
+
+/**
+ * Retrieve output payload size from a given handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Non-negative value or zero if no payload or the handle is not valid
+ */
+HG_PUBLIC hg_size_t
+HG_Get_output_payload_size(hg_handle_t handle);
 
 /**
  * Get output from handle (requires registration of output proc to deserialize
