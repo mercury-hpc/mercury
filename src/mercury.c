@@ -1823,6 +1823,30 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Get_input_payload_size(hg_handle_t handle)
+{
+    struct hg_private_handle *private_handle =
+        (struct hg_private_handle *) handle;
+
+    HG_CHECK_SUBSYS_ERROR_NORET(
+        rpc, handle == HG_HANDLE_NULL, error, "NULL HG handle");
+
+    if (private_handle->in_extra_buf != NULL)
+        return private_handle->in_extra_buf_size;
+    else {
+        hg_size_t header_size = hg_header_get_size(HG_INPUT),
+                  payload_size =
+                      HG_Core_get_input_payload_size(handle->core_handle);
+
+        return (payload_size > header_size) ? payload_size - header_size : 0;
+    }
+
+error:
+    return 0;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Get_input(hg_handle_t handle, void *in_struct)
 {
@@ -1880,6 +1904,30 @@ HG_Free_input(hg_handle_t handle, void *in_struct)
 
 error:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Get_output_payload_size(hg_handle_t handle)
+{
+    struct hg_private_handle *private_handle =
+        (struct hg_private_handle *) handle;
+
+    HG_CHECK_SUBSYS_ERROR_NORET(
+        rpc, handle == HG_HANDLE_NULL, error, "NULL HG handle");
+
+    if (private_handle->out_extra_buf != NULL)
+        return private_handle->out_extra_buf_size;
+    else {
+        hg_size_t header_size = hg_header_get_size(HG_OUTPUT),
+                  payload_size =
+                      HG_Core_get_output_payload_size(handle->core_handle);
+
+        return (payload_size > header_size) ? payload_size - header_size : 0;
+    }
+
+error:
+    return 0;
 }
 
 /*---------------------------------------------------------------------------*/

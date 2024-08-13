@@ -49,6 +49,9 @@ struct hg_test_handle_info {
 /* Public Macros */
 /*****************/
 
+/* Test path */
+#define HG_TEST_RPC_PATH (HG_TEST_TEMP_DIRECTORY "/test.txt")
+
 /*********************/
 /* Public Prototypes */
 /*********************/

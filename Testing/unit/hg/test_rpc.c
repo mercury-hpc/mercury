@@ -11,9 +11,6 @@
 /* Local Macros */
 /****************/
 
-/* Test path */
-#define HG_TEST_RPC_PATH (HG_TEST_TEMP_DIRECTORY "/test.txt")
-
 /* Wait timeout in ms */
 #define HG_TEST_WAIT_TIMEOUT (HG_TEST_TIMEOUT * 1000)
 
@@ -178,6 +175,9 @@ hg_test_rpc_input(hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id,
         .no_entry = false};
     rpc_open_in_t in_struct = {
         .handle = rpc_open_handle, .path = HG_TEST_RPC_PATH};
+    hg_size_t payload_size;
+    size_t expected_string_payload_size =
+        strlen(HG_TEST_RPC_PATH) + sizeof(uint64_t) + 3;
     unsigned int flag;
     int rc;
 
@@ -203,6 +203,13 @@ hg_test_rpc_input(hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id,
     ret = forward_cb_args.ret;
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "Error in HG callback (%s)", HG_Error_to_string(ret));
+
+    payload_size = HG_Get_input_payload_size(handle);
+    HG_TEST_CHECK_ERROR(
+        payload_size != sizeof(rpc_handle_t) + expected_string_payload_size,
+        error, ret, HG_FAULT,
+        "invalid input payload size (%" PRId64 "), expected (%zu)",
+        payload_size, sizeof(rpc_handle_t) + expected_string_payload_size);
 
     return HG_SUCCESS;
 
@@ -262,12 +269,16 @@ hg_test_rpc_output_cb(const struct hg_cb_info *callback_info)
     int rpc_open_event_id;
     rpc_open_out_t rpc_open_out_struct;
     hg_return_t ret = callback_info->ret;
+    hg_size_t payload_size = HG_Get_output_payload_size(handle);
 
     if (args->no_entry && ret == HG_NOENTRY)
         goto done;
 
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in HG callback (%s)",
         HG_Error_to_string(callback_info->ret));
+    HG_TEST_CHECK_ERROR(payload_size != sizeof(rpc_open_out_t), done, ret,
+        HG_FAULT, "invalid output payload size (%" PRId64 "), expected (%zu)",
+        payload_size, sizeof(rpc_open_out_t));
 
     /* Get output */
     ret = HG_Get_output(handle, &rpc_open_out_struct);
@@ -329,9 +340,16 @@ hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info)
     size_t string_len;
 #    endif
     hg_return_t ret = callback_info->ret;
+    hg_size_t payload_size = HG_Get_output_payload_size(handle);
+    size_t expected_string_payload_size =
+        HG_Class_get_output_eager_size(HG_Get_info(handle)->hg_class) * 2 + 3 +
+        2 * sizeof(uint64_t);
 
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in HG callback (%s)",
         HG_Error_to_string(callback_info->ret));
+    HG_TEST_CHECK_ERROR(payload_size != expected_string_payload_size, done, ret,
+        HG_FAULT, "invalid output payload size (%" PRId64 "), expected (%zu)",
+        payload_size, expected_string_payload_size);
 
     /* Get output */
     ret = HG_Get_output(handle, &out_struct);
@@ -899,6 +917,12 @@ main(int argc, char *argv[])
         hg_test_rpc_null_id_g, hg_test_rpc_no_output_cb, info.request);
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_rpc_no_input() failed (%s)",
         HG_Error_to_string(hg_ret));
+    HG_TEST_CHECK_ERROR(HG_Get_input_payload_size(info.handles[0]) != 0, error,
+        hg_ret, HG_FAULT, "input payload non null (%" PRId64 ")",
+        HG_Get_input_payload_size(info.handles[0]));
+    HG_TEST_CHECK_ERROR(HG_Get_output_payload_size(info.handles[0]) != 0, error,
+        hg_ret, HG_FAULT, "output payload non null (%" PRId64 ")",
+        HG_Get_output_payload_size(info.handles[0]));
     HG_PASSED();
 
     /* Simple RPC test */

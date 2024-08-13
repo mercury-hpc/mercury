@@ -866,6 +866,16 @@ static HG_INLINE hg_return_t
 HG_Core_set_target_id(hg_core_handle_t handle, uint8_t id);
 
 /**
+ * Get input payload size from handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Non-negative value or zero if no payload
+ */
+static HG_INLINE size_t
+HG_Core_get_input_payload_size(hg_core_handle_t handle);
+
+/**
  * Get input buffer from handle that can be used for serializing/deserializing
  * parameters.
  *
@@ -891,6 +901,16 @@ HG_Core_get_input(
  */
 HG_PUBLIC hg_return_t
 HG_Core_release_input(hg_core_handle_t handle);
+
+/**
+ * Get output payload size from handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Non-negative value or zero if no payload
+ */
+static HG_INLINE size_t
+HG_Core_get_output_payload_size(hg_core_handle_t handle);
 
 /**
  * Get output buffer from handle that can be used for serializing/deserializing
@@ -1096,6 +1116,8 @@ struct hg_core_handle {
     size_t out_buf_size;                /* Output buffer size */
     size_t na_in_header_offset;         /* Input NA header offset */
     size_t na_out_header_offset;        /* Output NA header offset */
+    size_t in_buf_used;                 /* Amount of input buffer used */
+    size_t out_buf_used;                /* Amount of output buffer used */
 };
 
 /*---------------------------------------------------------------------------*/
@@ -1289,6 +1311,19 @@ HG_Core_set_target_id(hg_core_handle_t handle, uint8_t id)
 }
 
 /*---------------------------------------------------------------------------*/
+static HG_INLINE size_t
+HG_Core_get_input_payload_size(hg_core_handle_t handle)
+{
+    size_t header_size =
+        hg_core_header_request_get_size() + handle->na_in_header_offset;
+
+    if (handle->in_buf_used > header_size)
+        return handle->in_buf_used - header_size;
+    else
+        return 0;
+}
+
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 HG_Core_get_input(
     hg_core_handle_t handle, void **in_buf_p, hg_size_t *in_buf_size_p)
@@ -1304,6 +1339,19 @@ HG_Core_get_input(
     *in_buf_size_p = handle->in_buf_size - header_offset;
 
     return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE size_t
+HG_Core_get_output_payload_size(hg_core_handle_t handle)
+{
+    size_t header_size =
+        hg_core_header_response_get_size() + handle->na_out_header_offset;
+
+    if (handle->out_buf_used > header_size)
+        return handle->out_buf_used - header_size;
+    else
+        return 0;
 }
 
 /*---------------------------------------------------------------------------*/

@@ -348,8 +348,6 @@ struct hg_core_private_handle {
     struct hg_core_multi_recv_op *multi_recv_op; /* Multi-recv operation */
     void *in_buf_storage;                        /* Storage input buffer */
     size_t in_buf_storage_size;                  /* Storage input buffer size */
-    size_t in_buf_used;                 /* Amount of input buffer used */
-    size_t out_buf_used;                /* Amount of output buffer used */
     na_tag_t tag;                       /* Tag used for request and response */
     hg_atomic_int32_t ref_count;        /* Reference count */
     hg_atomic_int32_t no_response_done; /* Reference count to reach for done */
@@ -3660,8 +3658,8 @@ hg_core_reset(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->tag = 0;
     hg_core_handle->cookie = 0;
     hg_core_handle->ret = HG_SUCCESS;
-    hg_core_handle->in_buf_used = 0;
-    hg_core_handle->out_buf_used = 0;
+    hg_core_handle->core_handle.in_buf_used = 0;
+    hg_core_handle->core_handle.out_buf_used = 0;
     hg_atomic_init32(
         &hg_core_handle->op_expected_count, 1); /* Default (no response) */
     HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) expected_count set to %" PRId32,
@@ -3962,9 +3960,10 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
                   hg_core_handle->core_handle.na_in_header_offset;
 
     /* Set the actual size of the msg that needs to be transmitted */
-    hg_core_handle->in_buf_used = header_size + payload_size;
+    hg_core_handle->core_handle.in_buf_used = header_size + payload_size;
     HG_CHECK_SUBSYS_ERROR(rpc,
-        hg_core_handle->in_buf_used > hg_core_handle->core_handle.in_buf_size,
+        hg_core_handle->core_handle.in_buf_used >
+            hg_core_handle->core_handle.in_buf_size,
         error, ret, HG_MSGSIZE, "Exceeding input buffer size");
 
     /* Parse flags */
@@ -4093,7 +4092,8 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
     /* Post send (input) */
     na_ret = NA_Msg_send_unexpected(hg_core_handle->na_class,
         hg_core_handle->na_context, hg_core_send_input_cb, hg_core_handle,
-        hg_core_handle->core_handle.in_buf, hg_core_handle->in_buf_used,
+        hg_core_handle->core_handle.in_buf,
+        hg_core_handle->core_handle.in_buf_used,
         hg_core_handle->in_buf_plugin_data, hg_core_handle->na_addr,
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         hg_core_handle->na_send_op_id);
@@ -4164,9 +4164,10 @@ hg_core_respond(struct hg_core_private_handle *hg_core_handle,
                   hg_core_handle->core_handle.na_out_header_offset;
 
     /* Set the actual size of the msg that needs to be transmitted */
-    hg_core_handle->out_buf_used = header_size + payload_size;
+    hg_core_handle->core_handle.out_buf_used = header_size + payload_size;
     HG_CHECK_SUBSYS_ERROR(rpc,
-        hg_core_handle->out_buf_used > hg_core_handle->core_handle.out_buf_size,
+        hg_core_handle->core_handle.out_buf_used >
+            hg_core_handle->core_handle.out_buf_size,
         error, ret, HG_MSGSIZE, "Exceeding output buffer size");
 
     /* Parse flags */
@@ -4328,7 +4329,8 @@ hg_core_respond_na(
     /* Post expected send (output) */
     na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
         hg_core_handle->na_context, hg_core_send_output_cb, hg_core_handle,
-        hg_core_handle->core_handle.out_buf, hg_core_handle->out_buf_used,
+        hg_core_handle->core_handle.out_buf,
+        hg_core_handle->core_handle.out_buf_used,
         hg_core_handle->out_buf_plugin_data, hg_core_handle->na_addr,
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         hg_core_handle->na_send_op_id);
@@ -4474,19 +4476,19 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             hg_core_handle->core_handle.info.addr->na_addr =
                 hg_core_handle->na_addr;
         hg_core_handle->tag = na_cb_info_recv_unexpected->tag;
-        hg_core_handle->in_buf_used =
+        hg_core_handle->core_handle.in_buf_used =
             na_cb_info_recv_unexpected->actual_buf_size;
-        HG_CHECK_SUBSYS_ERROR_NORET(rpc,
-            hg_core_handle->in_buf_used >
+        HG_CHECK_SUBSYS_ERROR(rpc,
+            hg_core_handle->core_handle.in_buf_used >
                 hg_core_handle->core_handle.in_buf_size,
-            error,
+            error, ret, HG_OVERFLOW,
             "Actual transfer size (%zu) is too large for unexpected recv",
-            hg_core_handle->in_buf_used);
+            hg_core_handle->core_handle.in_buf_used);
 
         HG_LOG_SUBSYS_DEBUG(rpc,
             "Processing input for handle %p, tag=%u, buf_size=%zu",
             (void *) hg_core_handle, hg_core_handle->tag,
-            hg_core_handle->in_buf_used);
+            hg_core_handle->core_handle.in_buf_used);
 
         /* Process input information */
         ret = hg_core_process_input(hg_core_handle);
@@ -4582,24 +4584,25 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
         hg_core_handle->core_handle.info.addr->na_addr =
             hg_core_handle->na_addr;
         hg_core_handle->tag = na_cb_info_multi_recv_unexpected->tag;
-        hg_core_handle->in_buf_used =
+        hg_core_handle->core_handle.in_buf_used =
             na_cb_info_multi_recv_unexpected->actual_buf_size;
 
         /* Either copy the buffer to release early or point to the actual
          * multi-recv buffer space to save a memcpy */
         if (hg_core_handle->multi_recv_copy) {
-            HG_CHECK_SUBSYS_ERROR_NORET(rpc,
-                hg_core_handle->in_buf_used >
+            HG_CHECK_SUBSYS_ERROR(rpc,
+                hg_core_handle->core_handle.in_buf_used >
                     hg_core_handle->in_buf_storage_size,
-                error,
+                error, ret, HG_OVERFLOW,
                 "Actual transfer size (%zu) is too large for unexpected recv",
-                hg_core_handle->in_buf_used);
+                hg_core_handle->core_handle.in_buf_used);
             HG_LOG_SUBSYS_DEBUG(rpc,
                 "Copying multi-recv payload of size %zu for handle (%p)",
-                hg_core_handle->in_buf_used, (void *) hg_core_handle);
+                hg_core_handle->core_handle.in_buf_used,
+                (void *) hg_core_handle);
             memcpy(hg_core_handle->in_buf_storage,
                 na_cb_info_multi_recv_unexpected->actual_buf,
-                hg_core_handle->in_buf_used);
+                hg_core_handle->core_handle.in_buf_used);
             hg_core_handle->core_handle.in_buf_size =
                 hg_core_handle->in_buf_storage_size;
             hg_core_handle->core_handle.in_buf = hg_core_handle->in_buf_storage;
@@ -4611,9 +4614,10 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
         } else {
             HG_LOG_SUBSYS_DEBUG(rpc,
                 "Using direct multi-recv payload of size %zu for handle (%p)",
-                hg_core_handle->in_buf_used, (void *) hg_core_handle);
+                hg_core_handle->core_handle.in_buf_used,
+                (void *) hg_core_handle);
             hg_core_handle->core_handle.in_buf_size =
-                hg_core_handle->in_buf_used;
+                hg_core_handle->core_handle.in_buf_used;
             hg_core_handle->core_handle.in_buf =
                 na_cb_info_multi_recv_unexpected->actual_buf;
         }
@@ -4621,7 +4625,7 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
         HG_LOG_SUBSYS_DEBUG(rpc,
             "Processing input for handle %p, tag=%u, buf_size=%zu",
             (void *) hg_core_handle, hg_core_handle->tag,
-            hg_core_handle->in_buf_used);
+            hg_core_handle->core_handle.in_buf_used);
 
         /* Process input information */
         ret = hg_core_process_input(hg_core_handle);
@@ -4774,8 +4778,19 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     hg_return_t ret;
 
     if (callback_info->ret == NA_SUCCESS) {
-        HG_LOG_SUBSYS_DEBUG(rpc, "Processing output for handle %p, tag=%u",
-            (void *) hg_core_handle, hg_core_handle->tag);
+        hg_core_handle->core_handle.out_buf_used =
+            callback_info->info.recv_expected.actual_buf_size;
+        HG_CHECK_SUBSYS_ERROR(rpc,
+            hg_core_handle->core_handle.out_buf_used >
+                hg_core_handle->core_handle.out_buf_size,
+            error, ret, HG_OVERFLOW,
+            "Actual transfer size (%zu) is too large for expected recv",
+            hg_core_handle->core_handle.out_buf_used);
+
+        HG_LOG_SUBSYS_DEBUG(rpc,
+            "Processing output for handle %p, tag=%u, buf_size=%zu",
+            (void *) hg_core_handle, hg_core_handle->tag,
+            hg_core_handle->core_handle.out_buf_used);
 
         /* Process output information */
         ret = hg_core_process_output(hg_core_handle, hg_core_send_ack);
