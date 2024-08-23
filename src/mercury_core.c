@@ -167,7 +167,10 @@ struct hg_core_counters {
     hg_atomic_int64_t *rpc_resp_recv_count;  /* RPC responses received */
     hg_atomic_int64_t *rpc_req_extra_count;  /* RPC that require extra data */
     hg_atomic_int64_t *rpc_resp_extra_count; /* RPC that require extra data */
-    hg_atomic_int64_t *bulk_count;           /* Bulk count */
+    hg_atomic_int64_t *rpc_req_recv_active_count; /* Currently active RPCs */
+    hg_atomic_int64_t *rpc_multi_recv_copy_count; /* RPCs requests received that
+                                                     required a copy */
+    hg_atomic_int64_t *bulk_count;                /* Bulk count */
 };
 
 /* HG class */
@@ -362,6 +365,9 @@ struct hg_core_private_handle {
     uint8_t cookie;               /* Cookie */
     bool multi_recv_copy;         /* Copy on multi-recv */
     bool reuse;                   /* Re-use handle once ref_count is 0 */
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+    bool active;
+#endif
 };
 
 /* HG op id */
@@ -433,6 +439,13 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
  */
 static hg_return_t
 hg_core_finalize(struct hg_core_private_class *hg_core_class);
+
+/**
+ * Get counters.
+ */
+static void
+hg_core_class_get_counters(const struct hg_core_counters *counters,
+    struct hg_diag_counters *diag_counters);
 
 /**
  * Create context.
@@ -1077,6 +1090,10 @@ hg_core_counters_init(struct hg_core_counters *hg_core_counters)
      * order */
     HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->bulk_count, "bulk_count",
         "Bulk transfers (inc. extra bulks)");
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_multi_recv_copy_count,
+        "rpc_multi_recv_copy_count", "RPC requests received requiring a copy");
+    HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_req_recv_active_count,
+        "rpc_req_recv_active_count", "RPC requests received still active");
     HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_resp_extra_count,
         "rpc_resp_extra_count", "RPCs with extra bulk response");
     HG_LOG_ADD_COUNTER64(hg_diag, &hg_core_counters->rpc_req_extra_count,
@@ -1494,6 +1511,31 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class)
 
 error:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_core_class_get_counters(const struct hg_core_counters *counters,
+    struct hg_diag_counters *diag_counters)
+{
+    *diag_counters = (struct hg_diag_counters){
+        .rpc_req_sent_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_req_sent_count),
+        .rpc_req_recv_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_req_recv_count),
+        .rpc_resp_sent_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_resp_sent_count),
+        .rpc_resp_recv_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_resp_recv_count),
+        .rpc_req_extra_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_req_extra_count),
+        .rpc_resp_extra_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_resp_extra_count),
+        .rpc_req_recv_active_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_req_recv_active_count),
+        .rpc_multi_recv_copy_count =
+            (uint64_t) hg_atomic_get64(counters->rpc_multi_recv_copy_count),
+        .bulk_count = (uint64_t) hg_atomic_get64(counters->bulk_count)};
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3389,6 +3431,14 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
         return HG_SUCCESS; /* Cannot free yet */
     }
 
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+    if (hg_core_handle->active) {
+        hg_atomic_decr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
+                             ->counters.rpc_req_recv_active_count);
+        hg_core_handle->active = false;
+    }
+#endif
+
     /* Re-use handle if we were listening, otherwise destroy it */
     if (hg_core_handle->reuse &&
         !hg_atomic_get32(&HG_CORE_HANDLE_CONTEXT(hg_core_handle)->unposting)) {
@@ -4466,6 +4516,12 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
     LIST_REMOVE(hg_core_handle, pending);
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+    /* Increment counter */
+    hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
+                         ->counters.rpc_req_recv_active_count);
+    hg_core_handle->active = true;
+#endif
 
     if (callback_info->ret == NA_SUCCESS) {
         /* Extend pool if all handles are being utilized */
@@ -4568,6 +4624,12 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
         ret = hg_core_handle_pool_get(context->handle_pool, &hg_core_handle);
         HG_CHECK_SUBSYS_HG_ERROR(
             rpc, error, ret, "Could not get handle from pool");
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+        /* Increment counter */
+        hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
+                             ->counters.rpc_req_recv_active_count);
+        hg_core_handle->active = true;
+#endif
         hg_core_handle->multi_recv_op = multi_recv_op;
         hg_atomic_incr32(&multi_recv_op->op_count);
         hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_MULTI_RECV);
@@ -4619,6 +4681,12 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
                 "Copying multi-recv payload of size %zu for handle (%p)",
                 hg_core_handle->core_handle.in_buf_used,
                 (void *) hg_core_handle);
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+            /* Increment counter */
+            hg_atomic_incr64(HG_CORE_CONTEXT_CLASS(context)
+                                 ->counters.rpc_multi_recv_copy_count);
+#endif
+
             memcpy(hg_core_handle->in_buf_storage,
                 na_cb_info_multi_recv_unexpected->actual_buf,
                 hg_core_handle->core_handle.in_buf_used);
@@ -6052,6 +6120,35 @@ HG_Core_set_more_data_callback(struct hg_core_class *hg_core_class,
 
     private_class->more_data_cb.acquire = more_data_acquire_callback;
     private_class->more_data_cb.release = more_data_release_callback;
+
+    return HG_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_class_get_counters(const hg_core_class_t *hg_core_class,
+    struct hg_diag_counters *diag_counters)
+{
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+    const struct hg_core_private_class *private_class =
+        (const struct hg_core_private_class *) hg_core_class;
+#endif
+    hg_return_t ret;
+
+    HG_CHECK_SUBSYS_ERROR(cls, hg_core_class == NULL, error, ret,
+        HG_INVALID_ARG, "NULL HG core class");
+    HG_CHECK_SUBSYS_ERROR(cls, diag_counters == NULL, error, ret,
+        HG_INVALID_ARG, "NULL pointer to diag_counters");
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
+    hg_core_class_get_counters(&private_class->counters, diag_counters);
+#else
+    HG_LOG_SUBSYS_ERROR(cls, "Counters not supported in current build, please "
+                             "build with MERCURY_ENABLE_DEBUG");
+    return HG_OPNOTSUPPORTED;
+#endif
 
     return HG_SUCCESS;
 

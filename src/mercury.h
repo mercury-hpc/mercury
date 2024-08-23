@@ -192,6 +192,12 @@ HG_PUBLIC void
 HG_Set_log_stream(const char *level, FILE *stream);
 
 /**
+ * Dump diagnostic counters into the existing log stream.
+ */
+HG_PUBLIC void
+HG_Diag_dump_counters(void);
+
+/**
  * Obtain the name of the given class.
  *
  * \param hg_class [IN]         pointer to HG class
@@ -297,6 +303,19 @@ HG_Class_set_data(
  */
 static HG_INLINE void *
 HG_Class_get_data(const hg_class_t *hg_class) HG_WARN_UNUSED_RESULT;
+
+/**
+ * Get diagnostic counters associated to HG class.
+ * (Requires debug enabled build)
+ *
+ * \param hg_class [IN]             pointer to HG class
+ * \param diag_counters [IN/OUT]    pointer to counters struct
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Class_get_counters(
+    const hg_class_t *hg_class, struct hg_diag_counters *diag_counters);
 
 /**
  * Set callback to be called on HG handle creation. Handles are created

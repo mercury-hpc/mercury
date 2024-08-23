@@ -257,12 +257,11 @@ hg_dlog_dump_counters(struct hg_dlog *d,
 
     if (!SLIST_EMPTY(&d->cnts32) || !SLIST_EMPTY(&d->cnts64)) {
         log_func(stream,
-            "### ----------------------\n"
+            "### --------------------------\n"
             "### (%s) counter log summary\n"
-            "### ----------------------\n",
+            "### --------------------------\n",
             (d->dlog_magic + strlen(HG_DLOG_STDMAGIC)));
 
-        log_func(stream, "# Counters\n");
         SLIST_FOREACH (dc32, &d->cnts32, l) {
             log_func(stream, "# %s: %" PRId32 " [%s]\n", dc32->name,
                 hg_atomic_get32(&dc32->c), dc32->descr);
@@ -271,7 +270,6 @@ hg_dlog_dump_counters(struct hg_dlog *d,
             log_func(stream, "# %s: %" PRId64 " [%s]\n", dc64->name,
                 hg_atomic_get64(&dc64->c), dc64->descr);
         }
-        log_func(stream, "# -\n");
     }
 
     hg_thread_mutex_unlock(&d->dlock);

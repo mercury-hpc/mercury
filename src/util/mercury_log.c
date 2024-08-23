@@ -510,6 +510,20 @@ hg_log_outlet_deregister(struct hg_log_outlet *hg_log_outlet)
 
 /*---------------------------------------------------------------------------*/
 void
+hg_log_dump_counters(struct hg_log_outlet *hg_log_outlet)
+{
+    if (hg_log_outlet->debug_log &&
+        hg_log_outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
+        FILE *stream = hg_log_streams_g[hg_log_outlet->level]
+                           ? hg_log_streams_g[hg_log_outlet->level]
+                           : *hg_log_std_streams_g[hg_log_outlet->level];
+        hg_dlog_dump_counters(
+            hg_log_outlet->debug_log, hg_log_func_g, stream, 0);
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+void
 hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
     const char *module, const char *file, unsigned int line, const char *func,
     bool no_return, const char *format, ...)
@@ -567,9 +581,7 @@ hg_log_vwrite(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
         no_return ? "" : "\n", HG_LOG_RESET);
 #else
     /* Print using logging function */
-    hg_log_func_g(stream,
-        "# [%lf] %s->%s: [%s] %s%s%s:%d\n"
-        " # %s(): %s%s",
+    hg_log_func_g(stream, "# [%lf] %s->%s [%s] %s%s%s:%d %s() %s%s",
         hg_time_to_double(tv), "mercury", hg_log_outlet->name, level_name,
         module ? module : "", module ? ":" : "", file, line, func, buf,
         no_return ? "" : "\n");

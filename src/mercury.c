@@ -1208,6 +1208,31 @@ HG_Set_log_stream(const char *level, FILE *stream)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+HG_Diag_dump_counters(void)
+{
+#ifndef _WIN32
+    hg_log_dump_counters(&HG_LOG_OUTLET(hg_diag));
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Class_get_counters(
+    const hg_class_t *hg_class, struct hg_diag_counters *diag_counters)
+{
+    hg_return_t ret;
+
+    HG_CHECK_SUBSYS_ERROR(
+        cls, hg_class == NULL, error, ret, HG_INVALID_ARG, "NULL HG class");
+
+    return HG_Core_class_get_counters(hg_class->core_class, diag_counters);
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Class_set_handle_create_callback(hg_class_t *hg_class,
     hg_return_t (*callback)(hg_handle_t, void *), void *arg)
