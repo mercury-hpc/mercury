@@ -185,6 +185,22 @@ typedef enum {
  */
 #define HG_CORE_SM (1 << 0)
 
+/**
+ * Counters.
+ */
+struct hg_diag_counters {
+    uint64_t rpc_req_sent_count;        /* RPC requests sent */
+    uint64_t rpc_req_recv_count;        /* RPC requests received */
+    uint64_t rpc_resp_sent_count;       /* RPC responses sent */
+    uint64_t rpc_resp_recv_count;       /* RPC responses received */
+    uint64_t rpc_req_extra_count;       /* RPCs that required extra data */
+    uint64_t rpc_resp_extra_count;      /* RPCs that required extra data */
+    uint64_t rpc_req_recv_active_count; /* Currently active RPCs */
+    uint64_t rpc_multi_recv_copy_count; /* RPCs requests received that
+                                                     required a copy */
+    uint64_t bulk_count;                /* Bulk transfer count */
+};
+
 /*****************/
 /* Public Macros */
 /*****************/

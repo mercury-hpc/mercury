@@ -484,6 +484,14 @@ HG_UTIL_PUBLIC void
 hg_log_outlet_deregister(struct hg_log_outlet *outlet);
 
 /**
+ * Dump counters associated to log outlet.
+ *
+ * \param outlet [IN]           log outlet
+ */
+HG_UTIL_PUBLIC void
+hg_log_dump_counters(struct hg_log_outlet *hg_log_outlet);
+
+/**
  * Write log.
  *
  * \param outlet [IN]           log outlet

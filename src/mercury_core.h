@@ -304,6 +304,19 @@ HG_Core_class_get_data(
     const hg_core_class_t *hg_core_class) HG_WARN_UNUSED_RESULT;
 
 /**
+ * Get diagnostic counters associated to HG core class.
+ * (Requires debug enabled build)
+ *
+ * \param hg_core_class [IN]        pointer to HG core class
+ * \param diag_counters [IN/OUT]    pointer to counters struct
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_class_get_counters(const hg_core_class_t *hg_core_class,
+    struct hg_diag_counters *diag_counters);
+
+/**
  * Create a new context. Must be destroyed by calling HG_Core_context_destroy().
  *
  * \param hg_core_class [IN]    pointer to HG core class
