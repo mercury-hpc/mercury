@@ -8332,6 +8332,10 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), error,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed (%s)",
         na_cb_type_to_string(na_ofi_op_id->type));
+    NA_CHECK_SUBSYS_ERROR(msg,
+        buf_size > na_ofi_class->endpoint->unexpected_msg_size_max, error, ret,
+        NA_INVALID_ARG, "Invalid msg size (%zu > %zu)", buf_size,
+        na_ofi_class->endpoint->unexpected_msg_size_max);
 
     NA_OFI_OP_RESET(na_ofi_op_id, context, FI_SEND, NA_CB_SEND_UNEXPECTED,
         callback, arg, na_ofi_addr);
@@ -8510,6 +8514,10 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), error,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed (%s)",
         na_cb_type_to_string(na_ofi_op_id->type));
+    NA_CHECK_SUBSYS_ERROR(msg,
+        buf_size > na_ofi_class->endpoint->expected_msg_size_max, error, ret,
+        NA_INVALID_ARG, "Invalid msg size (%zu > %zu)", buf_size,
+        na_ofi_class->endpoint->expected_msg_size_max);
 
     NA_OFI_OP_RESET(na_ofi_op_id, context, FI_SEND, NA_CB_SEND_EXPECTED,
         callback, arg, na_ofi_addr);
