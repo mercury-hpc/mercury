@@ -1218,13 +1218,14 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
     if (hg_init_info_p) {
         HG_CHECK_SUBSYS_ERROR(cls, version == 0, error, ret, HG_INVALID_ARG,
             "API version cannot be 0");
-        HG_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
+        HG_LOG_SUBSYS_DEBUG(cls, "HG init info version used: v%d.%d",
             HG_MAJOR(version), HG_MINOR(version));
         na_init_info_p = &na_init_info;
 
         /* Get init info and overwrite defaults */
         if (HG_VERSION_GE(version, HG_VERSION(2, 4))) {
             hg_init_info = *hg_init_info_p;
+            na_init_info_dup_4_0(&na_init_info, &hg_init_info.na_init_info);
             na_init_info.traffic_class = hg_init_info.traffic_class;
         } else if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
             hg_init_info_dup_2_3(&hg_init_info,
@@ -1232,6 +1233,23 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
         else
             hg_init_info_dup_2_2(&hg_init_info,
                 (const struct hg_init_info_2_2 *) hg_init_info_p);
+
+        HG_LOG_SUBSYS_DEBUG(cls,
+            "HG Init info: na_class=%p, request_post_init=%" PRIu32
+            ", request_post_incr=%" PRId32 ", auto_sm=%" PRIu8
+            ", sm_info_string=%s, checksum_level=%d, no_bulk_eager=%" PRIu8
+            ", no_loopback=%" PRIu8 ", stats=%" PRIu8 ", no_multi_recv=%" PRIu8
+            ", release_input_early=%" PRIu8
+            ", traffic_class=%d, no_overflow=%d, multi_recv_op_max=%u, "
+            "multi_recv_copy_threshold=%u",
+            (void *) hg_init_info.na_class, hg_init_info.request_post_init,
+            hg_init_info.request_post_incr, hg_init_info.auto_sm,
+            hg_init_info.sm_info_string, hg_init_info.checksum_level,
+            hg_init_info.no_bulk_eager, hg_init_info.no_loopback,
+            hg_init_info.stats, hg_init_info.no_multi_recv,
+            hg_init_info.release_input_early, hg_init_info.traffic_class,
+            hg_init_info.no_overflow, hg_init_info.multi_recv_op_max,
+            hg_init_info.multi_recv_copy_threshold);
     }
 
     /* Set post init / incr / multi-recv values  */

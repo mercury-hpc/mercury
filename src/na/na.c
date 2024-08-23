@@ -798,7 +798,7 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
     if (na_init_info) {
         NA_CHECK_SUBSYS_ERROR(fatal, version == 0, error, ret, NA_INVALID_ARG,
             "API version cannot be 0");
-        NA_LOG_SUBSYS_DEBUG(cls, "Init info version used: v%d.%d",
+        NA_LOG_SUBSYS_DEBUG(cls, "NA init info version used: v%d.%d",
             NA_MAJOR(version), NA_MINOR(version));
 
         /* Get init info and overwrite defaults */
@@ -807,6 +807,21 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
         else
             na_init_info_dup_4_0(&na_info->na_init_info,
                 (const struct na_init_info_4_0 *) na_init_info);
+
+        NA_LOG_SUBSYS_DEBUG(cls,
+            "NA Init info: ip_subnet=%s, auth_key=%s, max_unexpected_size=%zu, "
+            "max_expected_size=%zu, progress_mode=%" PRIu8
+            ", addr_format=%d, max_contexts=%" PRIu8 ", thread_mode=%" PRIu8
+            ", request_mem_device=%u, traffic_class=%d",
+            na_info->na_init_info.ip_subnet, na_info->na_init_info.auth_key,
+            na_info->na_init_info.max_unexpected_size,
+            na_info->na_init_info.max_expected_size,
+            na_info->na_init_info.progress_mode,
+            na_info->na_init_info.addr_format,
+            na_info->na_init_info.max_contexts,
+            na_info->na_init_info.thread_mode,
+            na_info->na_init_info.request_mem_device,
+            na_info->na_init_info.traffic_class);
 
         na_private_class->na_class.progress_mode = na_init_info->progress_mode;
     }
