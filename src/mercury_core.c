@@ -1221,11 +1221,13 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
         HG_LOG_SUBSYS_DEBUG(cls, "HG init info version used: v%d.%d",
             HG_MAJOR(version), HG_MINOR(version));
         na_init_info_p = &na_init_info;
+        na_init_info_dup_4_0(&na_init_info, &hg_init_info_p->na_init_info);
 
         /* Get init info and overwrite defaults */
         if (HG_VERSION_GE(version, HG_VERSION(2, 4))) {
             hg_init_info = *hg_init_info_p;
-            na_init_info_dup_4_0(&na_init_info, &hg_init_info.na_init_info);
+            /* Duplicate traffic class field for now, this will be fixed in
+             * a later major version. */
             na_init_info.traffic_class = hg_init_info.traffic_class;
         } else if (HG_VERSION_GE(version, HG_VERSION(2, 3)))
             hg_init_info_dup_2_3(&hg_init_info,
@@ -1290,8 +1292,7 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
 #endif
 
     /* Save progress mode */
-    hg_core_class->init_info.progress_mode =
-        hg_init_info.na_init_info.progress_mode;
+    hg_core_class->init_info.progress_mode = na_init_info.progress_mode;
 
     /* Loopback capability */
     hg_core_class->init_info.loopback = !hg_init_info.no_loopback;
