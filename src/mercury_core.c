@@ -443,9 +443,11 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class);
 /**
  * Get counters.
  */
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
 static void
 hg_core_class_get_counters(const struct hg_core_counters *counters,
     struct hg_diag_counters *diag_counters);
+#endif
 
 /**
  * Create context.
@@ -1514,6 +1516,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+#if defined(HG_HAS_DEBUG) && !defined(_WIN32)
 static void
 hg_core_class_get_counters(const struct hg_core_counters *counters,
     struct hg_diag_counters *diag_counters)
@@ -1537,6 +1540,7 @@ hg_core_class_get_counters(const struct hg_core_counters *counters,
             (uint64_t) hg_atomic_get64(counters->rpc_multi_recv_copy_count),
         .bulk_count = (uint64_t) hg_atomic_get64(counters->bulk_count)};
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 void
