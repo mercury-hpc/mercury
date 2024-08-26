@@ -4,6 +4,15 @@ This is a preview release of the v2.4.0 release.
 
 ## New features
 
+<span style="color:blue">Added in rc5</span>
+
+- __[HG]__
+    - Add `HG_Get_input_payload_size()`/`HG_Get_output_payload_size()`
+        - Add the ability to query input / output payload sizes
+    - Add `HG_Diag_dump_counters()` to dump diagnostic counters
+        - Add `rpc_req_recv_active_count` and `rpc_multi_recv_copy_count` counters
+    - Add `HG_Class_get_counters()` to retrieve internal counters
+
 <span style="color:blue">Added in rc4</span>
 
 - __[HG]__
@@ -89,6 +98,14 @@ This is a preview release of the v2.4.0 release.
         - MPI can now be autodetected and dynamically loaded in utilities, even if `MERCURY_TESTING_ENABLE_PARALLEL` was turned off. If `MERCURY_TESTING_ENABLE_PARALLEL` is turned on, tests remain manually linked against MPI as they used to be.
 
 ## Bug fixes
+
+<span style="color:blue">Added in rc5</span>
+
+- __[HG]__
+    - Make `HG_Core_event_ready()` non-inline to fix NA dependency and remove `HG_Core_event_ready_loopback()` from public API
+    - Fix NA init info not correctly set from HG
+- __[NA BMI/MPI]__
+    - Return actual msg size through cb info
 
 <span style="color:blue">Added in rc4</span>
 
