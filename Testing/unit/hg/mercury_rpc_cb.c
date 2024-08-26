@@ -183,6 +183,8 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
     int event_id;
     int open_ret;
     hg_return_t ret = HG_SUCCESS;
+    struct hg_unit_info *info = (struct hg_unit_info *) HG_Class_get_data(
+        HG_Get_info(handle)->hg_class);
     hg_size_t payload_size = HG_Get_input_payload_size(handle);
     size_t expected_string_payload_size =
         strlen(HG_TEST_RPC_PATH) + sizeof(uint64_t) + 3;
@@ -219,10 +221,14 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
 
-    payload_size = HG_Get_output_payload_size(handle);
-    HG_TEST_CHECK_ERROR(payload_size != sizeof(rpc_open_out_t), done, ret,
-        HG_FAULT, "invalid output payload size (%" PRId64 "), expected (%zu)",
-        payload_size, sizeof(rpc_open_out_t));
+    /* Skip check when sending to ourselves to prevent race */
+    if (!info->hg_test_info.na_test_info.self_send) {
+        payload_size = HG_Get_output_payload_size(handle);
+        HG_TEST_CHECK_ERROR(payload_size != sizeof(rpc_open_out_t), done, ret,
+            HG_FAULT,
+            "invalid output payload size (%" PRId64 "), expected (%zu)",
+            payload_size, sizeof(rpc_open_out_t));
+    }
 
 done:
     ret = HG_Destroy(handle);
