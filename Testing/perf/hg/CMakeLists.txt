@@ -12,7 +12,7 @@ if(${CMAKE_VERSION} VERSION_GREATER 3.12)
   endif()
 endif()
 
-set(HG_PERF_TARGETS hg_rate hg_bw_read hg_bw_write hg_perf_server)
+set(HG_PERF_TARGETS hg_rate hg_first hg_bw_read hg_bw_write hg_perf_server)
 foreach(perf ${HG_PERF_TARGETS})
   if(${CMAKE_VERSION} VERSION_GREATER 3.12)
     add_executable(${perf} ${perf}.c)
