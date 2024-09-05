@@ -25,6 +25,7 @@
 enum hg_perf_rpc_id {
     HG_PERF_RATE_INIT = 1,
     HG_PERF_RATE,
+    HG_PERF_FIRST,
     HG_PERF_BW_INIT,
     HG_PERF_BW_READ,
     HG_PERF_BW_WRITE,
@@ -135,6 +136,14 @@ hg_perf_print_header_lat(const struct hg_test_info *hg_test_info,
 
 void
 hg_perf_print_lat(const struct hg_test_info *hg_test_info,
+    const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t);
+
+void
+hg_perf_print_header_time(const struct hg_test_info *hg_test_info,
+    const struct hg_perf_class_info *info, const char *benchmark);
+
+void
+hg_perf_print_time(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t);
 
 void

@@ -88,6 +88,9 @@ static hg_return_t
 hg_perf_rpc_rate_cb(hg_handle_t handle);
 
 static hg_return_t
+hg_perf_first_cb(hg_handle_t handle);
+
+static hg_return_t
 hg_perf_bulk_init_cb(hg_handle_t handle);
 
 static hg_return_t
@@ -285,19 +288,34 @@ hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
     /* Register RPCs */
     ret = HG_Register(info->hg_class, HG_PERF_RATE_INIT, NULL, NULL,
         hg_perf_rpc_rate_init_cb);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Register() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Register(info->hg_class, HG_PERF_RATE, hg_perf_proc_iovec,
         (hg_test_info->bidirectional) ? hg_perf_proc_iovec : NULL,
         hg_perf_rpc_rate_cb);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Register() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Register(
+        info->hg_class, HG_PERF_FIRST, NULL, NULL, hg_perf_first_cb);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Register() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Register(info->hg_class, HG_PERF_BW_INIT,
         hg_perf_proc_bulk_init_info, NULL, hg_perf_bulk_init_cb);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Register() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Register(info->hg_class, HG_PERF_BW_READ, hg_perf_proc_bulk_info,
         NULL, hg_perf_bulk_push_cb);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Register() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Register(info->hg_class, HG_PERF_BW_WRITE, hg_perf_proc_bulk_info,
         NULL, hg_perf_bulk_pull_cb);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Register() failed (%s)", HG_Error_to_string(ret));
 
     ret =
         HG_Register(info->hg_class, HG_PERF_DONE, NULL, NULL, hg_perf_done_cb);
@@ -774,6 +792,38 @@ hg_perf_print_lat(const struct hg_test_info *hg_test_info,
 
 /*---------------------------------------------------------------------------*/
 void
+hg_perf_print_header_time(const struct hg_test_info *hg_test_info,
+    const struct hg_perf_class_info *info, const char *benchmark)
+{
+    printf("# %s v%s\n", benchmark, VERSION_NAME);
+    printf(
+        "# %d client process(es)\n", hg_test_info->na_test_info.mpi_info.size);
+    printf("# NULL RPC with %zu handle(s) in-flight\n", info->handle_max);
+    if (info->handle_max * (size_t) hg_test_info->na_test_info.mpi_info.size <
+        info->target_addr_max)
+        printf("# WARNING number of handles in flight less than number of "
+               "targets\n");
+    printf("%-*s%*s\n", 10, "# Size", NWIDTH, "Avg time (us)");
+    fflush(stdout);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_perf_print_time(const struct hg_test_info *hg_test_info,
+    const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t)
+{
+    double rpc_time;
+    size_t handle_max = (size_t) info->handle_max,
+           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
+
+    rpc_time =
+        hg_time_to_double(t) * 1e6 / (double) (handle_max * mpi_comm_size);
+
+    printf("%-*zu%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, rpc_time);
+}
+
+/*---------------------------------------------------------------------------*/
+void
 hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, const char *benchmark)
 {
@@ -1007,6 +1057,27 @@ hg_perf_rpc_rate_cb(hg_handle_t handle)
 
 error_free:
     (void) HG_Free_input(handle, &iov);
+error:
+    (void) HG_Destroy(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_perf_first_cb(hg_handle_t handle)
+{
+    hg_return_t ret;
+
+    /* Send response back */
+    ret = HG_Respond(handle, NULL, NULL, NULL);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
+
+    (void) HG_Destroy(handle);
+
+    return HG_SUCCESS;
+
 error:
     (void) HG_Destroy(handle);
 
