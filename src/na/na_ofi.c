@@ -97,9 +97,6 @@
 #    define FI_ADDR_CXI  (FI_ADDR_OPX + 1)
 #    define FI_PROTO_CXI (FI_PROTO_OPX + 1)
 #endif
-#ifndef NA_OFI_HAS_EXT_CXI_H
-#    define FI_CXI_DOM_OPS_6 "dom_ops_v6"
-#endif
 
 /* Fallback for undefined XNET values */
 #if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 17))
@@ -717,19 +714,25 @@ struct fi_gni_auth_key {
 #endif
 
 #ifndef NA_OFI_HAS_EXT_CXI_H
-/* CXI domain ops (v6) */
-struct fi_cxi_dom_ops {
-    int (*cntr_read)(struct fid *fid, unsigned int cntr, uint64_t *value,
-        struct timespec *ts);
-    int (*topology)(struct fid *fid, unsigned int *group_id,
-        unsigned int *switch_id, unsigned int *port_id);
-    int (*enable_hybrid_mr_desc)(struct fid *fid, bool enable);
-    size_t (*ep_get_unexp_msgs)(struct fid_ep *fid_ep,
-        struct fi_cq_tagged_entry *entry, size_t count, fi_addr_t *src_addr,
-        size_t *ux_count);
-    int (*get_dwq_depth)(struct fid *fid, size_t *depth);
-    int (*enable_mr_match_events)(struct fid *fid, bool enable);
-    int (*enable_optimized_mrs)(struct fid *fid, bool enable);
+/*
+ * TODO: The following should be integrated into the include/rdma/fi_ext.h
+ * and are use for provider specific fi_control() operations.
+ */
+#    define FI_PROV_SPECIFIC_CXI (0xccc << 16)
+
+enum {
+    FI_OPT_CXI_SET_TCLASS = -FI_PROV_SPECIFIC_CXI, /* uint32_t */
+    FI_OPT_CXI_SET_MSG_ORDER,                      /* uint64_t */
+
+    /* fid_nic control operation to refresh NIC attributes. */
+    FI_OPT_CXI_NIC_REFRESH_ATTR,
+
+    FI_OPT_CXI_SET_MR_MATCH_EVENTS, /* bool */
+    FI_OPT_CXI_GET_MR_MATCH_EVENTS, /* bool */
+    FI_OPT_CXI_SET_OPTIMIZED_MRS,   /* bool */
+    FI_OPT_CXI_GET_OPTIMIZED_MRS,   /* bool */
+    FI_OPT_CXI_SET_PROV_KEY_CACHE,  /* bool */
+    FI_OPT_CXI_GET_PROV_KEY_CACHE,  /* bool */
 };
 
 /* CXI Authorization Key */
@@ -1152,13 +1155,11 @@ static na_return_t
 na_ofi_gni_set_domain_ops(struct na_ofi_domain *na_ofi_domain);
 #endif
 
-#ifdef FI_CXI_DOM_OPS_6
 /**
  * Set CXI specific domain ops.
  */
-static na_return_t
+static void
 na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain);
-#endif
 
 /**
  * Parse auth key.
@@ -4240,11 +4241,8 @@ na_ofi_set_domain_ops(
             return NA_PROTONOSUPPORT;
 #endif
         case NA_OFI_PROV_CXI:
-#ifdef FI_CXI_DOM_OPS_6
-            return na_ofi_cxi_set_domain_ops(na_ofi_domain);
-#else
-            (void) na_ofi_domain;
-#endif
+            na_ofi_cxi_set_domain_ops(na_ofi_domain);
+            break;
         case NA_OFI_PROV_SHM:
         case NA_OFI_PROV_SOCKETS:
         case NA_OFI_PROV_TCP:
@@ -4252,7 +4250,7 @@ na_ofi_set_domain_ops(
         case NA_OFI_PROV_PSM2:
         case NA_OFI_PROV_OPX:
         case NA_OFI_PROV_VERBS_RXM:
-            return NA_SUCCESS;
+            break;
         case NA_OFI_PROV_NULL:
         default:
             NA_LOG_SUBSYS_ERROR(fatal,
@@ -4260,6 +4258,8 @@ na_ofi_set_domain_ops(
                 na_ofi_prov_name[prov_type]);
             return NA_PROTONOSUPPORT;
     }
+
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4346,43 +4346,52 @@ error:
 #endif
 
 /*---------------------------------------------------------------------------*/
-#ifdef FI_CXI_DOM_OPS_6
-static na_return_t
+static void
 na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain)
 {
-    struct fi_cxi_dom_ops *dom_ops;
-    na_return_t ret;
+    bool val = false;
     int rc;
 
-    rc = fi_open_ops(&na_ofi_domain->fi_domain->fid, FI_CXI_DOM_OPS_6, 0,
-        (void **) &dom_ops, NULL);
-    if (rc != 0) {
-        /* Silently ignore */
-        NA_LOG_SUBSYS_DEBUG(
-            cls, "fi_open_ops() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        return NA_SUCCESS;
-    }
+    /* PROV_KEY_CACHE: The provider key cache is a performance optimization for
+     * FI_MR_PROV_KEY. The performance gain is fi_mr_close() becomes a no-op but
+     * at the cost of the corresponding MR being left exposed to the network.
+     * This is intended to be used for applications where fi_mr_close() is on
+     * the critical path. For storage use-cases, leaving MRs exposed is an
+     * issue. This could result in MR operations unexpectedly completing and
+     * reading/writing to unknown memory. */
+    rc = fi_control(
+        &na_ofi_domain->fi_domain->fid, FI_OPT_CXI_SET_PROV_KEY_CACHE, &val);
+    NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
+        "could not set CXI PROV_KEY_CACHE property (%s)", fi_strerror(-rc));
 
-    /* Prevent potential memory corruption by ensuring that memory backing MRs
-     * cannot be accessed after invoking fi_close() even if that memory remains
-     * in the MR cache. */
-    rc = dom_ops->enable_mr_match_events(&na_ofi_domain->fi_domain->fid, true);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "enable_mr_match_events() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    /* OPTIMIZED_MRS: Optimized MRs offer a higher operation rate over
+     * standard/unoptimized MRs. Because optimized MR allocation/deallocation is
+     * expensive (i.e., it always requires calls into the kernel), optimized MRs
+     * should only be used for persistent MRs. This typically maps to MPI/SHMEM
+     * RMA windows which are persistent. For Mercury, since MRs are ephemeral
+     * and allocation/deallocation may be on the critical path, optimized MRs
+     * should be disabled. Optimized MRs also present a risk for the
+     * recycling of MR keys (when using FI_MR_PROV_KEY) where multiple regions
+     * could end up using the same key by allocating/deallocating the MR,
+     * leading to potential memory corruptions. */
+    rc = fi_control(
+        &na_ofi_domain->fi_domain->fid, FI_OPT_CXI_SET_OPTIMIZED_MRS, &val);
+    NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
+        "could not set CXI OPTIMIZED_MRS property (%s)", fi_strerror(-rc));
 
-    /* Disable use of optimized MRs to prevent quick recycle of MR keys (when
-     * using FI_MR_PROV_KEY). This prevents potential memory corruptions when
-     * multiple regions could end up using the same key. */
-    rc = dom_ops->enable_optimized_mrs(&na_ofi_domain->fi_domain->fid, false);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "enable_optimized_mrs() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-
-    return NA_SUCCESS;
-
-error:
-    return ret;
+    /* MR_MATCH_EVENTS: While standard/unoptimized MRs do not have a call into
+     * the kernel for MR allocation, there is still a call into the kernel for
+     * MR deallocation. To avoid this kernel call, MR_MATCH_EVENTS needs to be
+     * enabled. The cost MR_MATCH_EVENTS introduces is where the target of an
+     * RMA operation was previously passive (i.e., no events), this will enable
+     * MR events. This requires the owner of the MR to process event queues in a
+     * timely manner or have large event queue buffers. */
+    val = true;
+    rc = fi_control(
+        &na_ofi_domain->fi_domain->fid, FI_OPT_CXI_SET_MR_MATCH_EVENTS, &val);
+    NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
+        "could not set CXI MR_MATCH_EVENTS property (%s)", fi_strerror(-rc));
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -4749,6 +4758,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     struct fi_domain_attr *domain_attr = fi_info->domain_attr;
     union na_ofi_auth_key base_auth_key;
     const union na_ofi_auth_key *base_auth_key_p = NULL;
+    char *env;
+    bool skip_domain_ops = false;
     na_return_t ret;
     int rc;
 
@@ -4842,8 +4853,13 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
         fi_tostr(domain_attr, FI_TYPE_DOMAIN_ATTR));
 
     /* Set optional domain ops */
-    ret = na_ofi_set_domain_ops(na_ofi_fabric->prov_type, na_ofi_domain);
-    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not set domain ops");
+    env = getenv("NA_OFI_SKIP_DOMAIN_OPS");
+    if (env != NULL)
+        skip_domain_ops = (atoi(env) != 0);
+    if (!skip_domain_ops) {
+        ret = na_ofi_set_domain_ops(na_ofi_fabric->prov_type, na_ofi_domain);
+        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not set domain ops");
+    }
 
 #if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
     /* Check if we can use FI_AV_USER_ID */
