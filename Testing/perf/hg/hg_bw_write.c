@@ -54,8 +54,22 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
             hg_time_get_current(&t1);
         }
 
+        if (hg_test_info->na_test_info.force_register) {
+            for (j = 0; j < info->handle_max; j++) {
+                hg_size_t bulk_size = info->buf_size_max * info->bulk_count;
+                ret = HG_Bulk_create(info->hg_class, 1, &info->bulk_bufs[j],
+                    &bulk_size, HG_BULK_READ_ONLY,
+                    &info->local_bulk_handles[j]);
+                HG_TEST_CHECK_HG_ERROR(error, ret,
+                    "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
+            }
+        }
+
         for (j = 0; j < info->handle_max; j++) {
             struct hg_perf_bulk_info in_struct = {
+                .bulk = (hg_test_info->na_test_info.force_register)
+                            ? info->local_bulk_handles[j]
+                            : HG_BULK_NULL,
                 .handle_id = (uint32_t) ((comm_rank + j * comm_size) /
                                          info->target_addr_max),
                 .size = (uint32_t) buf_size};
@@ -69,6 +83,13 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
         ret = hg_perf_request_wait(info, &request, HG_MAX_IDLE_TIME, NULL);
         HG_TEST_CHECK_HG_ERROR(error, ret, "hg_perf_request_wait() failed (%s)",
             HG_Error_to_string(ret));
+
+        if (hg_test_info->na_test_info.force_register) {
+            for (j = 0; j < info->handle_max; j++) {
+                (void) HG_Bulk_free(info->local_bulk_handles[j]);
+                info->local_bulk_handles[j] = HG_BULK_NULL;
+            }
+        }
     }
 
     if (comm_size > 1)
