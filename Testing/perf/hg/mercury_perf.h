@@ -80,6 +80,7 @@ struct hg_perf_bulk_init_info {
 };
 
 struct hg_perf_bulk_info {
+    hg_bulk_t bulk;     /* Bulk handle */
     uint32_t handle_id; /* Source handle ID */
     uint32_t size;      /* Transfer size*/
 };
