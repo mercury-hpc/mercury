@@ -3463,7 +3463,23 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
             na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
             NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
             na_ofi_prov_ep_proto[prov_type]);
-        hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
+
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 21))
+        /* The FI_PROTO_CXI_RNR endpoint protocol is an optional protocol that
+         * targets client/server environments where send-after-send ordering
+         * is not required and messaging is generally to pre-posted buffers;
+         * FI_MULTI_RECV is recommended. It utilizes a receiver-not-ready
+         * implementation where FI_CXI_RNR_MAX_TIMEOUT_US can be tuned to
+         * control the maximum retry duration.*/
+        if (FI_VERSION_GE(fi_version(), FI_VERSION(1, 21)) &&
+            (prov_type == NA_OFI_PROV_CXI)) {
+            char *env = getenv("NA_OFI_CXI_PROTO_RNR");
+            if (env == NULL || atoi(env) != 0) /* Enabled by default */
+                hints->ep_attr->protocol = (uint32_t) FI_PROTO_CXI_RNR;
+        } else
+#endif
+            hints->ep_attr->protocol =
+                (uint32_t) na_ofi_prov_ep_proto[prov_type];
 
         /* add any additional caps that are particular to this provider */
         hints->caps |= na_ofi_prov_extra_caps[prov_type];
