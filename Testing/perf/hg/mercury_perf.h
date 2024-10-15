@@ -153,7 +153,8 @@ hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
 
 void
 hg_perf_print_bw(const struct hg_test_info *hg_test_info,
-    const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t);
+    const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t,
+    hg_time_t t_reg, hg_time_t t_dereg);
 
 hg_return_t
 hg_perf_send_done(struct hg_perf_class_info *info);

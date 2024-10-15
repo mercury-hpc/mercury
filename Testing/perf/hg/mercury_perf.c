@@ -35,7 +35,7 @@
     "." XSTRING(HG_VERSION_MINOR) "." XSTRING(HG_VERSION_PATCH)
 
 #define NDIGITS 2
-#define NWIDTH  27
+#define NWIDTH  24
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -832,6 +832,10 @@ void
 hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, const char *benchmark)
 {
+    const char *bw_label = (hg_test_info->na_test_info.mbps)
+                               ? "Bandwidth (MB/s)"
+                               : "Bandwidth (MiB/s)";
+
     printf("# %s v%s\n", benchmark, VERSION_NAME);
     printf(
         "# %d client process(es)\n", hg_test_info->na_test_info.mpi_info.size);
@@ -841,31 +845,28 @@ hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
         info->handle_max, (size_t) info->bulk_count);
     if (info->verify)
         printf("# WARNING verifying data, output will be slower\n");
-    if (hg_test_info->na_test_info.force_register)
+    if (hg_test_info->na_test_info.force_register) {
         printf("# WARNING forcing registration on every iteration\n");
-    if (hg_test_info->na_test_info.mbps)
-        printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, "Bandwidth (MB/s)", NWIDTH,
+        printf("%-*s%*s%*s%*s\n", 10, "# Size", NWIDTH, bw_label, NWIDTH,
+            "Reg Time (us)", NWIDTH, "Dereg Time (us)");
+    } else {
+        printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, bw_label, NWIDTH,
             "Time (us)");
-    else
-        printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, "Bandwidth (MiB/s)",
-            NWIDTH, "Time (us)");
+    }
     fflush(stdout);
 }
 
 /*---------------------------------------------------------------------------*/
 void
 hg_perf_print_bw(const struct hg_test_info *hg_test_info,
-    const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t)
+    const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t,
+    hg_time_t t_reg, hg_time_t t_dereg)
 {
     size_t loop = (size_t) hg_test_info->na_test_info.loop,
            mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size,
            handle_max = (size_t) info->handle_max,
            buf_count = (size_t) info->bulk_count;
-    double avg_time, avg_bw;
-
-    avg_time = hg_time_to_double(t) * 1e6 /
-               (double) (loop * handle_max * mpi_comm_size * buf_count);
-    avg_bw =
+    double avg_bw =
         (double) (buf_size * loop * handle_max * mpi_comm_size * buf_count) /
         hg_time_to_double(t);
 
@@ -874,8 +875,22 @@ hg_perf_print_bw(const struct hg_test_info *hg_test_info,
     else
         avg_bw /= (1024 * 1024); /* MiB/s */
 
-    printf("%-*zu%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, avg_bw, NWIDTH,
-        NDIGITS, avg_time);
+    if (hg_test_info->na_test_info.force_register) {
+        double reg_time =
+            hg_time_to_double(t_reg) * 1e6 / (double) (loop * handle_max);
+        double dereg_time =
+            hg_time_to_double(t_dereg) * 1e6 / (double) (loop * handle_max);
+
+        printf("%-*zu%*.*f%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, avg_bw,
+            NWIDTH, NDIGITS, reg_time, NWIDTH, NDIGITS, dereg_time);
+    } else {
+        double avg_time =
+            hg_time_to_double(t) * 1e6 /
+            (double) (loop * handle_max * mpi_comm_size * buf_count);
+
+        printf("%-*zu%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, avg_bw,
+            NWIDTH, NDIGITS, avg_time);
+    }
 }
 
 /*---------------------------------------------------------------------------*/

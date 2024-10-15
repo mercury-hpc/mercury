@@ -36,7 +36,8 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
     size_t comm_rank = (size_t) hg_test_info->na_test_info.mpi_info.rank,
            comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size,
            loop = (size_t) hg_test_info->na_test_info.loop;
-    hg_time_t t1, t2;
+    hg_time_t t1, t2, t3, t4, t_reg = hg_time_from_ms(0),
+                              t_dereg = hg_time_from_ms(0);
     hg_return_t ret;
     size_t i;
 
@@ -55,6 +56,8 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
         }
 
         if (hg_test_info->na_test_info.force_register) {
+            if (i >= skip)
+                hg_time_get_current(&t3);
             for (j = 0; j < info->handle_max; j++) {
                 hg_size_t bulk_size = info->buf_size_max * info->bulk_count;
                 ret = HG_Bulk_create(info->hg_class, 1, &info->bulk_bufs[j],
@@ -62,6 +65,10 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
                     &info->local_bulk_handles[j]);
                 HG_TEST_CHECK_HG_ERROR(error, ret,
                     "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
+            }
+            if (i >= skip) {
+                hg_time_get_current(&t4);
+                t_reg = hg_time_add(t_reg, hg_time_subtract(t4, t3));
             }
         }
 
@@ -85,9 +92,15 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
             HG_Error_to_string(ret));
 
         if (hg_test_info->na_test_info.force_register) {
+            if (i >= skip)
+                hg_time_get_current(&t3);
             for (j = 0; j < info->handle_max; j++) {
                 (void) HG_Bulk_free(info->local_bulk_handles[j]);
                 info->local_bulk_handles[j] = HG_BULK_NULL;
+            }
+            if (i >= skip) {
+                hg_time_get_current(&t4);
+                t_dereg = hg_time_add(t_dereg, hg_time_subtract(t4, t3));
             }
         }
     }
@@ -98,8 +111,8 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
     hg_time_get_current(&t2);
 
     if (comm_rank == 0)
-        hg_perf_print_bw(
-            hg_test_info, info, buf_size, hg_time_subtract(t2, t1));
+        hg_perf_print_bw(hg_test_info, info, buf_size, hg_time_subtract(t2, t1),
+            t_reg, t_dereg);
 
     return HG_SUCCESS;
 
