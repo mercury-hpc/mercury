@@ -105,7 +105,8 @@ void
 na_perf_print_header_bw(const struct na_perf_info *info, const char *benchmark);
 
 void
-na_perf_print_bw(const struct na_perf_info *info, size_t buf_size, hg_time_t t);
+na_perf_print_bw(const struct na_perf_info *info, size_t buf_size, hg_time_t t,
+    hg_time_t t_reg, hg_time_t t_dereg);
 
 void
 na_perf_init_data(void *buf, size_t buf_size, size_t header_size);

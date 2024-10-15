@@ -31,7 +31,8 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip);
 static na_return_t
 na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 {
-    hg_time_t t1, t2;
+    hg_time_t t1, t2, t3, t4, t_reg = hg_time_from_ms(0),
+                              t_dereg = hg_time_from_ms(0);
     na_return_t ret;
     size_t i, j;
 
@@ -55,10 +56,16 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
             NA_TEST_CHECK_NA_ERROR(error, ret,
                 "NA_Mem_handle_create() failed (%s)", NA_Error_to_string(ret));
 
+            if (i >= skip)
+                hg_time_get_current(&t3);
             ret = NA_Mem_register(
                 info->na_class, info->local_handle, NA_MEM_TYPE_HOST, 0);
             NA_TEST_CHECK_NA_ERROR(error, ret, "NA_Mem_register() failed (%s)",
                 NA_Error_to_string(ret));
+            if (i >= skip) {
+                hg_time_get_current(&t4);
+                t_reg = hg_time_add(t_reg, hg_time_subtract(t4, t3));
+            }
         }
 
         /* Post gets */
@@ -89,7 +96,13 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
         }
 
         if (info->na_test_info.force_register) {
+            if (i >= skip)
+                hg_time_get_current(&t3);
             NA_Mem_deregister(info->na_class, info->local_handle);
+            if (i >= skip) {
+                hg_time_get_current(&t4);
+                t_dereg = hg_time_add(t_dereg, hg_time_subtract(t4, t3));
+            }
             NA_Mem_handle_free(info->na_class, info->local_handle);
             info->local_handle = NULL;
         }
@@ -97,7 +110,7 @@ na_perf_run(struct na_perf_info *info, size_t buf_size, size_t skip)
 
     hg_time_get_current(&t2);
 
-    na_perf_print_bw(info, buf_size, hg_time_subtract(t2, t1));
+    na_perf_print_bw(info, buf_size, hg_time_subtract(t2, t1), t_reg, t_dereg);
 
     return NA_SUCCESS;
 
