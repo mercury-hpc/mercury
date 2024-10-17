@@ -3224,8 +3224,7 @@ na_ucx_initialize(
     ucp_config_t *config = NULL;
     bool no_wait = false;
     size_t unexpected_size_max = 0, expected_size_max = 0;
-    ucs_thread_mode_t context_thread_mode = UCS_THREAD_MODE_SINGLE,
-                      worker_thread_mode = UCS_THREAD_MODE_MULTI;
+    ucs_thread_mode_t context_thread_mode, worker_thread_mode;
     na_return_t ret;
 #ifdef NA_UCX_HAS_ADDR_POOL
     unsigned int i;
@@ -3247,12 +3246,13 @@ na_ucx_initialize(
     if (na_init_info->max_expected_size)
         expected_size_max = na_init_info->max_expected_size;
     /* Thread mode */
-    if ((na_init_info->max_contexts > 1) &&
-        !(na_init_info->thread_mode & NA_THREAD_MODE_SINGLE))
-        context_thread_mode = UCS_THREAD_MODE_MULTI;
-
-    if (na_init_info->thread_mode & NA_THREAD_MODE_SINGLE_CTX)
+    if (na_init_info->thread_mode & NA_THREAD_MODE_SINGLE) {
+        context_thread_mode = UCS_THREAD_MODE_SINGLE;
         worker_thread_mode = UCS_THREAD_MODE_SINGLE;
+    } else {
+        context_thread_mode = UCS_THREAD_MODE_MULTI;
+        worker_thread_mode = UCS_THREAD_MODE_MULTI;
+    }
 
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucp_lib_attrs.field_mask = UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL;
