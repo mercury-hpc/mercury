@@ -207,7 +207,7 @@ hg_core_respond_cb(const struct hg_core_cb_info *callback_info);
 /*******************/
 
 /* Return code string table */
-#define X(a) #a,
+#define X(a, b) #a,
 static const char *const hg_return_name[] = {HG_RETURN_VALUES};
 #undef X
 
@@ -1054,7 +1054,9 @@ HG_Version_get(
 const char *
 HG_Error_to_string(hg_return_t errnum)
 {
-    return hg_return_name[errnum];
+    return hg_return_name[errnum < (hg_return_t) NA_RETURN_MAX
+                              ? errnum
+                              : errnum - HG_NA_ERRNO_OFFSET + NA_RETURN_MAX];
 }
 
 /*---------------------------------------------------------------------------*/

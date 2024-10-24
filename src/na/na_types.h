@@ -151,6 +151,7 @@ struct na_protocol_info {
     X(NA_HOSTUNREACH)    /*!< cannot reach host during operation */            \
     X(NA_TIMEOUT)        /*!< operation reached timeout */                     \
     X(NA_CANCELED)       /*!< operation canceled */                            \
+    X(NA_IO_ERROR)       /*!< I/O error */                                     \
     X(NA_RETURN_MAX)
 
 #define X(a) a,

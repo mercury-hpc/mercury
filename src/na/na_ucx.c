@@ -1045,7 +1045,6 @@ na_ucs_status_to_na(ucs_status_t status)
             ret = NA_ADDRNOTAVAIL;
             break;
 
-        case UCS_ERR_SOME_CONNECTS_FAILED:
         case UCS_ERR_UNREACHABLE:
         case UCS_ERR_CONNECTION_RESET:
         case UCS_ERR_NOT_CONNECTED:
@@ -1062,8 +1061,12 @@ na_ucs_status_to_na(ucs_status_t status)
             ret = NA_CANCELED;
             break;
 
-        case UCS_ERR_NO_MESSAGE:
+        case UCS_ERR_SOME_CONNECTS_FAILED:
         case UCS_ERR_IO_ERROR:
+            ret = NA_IO_ERROR;
+            break;
+
+        case UCS_ERR_NO_MESSAGE:
         case UCS_ERR_SHMEM_SEGMENT:
         default:
             ret = NA_PROTOCOL_ERROR;
