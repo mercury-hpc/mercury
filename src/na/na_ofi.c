@@ -2169,13 +2169,28 @@ na_ofi_errno_to_na(int rc)
         case FI_EINTR:
             ret = NA_INTERRUPT;
             break;
+        case FI_EIO:
+#if !defined(__APPLE__)
+        case FI_EREMOTEIO:
+#endif
+            ret = NA_IO_ERROR;
+            break;
         case FI_EAGAIN:
+#ifdef _WIN32
+        case FI_EWOULDBLOCK:
+#endif
             ret = NA_AGAIN;
             break;
         case FI_ENOMEM:
+        case FI_EMFILE:
+        case FI_ENOSPC:
+        case FI_ENOBUFS:
             ret = NA_NOMEM;
             break;
         case FI_EACCES:
+#if !defined(_WIN32) && !defined(__APPLE__)
+        case FI_EKEYREJECTED:
+#endif
             ret = NA_ACCESS;
             break;
         case FI_EFAULT:
@@ -2187,6 +2202,8 @@ na_ofi_errno_to_na(int rc)
         case FI_ENODEV:
             ret = NA_NODEV;
             break;
+        case FI_E2BIG:
+        case FI_EBADF:
         case FI_EINVAL:
             ret = NA_INVALID_ARG;
             break;
@@ -2197,6 +2214,7 @@ na_ofi_errno_to_na(int rc)
             ret = NA_MSGSIZE;
             break;
         case FI_ENOPROTOOPT:
+        case FI_ENOSYS:
             ret = NA_PROTONOSUPPORT;
             break;
         case FI_EOPNOTSUPP:
@@ -2210,14 +2228,12 @@ na_ofi_errno_to_na(int rc)
             break;
         case FI_ENETDOWN:
         case FI_ENETUNREACH:
-        case FI_ENOTCONN:
         case FI_ECONNABORTED:
-        case FI_ECONNREFUSED:
         case FI_ECONNRESET:
-#ifndef _WIN32
+        case FI_ENOTCONN:
         case FI_ESHUTDOWN:
+        case FI_ECONNREFUSED:
         case FI_EHOSTDOWN:
-#endif
         case FI_EHOSTUNREACH:
             ret = NA_HOSTUNREACH;
             break;
@@ -2227,6 +2243,13 @@ na_ofi_errno_to_na(int rc)
         case FI_ECANCELED:
             ret = NA_CANCELED;
             break;
+        case FI_ENOMSG:
+        case FI_ENODATA:
+        /* In practice the following codes are not errors but treat them as is
+         * in this routine. */
+        case FI_EISCONN:
+        case FI_EALREADY:
+        case FI_EINPROGRESS:
         default:
             ret = NA_PROTOCOL_ERROR;
             break;
