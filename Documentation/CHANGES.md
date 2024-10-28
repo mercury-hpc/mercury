@@ -28,7 +28,7 @@ the handling of multi-recv buffers and the support of cxi with HPE SHS 11.0.
     - Add missing `HG_WARN_UNUSED_RESULT` to HG calls
     - Switch to using standard types and align with NA
         - Keep some `uint8_t` instances instead of `hg_bool_t` for ABI compatibility
-    - Add `HG_IO_ERROR` return code and reserve space for additional NA codes
+    - Add `HG_IO_ERROR` return code
 - __[NA]__
     - Bump NA version to v5.0.0
     - Add `NA_Poll()` and `NA_Poll_wait()` routines

@@ -119,44 +119,38 @@ struct hg_init_info {
     unsigned int multi_recv_copy_threshold;
 };
 
-/* Keep offset to keep room for additional NA error codes */
-#define HG_NA_ERRNO_OFFSET 64
-
 /* Error return codes:
  * Functions return 0 for success or corresponding return code */
 #define HG_RETURN_VALUES                                                       \
-    X(HG_SUCCESS, NA_SUCCESS)               /*!< operation succeeded */        \
-    X(HG_PERMISSION, NA_PERMISSION)         /*!< operation not permitted */    \
-    X(HG_NOENTRY, NA_NOENTRY)               /*!< no such file or directory */  \
-    X(HG_INTERRUPT, NA_INTERRUPT)           /*!< operation interrupted */      \
-    X(HG_AGAIN, NA_AGAIN)                   /*!< operation must be retried */  \
-    X(HG_NOMEM, NA_NOMEM)                   /*!< out of memory */              \
-    X(HG_ACCESS, NA_ACCESS)                 /*!< permission denied */          \
-    X(HG_FAULT, NA_FAULT)                   /*!< bad address */                \
-    X(HG_BUSY, NA_BUSY)                     /*!< device or resource busy */    \
-    X(HG_EXIST, NA_EXIST)                   /*!< entry already exists */       \
-    X(HG_NODEV, NA_NODEV)                   /*!< no such device */             \
-    X(HG_INVALID_ARG, NA_INVALID_ARG)       /*!< invalid argument */           \
-    X(HG_PROTOCOL_ERROR, NA_PROTOCOL_ERROR) /*!< protocol error */             \
-    X(HG_OVERFLOW, NA_OVERFLOW)             /*!< value too large */            \
-    X(HG_MSGSIZE, NA_MSGSIZE)               /*!< message size too long */      \
-    X(HG_PROTONOSUPPORT, NA_PROTONOSUPPORT) /*!< protocol not supported */     \
-    X(HG_OPNOTSUPPORTED,                                                       \
-        NA_OPNOTSUPPORTED)        /*!< operation not supported on endpoint */  \
-    X(HG_ADDRINUSE, NA_ADDRINUSE) /*!< address already in use */               \
-    X(HG_ADDRNOTAVAIL,                                                         \
-        NA_ADDRNOTAVAIL) /*!< cannot assign requested address */               \
-    X(HG_HOSTUNREACH,                                                          \
-        NA_HOSTUNREACH)         /*!< cannot reach host during operation */     \
-    X(HG_TIMEOUT, NA_TIMEOUT)   /*!< operation reached timeout */              \
-    X(HG_CANCELED, NA_CANCELED) /*!< operation canceled */                     \
-    X(HG_IO_ERROR, NA_IO_ERROR) /*!< I/O error */                              \
-    X(HG_CHECKSUM_ERROR, HG_NA_ERRNO_OFFSET)  /*!< checksum error */           \
-    X(HG_NA_ERROR, HG_NA_ERRNO_OFFSET + 1)    /*!< generic NA error */         \
-    X(HG_OTHER_ERROR, HG_NA_ERRNO_OFFSET + 2) /*!< generic HG error */         \
-    X(HG_RETURN_MAX, HG_NA_ERRNO_OFFSET + 3)
+    X(HG_SUCCESS)        /*!< operation succeeded */                           \
+    X(HG_PERMISSION)     /*!< operation not permitted */                       \
+    X(HG_NOENTRY)        /*!< no such file or directory */                     \
+    X(HG_INTERRUPT)      /*!< operation interrupted */                         \
+    X(HG_AGAIN)          /*!< operation must be retried */                     \
+    X(HG_NOMEM)          /*!< out of memory */                                 \
+    X(HG_ACCESS)         /*!< permission denied */                             \
+    X(HG_FAULT)          /*!< bad address */                                   \
+    X(HG_BUSY)           /*!< device or resource busy */                       \
+    X(HG_EXIST)          /*!< entry already exists */                          \
+    X(HG_NODEV)          /*!< no such device */                                \
+    X(HG_INVALID_ARG)    /*!< invalid argument */                              \
+    X(HG_PROTOCOL_ERROR) /*!< protocol error */                                \
+    X(HG_OVERFLOW)       /*!< value too large */                               \
+    X(HG_MSGSIZE)        /*!< message size too long */                         \
+    X(HG_PROTONOSUPPORT) /*!< protocol not supported */                        \
+    X(HG_OPNOTSUPPORTED) /*!< operation not supported on endpoint */           \
+    X(HG_ADDRINUSE)      /*!< address already in use */                        \
+    X(HG_ADDRNOTAVAIL)   /*!< cannot assign requested address */               \
+    X(HG_HOSTUNREACH)    /*!< cannot reach host during operation */            \
+    X(HG_TIMEOUT)        /*!< operation reached timeout */                     \
+    X(HG_CANCELED)       /*!< operation canceled */                            \
+    X(HG_IO_ERROR)       /*!< I/O error */                                     \
+    X(HG_CHECKSUM_ERROR) /*!< checksum error */                                \
+    X(HG_NA_ERROR)       /*!< generic NA error */                              \
+    X(HG_OTHER_ERROR)    /*!< generic HG error */                              \
+    X(HG_RETURN_MAX)
 
-#define X(a, b) a = b,
+#define X(a) a,
 typedef enum hg_return { HG_RETURN_VALUES } hg_return_t;
 #undef X
 
