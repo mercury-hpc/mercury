@@ -2006,7 +2006,7 @@ error:
 const char *
 NA_Error_to_string(na_return_t errnum)
 {
-    return na_return_name_g[errnum];
+    return errnum < NA_RETURN_MAX ? na_return_name_g[errnum] : NULL;
 }
 
 /*---------------------------------------------------------------------------*/
