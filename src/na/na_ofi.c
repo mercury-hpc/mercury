@@ -670,7 +670,9 @@ struct na_ofi_op_queue {
 struct na_ofi_eq {
     struct fid_cq *fi_cq;                   /* CQ handle                */
     struct na_ofi_op_queue *retry_op_queue; /* Retry op queue           */
-    struct fid_wait *fi_wait;               /* Optional wait set handle */
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 0))
+    struct fid_wait *fi_wait; /* Optional wait set handle */
+#endif
 };
 
 /* Context */
@@ -2038,8 +2040,7 @@ static const char *const na_ofi_log_subsys_g[] = {[FI_LOG_CORE] = "core",
     [FI_LOG_CQ] = "cq",
     [FI_LOG_EQ] = "eq",
     [FI_LOG_MR] = "mr",
-    [FI_LOG_CNTR] = "cntr",
-    [FI_LOG_SUBSYS_MAX] = NULL};
+    [FI_LOG_CNTR] = "cntr"};
 
 /* Log interval in ms */
 static int na_ofi_log_interval_g = 2000;
@@ -2110,8 +2111,8 @@ na_ofi_log(const struct fi_provider *prov, enum fi_log_level level,
     enum fi_log_subsys subsys, const char *func, int line, const char *msg)
 {
     HG_LOG_WRITE_FUNC(na_libfabric, na_ofi_log_level_to_hg(level), prov->name,
-        na_ofi_log_subsys_g[subsys], (unsigned int) line, func, true, "%s",
-        msg);
+        subsys > FI_LOG_CNTR ? "unknown" : na_ofi_log_subsys_g[subsys],
+        (unsigned int) line, func, true, "%s", msg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2145,7 +2146,6 @@ na_ofi_log_level_to_hg(enum fi_log_level level)
         case FI_LOG_INFO:
         case FI_LOG_DEBUG:
             return HG_LOG_LEVEL_DEBUG;
-        case FI_LOG_MAX:
         default:
             return HG_LOG_LEVEL_MAX;
     }
@@ -3453,8 +3453,8 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     hints->caps = FI_MSG | FI_TAGGED | FI_RMA | FI_DIRECTED_RECV;
 
     /* msg_order, comp_order */
-    hints->tx_attr->msg_order = FI_ORDER_NONE;
-    hints->tx_attr->comp_order = FI_ORDER_NONE;
+    hints->tx_attr->msg_order = 0;
+    hints->tx_attr->comp_order = 0;
 
     /* Generate completion event when it is safe to re-use buffer */
     hints->tx_attr->op_flags = FI_INJECT_COMPLETE;
@@ -5372,6 +5372,7 @@ na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
     if (!no_wait) {
         if (na_ofi_prov_flags[na_ofi_fabric->prov_type] & NA_OFI_WAIT_FD)
             cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 0))
         else {
             struct fi_wait_attr wait_attr = {0};
 
@@ -5385,6 +5386,7 @@ na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
             cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
             cq_attr.wait_set = na_ofi_eq->fi_wait;
         }
+#endif
     }
     cq_attr.wait_cond = FI_CQ_COND_NONE;
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
@@ -5409,10 +5411,12 @@ error:
             (void) fi_close(&na_ofi_eq->fi_cq->fid);
             na_ofi_eq->fi_cq = NULL;
         }
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 0))
         if (na_ofi_eq->fi_wait != NULL) {
             (void) fi_close(&na_ofi_eq->fi_wait->fid);
             na_ofi_eq->fi_wait = NULL;
         }
+#endif
         if (na_ofi_eq->retry_op_queue) {
             hg_thread_spin_destroy(&na_ofi_eq->retry_op_queue->lock);
             free(na_ofi_eq->retry_op_queue);
@@ -5439,6 +5443,7 @@ na_ofi_eq_close(struct na_ofi_eq *na_ofi_eq)
         na_ofi_eq->fi_cq = NULL;
     }
 
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 0))
     /* Close wait set */
     if (na_ofi_eq->fi_wait) {
         rc = fi_close(&na_ofi_eq->fi_wait->fid);
@@ -5446,6 +5451,7 @@ na_ofi_eq_close(struct na_ofi_eq *na_ofi_eq)
             "fi_close() wait failed, rc: %d (%s)", rc, fi_strerror(-rc));
         na_ofi_eq->fi_wait = NULL;
     }
+#endif
 
     if (na_ofi_eq->retry_op_queue) {
         hg_thread_spin_destroy(&na_ofi_eq->retry_op_queue->lock);
@@ -9142,8 +9148,10 @@ na_ofi_poll_wait(na_class_t *na_class, na_context_t *context,
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
 
     do {
-        struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
         unsigned int count = 0;
+
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 0))
+        struct na_ofi_context *na_ofi_context = NA_OFI_CONTEXT(context);
 
         if (timeout_ms != 0 && na_ofi_context->eq->fi_wait != NULL) {
             /* Wait in wait set if provider does not support wait on FDs */
@@ -9161,6 +9169,7 @@ na_ofi_poll_wait(na_class_t *na_class, na_context_t *context,
                 na_ofi_errno_to_na(-rc), "fi_wait() failed, rc: %d (%s)", rc,
                 fi_strerror(-rc));
         }
+#endif
 
         ret = na_ofi_poll(na_class, context, &count);
         NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll");
