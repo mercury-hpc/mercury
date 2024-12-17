@@ -110,14 +110,14 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 #ifdef HG_HAS_XDR
 #    define HG_PROC_TYPE(proc, type, data, label, ret)                         \
         do {                                                                   \
-            HG_PROC_CHECK_SIZE(proc, sizeof(type), label, ret);                \
+            HG_PROC_CHECK_SIZE(proc, RNDUP(sizeof(type)), label, ret);         \
                                                                                \
             if (xdr_##type(hg_proc_get_xdr_ptr(proc), data) == 0) {            \
                 ret = HG_PROTOCOL_ERROR;                                       \
                 goto label;                                                    \
             }                                                                  \
                                                                                \
-            HG_PROC_UPDATE(proc, sizeof(type));                                \
+            HG_PROC_UPDATE(proc, RNDUP(sizeof(type)));                         \
             HG_PROC_CHECKSUM_UPDATE(proc, data, sizeof(type));                 \
         } while (0)
 #else
@@ -147,15 +147,15 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 #ifdef HG_HAS_XDR
 #    define HG_PROC_BYTES(proc, data, size, label, ret)                        \
         do {                                                                   \
-            HG_PROC_CHECK_SIZE(proc, size, label, ret);                        \
+            HG_PROC_CHECK_SIZE(proc, RNDUP(size), label, ret);                 \
                                                                                \
-            if (xdr_bytes(hg_proc_get_xdr_ptr(proc), (char **) &data,          \
-                    (u_int *) &size, UINT_MAX) == 0) {                         \
+            if (xdr_opaque(hg_proc_get_xdr_ptr(proc), (char *) data, size) ==  \
+                0) {                                                           \
                 ret = HG_PROTOCOL_ERROR;                                       \
                 goto label;                                                    \
             }                                                                  \
                                                                                \
-            HG_PROC_UPDATE(proc, size);                                        \
+            HG_PROC_UPDATE(proc, RNDUP(size));                                 \
             HG_PROC_CHECKSUM_UPDATE(proc, data, size);                         \
         } while (0)
 #else
