@@ -176,8 +176,16 @@ hg_test_rpc_input(hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id,
     rpc_open_in_t in_struct = {
         .handle = rpc_open_handle, .path = HG_TEST_RPC_PATH};
     hg_size_t payload_size;
+#ifdef HG_HAS_XDR
+    size_t expected_string_payload_size =     /* note xdr rounding rules */
+        sizeof(uint64_t) +                    /* length */
+        RNDUP(strlen(HG_TEST_RPC_PATH) + 1) + /* string data, inc \0 at end */
+        RNDUP(sizeof(uint8_t)) +              /* is_const */
+        RNDUP(sizeof(uint8_t));               /* is_owned */
+#else
     size_t expected_string_payload_size =
         strlen(HG_TEST_RPC_PATH) + sizeof(uint64_t) + 3;
+#endif
     unsigned int flag;
     int rc;
 
