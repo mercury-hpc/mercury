@@ -781,13 +781,8 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_header_proc(HG_ENCODE, buf, buf_size, hg_header);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not process header");
 
-#ifdef HG_HAS_XDR
-    /* XDR requires entire buffer payload */
-    *payload_size = buf_size;
-#else
     /* Only send the actual size of the data, not the entire buffer */
     *payload_size = hg_proc_get_size_used(proc) + header_offset;
-#endif
 
     return HG_SUCCESS;
 

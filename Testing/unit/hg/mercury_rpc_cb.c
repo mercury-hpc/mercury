@@ -186,8 +186,16 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
     struct hg_unit_info *info = (struct hg_unit_info *) HG_Class_get_data(
         HG_Get_info(handle)->hg_class);
     hg_size_t payload_size = HG_Get_input_payload_size(handle);
+#ifdef HG_HAS_XDR
+    size_t expected_string_payload_size =     /* note xdr rounding rules */
+        sizeof(uint64_t) +                    /* length */
+        RNDUP(strlen(HG_TEST_RPC_PATH) + 1) + /* string data, inc \0 at end */
+        RNDUP(sizeof(uint8_t)) +              /* is_const */
+        RNDUP(sizeof(uint8_t));               /* is_owned */
+#else
     size_t expected_string_payload_size =
         strlen(HG_TEST_RPC_PATH) + sizeof(uint64_t) + 3;
+#endif
 
     HG_TEST_CHECK_ERROR(
         payload_size != sizeof(rpc_handle_t) + expected_string_payload_size,
