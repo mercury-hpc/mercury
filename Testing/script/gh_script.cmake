@@ -198,6 +198,12 @@ endif()
 if(NOT build_shared_libs)
   set(lower_mercury_build_configuration ${lower_mercury_build_configuration}-static)
 endif()
+if(build_dynamic_plugins)
+  set(lower_mercury_build_configuration ${lower_mercury_build_configuration}-plugin)
+endif()
+if(build_xdr)
+  set(lower_mercury_build_configuration ${lower_mercury_build_configuration}-xdr)
+endif()
 
 set(CTEST_BUILD_NAME "${BUILD_NAME}-${OS_NAME}-$ENV{CC}-${lower_mercury_build_configuration}-${BUILD_NUMBER}")
 
@@ -265,7 +271,7 @@ MERCURY_ENABLE_COVERAGE:BOOL=${MERCURY_DO_COVERAGE}
 MERCURY_ENABLE_DEBUG:BOOL=${enable_debug}
 MERCURY_USE_BOOST_PP:BOOL=OFF
 MERCURY_USE_CHECKSUMS:BOOL=${USE_CHECKSUMS}
-MERCURY_USE_XDR:BOOL=OFF
+MERCURY_USE_XDR:BOOL=${build_xdr}
 NA_USE_DYNAMIC_PLUGINS:BOOL=${build_dynamic_plugins}
 NA_DEFAULT_PLUGIN_PATH:PATH=${CTEST_BINARY_DIRECTORY}/bin
 NA_USE_BMI:BOOL=${USE_BMI}
