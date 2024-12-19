@@ -81,27 +81,43 @@ jobs:
         build_type: [Debug, RelWithDebInfo, Release]
         libs: [shared]
         plugins: [static_plugins]
+        encoding: [xdr_off]
         include:
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Debug
             libs: static
             plugins: static_plugins
+            encoding: xdr_off
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Asan
             libs: shared
             plugins: static_plugins
+            encoding: xdr_off
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Tsan
             libs: shared
             plugins: static_plugins
+            encoding: xdr_off
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: Ubsan
             libs: shared
             plugins: static_plugins
+            encoding: xdr_off
           - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
             build_type: RelWithDebInfo
             libs: shared
             plugins: dynamic_plugins
+            encoding: xdr_off
+          - config: {os: ubuntu-latest, cc: gcc, cxx: g++}
+            build_type: RelWithDebInfo
+            libs: shared
+            plugins: static_plugins
+            encoding: xdr_on
+          - config: {os: macos-latest, cc: clang, cxx: clang++}
+            build_type: RelWithDebInfo
+            libs: shared
+            plugins: static_plugins
+            encoding: xdr_on
 
     runs-on: ${{ matrix.config.os }}
 
@@ -110,6 +126,7 @@ jobs:
       MERCURY_BUILD_CONFIGURATION: ${{ matrix.build_type }}
       MERCURY_LIBS: ${{ matrix.libs }}
       MERCURY_PLUGINS: ${{ matrix.plugins }}
+      MERCURY_ENCODING: ${{ matrix.encoding }}
       CC: ${{ matrix.config.cc }}
       CXX: ${{ matrix.config.cxx }}
       INSTALL_DIR: install

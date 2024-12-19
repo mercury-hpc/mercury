@@ -41,6 +41,12 @@ else
   BUILD_DYNAMIC_PLUGINS=FALSE
 fi
 
+if [[ ${MERCURY_ENCODING} == 'xdr_on' ]]; then
+  MERCURY_USE_XDR=TRUE
+else
+  MERCURY_USE_XDR=FALSE
+fi
+
 # Source intel env when using icx
 if [[ ${CC} == 'icx' ]]; then
   ICX_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/compiler/ | grep -v latest | sort | tail -1)
@@ -64,6 +70,7 @@ $CTEST -VV --output-on-failure                        \
   -Ddashboard_model=${DASHBOARD_MODEL}                \
   -Dbuild_shared_libs=${BUILD_SHARED}                 \
   -Dbuild_dynamic_plugins=${BUILD_DYNAMIC_PLUGINS}    \
+  -Dbuild_xdr=${MERCURY_USE_XDR}                      \
   -Ddashboard_do_submit=${DASHBOARD_SUBMIT}           \
   -Ddashboard_allow_errors=TRUE                       \
   -S $CTEST_SCRIPT
