@@ -6801,11 +6801,15 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
                 &na_ofi_op_id->completion_data->callback_info.info
                      .recv_unexpected,
                 na_ofi_op_id->info.msg.buf.ptr, cq_event->len, na_ofi_addr,
-                (cq_event->data > 0) ? cq_event->data : cq_event->tag);
+                (cq_event->flags & FI_REMOTE_CQ_DATA) ? cq_event->data
+                                                      : cq_event->tag);
             NA_CHECK_SUBSYS_NA_ERROR(
                 msg, error, ret, "Could not process unexpected recv event");
             break;
         case NA_CB_MULTI_RECV_UNEXPECTED:
+            NA_CHECK_SUBSYS_ERROR(msg, !(cq_event->flags & FI_REMOTE_CQ_DATA),
+                error, ret, NA_INVALID_ARG,
+                "FI_REMOTE_CQ_DATA not set in completion event");
             complete = cq_event->flags & FI_MULTI_RECV;
 
             ret = na_ofi_cq_process_multi_recv_unexpected(na_ofi_class,
