@@ -95,7 +95,7 @@ print_csv(const struct na_protocol_info *protocol_infos)
 
     printf("class,protocol,device\n");
     for (protocol_info = protocol_infos; protocol_info != NULL;
-         protocol_info = protocol_info->next)
+        protocol_info = protocol_info->next)
         printf("%s,%s,%s\n", protocol_info->class_name,
             protocol_info->protocol_name, protocol_info->device_name);
 }
@@ -111,7 +111,7 @@ print_json(const struct na_protocol_info *protocol_infos)
     json_protocols = json_object_new_object();
     json_protocol_infos = json_object_new_array();
     for (protocol_info = protocol_infos; protocol_info != NULL;
-         protocol_info = protocol_info->next) {
+        protocol_info = protocol_info->next) {
         struct json_object *json_protocol_info = json_object_new_object();
         json_object_object_add(json_protocol_info, "class",
             json_object_new_string(protocol_info->class_name));
@@ -139,7 +139,7 @@ print_std(const struct na_protocol_info *protocol_infos)
     printf("%-*s%*s%*s\n", 10, "Class", NWIDTH, "Protocol", NWIDTH, "Device");
     printf("--------------------------------------------------\n");
     for (protocol_info = protocol_infos; protocol_info != NULL;
-         protocol_info = protocol_info->next)
+        protocol_info = protocol_info->next)
         printf("%-*s%*s%*s\n", 10, protocol_info->class_name, NWIDTH,
             protocol_info->protocol_name, NWIDTH, protocol_info->device_name);
 }
