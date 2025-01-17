@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      CLANG_FORMAT_VERSION: 12
+      CLANG_FORMAT_VERSION: 18
 
     steps:
       - name: Checkout source
@@ -171,13 +171,13 @@ jobs:
         if: matrix.config.cc == 'icx' && steps.cache-pkg-deps.outputs.cache-hit != 'true'
         run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh "$ICX_COMPONENTS"
 
-      - name: Install pkg-config
-        if: runner.os == 'macOS'
-        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh pkg-config
-
       - name: Install MPI package dependencies
-        if: matrix.config.cc != 'icx'
-        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh mpich
+        if: matrix.config.cc != 'icx' && runner.os == 'Linux' 
+        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh libhwloc-dev
+
+      - name: Setup XDR package dependencies
+        if: matrix.encoding == 'xdr_on' && runner.os == 'Linux'
+        run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh libtirpc-dev
 
       - name: Restore cached dependencies
         uses: actions/cache@v3
