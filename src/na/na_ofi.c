@@ -1630,6 +1630,14 @@ na_ofi_cq_process_multi_recv_unexpected(struct na_ofi_class *na_ofi_class,
     bool last);
 
 /**
+ * Multi-recv unexpected operation events (error).
+ */
+static NA_INLINE void
+na_ofi_cq_process_error_multi_recv_unexpected(
+    struct na_cb_info_multi_recv_unexpected *multi_recv_unexpected_info,
+    bool last);
+
+/**
  * Recv expected operation events.
  */
 static NA_INLINE na_return_t
@@ -6549,6 +6557,7 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
     switch (cq_err.err) {
         case FI_ECANCELED: {
             struct na_ofi_op_id *na_ofi_op_id = NULL;
+            bool complete;
 
             NA_CHECK_SUBSYS_ERROR(op, cq_err.op_context == NULL, out, ret,
                 NA_INVALID_ARG, "Invalid operation context");
@@ -6571,8 +6580,27 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
                 "Operation ID was not canceled by user");
             */
 
+            /* Multi-recv buffers may still be used even after an error has been
+             * reported, hence we can only complete the operation if the
+             * FI_MULTI_RECV flag is set. */
+            if (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
+                complete = (FI_VERSION_LT(fi_version(), FI_VERSION(2, 1)) ||
+                               (na_ofi_op_id->na_ofi_class->fabric->prov_type ==
+                                   NA_OFI_PROV_SOCKETS))
+                               ? true /* workaround issue in providers */
+                               : cq_err.flags & FI_MULTI_RECV;
+                NA_LOG_SUBSYS_DEBUG(op,
+                    "FI_ECANCELED reported on multi-recv (completed=%d)",
+                    complete);
+                na_ofi_cq_process_error_multi_recv_unexpected(
+                    &na_ofi_op_id->completion_data->callback_info.info
+                         .multi_recv_unexpected,
+                    complete);
+            } else
+                complete = true;
+
             /* Complete operation in canceled state */
-            na_ofi_op_id->complete(na_ofi_op_id, true, NA_CANCELED);
+            na_ofi_op_id->complete(na_ofi_op_id, complete, NA_CANCELED);
         } break;
 
         case FI_EADDRNOTAVAIL:
@@ -6613,6 +6641,7 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
                 struct na_ofi_op_id *na_ofi_op_id = container_of(
                     cq_err.op_context, struct na_ofi_op_id, fi_ctx);
                 na_return_t na_ret = na_ofi_errno_to_na(cq_err.err);
+                bool complete;
 
                 NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, out, ret,
                     NA_INVALID_ARG, "Invalid operation ID");
@@ -6634,8 +6663,28 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
                         NA_OFI_CONTEXT(na_ofi_op_id->context),
                         na_ofi_op_id->addr->fi_addr, NA_HOSTUNREACH);
 
+                /* Multi-recv buffers may still be used even after an error has
+                 * been reported, hence we can only complete the operation if
+                 * the FI_MULTI_RECV flag is set. */
+                if (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
+                    complete =
+                        (FI_VERSION_LT(fi_version(), FI_VERSION(2, 1)) ||
+                            (na_ofi_op_id->na_ofi_class->fabric->prov_type ==
+                                NA_OFI_PROV_SOCKETS))
+                            ? true /* workaround issue in providers */
+                            : cq_err.flags & FI_MULTI_RECV;
+                    NA_LOG_SUBSYS_DEBUG(op,
+                        "error reported on multi-recv (completed=%d)",
+                        complete);
+                    na_ofi_cq_process_error_multi_recv_unexpected(
+                        &na_ofi_op_id->completion_data->callback_info.info
+                             .multi_recv_unexpected,
+                        complete);
+                } else
+                    complete = true;
+
                 /* Complete operation in error state */
-                na_ofi_op_id->complete(na_ofi_op_id, true, na_ret);
+                na_ofi_op_id->complete(na_ofi_op_id, complete, na_ret);
             }
             break;
     }
@@ -6923,6 +6972,15 @@ na_ofi_cq_process_multi_recv_unexpected(struct na_ofi_class *na_ofi_class,
 
 error:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_ofi_cq_process_error_multi_recv_unexpected(
+    struct na_cb_info_multi_recv_unexpected *multi_recv_unexpected_info,
+    bool last)
+{
+    multi_recv_unexpected_info->last = last;
 }
 
 /*---------------------------------------------------------------------------*/
