@@ -4727,12 +4727,23 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
     } else if (callback_info->ret == NA_CANCELED) {
         HG_LOG_SUBSYS_DEBUG(
             rpc, "NA_CANCELED event on multi-recv op %d", multi_recv_op->id);
-        hg_atomic_decr32(&context->multi_recv_op_count);
+        if (na_cb_info_multi_recv_unexpected->last) {
+            HG_LOG_SUBSYS_DEBUG(rpc,
+                "This is the last buffer of multi-recv op %d, marking as last",
+                multi_recv_op->id);
+            hg_atomic_set32(&multi_recv_op->last, true);
+            hg_atomic_decr32(&context->multi_recv_op_count);
+        }
     } else {
         HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s)",
             NA_Error_to_string(callback_info->ret));
-        hg_atomic_decr32(&context->multi_recv_op_count);
-        /* TODO can an unexpected multi-recv operation ever fail? */
+        if (na_cb_info_multi_recv_unexpected->last) {
+            HG_LOG_SUBSYS_DEBUG(rpc,
+                "This is the last buffer of multi-recv op %d, marking as last",
+                multi_recv_op->id);
+            hg_atomic_set32(&multi_recv_op->last, true);
+            hg_atomic_decr32(&context->multi_recv_op_count);
+        }
     }
 
     return;
