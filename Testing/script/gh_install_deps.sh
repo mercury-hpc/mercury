@@ -4,7 +4,7 @@
 BMI_VERSION=latest
 MPI_VERSION=4.2.3
 #OFI_PR=
-OFI_VERSION=1.22.0
+OFI_VERSION=2.0.0
 # PSM_VERSION=updates
 UCX_VERSION=1.17.0
 
@@ -46,6 +46,8 @@ if [ -z "$OFI_PR" ]; then
   cd libfabric-${OFI_VERSION};
   #wget https://github.com/ofiwg/libfabric/pull/6509.patch
   #patch -p1 < 6509.patch
+  wget https://patch-diff.githubusercontent.com/raw/ofiwg/libfabric/pull/10721.patch
+  patch -p1 < 10721.patch
   patch -p1 < ${GITHUB_WORKSPACE}/Testing/script/ofi_socket_assert.patch
 else
   git clone https://github.com/ofiwg/libfabric.git libfabric-${OFI_VERSION};
