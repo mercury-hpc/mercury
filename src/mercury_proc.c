@@ -278,30 +278,42 @@ void *
 hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
+    hg_size_t alloc_size = data_size;
     void *ptr;
-#ifdef HG_HAS_XDR
-    unsigned int cur_pos;
-#endif
 
     HG_CHECK_SUBSYS_ERROR_NORET(
         proc, proc == HG_PROC_NULL, error, "Proc is not initialized");
     HG_CHECK_SUBSYS_ERROR_NORET(
         proc, hg_proc->op == HG_FREE, error, "Cannot save_ptr on HG_FREE");
 
+#ifdef HG_HAS_XDR
+    alloc_size = RNDUP(data_size); /* adjust for BYTES_PER_XDR_UNIT */
+
+    /* Fail if not enough space preallocated for xdr */
+    HG_CHECK_SUBSYS_ERROR_NORET(proc,
+        alloc_size && hg_proc->current_buf->size_left < alloc_size, error,
+        "Not enough space preallocated for xdr inline");
+#else
     /* If not enough space allocate extra space if encoding or
      * just get extra buffer if decoding */
-    if (data_size && hg_proc->current_buf->size_left < data_size)
-        hg_proc_set_size(
-            proc, hg_proc->proc_buf.size + hg_proc->extra_buf.size + data_size);
+    if (alloc_size && hg_proc->current_buf->size_left < alloc_size) {
+        hg_return_t ret = hg_proc_set_size(proc,
+            hg_proc->proc_buf.size + hg_proc->extra_buf.size + alloc_size);
+        HG_CHECK_SUBSYS_HG_ERROR(
+            proc, error, ret, "Set size failed to grow buffer");
+    }
+#endif
 
     ptr = hg_proc->current_buf->buf_ptr;
-    hg_proc->current_buf->buf_ptr =
-        (char *) hg_proc->current_buf->buf_ptr + data_size;
-    hg_proc->current_buf->size_left -= data_size;
 #ifdef HG_HAS_XDR
-    cur_pos = xdr_getpos(&hg_proc->current_buf->xdr);
-    xdr_setpos(&hg_proc->current_buf->xdr, (hg_uint32_t) (cur_pos + data_size));
+    /* sync xdr with our allocation with a call to xdr_inline() */
+    HG_CHECK_SUBSYS_ERROR_NORET(proc,
+        xdr_inline(&hg_proc->current_buf->xdr, alloc_size) != ptr, error,
+        "xdr_inline pointer mismatch!");
 #endif
+    hg_proc->current_buf->buf_ptr =
+        (char *) hg_proc->current_buf->buf_ptr + alloc_size;
+    hg_proc->current_buf->size_left -= alloc_size;
 
     return ptr;
 

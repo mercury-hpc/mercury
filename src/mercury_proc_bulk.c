@@ -89,6 +89,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
                 hg_proc_bytes(proc, cached_ptr, buf_size);
             } else {
                 buf = hg_proc_save_ptr(proc, buf_size);
+                HG_CHECK_SUBSYS_ERROR(proc, buf == NULL, error, ret, HG_NOMEM,
+                    "Proc save ptr failed to alloc bulk handle enc memory");
                 ret = HG_Bulk_serialize(buf, buf_size, flags, *bulk_ptr);
                 HG_CHECK_SUBSYS_HG_ERROR(
                     proc, error, ret, "Could not serialize handle");
@@ -113,6 +115,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             }
 
             buf = hg_proc_save_ptr(proc, buf_size);
+            HG_CHECK_SUBSYS_ERROR(proc, buf == NULL, error, ret, HG_NOMEM,
+                "Proc save ptr failed to alloc bulk handle dec memory");
             ret = HG_Bulk_deserialize(hg_class, bulk_ptr, buf, buf_size);
             HG_CHECK_SUBSYS_HG_ERROR(
                 proc, error, ret, "Could not deserialize handle");
