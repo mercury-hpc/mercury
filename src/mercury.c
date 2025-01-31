@@ -572,7 +572,6 @@ hg_get_struct(struct hg_private_handle *hg_handle,
     }
 #endif
 
-#ifndef HG_HAS_XDR
     if (HG_HANDLE_CLASS(&hg_handle->handle)->release_input_early &&
         op == HG_INPUT) {
         /* Now that the parameters have been decoded, release the buffer so it
@@ -581,7 +580,6 @@ hg_get_struct(struct hg_private_handle *hg_handle,
         HG_CHECK_SUBSYS_HG_ERROR(
             rpc, error, ret, "Could not release input buffer");
     }
-#endif
 
     /* Increment ref count on handle so that it remains valid until free_struct
      * is called */
@@ -715,10 +713,6 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     if (hg_proc_get_extra_buf(proc)) {
         /* Potentially free previous payload if handle was not reset */
         hg_free_extra_payload(hg_handle);
-#ifdef HG_HAS_XDR
-        HG_GOTO_SUBSYS_ERROR(rpc, error, ret, HG_OVERFLOW,
-            "Arguments overflow is not supported with XDR");
-#endif
         HG_CHECK_SUBSYS_ERROR(rpc,
             HG_HANDLE_CLASS(&hg_handle->handle)->no_overflow, error, ret,
             HG_OVERFLOW,
@@ -795,11 +789,6 @@ static hg_return_t
 hg_free_struct(struct hg_private_handle *hg_handle,
     const struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr)
 {
-    void *buf = NULL;
-    hg_size_t buf_size = 0;
-#ifdef HG_HAS_XDR
-    hg_size_t header_offset = hg_header_get_size(op);
-#endif
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
     hg_return_t ret;
@@ -809,25 +798,11 @@ hg_free_struct(struct hg_private_handle *hg_handle,
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
-#ifdef HG_HAS_XDR
-            /* Get core input buffer */
-            ret = HG_Core_get_input(
-                hg_handle->handle.core_handle, &buf, &buf_size);
-            HG_CHECK_SUBSYS_HG_ERROR(
-                rpc, error, ret, "Could not get input buffer");
-#endif
             break;
         case HG_OUTPUT:
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
-#ifdef HG_HAS_XDR
-            /* Get core output buffer */
-            ret = HG_Core_get_output(
-                hg_handle->handle.core_handle, &buf, &buf_size);
-            HG_CHECK_SUBSYS_HG_ERROR(
-                rpc, error, ret, "Could not get input buffer");
-#endif
             break;
         default:
             HG_GOTO_SUBSYS_ERROR(
@@ -836,14 +811,8 @@ hg_free_struct(struct hg_private_handle *hg_handle,
     HG_CHECK_SUBSYS_ERROR(rpc, proc_cb == NULL, error, ret, HG_FAULT,
         "No proc set, proc must be set in HG_Register()");
 
-#ifdef HG_HAS_XDR
-    /* Include our own header offset */
-    buf = (char *) buf + header_offset;
-    buf_size -= header_offset;
-#endif
-
     /* Reset proc */
-    ret = hg_proc_reset(proc, buf, buf_size, HG_FREE);
+    ret = hg_proc_reset(proc, NULL, 0, HG_FREE);
     HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not reset proc");
 
     /* Free memory allocated during decode operation */

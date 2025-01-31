@@ -69,10 +69,8 @@ hg_test_rpc_output_cb(const struct hg_cb_info *callback_info);
 static hg_return_t
 hg_test_rpc_no_output_cb(const struct hg_cb_info *callback_info);
 
-#ifndef HG_HAS_XDR
 static hg_return_t
 hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info);
-#endif
 
 static hg_return_t
 hg_test_rpc_cancel(hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id,
@@ -335,7 +333,6 @@ hg_test_rpc_no_output_cb(const struct hg_cb_info *callback_info)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifndef HG_HAS_XDR
 static hg_return_t
 hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info)
 {
@@ -349,9 +346,19 @@ hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info)
 #    endif
     hg_return_t ret = callback_info->ret;
     hg_size_t payload_size = HG_Get_output_payload_size(handle);
+#ifdef HG_HAS_XDR
+    size_t sz = HG_Class_get_output_eager_size(HG_Get_info(handle)->hg_class);
+
+    /* note xdr rounding rules on data length and is_const/is_owned */
+    /* format: size + data_with_null + is_const + is_owned + size */
+    size_t expected_string_payload_size =
+        sizeof(uint64_t) + RNDUP((sz * 2) + 1) + (RNDUP(sizeof(uint8_t)) * 2) +
+        sizeof(uint64_t);
+#else
     size_t expected_string_payload_size =
         HG_Class_get_output_eager_size(HG_Get_info(handle)->hg_class) * 2 + 3 +
         2 * sizeof(uint64_t);
+#endif
 
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in HG callback (%s)",
         HG_Error_to_string(callback_info->ret));
@@ -383,7 +390,6 @@ done:
 
     return HG_SUCCESS;
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -1014,7 +1020,6 @@ main(int argc, char *argv[])
         HG_PASSED();
     }
 
-#ifndef HG_HAS_XDR
     /* Overflow RPC test */
     HG_TEST("RPC with output overflow");
     hg_ret = hg_test_rpc_no_input(info.handles[0], info.target_addr,
@@ -1022,7 +1027,6 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_rpc_no_input() failed (%s)",
         HG_Error_to_string(hg_ret));
     HG_PASSED();
-#endif
 
     /* Cancel RPC test (self cancelation is not supported) */
     if (!info.hg_test_info.na_test_info.self_send) {
