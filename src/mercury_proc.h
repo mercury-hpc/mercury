@@ -61,26 +61,15 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 #endif
 
 /* Check whether size exceeds current proc size left */
-#ifdef HG_HAS_XDR
-#    define HG_PROC_CHECK_SIZE(proc, size, label, ret)                         \
-        do {                                                                   \
-            if (unlikely(((struct hg_proc *) proc)->current_buf->size_left <   \
-                         size)) {                                              \
-                ret = HG_OVERFLOW;                                             \
+#define HG_PROC_CHECK_SIZE(proc, size, label, ret)                             \
+    do {                                                                       \
+        if (unlikely(                                                          \
+                ((struct hg_proc *) proc)->current_buf->size_left < size)) {   \
+            ret = hg_proc_set_size(proc, hg_proc_get_size(proc) + size);       \
+            if (ret != HG_SUCCESS)                                             \
                 goto label;                                                    \
-            }                                                                  \
-        } while (0)
-#else
-#    define HG_PROC_CHECK_SIZE(proc, size, label, ret)                         \
-        do {                                                                   \
-            if (unlikely(((struct hg_proc *) proc)->current_buf->size_left <   \
-                         size)) {                                              \
-                ret = hg_proc_set_size(proc, hg_proc_get_size(proc) + size);   \
-                if (ret != HG_SUCCESS)                                         \
-                    goto label;                                                \
-            }                                                                  \
-        } while (0)
-#endif
+        }                                                                      \
+    } while (0)
 
 /* Encode type */
 #define HG_PROC_TYPE_ENCODE(proc, data, size)                                  \
@@ -598,9 +587,6 @@ struct hg_proc_buf {
     hg_size_t size;      /* Total buffer size */
     hg_size_t size_left; /* Available size for user */
     uint8_t is_mine;
-#ifdef HG_HAS_XDR
-    XDR xdr;
-#endif
 };
 
 /* HG proc */
@@ -609,6 +595,9 @@ struct hg_proc {
     struct hg_proc_buf extra_buf;
     hg_class_t *hg_class; /* HG class */
     struct hg_proc_buf *current_buf;
+#ifdef HG_HAS_XDR
+    XDR xdr;
+#endif
 #ifdef HG_HAS_CHECKSUMS
     struct mchecksum_object *checksum; /* Checksum */
     void *checksum_hash;               /* Base checksum buf */
@@ -689,7 +678,7 @@ hg_proc_get_size_left(hg_proc_t proc)
 static HG_INLINE XDR *
 hg_proc_get_xdr_ptr(hg_proc_t proc)
 {
-    return &((struct hg_proc *) proc)->current_buf->xdr;
+    return &((struct hg_proc *) proc)->xdr;
 }
 #endif
 

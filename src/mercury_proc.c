@@ -163,16 +163,16 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
 #ifdef HG_HAS_XDR
     switch (op) {
         case HG_ENCODE:
-            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf,
-                (hg_uint32_t) buf_size, XDR_ENCODE);
+            xdrmem_create(&hg_proc->xdr, (char *) buf, (hg_uint32_t) buf_size,
+                XDR_ENCODE);
             break;
         case HG_DECODE:
-            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf,
-                (hg_uint32_t) buf_size, XDR_DECODE);
+            xdrmem_create(&hg_proc->xdr, (char *) buf, (hg_uint32_t) buf_size,
+                XDR_DECODE);
             break;
         case HG_FREE:
-            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf,
-                (hg_uint32_t) buf_size, XDR_FREE);
+            /* buf addr and size args are ignored by XDR_FREE op */
+            xdrmem_create(&hg_proc->xdr, NULL, 0, XDR_FREE);
             break;
         default:
             HG_GOTO_SUBSYS_ERROR(
@@ -264,6 +264,14 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     hg_proc->extra_buf.size_left =
         hg_proc->extra_buf.size - (hg_size_t) current_pos;
     hg_proc->extra_buf.is_mine = true;
+#ifdef HG_HAS_XDR
+    /* sync xdr up to current version of extra_buf */
+    if (hg_proc->xdr.x_base != new_buf) { /* might be equal w/realloc() */
+        hg_proc->xdr.x_base = new_buf;
+        hg_proc->xdr.x_private = new_buf + current_pos;
+    }
+    hg_proc->xdr.x_handy = hg_proc->extra_buf.size_left;
+#endif
 
     return HG_SUCCESS;
 
@@ -288,12 +296,8 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 
 #ifdef HG_HAS_XDR
     alloc_size = RNDUP(data_size); /* adjust for BYTES_PER_XDR_UNIT */
+#endif
 
-    /* Fail if not enough space preallocated for xdr */
-    HG_CHECK_SUBSYS_ERROR_NORET(proc,
-        alloc_size && hg_proc->current_buf->size_left < alloc_size, error,
-        "Not enough space preallocated for xdr inline");
-#else
     /* If not enough space allocate extra space if encoding or
      * just get extra buffer if decoding */
     if (alloc_size && hg_proc->current_buf->size_left < alloc_size) {
@@ -302,13 +306,12 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
         HG_CHECK_SUBSYS_HG_ERROR(
             proc, error, ret, "Set size failed to grow buffer");
     }
-#endif
 
     ptr = hg_proc->current_buf->buf_ptr;
 #ifdef HG_HAS_XDR
     /* sync xdr with our allocation with a call to xdr_inline() */
     HG_CHECK_SUBSYS_ERROR_NORET(proc,
-        xdr_inline(&hg_proc->current_buf->xdr, alloc_size) != ptr, error,
+        xdr_inline(&hg_proc->xdr, alloc_size) != ptr, error,
         "xdr_inline pointer mismatch!");
 #endif
     hg_proc->current_buf->buf_ptr =
