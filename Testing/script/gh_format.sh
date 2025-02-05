@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 if [ -z "$1" ]
 then
   echo "Error: no commit passed"
@@ -9,7 +7,7 @@ then
 fi
 
 # Check C and C++ code with clang-format
-echo "Checking formatting for commit range: $1"
+echo "Checking formatting using $(which clang-format-${CLANG_FORMAT_VERSION}) for commit range: $1"
 DIFF="$(git clang-format-${CLANG_FORMAT_VERSION} --style file --diff --extensions c,h $1)"
 if [ -n "${DIFF}" ] && [ "${DIFF}" != "no modified files to format" ] && [ "${DIFF}" != "clang-format did not modify any files" ]
 then
