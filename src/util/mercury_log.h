@@ -54,9 +54,11 @@
  */
 #define HG_LOG_LEVELS                                                          \
     X(HG_LOG_LEVEL_NONE, "", "", NULL)                  /*!< no log */         \
+    X(HG_LOG_LEVEL_FATAL, "fatal", "ftl", &stderr)      /*!< fatal error */    \
     X(HG_LOG_LEVEL_ERROR, "error", "err", &stderr)      /*!< error log */      \
     X(HG_LOG_LEVEL_WARNING, "warning", "warn", &stdout) /*!< warning log */    \
     X(HG_LOG_LEVEL_MIN_DEBUG, "min_debug", "trace", &stdout) /*!< trace log */ \
+    X(HG_LOG_LEVEL_INFO, "info", "inf", &stdout)             /*!< info log */  \
     X(HG_LOG_LEVEL_DEBUG, "debug", "dbg", &stdout)           /*!< debug log */ \
     X(HG_LOG_LEVEL_MAX, "", "", NULL)
 

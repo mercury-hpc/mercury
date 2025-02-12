@@ -72,12 +72,12 @@ static void
 hg_log_finalize(void) HG_UTIL_DESTRUCTOR;
 
 /* Init log level */
-static bool
+static void
 hg_log_init_level(void);
 
 /* Init log subsys */
 static void
-hg_log_init_subsys(bool level_set);
+hg_log_init_subsys(void);
 
 /* Reset all log levels */
 static void
@@ -111,7 +111,7 @@ static STAILQ_HEAD(, hg_log_outlet) hg_log_outlets_g = STAILQ_HEAD_INITIALIZER(
 static hg_log_func_t hg_log_func_g = fprintf;
 
 /* Default log level */
-static enum hg_log_level hg_log_level_g = HG_LOG_LEVEL_ERROR;
+static enum hg_log_level hg_log_level_g = HG_LOG_LEVEL_NONE;
 
 /* Default log subsystems */
 static char hg_log_subsys_g[HG_LOG_SUBSYS_MAX][HG_LOG_SUBSYS_NAME_MAX + 1] = {
@@ -139,8 +139,8 @@ static FILE *hg_log_streams_g[HG_LOG_LEVEL_MAX] = {NULL};
 
 /* Log colors */
 #ifdef HG_UTIL_HAS_LOG_COLOR
-static const char *const hg_log_colors_g[] = {
-    "", HG_LOG_RED, HG_LOG_MAGENTA, HG_LOG_BLUE, HG_LOG_BLUE, ""};
+static const char *const hg_log_colors_g[] = {"", HG_LOG_RED, HG_LOG_RED,
+    HG_LOG_MAGENTA, HG_LOG_BLUE, HG_LOG_BLUE, HG_LOG_BLUE, ""};
 #endif
 
 /* Init */
@@ -152,9 +152,8 @@ static bool hg_log_init_g = false;
 static void
 hg_log_init(void)
 {
-    bool level_set = hg_log_init_level();
-
-    hg_log_init_subsys(level_set);
+    hg_log_init_level();
+    hg_log_init_subsys();
 
     /* Register top outlet */
     hg_log_outlet_register(&HG_LOG_OUTLET(HG_LOG_OUTLET_ROOT_NAME));
@@ -169,32 +168,26 @@ hg_log_finalize(void)
 }
 
 /*---------------------------------------------------------------------------*/
-static bool
+static void
 hg_log_init_level(void)
 {
     const char *log_level = getenv("HG_LOG_LEVEL");
 
     /* Override default log level */
     if (log_level == NULL)
-        return false;
+        log_level = "fatal";
 
     hg_log_set_level(hg_log_name_to_level(log_level));
-
-    return true;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_log_init_subsys(bool level_set)
+hg_log_init_subsys(void)
 {
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
 
-    if (log_subsys == NULL) {
-        if (!level_set)
-            return;
-        else
-            log_subsys = HG_LOG_OUTLET_ROOT_NAME_STRING;
-    }
+    if (log_subsys == NULL)
+        log_subsys = HG_LOG_OUTLET_ROOT_NAME_STRING;
 
     // fprintf(stderr, "subsys: %s\n", log_subsys);
     hg_log_set_subsys(log_subsys);

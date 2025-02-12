@@ -16,9 +16,6 @@
 /* Default log outlet */
 extern HG_PRIVATE HG_LOG_OUTLET_DECL(hg);
 
-/* Fatal log outlet always 'on' by default */
-extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(fatal, hg);
-
 /* Specific outlets */
 extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(cls, hg);       /* Class */
 extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(ctx, hg);       /* Context */
@@ -35,12 +32,18 @@ extern HG_PRIVATE HG_LOG_OUTLET_SUBSYS_DECL(diag, hg); /* Diagnostics */
 #endif
 
 /* Base log macros */
+#define HG_LOG_FATAL(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_FATAL, __VA_ARGS__)
+#define HG_LOG_SUBSYS_FATAL(subsys, ...)                                       \
+    HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_FATAL, __VA_ARGS__)
 #define HG_LOG_ERROR(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_SUBSYS_ERROR(subsys, ...)                                       \
     HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_LOG_WARNING(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #define HG_LOG_SUBSYS_WARNING(subsys, ...)                                     \
     HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
+#define HG_LOG_INFO(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_INFO, __VA_ARGS__)
+#define HG_LOG_SUBSYS_INFO(subsys, ...)                                        \
+    HG_LOG_SUBSYS_WRITE(subsys, hg, HG_LOG_LEVEL_INFO, __VA_ARGS__)
 #ifdef HG_HAS_DEBUG
 #    define HG_LOG_DEBUG(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #    define HG_LOG_SUBSYS_DEBUG(subsys, ...)                                   \

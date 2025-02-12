@@ -2134,8 +2134,8 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
 
     /* Generate new SM ID (TODO fix that to avoid reaching limit) */
     addr_key.id = ((unsigned int) (hg_atomic_incr32(&sm_id_g) - 1)) & 0xff;
-    NA_CHECK_SUBSYS_ERROR(fatal, addr_key.id > UINT8_MAX, error, ret,
-        NA_OVERFLOW, "Reached maximum number of SM instances for this process");
+    NA_CHECK_SUBSYS_FATAL(cls, addr_key.id > UINT8_MAX, error, ret, NA_OVERFLOW,
+        "Reached maximum number of SM instances for this process");
 
     /* Save listen state */
     na_sm_endpoint->listen = listen;
@@ -2177,7 +2177,7 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *name,
             NA_LOG_SUBSYS_DEBUG(
                 cls, "Using passed endpoint name as URI %s", name);
 
-            NA_CHECK_SUBSYS_ERROR(fatal, strchr(name, '/'), error, ret,
+            NA_CHECK_SUBSYS_FATAL(cls, strchr(name, '/'), error, ret,
                 NA_INVALID_ARG, "Cannot use '/' in endpoint name (passed '%s')",
                 name);
             strncpy(uri, name, NA_SM_MAX_FILENAME - 1);
@@ -3484,7 +3484,7 @@ na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
     nwrite = process_vm_writev(pid, local_iov, liovcnt, remote_iov, riovcnt, 0);
     if (unlikely(nwrite < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
-            NA_GOTO_SUBSYS_ERROR(fatal, error, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_FATAL(rma, error, ret, na_sm_errno_to_na(errno),
                 "process_vm_writev() failed (%s):\n"
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
@@ -3521,13 +3521,12 @@ na_sm_process_vm_writev(pid_t pid, const struct iovec *local_iov,
     na_return_t ret;
 
     kret = task_for_pid(mach_task_self(), pid, &remote_task);
-    NA_CHECK_SUBSYS_ERROR(fatal, kret != KERN_SUCCESS, error, ret,
-        NA_PERMISSION,
+    NA_CHECK_SUBSYS_FATAL(rma, kret != KERN_SUCCESS, error, ret, NA_PERMISSION,
         "task_for_pid() failed (%s)\n"
         "Permission must be set to access remote memory, please refer to the "
         "documentation for instructions.",
         mach_error_string(kret));
-    NA_CHECK_SUBSYS_ERROR(fatal, liovcnt > 1 || riovcnt > 1, error, ret,
+    NA_CHECK_SUBSYS_FATAL(rma, liovcnt > 1 || riovcnt > 1, error, ret,
         NA_OPNOTSUPPORTED, "Non-contiguous transfers are not supported");
 
     kret =
@@ -3558,7 +3557,7 @@ na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
     nread = process_vm_readv(pid, local_iov, liovcnt, remote_iov, riovcnt, 0);
     if (unlikely(nread < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
-            NA_GOTO_SUBSYS_ERROR(fatal, error, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_FATAL(rma, error, ret, na_sm_errno_to_na(errno),
                 "process_vm_readv() failed (%s):\n"
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
@@ -3596,13 +3595,12 @@ na_sm_process_vm_readv(pid_t pid, const struct iovec *local_iov,
     na_return_t ret;
 
     kret = task_for_pid(mach_task_self(), pid, &remote_task);
-    NA_CHECK_SUBSYS_ERROR(fatal, kret != KERN_SUCCESS, error, ret,
-        NA_PERMISSION,
+    NA_CHECK_SUBSYS_FATAL(rma, kret != KERN_SUCCESS, error, ret, NA_PERMISSION,
         "task_for_pid() failed (%s)\n"
         "Permission must be set to access remote memory, please refer to the "
         "documentation for instructions.",
         mach_error_string(kret));
-    NA_CHECK_SUBSYS_ERROR(fatal, liovcnt > 1 || riovcnt > 1, error, ret,
+    NA_CHECK_SUBSYS_FATAL(rma, liovcnt > 1 || riovcnt > 1, error, ret,
         NA_OPNOTSUPPORTED, "Non-contiguous transfers are not supported");
 
     kret = mach_vm_read_overwrite(remote_task,
@@ -4856,7 +4854,7 @@ na_sm_mem_handle_create_segments(na_class_t *na_class,
     NA_CHECK_SUBSYS_WARNING(mem, segment_count == 1, "Segment count is 1");
 
     /* Check that we do not exceed IOV_MAX */
-    NA_CHECK_SUBSYS_ERROR(fatal, segment_count > NA_SM_CLASS(na_class)->iov_max,
+    NA_CHECK_SUBSYS_FATAL(mem, segment_count > NA_SM_CLASS(na_class)->iov_max,
         error, ret, NA_INVALID_ARG, "Segment count exceeds IOV_MAX limit (%zu)",
         NA_SM_CLASS(na_class)->iov_max);
 
