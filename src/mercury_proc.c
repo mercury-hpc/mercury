@@ -268,9 +268,9 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     /* sync xdr up to current version of extra_buf */
     if (hg_proc->xdr.x_base != new_buf) { /* might be equal w/realloc() */
         hg_proc->xdr.x_base = new_buf;
-        hg_proc->xdr.x_private = new_buf + current_pos;
+        hg_proc->xdr.x_private = (char *) new_buf + current_pos;
     }
-    hg_proc->xdr.x_handy = hg_proc->extra_buf.size_left;
+    hg_proc->xdr.x_handy = (u_int) hg_proc->extra_buf.size_left;
 #endif
 
     return HG_SUCCESS;
@@ -311,7 +311,7 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 #ifdef HG_HAS_XDR
     /* sync xdr with our allocation with a call to xdr_inline() */
     HG_CHECK_SUBSYS_ERROR_NORET(proc,
-        xdr_inline(&hg_proc->xdr, alloc_size) != ptr, error,
+        xdr_inline(&hg_proc->xdr, (u_int) alloc_size) != ptr, error,
         "xdr_inline pointer mismatch!");
 #endif
     hg_proc->current_buf->buf_ptr =
