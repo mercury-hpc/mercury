@@ -2143,7 +2143,9 @@ na_ofi_log_level_to_hg(enum fi_log_level level)
         case FI_LOG_WARN:
             return HG_LOG_LEVEL_WARNING;
         case FI_LOG_TRACE:
+            return HG_LOG_LEVEL_MIN_DEBUG;
         case FI_LOG_INFO:
+            return HG_LOG_LEVEL_INFO;
         case FI_LOG_DEBUG:
             return HG_LOG_LEVEL_DEBUG;
         default:
@@ -2299,7 +2301,7 @@ na_ofi_tclass(enum na_traffic_class traffic_class)
         case NA_TC_UNSPEC:
             return FI_TC_UNSPEC;
         default:
-            NA_LOG_SUBSYS_ERROR(fatal, "Unsupported traffic class");
+            NA_LOG_SUBSYS_FATAL(cls, "Unsupported traffic class");
             return FI_TC_UNSPEC;
     }
 }
@@ -2319,7 +2321,7 @@ na_ofi_prov_addr_format(
         case NA_ADDR_UNSPEC:
             return na_ofi_prov_addr_format_pref[prov_type];
         default:
-            NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
+            NA_LOG_SUBSYS_FATAL(addr, "Unsupported address format");
             return FI_FORMAT_UNSPEC;
     }
 }
@@ -2348,7 +2350,7 @@ na_ofi_prov_addr_size(int addr_format)
         case FI_ADDR_STR:
             return sizeof(struct na_ofi_str_addr);
         default:
-            NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
+            NA_LOG_SUBSYS_FATAL(addr, "Unsupported address format");
             return 0;
     }
 }
@@ -2394,8 +2396,8 @@ na_ofi_str_to_raw_addr(
         case FI_ADDR_STR:
             return na_ofi_str_to_str(str, &addr->str);
         default:
-            NA_LOG_SUBSYS_ERROR(
-                fatal, "Unsupported address format: %d", addr_format);
+            NA_LOG_SUBSYS_FATAL(
+                addr, "Unsupported address format: %d", addr_format);
             return NA_PROTONOSUPPORT;
     }
 }
@@ -2714,7 +2716,7 @@ na_ofi_raw_addr_to_key(int addr_format, const union na_ofi_raw_addr *addr)
         case FI_ADDR_STR:
             return na_ofi_str_to_key(&addr->str);
         default:
-            NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
+            NA_LOG_SUBSYS_FATAL(addr, "Unsupported address format");
             return 0;
     }
 }
@@ -2834,7 +2836,7 @@ na_ofi_raw_addr_serialize_size(int addr_format)
         case FI_ADDR_STR:
             return sizeof(struct na_ofi_str_addr);
         default:
-            NA_LOG_SUBSYS_ERROR(fatal, "Unsupported address format");
+            NA_LOG_SUBSYS_FATAL(addr, "Unsupported address format");
             return 0;
     }
 }
@@ -3407,7 +3409,7 @@ na_ofi_provider_check(
     avail[strlen(avail) - 1] = '\0';
 
     /* display error message */
-    NA_LOG_SUBSYS_ERROR(fatal,
+    NA_LOG_SUBSYS_FATAL(cls,
         "Requested OFI provider \"%s\" (derived from \"%s\"\n"
         "   protocol) is not available. Please re-compile libfabric with "
         "support for\n"
@@ -3701,7 +3703,7 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
         prov_array[prov_count] = prov;
         prov_count++;
     }
-    NA_CHECK_SUBSYS_ERROR(fatal, prov_count == 0, error, ret, NA_NOENTRY,
+    NA_CHECK_SUBSYS_FATAL(cls, prov_count == 0, error, ret, NA_NOENTRY,
         "No provider found for \"%s\" provider on domain \"%s\"",
         na_ofi_prov_name[prov_type], domain_name);
 
@@ -3838,8 +3840,8 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             *src_addrlen_p = sizeof(struct na_ofi_opx_addr);
             break;
         default:
-            NA_LOG_SUBSYS_ERROR(
-                fatal, "Unsupported address format: %d", addr_format);
+            NA_LOG_SUBSYS_FATAL(
+                cls, "Unsupported address format: %d", addr_format);
             return NA_PROTONOSUPPORT;
     }
 
@@ -4292,7 +4294,7 @@ na_ofi_set_domain_ops(
             break;
         case NA_OFI_PROV_NULL:
         default:
-            NA_LOG_SUBSYS_ERROR(fatal,
+            NA_LOG_SUBSYS_FATAL(cls,
                 "auth_key not supported for this provider: %s",
                 na_ofi_prov_name[prov_type]);
             return NA_PROTONOSUPPORT;
@@ -4454,8 +4456,8 @@ na_ofi_parse_auth_key(const char *str, enum na_ofi_prov_type prov_type,
         case NA_OFI_PROV_OPX:
         case NA_OFI_PROV_VERBS_RXM:
         default:
-            NA_LOG_SUBSYS_ERROR(
-                fatal, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
+            NA_LOG_SUBSYS_FATAL(
+                cls, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
             return NA_PROTONOSUPPORT;
     }
 }
@@ -4615,8 +4617,8 @@ na_ofi_parse_auth_key_range(const char *str, enum na_ofi_prov_type prov_type,
         case NA_OFI_PROV_OPX:
         case NA_OFI_PROV_VERBS_RXM:
         default:
-            NA_LOG_SUBSYS_ERROR(
-                fatal, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
+            NA_LOG_SUBSYS_FATAL(
+                cls, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
             return NA_PROTONOSUPPORT;
     }
 }
@@ -4675,8 +4677,8 @@ na_ofi_gen_auth_key(const union na_ofi_auth_key *base_key, int index,
         case NA_OFI_PROV_OPX:
         case NA_OFI_PROV_VERBS_RXM:
         default:
-            NA_LOG_SUBSYS_ERROR(
-                fatal, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
+            NA_LOG_SUBSYS_FATAL(
+                cls, "unsupported provider: %s", na_ofi_prov_name[prov_type]);
             return NA_PROTONOSUPPORT;
     }
 }
@@ -7504,7 +7506,7 @@ na_ofi_check_protocol(const char *protocol_name)
         "Protocol %s not supported", protocol_name);
 
     /* Prevent < 1.20 builds to run with >= 1.20 runtimes */
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(cls,
         (type == NA_OFI_PROV_CXI) &&
             FI_VERSION_GE(runtime_version, FI_VERSION(1, 20)) &&
             FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 20)),
@@ -7516,7 +7518,7 @@ na_ofi_check_protocol(const char *protocol_name)
 
 /* Only the sockets provider is currently supported on macOS */
 #ifdef __APPLE__
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(cls,
         FI_VERSION_LT(runtime_version, FI_VERSION(1, 18)) &&
             (type != NA_OFI_PROV_SOCKETS),
         out, accept, false,
@@ -7578,7 +7580,7 @@ na_ofi_initialize(
 
     /* Get provider type */
     prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
-    NA_CHECK_SUBSYS_ERROR(fatal, prov_type == NA_OFI_PROV_NULL, error, ret,
+    NA_CHECK_SUBSYS_FATAL(cls, prov_type == NA_OFI_PROV_NULL, error, ret,
         NA_INVALID_ARG, "Protocol %s not supported", na_info->protocol_name);
 
 #if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
@@ -7587,7 +7589,7 @@ na_ofi_initialize(
      * code is not likely to work if Cray MPI is also used. Print error msg
      * suggesting workaround.
      */
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(cls,
         prov_type == NA_OFI_PROV_GNI && !getenv("MPICH_GNI_NDREG_ENTRIES"),
         error, ret, NA_INVALID_ARG,
         "ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES "
@@ -7702,7 +7704,7 @@ na_ofi_initialize(
     na_ofi_class->no_wait = na_ofi_class->domain->no_wait || no_wait;
 
     /* Set context limits */
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(cls,
         na_init_info->max_contexts > na_ofi_class->domain->context_max, error,
         ret, NA_INVALID_ARG,
         "Maximum number of requested contexts (%" PRIu8 ") exceeds provider "
@@ -7839,7 +7841,7 @@ na_ofi_context_create(na_class_t *na_class, void **context_p, uint8_t id)
         na_ofi_context->eq = na_ofi_class->endpoint->eq;
     } else {
         int32_t n_contexts = hg_atomic_get32(&na_ofi_class->n_contexts);
-        NA_CHECK_SUBSYS_ERROR(fatal,
+        NA_CHECK_SUBSYS_FATAL(ctx,
             n_contexts >= (int32_t) na_ofi_class->context_max ||
                 id >= na_ofi_class->context_max,
             error, ret, NA_OPNOTSUPPORTED,
@@ -8047,7 +8049,7 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
     na_return_t ret;
 
     /* Check provider from name */
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(addr,
         NA_OFI_CLASS(na_class)->fabric->prov_type != NA_OFI_PROV_TCP &&
             na_ofi_addr_prov(name) != NA_OFI_CLASS(na_class)->fabric->prov_type,
         error, ret, NA_INVALID_ARG, "Unrecognized provider type found from: %s",
@@ -8719,7 +8721,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
     NA_CHECK_SUBSYS_WARNING(mem, segment_count == 1, "Segment count is 1");
 
     /* Check that we do not exceed IOV limit */
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(mem,
         segment_count >
             NA_OFI_CLASS(na_class)->fi_info->domain_attr->mr_iov_limit,
         error, ret, NA_INVALID_ARG,

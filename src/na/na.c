@@ -228,7 +228,6 @@ static HG_LOG_DEBUG_DECL_DLOG(NA_SUBSYS_NAME) = HG_LOG_DLOG_INITIALIZER(
 
 HG_LOG_DLOG_DECL_REGISTER(NA_SUBSYS_NAME);
 #endif
-HG_LOG_SUBSYS_DECL_STATE_REGISTER(fatal, NA_SUBSYS_NAME, HG_LOG_ON);
 
 /* Specific log outlets */
 NA_PLUGIN_VISIBILITY HG_LOG_SUBSYS_DECL_REGISTER(cls, NA_SUBSYS_NAME);
@@ -271,8 +270,9 @@ na_initialize(void)
         plugin_path = NA_DEFAULT_PLUGIN_PATH;
 
     ret = na_plugin_scan_path(plugin_path, &na_plugin_dynamic_g);
-    NA_CHECK_SUBSYS_WARNING(fatal, ret != NA_SUCCESS,
-        "No plugin found in path (%s), consider setting NA_PLUGIN_PATH.",
+    NA_CHECK_FATAL_DONE(ret != NA_SUCCESS,
+        "No usable plugin found in path (%s), consider setting NA_PLUGIN_PATH "
+        "if path indicated is not valid.",
         plugin_path);
 }
 
@@ -341,7 +341,7 @@ na_info_parse(
         goto done;
 
     /* Format sanity check ("://") */
-    NA_CHECK_SUBSYS_ERROR(fatal, strncmp(locator, "//", 2) != 0, error, ret,
+    NA_CHECK_SUBSYS_FATAL(cls, strncmp(locator, "//", 2) != 0, error, ret,
         NA_PROTONOSUPPORT, "Bad address string format");
 
     /* :// followed by empty hostname is allowed, explicitly check here */
@@ -455,7 +455,7 @@ na_plugin_check_protocol(const struct na_class_ops *const class_ops[],
         if (ops->check_protocol(protocol_name))
             break;
         else
-            NA_CHECK_SUBSYS_ERROR(fatal, class_name != NULL, error, ret,
+            NA_CHECK_SUBSYS_FATAL(cls, class_name != NULL, error, ret,
                 NA_PROTONOSUPPORT,
                 "Specified class name \"%s\" does not support requested "
                 "protocol",
@@ -589,18 +589,18 @@ na_plugin_open(
     /* Open plugin */
     NA_LOG_SUBSYS_DEBUG(cls, "Opening plugin %s", entry->path);
     entry->dl_handle = hg_dl_open(entry->path);
-    NA_CHECK_SUBSYS_ERROR(cls, entry->dl_handle == NULL, error, ret, NA_NOENTRY,
-        "Could not open lib %s (%s)", entry->path, hg_dl_error());
+    NA_CHECK_SUBSYS_FATAL(cls, entry->dl_handle == NULL, error, ret, NA_NOENTRY,
+        "Could not open lib %s, %s", entry->path, hg_dl_error());
 
     /* Retrieve plugin name from file name */
     rc = sscanf(file, NA_PLUGIN_SCN_NAME, plugin_name);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
+    NA_CHECK_SUBSYS_FATAL(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Could not find plugin name (%s)", file);
 
     /* Generate plugin ops symbol name */
     rc = snprintf(plugin_ops_name, sizeof(plugin_ops_name), "na_%s_class_ops_g",
         plugin_name);
-    NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > (int) sizeof(plugin_ops_name),
+    NA_CHECK_SUBSYS_FATAL(cls, rc < 0 || rc > (int) sizeof(plugin_ops_name),
         error, ret, NA_OVERFLOW,
         "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
         sizeof(plugin_ops_name));
@@ -608,8 +608,8 @@ na_plugin_open(
     /* Get plugin ops */
     entry->ops = (const struct na_class_ops *) hg_dl_sym(
         entry->dl_handle, plugin_ops_name);
-    NA_CHECK_SUBSYS_ERROR(cls, entry->ops == NULL, error, ret, NA_NOENTRY,
-        "Could not find symbol %s (%s)", plugin_ops_name, hg_dl_error());
+    NA_CHECK_SUBSYS_FATAL(cls, entry->ops == NULL, error, ret, NA_NOENTRY,
+        "Could not find symbol %s, %s", plugin_ops_name, hg_dl_error());
 
     return NA_SUCCESS;
 
@@ -796,7 +796,7 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
 
     /* Ensure init info is API compatible */
     if (na_init_info) {
-        NA_CHECK_SUBSYS_ERROR(fatal, version == 0, error, ret, NA_INVALID_ARG,
+        NA_CHECK_SUBSYS_FATAL(cls, version == 0, error, ret, NA_INVALID_ARG,
             "API version cannot be 0");
         NA_LOG_SUBSYS_DEBUG(cls, "NA init info version used: v%d.%d",
             NA_MAJOR(version), NA_MINOR(version));
@@ -856,7 +856,7 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
             cls, error, ret, "Could not check dynamic plugins");
 #endif
 
-        NA_CHECK_SUBSYS_ERROR(fatal, ops == NULL, error, ret, NA_PROTONOSUPPORT,
+        NA_CHECK_SUBSYS_FATAL(cls, ops == NULL, error, ret, NA_PROTONOSUPPORT,
             "No suitable plugin found that matches %s", info_string);
 #ifdef NA_HAS_DYNAMIC_PLUGINS
     }

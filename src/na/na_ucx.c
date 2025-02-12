@@ -1108,12 +1108,15 @@ na_ucs_log_level_to_hg(ucs_log_level_t level)
 {
     switch (level) {
         case UCS_LOG_LEVEL_FATAL:
+            return HG_LOG_LEVEL_FATAL;
         case UCS_LOG_LEVEL_ERROR:
             return HG_LOG_LEVEL_ERROR;
         case UCS_LOG_LEVEL_WARN:
             return HG_LOG_LEVEL_WARNING;
         case UCS_LOG_LEVEL_DIAG:
+            return HG_LOG_LEVEL_MIN_DEBUG;
         case UCS_LOG_LEVEL_INFO:
+            return HG_LOG_LEVEL_INFO;
         case UCS_LOG_LEVEL_DEBUG:
         case UCS_LOG_LEVEL_TRACE:
         case UCS_LOG_LEVEL_TRACE_REQ:
@@ -1134,12 +1137,16 @@ static const char *
 na_ucs_log_level_to_string(enum hg_log_level level)
 {
     switch (level) {
+        case HG_LOG_LEVEL_FATAL:
+            return "fatal";
         case HG_LOG_LEVEL_ERROR:
             return "error";
         case HG_LOG_LEVEL_WARNING:
             return "warn";
         case HG_LOG_LEVEL_MIN_DEBUG:
-            return "trace";
+            return "diag";
+        case HG_LOG_LEVEL_INFO:
+            return "info";
         case HG_LOG_LEVEL_DEBUG:
             return "debug";
         case HG_LOG_LEVEL_NONE:
@@ -3490,7 +3497,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
     int rc;
 
     /* Only support 'all' or same protocol */
-    NA_CHECK_SUBSYS_ERROR(fatal,
+    NA_CHECK_SUBSYS_FATAL(addr,
         strncmp(name, "all", strlen("all")) &&
             strncmp(name, na_ucx_class->protocol_name,
                 strlen(na_ucx_class->protocol_name)),
