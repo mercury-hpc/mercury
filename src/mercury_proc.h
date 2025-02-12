@@ -138,8 +138,8 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
         do {                                                                   \
             HG_PROC_CHECK_SIZE(proc, RNDUP(size), label, ret);                 \
                                                                                \
-            if (xdr_opaque(hg_proc_get_xdr_ptr(proc), (char *) data, size) ==  \
-                0) {                                                           \
+            if (xdr_opaque(hg_proc_get_xdr_ptr(proc), (char *) data,           \
+                    (unsigned int) size) == 0) {                               \
                 ret = HG_PROTOCOL_ERROR;                                       \
                 goto label;                                                    \
             }                                                                  \
