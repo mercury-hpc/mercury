@@ -3504,6 +3504,15 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
             hints->ep_attr->protocol =
                 (uint32_t) na_ofi_prov_ep_proto[prov_type];
 
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(2, 0))
+        if (FI_VERSION_GE(fi_version(), FI_VERSION(2, 0)) &&
+            (prov_type == NA_OFI_PROV_TCP)) {
+            char *env = getenv("NA_OFI_TCP_TAG_RPC");
+            if (env == NULL || atoi(env) != 0) /* Enabled by default */
+                hints->ep_attr->mem_tag_format = FI_TAG_RPC;
+        }
+#endif
+
         /* add any additional caps that are particular to this provider */
         hints->caps |= na_ofi_prov_extra_caps[prov_type];
 #if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
@@ -5146,11 +5155,6 @@ na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
         error, ret, NA_OVERFLOW,
         "Msg size max (%zu) larger than provider max (%zu)",
         na_ofi_endpoint->expected_msg_size_max, fi_info->ep_attr->max_msg_size);
-
-#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(2, 0))
-    /* Tell ofi to drop unexpected tagged messages */
-    fi_info->ep_attr->mem_tag_format = FI_TAG_RPC;
-#endif
 
     if (sep) {
         ret = na_ofi_sep_open(
