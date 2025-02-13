@@ -5147,6 +5147,11 @@ na_ofi_endpoint_open(const struct na_ofi_fabric *na_ofi_fabric,
         "Msg size max (%zu) larger than provider max (%zu)",
         na_ofi_endpoint->expected_msg_size_max, fi_info->ep_attr->max_msg_size);
 
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(2, 0))
+    /* Tell ofi to drop unexpected tagged messages */
+    fi_info->ep_attr->mem_tag_format = FI_TAG_RPC;
+#endif
+
     if (sep) {
         ret = na_ofi_sep_open(
             na_ofi_domain, fi_info, max_contexts, na_ofi_endpoint);
