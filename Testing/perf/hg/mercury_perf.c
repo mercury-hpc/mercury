@@ -128,19 +128,45 @@ hg_perf_request_wait(struct hg_perf_class_info *info,
     do {
         unsigned int count = 0, actual_count = 0;
 
-        if (info->poll_set && !HG_Event_ready(info->context)) {
-            struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
-            unsigned int actual_events = 0;
-            int rc;
+        if (info->poll_set && timeout_ms != 0) {
+            if (!hg_time_less(now, info->spin_deadline)) {
+                /* Reached spin deadline, reset to force re-evaluation */
+                info->spin_flag = false;
+                info->spin_deadline = hg_time_from_ms(0);
+            }
 
-            HG_TEST_LOG_DEBUG("Waiting for %u ms",
-                hg_time_to_ms(hg_time_subtract(deadline, now)));
+            if (!info->spin_flag) {
+                if (!HG_Event_ready(info->context)) {
+                    struct hg_poll_event poll_event = {
+                        .events = 0, .data.ptr = NULL};
+                    unsigned int actual_events = 0;
+                    int rc;
 
-            rc = hg_poll_wait(info->poll_set,
-                hg_time_to_ms(hg_time_subtract(deadline, now)), 1, &poll_event,
-                &actual_events);
-            HG_TEST_CHECK_ERROR(rc != 0, error, ret, HG_PROTOCOL_ERROR,
-                "hg_poll_wait() failed");
+                    HG_TEST_LOG_DEBUG("Waiting for %u ms",
+                        hg_time_to_ms(hg_time_subtract(deadline, now)));
+
+                    rc = hg_poll_wait(info->poll_set,
+                        hg_time_to_ms(hg_time_subtract(deadline, now)), 1,
+                        &poll_event, &actual_events);
+                    HG_TEST_CHECK_ERROR(rc != 0, error, ret, HG_PROTOCOL_ERROR,
+                        "hg_poll_wait() failed");
+                    if (actual_events > 0) {
+                        /* If we woke up with an event, set spin flag to true to
+                         * keep spinning for a while until we reach
+                         * spin_deadline or deadline/timeout. */
+                        hg_time_get_current_ms(&now);
+                        info->spin_flag = true;
+                        info->spin_deadline =
+                            hg_time_add(now, hg_time_from_ms(1000));
+                    }
+                } else {
+                    /* If we did not block, set spin flag to true to keep
+                     * spinning until we reach spin_deadline. */
+                    info->spin_flag = true;
+                    info->spin_deadline =
+                        hg_time_add(now, hg_time_from_ms(1000));
+                }
+            }
         }
 
         ret = HG_Event_progress(info->context, &count);
