@@ -76,17 +76,46 @@ na_perf_loop(struct na_perf_info *info, na_perf_recv_op_t recv_op,
     while (!recv_info.done) {
         unsigned int count = 0, actual_count = 0;
 
-        if (info->poll_set && NA_Poll_try_wait(info->na_class, info->context)) {
-            struct hg_poll_event poll_event = {.events = 0, .data.ptr = NULL};
-            unsigned int actual_events = 0;
-            int rc;
+        if (info->poll_set) {
+            hg_time_t now;
 
-            NA_TEST_LOG_DEBUG("Waiting for 1000 ms");
+            hg_time_get_current_ms(&now);
+            if (!hg_time_less(now, info->spin_deadline)) {
+                /* Reached spin deadline, reset to force re-evaluation */
+                info->spin_flag = false;
+                info->spin_deadline = hg_time_from_ms(0);
+            }
 
-            rc = hg_poll_wait(
-                info->poll_set, 1000, 1, &poll_event, &actual_events);
-            NA_TEST_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-                "hg_poll_wait() failed");
+            if (!info->spin_flag) {
+                if (NA_Poll_try_wait(info->na_class, info->context)) {
+                    struct hg_poll_event poll_event = {
+                        .events = 0, .data.ptr = NULL};
+                    unsigned int actual_events = 0;
+                    int rc;
+
+                    NA_TEST_LOG_DEBUG("Waiting for 1000 ms");
+
+                    rc = hg_poll_wait(
+                        info->poll_set, 1000, 1, &poll_event, &actual_events);
+                    NA_TEST_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+                        "hg_poll_wait() failed");
+                    if (actual_events > 0) {
+                        /* If we woke up with an event, set spin flag to true to
+                         * keep spinning for a while until we reach
+                         * spin_deadline. */
+                        hg_time_get_current_ms(&now);
+                        info->spin_flag = true;
+                        info->spin_deadline =
+                            hg_time_add(now, hg_time_from_ms(1000));
+                    }
+                } else {
+                    /* If we did not block, set spin flag to true to keep
+                     * spinning until we reach spin_deadline. */
+                    info->spin_flag = true;
+                    info->spin_deadline =
+                        hg_time_add(now, hg_time_from_ms(1000));
+                }
+            }
         }
 
         ret = NA_Poll(info->na_class, info->context, &count);
