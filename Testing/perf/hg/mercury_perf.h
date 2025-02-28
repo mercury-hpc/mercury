@@ -55,7 +55,9 @@ struct hg_perf_class_info {
     size_t buf_size_max;
     hg_bulk_t *local_bulk_handles;
     hg_bulk_t *remote_bulk_handles;
-    int wait_fd; /* Wait fd */
+    int wait_fd;             /* Wait fd */
+    hg_time_t spin_deadline; /* Spin deadline */
+    bool spin_flag;          /* Spin flag */
     int class_id;
     bool done;
     bool verify;

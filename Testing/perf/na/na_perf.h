@@ -47,6 +47,8 @@ struct na_perf_info {
     size_t rma_size_max;              /* Max buffer size */
     size_t rma_count;                 /* Buffer count */
     int poll_fd;                      /* Poll fd */
+    hg_time_t spin_deadline;          /* Spin deadline */
+    bool spin_flag;                   /* Spin flag */
 };
 
 struct na_perf_request_info {
