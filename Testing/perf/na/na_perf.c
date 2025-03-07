@@ -36,10 +36,46 @@
 /* Local Prototypes */
 /********************/
 
+static struct na_perf_exp_op_id *
+na_perf_exp_op_id_alloc(struct na_perf_info *info);
+
+static void
+na_perf_exp_op_id_free(struct na_perf_exp_op_id *exp_op_id);
+
 /*******************/
 /* Local Variables */
 /*******************/
 
+static struct na_perf_exp_op_id *
+na_perf_exp_op_id_alloc(struct na_perf_info *info)
+{
+    struct na_perf_exp_op_id *exp_op_id = NULL;
+
+    exp_op_id = (struct na_perf_exp_op_id *) calloc(1, sizeof(*exp_op_id));
+    NA_TEST_CHECK_ERROR_NORET(
+        exp_op_id == NULL, error, "Could not allocate exp op id");
+    exp_op_id->info = info;
+
+    exp_op_id->op_id = NA_Op_create(info->na_class, NA_OP_SINGLE);
+    NA_TEST_CHECK_ERROR_NORET(
+        exp_op_id->op_id == NULL, error, "NA_Op_create() failed");
+
+    return exp_op_id;
+
+error:
+    free(exp_op_id);
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_perf_exp_op_id_free(struct na_perf_exp_op_id *exp_op_id)
+{
+    NA_Op_destroy(exp_op_id->info->na_class, exp_op_id->op_id);
+    free(exp_op_id);
+}
+
+/*---------------------------------------------------------------------------*/
 na_return_t
 na_perf_request_wait(struct na_perf_info *info,
     struct na_perf_request_info *request_info, unsigned int timeout_ms,
@@ -138,6 +174,39 @@ na_perf_request_complete(const struct na_cb_info *na_cb_info)
 }
 
 /*---------------------------------------------------------------------------*/
+struct na_perf_exp_op_id *
+na_perf_exp_op_id_get(struct na_perf_info *info)
+{
+    struct na_perf_exp_op_id *exp_op_id = NULL;
+
+    exp_op_id = STAILQ_FIRST(&info->exp_op_id_queue);
+    if (exp_op_id)
+        STAILQ_REMOVE_HEAD(&info->exp_op_id_queue, entry);
+    else {
+        NA_TEST_LOG_WARNING("Exp op id queue empty, allocating new one");
+        exp_op_id = na_perf_exp_op_id_alloc(info);
+        NA_TEST_CHECK_ERROR_NORET(
+            exp_op_id == NULL, error, "Could not allocate exp op id");
+    }
+    info->exp_op_id_in_use++;
+
+    return exp_op_id;
+
+error:
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+na_perf_exp_op_id_release(struct na_perf_exp_op_id *exp_op_id)
+{
+    struct na_perf_info *info = exp_op_id->info;
+
+    STAILQ_INSERT_TAIL(&info->exp_op_id_queue, exp_op_id, entry);
+    info->exp_op_id_in_use--;
+}
+
+/*---------------------------------------------------------------------------*/
 na_return_t
 na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
 {
@@ -148,6 +217,7 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
 
     /* Initialize the interface */
     memset(info, 0, sizeof(*info));
+    STAILQ_INIT(&info->exp_op_id_queue);
     if (listen)
         info->na_test_info.listen = true;
     ret = NA_Test_init(argc, argv, &info->na_test_info);
@@ -316,6 +386,12 @@ na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info)
     info->msg_exp_op_id = NA_Op_create(info->na_class, NA_OP_SINGLE);
     NA_TEST_CHECK_ERROR(info->msg_exp_op_id == NULL, error, ret, NA_NOMEM,
         "NA_Op_create() failed");
+    if (listen) {
+        struct na_perf_exp_op_id *exp_op_id = na_perf_exp_op_id_alloc(info);
+        NA_TEST_CHECK_ERROR(
+            exp_op_id == NULL, error, ret, NA_NOMEM, "NA_Op_create() failed");
+        STAILQ_INSERT_HEAD(&info->exp_op_id_queue, exp_op_id, entry);
+    }
 
     /* Create RMA operation IDs */
     info->rma_op_ids =
@@ -347,6 +423,13 @@ na_perf_cleanup(struct na_perf_info *info)
 
     if (info->msg_exp_op_id != NULL)
         NA_Op_destroy(info->na_class, info->msg_exp_op_id);
+
+    while (!STAILQ_EMPTY(&info->exp_op_id_queue)) {
+        struct na_perf_exp_op_id *exp_op_id =
+            STAILQ_FIRST(&info->exp_op_id_queue);
+        STAILQ_REMOVE_HEAD(&info->exp_op_id_queue, entry);
+        na_perf_exp_op_id_free(exp_op_id);
+    }
 
     if (info->rma_op_ids != NULL) {
         size_t i;
