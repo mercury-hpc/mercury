@@ -47,6 +47,9 @@ static void
 na_perf_process_recv(struct na_perf_recv_info *recv_info, void *actual_buf,
     size_t actual_buf_size, na_addr_t *source, na_tag_t tag);
 
+static void
+na_perf_send_cb(const struct na_cb_info *na_cb_info);
+
 /*******************/
 /* Local Variables */
 /*******************/
@@ -73,7 +76,7 @@ na_perf_loop(struct na_perf_info *info, na_perf_recv_op_t recv_op,
         error, ret, "%s() failed (%s)", recv_op_name, NA_Error_to_string(ret));
 
     /* Progress loop */
-    while (!recv_info.done) {
+    while (!recv_info.done || (info->exp_op_id_in_use > 0)) {
         unsigned int count = 0, actual_count = 0;
 
         if (info->poll_set) {
@@ -197,14 +200,18 @@ na_perf_process_recv(struct na_perf_recv_info *recv_info,
             na_perf_init_data(info->msg_exp_buf, info->msg_exp_size_max,
                 info->msg_exp_header_size);
             break;
-        case NA_PERF_TAG_LAT:
+        case NA_PERF_TAG_LAT: {
+            struct na_perf_exp_op_id *exp_op_id = na_perf_exp_op_id_get(info);
+            NA_TEST_CHECK_ERROR(exp_op_id == NULL, done, ret, NA_NOMEM,
+                "na_perf_exp_op_id_get() failed");
+
             /* Respond with same data */
-            ret = NA_Msg_send_expected(info->na_class, info->context, NULL,
-                NULL, info->msg_exp_buf, actual_buf_size, info->msg_exp_data,
-                source, 0, tag, info->msg_exp_op_id);
+            ret = NA_Msg_send_expected(info->na_class, info->context,
+                na_perf_send_cb, exp_op_id, info->msg_exp_buf, actual_buf_size,
+                info->msg_exp_data, source, 0, tag, exp_op_id->op_id);
             NA_TEST_CHECK_NA_ERROR(done, ret,
                 "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
-            break;
+        } break;
         case NA_PERF_TAG_PUT:
             ret = na_perf_mem_handle_send(info, source, tag);
             NA_TEST_CHECK_NA_ERROR(done, ret,
@@ -235,6 +242,13 @@ na_perf_process_recv(struct na_perf_recv_info *recv_info,
 
 done:
     recv_info->ret = ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_perf_send_cb(const struct na_cb_info *na_cb_info)
+{
+    na_perf_exp_op_id_release((struct na_perf_exp_op_id *) na_cb_info->arg);
 }
 
 /*---------------------------------------------------------------------------*/

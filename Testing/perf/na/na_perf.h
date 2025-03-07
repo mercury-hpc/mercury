@@ -33,22 +33,30 @@ struct na_perf_info {
     void *msg_exp_data;               /* Plugin data */
     na_op_id_t *msg_unexp_op_id;      /* Msg unexpected op ID */
     na_op_id_t *msg_exp_op_id;        /* Msg expected op ID */
-    void *rma_buf;                    /* RMA buffer */
-    void *verify_buf;                 /* Verify buffer */
-    na_mem_handle_t *local_handle;    /* Local handle */
-    na_mem_handle_t *remote_handle;   /* Remote handle */
-    na_mem_handle_t *verify_handle;   /* Local handle to verify buffer */
-    na_op_id_t **rma_op_ids;          /* RMA op IDs */
-    size_t msg_unexp_header_size;     /* Header size */
-    size_t msg_exp_header_size;       /* Header size */
-    size_t msg_unexp_size_max;        /* Max buffer size */
-    size_t msg_exp_size_max;          /* Max buffer size */
-    size_t rma_size_min;              /* Min buffer size */
-    size_t rma_size_max;              /* Max buffer size */
-    size_t rma_count;                 /* Buffer count */
-    int poll_fd;                      /* Poll fd */
-    hg_time_t spin_deadline;          /* Spin deadline */
-    bool spin_flag;                   /* Spin flag */
+    STAILQ_HEAD(, na_perf_exp_op_id) exp_op_id_queue; /* Op ID queue */
+    size_t exp_op_id_in_use;                          /* Op ID in use */
+    void *rma_buf;                                    /* RMA buffer */
+    void *verify_buf;                                 /* Verify buffer */
+    na_mem_handle_t *local_handle;                    /* Local handle */
+    na_mem_handle_t *remote_handle;                   /* Remote handle */
+    na_mem_handle_t *verify_handle; /* Local handle to verify buffer */
+    na_op_id_t **rma_op_ids;        /* RMA op IDs */
+    size_t msg_unexp_header_size;   /* Header size */
+    size_t msg_exp_header_size;     /* Header size */
+    size_t msg_unexp_size_max;      /* Max buffer size */
+    size_t msg_exp_size_max;        /* Max buffer size */
+    size_t rma_size_min;            /* Min buffer size */
+    size_t rma_size_max;            /* Max buffer size */
+    size_t rma_count;               /* Buffer count */
+    int poll_fd;                    /* Poll fd */
+    hg_time_t spin_deadline;        /* Spin deadline */
+    bool spin_flag;                 /* Spin flag */
+};
+
+struct na_perf_exp_op_id {
+    struct na_perf_info *info;
+    na_op_id_t *op_id;
+    STAILQ_ENTRY(na_perf_exp_op_id) entry;
 };
 
 struct na_perf_request_info {
@@ -88,6 +96,12 @@ na_perf_request_wait(struct na_perf_info *info,
 
 void
 na_perf_request_complete(const struct na_cb_info *na_cb_info);
+
+struct na_perf_exp_op_id *
+na_perf_exp_op_id_get(struct na_perf_info *info);
+
+void
+na_perf_exp_op_id_release(struct na_perf_exp_op_id *exp_op_id);
 
 na_return_t
 na_perf_init(int argc, char *argv[], bool listen, struct na_perf_info *info);
