@@ -62,6 +62,7 @@ struct hg_perf_class_info {
     bool done;
     bool verify;
     bool bidir;
+    bool barrier; /* Use barriers for perf measurements */
 };
 
 struct hg_perf_request {

@@ -93,14 +93,11 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
         }
     }
 
-    if (hg_test_info->na_test_info.mpi_info.size > 1)
+    if (info->barrier && hg_test_info->na_test_info.mpi_info.size > 1)
         NA_Test_barrier(&hg_test_info->na_test_info);
-
     hg_time_get_current(&t2);
 
-    if (hg_test_info->na_test_info.mpi_info.rank == 0)
-        hg_perf_print_lat(
-            hg_test_info, info, buf_size, hg_time_subtract(t2, t1));
+    hg_perf_print_lat(hg_test_info, info, buf_size, hg_time_subtract(t2, t1));
 
     return HG_SUCCESS;
 

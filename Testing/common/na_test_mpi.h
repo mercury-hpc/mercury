@@ -64,6 +64,10 @@ na_return_t
 na_test_mpi_bcast(const struct na_test_mpi_info *mpi_info, void *buffer,
     size_t size, int root);
 
+na_return_t
+na_test_mpi_gather(const struct na_test_mpi_info *mpi_info, const void *sendbuf,
+    size_t sendcount, void *recvbuf, size_t recvcount, int root);
+
 #ifdef __cplusplus
 }
 #endif

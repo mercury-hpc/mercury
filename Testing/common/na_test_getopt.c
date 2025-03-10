@@ -39,7 +39,7 @@ const struct na_test_opt na_test_opt_g[] = {
     {"handle", require_arg, 'x'},
     {"memory", no_arg, 'm'},
     {"threads", require_arg, 't'},
-    {"bidirectional", no_arg, 'B'},
+    {"barrier", no_arg, 'B'},
     {"force-register", no_arg, 'R'},
     {"verify", no_arg, 'v'},
     {"millionbps", no_arg, 'M'},

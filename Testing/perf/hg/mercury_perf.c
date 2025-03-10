@@ -34,8 +34,11 @@
     XSTRING(HG_VERSION_MAJOR)                                                  \
     "." XSTRING(HG_VERSION_MINOR) "." XSTRING(HG_VERSION_PATCH)
 
-#define NDIGITS 2
-#define NWIDTH  24
+#define NDIGITS        2
+#define NWIDTH         25
+#define NWIDTH_SMALL   21
+#define NWIDTH_SMALLER 17
+#define NWIDTH_TINY    12
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -270,6 +273,7 @@ hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
     info->hg_class = hg_class;
     info->verify = hg_test_info->na_test_info.verify;
     info->bidir = hg_test_info->bidirectional;
+    info->barrier = hg_test_info->barrier;
 
     /* Add extra info to handles created */
     ret = HG_Class_set_handle_create_callback(
@@ -785,21 +789,27 @@ void
 hg_perf_print_header_lat(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, const char *benchmark)
 {
+    size_t comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
+
     printf("# %s v%s\n", benchmark, VERSION_NAME);
-    printf(
-        "# %d client process(es)\n", hg_test_info->na_test_info.mpi_info.size);
+    printf("# %zu client process(es)\n", comm_size);
     printf("# Loop %d times from size %zu to %zu byte(s) with %zu handle(s) "
            "in-flight\n",
         hg_test_info->na_test_info.loop, info->buf_size_min, info->buf_size_max,
         info->handle_max);
-    if (info->handle_max * (size_t) hg_test_info->na_test_info.mpi_info.size <
-        info->target_addr_max)
+    if (info->handle_max * comm_size < info->target_addr_max)
         printf("# WARNING number of handles in flight less than number of "
                "targets\n");
     if (info->verify)
         printf("# WARNING verifying data, output will be slower\n");
-    printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, "Avg time (us)", NWIDTH,
-        "Avg rate (RPC/s)");
+    if (!info->barrier && comm_size > 1)
+        printf("%-*s%*s%*s%*s%*s%*s%*s\n", 10, "# Size", NWIDTH_SMALL,
+            "\"Rate (ops/s)\"", NWIDTH_SMALL, "\"Rate/rank (ops/s)\"",
+            NWIDTH_SMALL, "\"Min Rate (ops/s)\"", NWIDTH_TINY, "\"Min Rank\"",
+            NWIDTH_SMALL, "\"Max Rate (ops/s)\"", NWIDTH_TINY, "\"Max Rank\"");
+    else
+        printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, "\"Rate (ops/s)\"", NWIDTH,
+            "\"Time (us)\"");
     fflush(stdout);
 }
 
@@ -808,17 +818,73 @@ void
 hg_perf_print_lat(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t)
 {
-    double rpc_time;
+    double rpc_time, *rpc_times = NULL;
     size_t loop = (size_t) hg_test_info->na_test_info.loop,
            handle_max = (size_t) info->handle_max,
            dir = (size_t) (hg_test_info->bidirectional ? 2 : 1),
-           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
+           comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
+    int comm_rank = (int) hg_test_info->na_test_info.mpi_info.rank;
 
-    rpc_time = hg_time_to_double(t) * 1e6 /
-               (double) (loop * handle_max * dir * mpi_comm_size);
+    rpc_time = hg_time_to_double(t) * 1e6 / (double) (loop * handle_max * dir);
 
-    printf("%-*zu%*.*f%*lu\n", 10, buf_size, NWIDTH, NDIGITS, rpc_time, NWIDTH,
-        (long unsigned int) (1e6 / rpc_time));
+    if (!info->barrier && comm_size > 1) {
+        na_return_t na_ret;
+
+        if (comm_rank == 0) {
+            rpc_times = (double *) malloc(comm_size * sizeof(double));
+            HG_TEST_CHECK_ERROR_NORET(
+                rpc_times == NULL, cleanup, "Could not allocate rpc_times");
+        }
+
+        na_ret = na_test_mpi_gather(&hg_test_info->na_test_info.mpi_info,
+            &rpc_time, sizeof(rpc_time), rpc_times, sizeof(rpc_time), 0);
+        HG_TEST_CHECK_ERROR_NORET(
+            na_ret != NA_SUCCESS, cleanup, "Could not gather rpc_times");
+    }
+
+    if (comm_rank != 0)
+        return;
+
+    if (!info->barrier && comm_size > 1) {
+        double rpc_time_min = 0, rpc_time_max = 0;
+        double rpc_rate_min = 0, rpc_rate_max = 0;
+        double rpc_time_avg = 0;
+        double rpc_rate_sum = 0, rpc_rate_avg = 0;
+        size_t i, rank_min = 0, rank_max = 0;
+
+        for (i = 0; i < comm_size; i++) {
+            if (!rpc_time_min || rpc_times[i] < rpc_time_min) {
+                rpc_time_min = rpc_times[i];
+                rank_max = i; /* Min time is max rate */
+            }
+            if (rpc_times[i] > rpc_time_max) {
+                rpc_time_max = rpc_times[i];
+                rank_min = i; /* Max time is min rate */
+            }
+            rpc_time_avg += rpc_times[i];
+            rpc_rate_sum += 1e6 / rpc_times[i];
+        }
+
+        rpc_time_avg /= (double) comm_size;
+        rpc_rate_avg = 1e6 / rpc_time_avg;
+        rpc_rate_min = 1e6 / rpc_time_max;
+        rpc_rate_max = 1e6 / rpc_time_min;
+
+        printf("%-*zu%*lu%*lu%*.*f%*zu%*.*f%*zu\n", 10, buf_size, NWIDTH_SMALL,
+            (long unsigned int) rpc_rate_sum, NWIDTH_SMALL,
+            (long unsigned int) rpc_rate_avg, NWIDTH_SMALL, NDIGITS,
+            rpc_rate_min, NWIDTH_TINY, rank_min, NWIDTH_SMALL, NDIGITS,
+            rpc_rate_max, NWIDTH_TINY, rank_max);
+    } else {
+        rpc_time /= (double) comm_size;
+
+        printf("%-*zu%*lu%*.*f\n", 10, buf_size, NWIDTH,
+            (long unsigned int) (1e6 / rpc_time), NWIDTH, NDIGITS, rpc_time);
+    }
+
+cleanup:
+    if (comm_size > 1)
+        free(rpc_times);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -858,26 +924,53 @@ void
 hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, const char *benchmark)
 {
+    size_t comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
     const char *bw_label = (hg_test_info->na_test_info.mbps)
-                               ? "Bandwidth (MB/s)"
-                               : "Bandwidth (MiB/s)";
+                               ? "\"Bandwidth (MB/s)\""
+                               : "\"Bandwidth (MiB/s)\"";
 
     printf("# %s v%s\n", benchmark, VERSION_NAME);
-    printf(
-        "# %d client process(es)\n", hg_test_info->na_test_info.mpi_info.size);
+    printf("# %zu client process(es)\n", comm_size);
     printf("# Loop %d times from size %zu to %zu byte(s) with %zu handle(s) "
            "in-flight\n# - %zu bulk transfer(s) per handle\n",
         hg_test_info->na_test_info.loop, info->buf_size_min, info->buf_size_max,
         info->handle_max, (size_t) info->bulk_count);
     if (info->verify)
         printf("# WARNING verifying data, output will be slower\n");
-    if (hg_test_info->na_test_info.force_register) {
+    if (hg_test_info->na_test_info.force_register)
         printf("# WARNING forcing registration on every iteration\n");
-        printf("%-*s%*s%*s%*s\n", 10, "# Size", NWIDTH, bw_label, NWIDTH,
-            "Reg Time (us)", NWIDTH, "Dereg Time (us)");
+    if (!info->barrier && comm_size > 1) {
+        const char *bw_rank_label = (hg_test_info->na_test_info.mbps)
+                                        ? "\"BW/rank (MB/s)\""
+                                        : "\"BW/rank (MiB/s)\"";
+        const char *bw_min_label = (hg_test_info->na_test_info.mbps)
+                                       ? "\"Min BW (MB/s)\""
+                                       : "\"Min BW (MiB/s)\"";
+        const char *bw_max_label = (hg_test_info->na_test_info.mbps)
+                                       ? "\"Max BW (MB/s)\""
+                                       : "\"Max BW (MiB/s)\"";
+
+        if (hg_test_info->na_test_info.force_register) {
+            printf("%-*s%*s%*s%*s%*s%*s%*s%*s%*s\n", 10, "# Size", NWIDTH_SMALL,
+                bw_label, NWIDTH_SMALL, bw_rank_label, NWIDTH_SMALLER,
+                bw_min_label, NWIDTH_TINY, "\"Min Rank\"", NWIDTH_SMALLER,
+                bw_max_label, NWIDTH_TINY, "\"Max Rank\"", NWIDTH_SMALL,
+                "\"Reg Time (us)\"", NWIDTH_SMALL, "\"Dereg Time (us)\"");
+        } else {
+            printf("%-*s%*s%*s%*s%*s%*s%*s\n", 10, "# Size", NWIDTH_SMALL,
+                bw_label, NWIDTH_SMALL, bw_rank_label, NWIDTH_SMALLER,
+                bw_min_label, NWIDTH_TINY, "\"Min Rank\"", NWIDTH_SMALLER,
+                bw_max_label, NWIDTH_TINY, "\"Max Rank\"");
+        }
     } else {
-        printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, bw_label, NWIDTH,
-            "Time (us)");
+        if (hg_test_info->na_test_info.force_register) {
+            printf("%-*s%*s%*s%*s%*s\n", 10, "# Size", NWIDTH, bw_label, NWIDTH,
+                "\"Time (us)\"", NWIDTH, "\"Reg Time (us)\"", NWIDTH,
+                "\"Dereg Time (us)\"");
+        } else {
+            printf("%-*s%*s%*s\n", 10, "# Size", NWIDTH, bw_label, NWIDTH,
+                "\"Time (us)\"");
+        }
     }
     fflush(stdout);
 }
@@ -888,34 +981,130 @@ hg_perf_print_bw(const struct hg_test_info *hg_test_info,
     const struct hg_perf_class_info *info, size_t buf_size, hg_time_t t,
     hg_time_t t_reg, hg_time_t t_dereg)
 {
+    double bulk_bw, reg_time, dereg_time;
+    double *bulk_bws = NULL, *reg_times = NULL, *dereg_times = NULL;
     size_t loop = (size_t) hg_test_info->na_test_info.loop,
-           mpi_comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size,
            handle_max = (size_t) info->handle_max,
-           buf_count = (size_t) info->bulk_count;
-    double avg_bw =
-        (double) (buf_size * loop * handle_max * mpi_comm_size * buf_count) /
-        hg_time_to_double(t);
+           buf_count = (size_t) info->bulk_count,
+           comm_size = (size_t) hg_test_info->na_test_info.mpi_info.size;
+    int comm_rank = (int) hg_test_info->na_test_info.mpi_info.rank;
+
+    bulk_bw = (double) (buf_size * loop * handle_max * buf_count) /
+              hg_time_to_double(t);
 
     if (hg_test_info->na_test_info.mbps)
-        avg_bw /= 1e6; /* MB/s, matches OSU benchmarks */
+        bulk_bw /= 1e6; /* MB/s, matches OSU benchmarks */
     else
-        avg_bw /= (1024 * 1024); /* MiB/s */
+        bulk_bw /= (1024 * 1024); /* MiB/s */
 
     if (hg_test_info->na_test_info.force_register) {
-        double reg_time =
+        reg_time =
             hg_time_to_double(t_reg) * 1e6 / (double) (loop * handle_max);
-        double dereg_time =
+        dereg_time =
             hg_time_to_double(t_dereg) * 1e6 / (double) (loop * handle_max);
+    }
 
-        printf("%-*zu%*.*f%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, avg_bw,
-            NWIDTH, NDIGITS, reg_time, NWIDTH, NDIGITS, dereg_time);
+    if (!info->barrier && comm_size > 1) {
+        na_return_t na_ret;
+
+        if (comm_rank == 0) {
+            bulk_bws = (double *) malloc(comm_size * sizeof(double));
+            HG_TEST_CHECK_ERROR_NORET(
+                bulk_bws == NULL, cleanup, "Could not allocate bulk_bws");
+
+            if (hg_test_info->na_test_info.force_register) {
+                reg_times = (double *) malloc(comm_size * sizeof(double));
+                HG_TEST_CHECK_ERROR_NORET(
+                    reg_times == NULL, cleanup, "Could not allocate reg_times");
+
+                dereg_times = (double *) malloc(comm_size * sizeof(double));
+                HG_TEST_CHECK_ERROR_NORET(dereg_times == NULL, cleanup,
+                    "Could not allocate dereg_times");
+            }
+        }
+
+        na_ret = na_test_mpi_gather(&hg_test_info->na_test_info.mpi_info,
+            &bulk_bw, sizeof(bulk_bw), bulk_bws, sizeof(bulk_bw), 0);
+        HG_TEST_CHECK_ERROR_NORET(
+            na_ret != NA_SUCCESS, cleanup, "Could not gather bulk_bws");
+
+        if (hg_test_info->na_test_info.force_register) {
+            na_ret = na_test_mpi_gather(&hg_test_info->na_test_info.mpi_info,
+                &reg_time, sizeof(reg_time), reg_times, sizeof(reg_time), 0);
+            HG_TEST_CHECK_ERROR_NORET(
+                na_ret != NA_SUCCESS, cleanup, "Could not gather reg_times");
+
+            na_ret = na_test_mpi_gather(&hg_test_info->na_test_info.mpi_info,
+                &dereg_time, sizeof(dereg_time), dereg_times,
+                sizeof(dereg_time), 0);
+            HG_TEST_CHECK_ERROR_NORET(
+                na_ret != NA_SUCCESS, cleanup, "Could not gather dereg_times");
+        }
+    }
+
+    if (comm_rank != 0)
+        return;
+
+    if (!info->barrier && comm_size > 1) {
+        double bulk_bw_min = 0, bulk_bw_max = 0;
+        double bulk_bw_sum = 0, bulk_bw_avg = 0;
+        double reg_time_avg = 0, dereg_time_avg = 0;
+        size_t i, rank_min = 0, rank_max = 0;
+
+        for (i = 0; i < comm_size; i++) {
+            if (!bulk_bw_min || bulk_bws[i] < bulk_bw_min) {
+                bulk_bw_min = bulk_bws[i];
+                rank_min = i;
+            }
+            if (bulk_bws[i] > bulk_bw_max) {
+                bulk_bw_max = bulk_bws[i];
+                rank_max = i;
+            }
+            if (hg_test_info->na_test_info.force_register) {
+                reg_time_avg += reg_times[i];
+                dereg_time_avg += dereg_times[i];
+            }
+            bulk_bw_sum += bulk_bws[i];
+        }
+
+        bulk_bw_avg = bulk_bw_sum / (double) comm_size;
+        if (hg_test_info->na_test_info.force_register) {
+            reg_time_avg /= (double) comm_size;
+            dereg_time_avg /= (double) comm_size;
+        }
+
+        if (hg_test_info->na_test_info.force_register)
+            printf("%-*zu%*.*f%*.*f%*.*f%*zu%*.*f%*zu%*.*f%*.*f\n", 10,
+                buf_size, NWIDTH_SMALL, NDIGITS, bulk_bw_sum, NWIDTH_SMALL,
+                NDIGITS, bulk_bw_avg, NWIDTH_SMALLER, NDIGITS, bulk_bw_min,
+                NWIDTH_TINY, rank_min, NWIDTH_SMALLER, NDIGITS, bulk_bw_max,
+                NWIDTH_TINY, rank_max, NWIDTH_SMALL, NDIGITS, reg_time_avg,
+                NWIDTH_SMALL, NDIGITS, dereg_time_avg);
+        else
+            printf("%-*zu%*.*f%*.*f%*.*f%*zu%*.*f%*zu\n", 10, buf_size,
+                NWIDTH_SMALL, NDIGITS, bulk_bw_sum, NWIDTH_SMALL, NDIGITS,
+                bulk_bw_avg, NWIDTH_SMALLER, NDIGITS, bulk_bw_min, NWIDTH_TINY,
+                rank_min, NWIDTH_SMALLER, NDIGITS, bulk_bw_max, NWIDTH_TINY,
+                rank_max);
     } else {
-        double avg_time =
-            hg_time_to_double(t) * 1e6 /
-            (double) (loop * handle_max * mpi_comm_size * buf_count);
+        double bulk_time = hg_time_to_double(t) * 1e6 /
+                           (double) (loop * handle_max * comm_size * buf_count);
+        bulk_bw *= (double) comm_size;
 
-        printf("%-*zu%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, avg_bw,
-            NWIDTH, NDIGITS, avg_time);
+        if (hg_test_info->na_test_info.force_register)
+            printf("%-*zu%*.*f%*.*f%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS,
+                bulk_bw, NWIDTH, NDIGITS, bulk_time, NWIDTH, NDIGITS, reg_time,
+                NWIDTH, NDIGITS, dereg_time);
+        else
+            printf("%-*zu%*.*f%*.*f\n", 10, buf_size, NWIDTH, NDIGITS, bulk_bw,
+                NWIDTH, NDIGITS, bulk_time);
+    }
+
+cleanup:
+    if (comm_size > 1) {
+        free(bulk_bws);
+        free(reg_times);
+        free(dereg_times);
     }
 }
 

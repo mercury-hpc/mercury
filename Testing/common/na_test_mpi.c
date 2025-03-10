@@ -60,7 +60,10 @@ union na_test_mpi_dtype {
         X(Comm_free, (MPI_Comm * comm))                                        \
         X(Barrier, (MPI_Comm comm))                                            \
         X(Bcast, (void *buffer, int count, MPI_Datatype datatype, int root,    \
-                     MPI_Comm comm))
+                     MPI_Comm comm))                                           \
+        X(Gather, (const void *sendbuf, int sendcount, MPI_Datatype sendtype,  \
+                      void *recvbuf, int recvcount, MPI_Datatype recvtype,     \
+                      int root, MPI_Comm comm))
 
 #    define X(a, b) int(*a) b;
 struct na_test_mpi_funcs {
@@ -84,7 +87,10 @@ static struct na_test_mpi_funcs na_test_mpi_funcs = {NA_TEST_MPI_SYMS};
         X(Comm_dup, (int comm, int *newcomm))                                  \
         X(Comm_free, (int *comm))                                              \
         X(Barrier, (int comm))                                                 \
-        X(Bcast, (void *buffer, int count, int datatype, int root, int comm))
+        X(Bcast, (void *buffer, int count, int datatype, int root, int comm))  \
+        X(Gather,                                                              \
+            (const void *sendbuf, int sendcount, int sendtype, void *recvbuf,  \
+                int recvcount, int recvtype, int root, int comm))
 
 #    define NA_TEST_OMPI_SYMS                                                  \
         X(Init, (int *argc, char ***argv))                                     \
@@ -99,7 +105,10 @@ static struct na_test_mpi_funcs na_test_mpi_funcs = {NA_TEST_MPI_SYMS};
         X(Comm_free, (void **comm))                                            \
         X(Barrier, (void *comm))                                               \
         X(Bcast,                                                               \
-            (void *buffer, int count, void *datatype, int root, void *comm))
+            (void *buffer, int count, void *datatype, int root, void *comm))   \
+        X(Gather, (const void *sendbuf, int sendcount, void *sendtype,         \
+                      void *recvbuf, int recvcount, void *recvtype, int root,  \
+                      void *comm))
 
 #    define X(a, b) int(*a) b;
 struct na_test_mpich_funcs {
@@ -462,6 +471,33 @@ na_test_mpi_Bcast(void *buffer, int count,
 }
 
 /*---------------------------------------------------------------------------*/
+static int
+na_test_mpi_Gather(const void *sendbuf, int sendcount,
+    const union na_test_mpi_dtype *sendtype, void *recvbuf, int recvcount,
+    const union na_test_mpi_dtype *recvtype, int root,
+    const union na_test_mpi_comm *comm)
+{
+    switch (na_test_mpi_impl) {
+#ifdef HG_TEST_HAS_PARALLEL
+        case NA_TEST_MPI_SYSTEM:
+            return na_test_mpi_funcs.Gather(sendbuf, sendcount, sendtype->sys,
+                recvbuf, recvcount, recvtype->sys, root, comm->sys);
+#else
+        case NA_TEST_MPI_MPICH:
+            return na_test_mpich_funcs.Gather(sendbuf, sendcount,
+                sendtype->mpich, recvbuf, recvcount, recvtype->mpich, root,
+                comm->mpich);
+        case NA_TEST_MPI_OMPI:
+            return na_test_ompi_funcs.Gather(sendbuf, sendcount, sendtype->ompi,
+                recvbuf, recvcount, recvtype->ompi, root, comm->ompi);
+#endif
+        case NA_TEST_MPI_NONE:
+        default:
+            return -1;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 na_return_t
 na_test_mpi_init(struct na_test_mpi_info *mpi_info, bool listen,
     bool use_threads, bool mpi_static)
@@ -620,6 +656,25 @@ na_test_mpi_bcast(const struct na_test_mpi_info *mpi_info, void *buffer,
         buffer, (int) size, &na_test_mpi_byte, root, &mpi_info->comm);
     NA_TEST_CHECK_ERROR(
         rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR, "MPI_Bcast() failed");
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_test_mpi_gather(const struct na_test_mpi_info *mpi_info, const void *sendbuf,
+    size_t sendcount, void *recvbuf, size_t recvcount, int root)
+{
+    na_return_t ret;
+    int rc;
+
+    rc = na_test_mpi_Gather(sendbuf, (int) sendcount, &na_test_mpi_byte,
+        recvbuf, (int) recvcount, &na_test_mpi_byte, root, &mpi_info->comm);
+    NA_TEST_CHECK_ERROR(rc != MPI_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
+        "MPI_Gather() failed");
 
     return NA_SUCCESS;
 
