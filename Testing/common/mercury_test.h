@@ -24,8 +24,9 @@ struct hg_test_info {
     unsigned int thread_count;        /* Max number of threads */
     unsigned int multi_recv_op_max;   /* Max number of multi-recv ops */
     unsigned int request_post_init;   /* Init number of posted handles */
-    hg_bool_t auto_sm;                /* Use shared-memory */
-    hg_bool_t bidirectional;          /* Bidirectional tests */
+    bool auto_sm;                     /* Use shared-memory */
+    bool bidirectional;               /* Bidirectional tests */
+    bool barrier;                     /* Use barriers for perf measurements */
 };
 
 /*****************/

@@ -120,8 +120,8 @@ na_test_usage(const char *execname)
     printf("    -M, --mbps           Output in MB/s instead of MiB/s\n");
     printf("    -U, --no-multi-recv  Disable multi-recv\n");
     printf("    -f, --hostfile       Specify hostfile to use\n"
-           "                         Default: " HG_TEST_TEMP_DIRECTORY
-               HG_TEST_CONFIG_FILE_NAME "\n");
+           "                         "
+           "Default: " HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME "\n");
     printf("    -V, --verbose        Print verbose output\n");
 }
 
@@ -743,13 +743,16 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
         na_test_info->target_name = na_test_info->target_names[0];
         if (na_test_info->mpi_info.rank == 0) {
-            uint32_t j;
-
             printf("# %" PRIu32 " target name(s) read:\n",
                 na_test_info->max_targets);
-            for (j = 0; j < na_test_info->max_targets; j++)
-                printf("# - %" PRIu32 "/%" PRIu32 ": %s\n", j + 1,
-                    na_test_info->max_targets, na_test_info->target_names[j]);
+            printf("# - %" PRIu32 "/%" PRIu32 ": %s\n", 1,
+                na_test_info->max_targets, na_test_info->target_names[0]);
+            if (na_test_info->max_targets > 2)
+                printf("# - [...]\n");
+            if (na_test_info->max_targets > 1)
+                printf("# - %" PRIu32 "/%" PRIu32 ": %s\n",
+                    na_test_info->max_targets, na_test_info->max_targets,
+                    na_test_info->target_names[na_test_info->max_targets - 1]);
         }
     }
 

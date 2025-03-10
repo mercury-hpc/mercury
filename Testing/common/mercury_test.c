@@ -65,7 +65,7 @@ hg_test_usage(const char *execname)
     printf("    -x, --handle        Max number of handles\n");
     printf("    -m, --memory        Use shared-memory with local targets\n");
     printf("    -t, --threads       Number of server threads\n");
-    printf("    -B, --bidirectional Bidirectional communication\n");
+    printf("    -B, --barrier       Use barriers for perf measurements\n");
     printf("    -u, --mrecv-ops     Number of multi-recv ops (server only)\n");
     printf("    -i, --post-init     Number of handles posted (server only)\n");
 }
@@ -89,7 +89,7 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
                 hg_test_usage(argv[0]);
                 exit(1);
             case 'm': /* memory */
-                hg_test_info->auto_sm = HG_TRUE;
+                hg_test_info->auto_sm = true;
                 break;
             case 't': /* number of threads */
                 hg_test_info->thread_count =
@@ -99,8 +99,8 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
                 hg_test_info->handle_max =
                     (unsigned int) atoi(na_test_opt_arg_g);
                 break;
-            case 'B': /* bidirectional */
-                hg_test_info->bidirectional = HG_TRUE;
+            case 'B': /* barrier */
+                hg_test_info->barrier = true;
                 break;
             case 'u': /* multi_recv_op_max */
                 hg_test_info->multi_recv_op_max =
