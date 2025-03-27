@@ -101,6 +101,7 @@
 #cmakedefine NA_OFI_HAS_EXT_GNI_H
 #cmakedefine NA_OFI_HAS_EXT_CXI_H
 #cmakedefine NA_OFI_GNI_HAS_UDREG
+#cmakedefine NA_OFI_HAS_FIREWALL_ADDR
 
 /* NA SM */
 #cmakedefine NA_HAS_SM

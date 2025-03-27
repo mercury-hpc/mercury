@@ -145,6 +145,7 @@ struct hg_init_info {
     X(HG_TIMEOUT)        /*!< operation reached timeout */                     \
     X(HG_CANCELED)       /*!< operation canceled */                            \
     X(HG_IO_ERROR)       /*!< I/O error */                                     \
+    X(HG_HOSTFIREWALL)   /*!< Host unreachable due to firewall */              \
     X(HG_CHECKSUM_ERROR) /*!< checksum error */                                \
     X(HG_NA_ERROR)       /*!< generic NA error */                              \
     X(HG_OTHER_ERROR)    /*!< generic HG error */                              \

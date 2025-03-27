@@ -747,18 +747,20 @@ HG_Core_addr_serialize(
  * \param addr_p [OUT]          pointer to abstract address
  * \param buf [IN]              pointer to buffer used for deserialization
  * \param buf_size [IN]         buffer size
+ * \param flags [IN]            extra flags to describe the address
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
 HG_Core_addr_deserialize(hg_core_class_t *hg_core_class, hg_core_addr_t *addr_p,
-    const void *buf, hg_size_t buf_size);
+    const void *buf, hg_size_t buf_size, uint64_t flags);
 
 /**
- * Initiate a new HG RPC using the specified function ID and the local/remote
- * target defined by addr. The HG handle created can be used to query input
- * and output buffers, as well as issuing the RPC by using HG_Core_forward().
- * After completion the handle must be freed using HG_Core_destroy().
+ * Initiate a new HG RPC using the specified function ID and the
+ * local/remote target defined by addr. The HG handle created can be used to
+ * query input and output buffers, as well as issuing the RPC by using
+ * HG_Core_forward(). After completion the handle must be freed using
+ * HG_Core_destroy().
  *
  * \param context [IN]          pointer to HG core context
  * \param addr [IN]             target address

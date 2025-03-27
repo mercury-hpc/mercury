@@ -966,8 +966,8 @@ na_sm_addr_serialize(
 
 /* addr_deserialize */
 static na_return_t
-na_sm_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size);
+na_sm_addr_deserialize(na_class_t *na_class, na_addr_t **addr_p,
+    const void *buf, size_t buf_size, uint64_t flags);
 
 /* msg_get_max_unexpected_size */
 static NA_INLINE size_t
@@ -4601,8 +4601,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size)
+na_sm_addr_deserialize(na_class_t *na_class, na_addr_t **addr_p,
+    const void *buf, size_t buf_size, uint64_t NA_UNUSED flags)
 {
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     struct na_sm_addr *na_sm_addr = NULL;

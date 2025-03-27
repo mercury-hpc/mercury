@@ -1420,8 +1420,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size)
+NA_Addr_deserialize(na_class_t *na_class, na_addr_t **addr_p, const void *buf,
+    size_t buf_size, uint64_t flags)
 {
     na_return_t ret;
 
@@ -1439,7 +1439,8 @@ NA_Addr_deserialize(
         ret, NA_OPNOTSUPPORTED,
         "addr_deserialize plugin callback is not defined");
 
-    ret = na_class->ops->addr_deserialize(na_class, addr_p, buf, buf_size);
+    ret =
+        na_class->ops->addr_deserialize(na_class, addr_p, buf, buf_size, flags);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret,
         "Could not deserialize addr from buffer (%p, %zu)", buf, buf_size);
 

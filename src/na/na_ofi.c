@@ -982,7 +982,7 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
 static na_return_t
 na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
     struct na_ofi_addr_key *addr_key, fi_addr_t fi_auth_key,
-    struct na_ofi_addr **na_ofi_addr_p);
+    struct na_ofi_addr **na_ofi_addr_p, uint64_t flags);
 
 /**
  * Key hash for hash table.
@@ -1022,7 +1022,7 @@ na_ofi_addr_map_lookup(
 static na_return_t
 na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
     struct na_ofi_map *na_ofi_map, struct na_ofi_addr_key *addr_key,
-    fi_addr_t fi_auth_key, struct na_ofi_addr **na_ofi_addr_p);
+    fi_addr_t fi_auth_key, struct na_ofi_addr **na_ofi_addr_p, uint64_t flags);
 
 /**
  * Remove addr key from map.
@@ -1816,8 +1816,8 @@ na_ofi_addr_serialize(
 
 /* addr_deserialize */
 static na_return_t
-na_ofi_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size);
+na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t **addr_p,
+    const void *buf, size_t buf_size, uint64_t flags);
 
 /* msg_get_max_unexpected_size */
 static NA_INLINE size_t
@@ -2228,6 +2228,11 @@ na_ofi_errno_to_na(int rc)
         case FI_EADDRNOTAVAIL:
             ret = NA_ADDRNOTAVAIL;
             break;
+#ifdef NA_OFI_HAS_FIREWALL_ADDR
+        case FI_EFIREWALLADDR:
+            ret = NA_HOSTFIREWALL;
+            break;
+#endif
         case FI_ENETDOWN:
         case FI_ENETUNREACH:
         case FI_ECONNABORTED:
@@ -3040,7 +3045,7 @@ error:
 static na_return_t
 na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
     struct na_ofi_addr_key *addr_key, fi_addr_t fi_auth_key,
-    struct na_ofi_addr **na_ofi_addr_p)
+    struct na_ofi_addr **na_ofi_addr_p, uint64_t flags)
 {
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret;
@@ -3058,7 +3063,7 @@ na_ofi_addr_key_lookup(struct na_ofi_class *na_ofi_class,
         /* Insert new entry and create new address if needed */
         na_ret = na_ofi_addr_map_insert(na_ofi_class,
             &na_ofi_class->domain->addr_map, addr_key, fi_auth_key,
-            &na_ofi_addr);
+            &na_ofi_addr, flags);
         NA_CHECK_SUBSYS_ERROR(addr, na_ret != NA_SUCCESS && na_ret != NA_EXIST,
             error, ret, na_ret, "Could not insert new address");
     }
@@ -3141,10 +3146,11 @@ na_ofi_addr_map_lookup(
 static na_return_t
 na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
     struct na_ofi_map *na_ofi_map, struct na_ofi_addr_key *addr_key,
-    fi_addr_t fi_auth_key, struct na_ofi_addr **na_ofi_addr_p)
+    fi_addr_t fi_auth_key, struct na_ofi_addr **na_ofi_addr_p,
+    uint64_t NA_UNUSED flags)
 {
     struct na_ofi_addr *na_ofi_addr = NULL;
-    uint64_t flags = 0;
+    uint64_t fi_flags = 0;
     na_return_t ret = NA_SUCCESS;
     bool addr_map_exist = false;
     int rc;
@@ -3191,19 +3197,23 @@ na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
         } else
             na_ofi_addr->fi_auth_key = fi_auth_key;
 
-        flags |= FI_AUTH_KEY;
+        fi_flags |= FI_AUTH_KEY;
         /* Input of fi_av_insert(), output will be actual fi_addr_t */
         na_ofi_addr->fi_addr = na_ofi_addr->fi_auth_key;
     } else if (na_ofi_class->domain->av_user_id) {
-        flags |= FI_AV_USER_ID;
+        fi_flags |= FI_AV_USER_ID;
         /* Input of fi_av_insert(), output will be actual fi_addr_t */
         na_ofi_addr->fi_addr = (fi_addr_t) na_ofi_addr;
     }
 #endif
 
+#ifdef NA_OFI_HAS_FIREWALL_ADDR
+    fi_flags |= (flags & NA_FIREWALL_ADDR) ? FI_FIREWALL_ADDR : 0;
+#endif
+
     /* Insert addr into AV if key not found */
     rc = fi_av_insert(na_ofi_class->domain->fi_av, &na_ofi_addr->addr_key.addr,
-        1, &na_ofi_addr->fi_addr, flags, NULL);
+        1, &na_ofi_addr->fi_addr, fi_flags, NULL);
     NA_CHECK_SUBSYS_ERROR(addr, rc < 1, error, ret, na_ofi_errno_to_na(-rc),
         "fi_av_insert() failed, inserted: %d", rc);
 
@@ -5513,7 +5523,7 @@ na_ofi_endpoint_get_src_addr(struct na_ofi_class *na_ofi_class)
 
     /* Lookup/insert self address so that we can use it to send to ourself */
     ret = na_ofi_addr_map_insert(na_ofi_class, &na_ofi_class->domain->addr_map,
-        &addr_key, FI_ADDR_NOTAVAIL, &na_ofi_class->endpoint->src_addr);
+        &addr_key, FI_ADDR_NOTAVAIL, &na_ofi_class->endpoint->src_addr, 0);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not insert src address");
 
     na_ofi_addr_ref_incr(na_ofi_class->endpoint->src_addr);
@@ -6713,7 +6723,7 @@ na_ofi_cq_process_fi_src_err(struct na_ofi_class *na_ofi_class,
 
     /* Lookup key and create new addr if it does not exist */
     ret = na_ofi_addr_key_lookup(
-        na_ofi_class, &addr_key, src_err->fi_auth_key, na_ofi_addr_p);
+        na_ofi_class, &addr_key, src_err->fi_auth_key, na_ofi_addr_p, 0);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
 
     NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
@@ -6757,7 +6767,7 @@ na_ofi_cq_process_raw_src_addr(struct na_ofi_class *na_ofi_class,
 
     /* Lookup key and create new addr if it does not exist */
     ret = na_ofi_addr_key_lookup(
-        na_ofi_class, &addr_key, fi_auth_key, na_ofi_addr_p);
+        na_ofi_class, &addr_key, fi_auth_key, na_ofi_addr_p, 0);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address");
 
     NA_LOG_SUBSYS_DEBUG(addr, "Retrieved address for FI addr %" PRIu64,
@@ -7677,8 +7687,9 @@ na_ofi_initialize(
     }
     if (na_ofi_class->fi_info->caps & FI_SOURCE_ERR) {
         na_ofi_class->cq_poll = na_ofi_cq_poll_fi_source;
-    } else
+    } else {
         na_ofi_class->cq_poll = na_ofi_cq_poll_no_source;
+    }
 
     /* Open fabric */
     ret = na_ofi_fabric_open(
@@ -7753,6 +7764,18 @@ na_ofi_initialize(
         NA_CHECK_SUBSYS_ERROR(cls, na_ofi_addr == NULL, error, ret, NA_NOMEM,
             "Could not create address");
         STAILQ_INSERT_TAIL(&na_ofi_class->addr_pool.queue, na_ofi_addr, entry);
+    }
+#endif
+
+#ifdef NA_OFI_HAS_FIREWALL_ADDR
+    {
+        int val = 0;
+        size_t len = sizeof(int);
+        ret = fi_getopt(&na_ofi_class->endpoint->fi_ep->fid, FI_OPT_ENDPOINT,
+            FI_OPT_FIREWALL_ADDR, &val, &len);
+        if (ret == 0 && val != 0) {
+            na_ofi_class->opt_features |= NA_OPT_FIREWALL_ADDR;
+        }
     }
 #endif
 
@@ -8069,7 +8092,7 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
      * When using auth keys, peers must either share the same global key or use
      * the same base key when using FI_AV_AUTH_KEY to be able to communicate. */
     ret = na_ofi_addr_key_lookup(
-        na_ofi_class, &addr_key, FI_ADDR_NOTAVAIL, &na_ofi_addr);
+        na_ofi_class, &addr_key, FI_ADDR_NOTAVAIL, &na_ofi_addr, 0);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not lookup address key for %s", name);
 
@@ -8193,8 +8216,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size)
+na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t **addr_p,
+    const void *buf, size_t buf_size, uint64_t flags)
 {
     struct na_ofi_class *na_ofi_class = NA_OFI_CLASS(na_class);
     struct na_ofi_addr_key addr_key;
@@ -8245,7 +8268,7 @@ na_ofi_addr_deserialize(
 
     /* Lookup key and create new addr if it does not exist */
     ret = na_ofi_addr_key_lookup(
-        na_ofi_class, &addr_key, fi_auth_key, &na_ofi_addr);
+        na_ofi_class, &addr_key, fi_auth_key, &na_ofi_addr, flags);
     NA_CHECK_SUBSYS_NA_ERROR(addr, error, ret, "Could not lookup address key");
 
     *addr_p = (na_addr_t *) na_ofi_addr;

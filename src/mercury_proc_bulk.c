@@ -36,7 +36,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE: {
-            uint8_t flags = 0;
+            uint32_t flags = 0;
             bool try_eager = false; /* Flag will not be set if bulk handle does
                                        not support it */
 

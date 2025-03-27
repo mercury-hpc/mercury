@@ -25,11 +25,16 @@
 /* Limit for number of segments statically allocated */
 #define HG_BULK_STATIC_MAX (8)
 
-/* Additional internal bulk flags (can hold up to 8 bits) */
-#define HG_BULK_ALLOC (1 << 4) /* memory is allocated */
-#define HG_BULK_BIND  (1 << 5) /* address is bound to segment */
-#define HG_BULK_REGV  (1 << 6) /* single registration for multiple segments */
-#define HG_BULK_VIRT  (1 << 7) /* addresses are virtual */
+/* Definition of hg_bulk_desc_info::flags
+ *
+ * Additional internal bulk flags
+ * bit 0 ~ 3 are for public use. */
+
+#define HG_BULK_ALLOC         (1 << 4) /* memory is allocated */
+#define HG_BULK_BIND          (1 << 5) /* address is bound to segment */
+#define HG_BULK_REGV          (1 << 6) /* single registration for multiple segments */
+#define HG_BULK_VIRT          (1 << 7) /* addresses are virtual */
+#define HG_BULK_FIREWALL_ADDR (1 << 8) /* if the origin is behind firewall */
 
 /* Op ID status bits */
 #define HG_BULK_OP_COMPLETED (1 << 0)
@@ -291,7 +296,7 @@ hg_bulk_deregister(
  * Get serialize size.
  */
 static hg_size_t
-hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, uint8_t flags);
+hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, unsigned long flags);
 
 /**
  * Get serialize size of NA memory descriptors.
@@ -304,8 +309,8 @@ hg_bulk_get_serialize_size_mem_descs(
  * Serialize bulk handle.
  */
 static hg_return_t
-hg_bulk_serialize(
-    void *buf, hg_size_t buf_size, uint8_t flags, struct hg_bulk *hg_bulk);
+hg_bulk_serialize(void *buf, hg_size_t buf_size, unsigned long flags,
+    struct hg_bulk *hg_bulk);
 
 /**
  * Serialize NA memory descriptors.
@@ -426,9 +431,9 @@ static hg_return_t
 hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
     uint8_t origin_id, const struct hg_bulk_segment *origin_segments,
     uint32_t origin_count, na_mem_handle_t **origin_mem_handles,
-    uint8_t origin_flags, hg_size_t origin_offset,
+    uint32_t origin_flags, hg_size_t origin_offset,
     const struct hg_bulk_segment *local_segments, uint32_t local_count,
-    na_mem_handle_t **local_mem_handles, uint8_t local_flags,
+    na_mem_handle_t **local_mem_handles, uint32_t local_flags,
     hg_size_t local_offset, hg_size_t size,
     struct hg_bulk_op_id *hg_bulk_op_id);
 
@@ -845,6 +850,11 @@ hg_bulk_bind(struct hg_bulk *hg_bulk, hg_core_context_t *core_context)
 
     /* Set flags */
     hg_bulk->desc.info.flags |= HG_BULK_BIND;
+    if (NA_Has_opt_feature(hg_bulk->na_class, NA_OPT_FIREWALL_ADDR)) {
+        hg_bulk->desc.info.flags |= HG_BULK_FIREWALL_ADDR;
+        HG_LOG_SUBSYS_DEBUG(
+            bulk, "This host is behind firewall: %x", hg_bulk->desc.info.flags);
+    }
 
     return HG_SUCCESS;
 
@@ -972,7 +982,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_size_t
-hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, uint8_t flags)
+hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, unsigned long flags)
 {
     struct hg_bulk_desc_info *desc_info = &hg_bulk->desc.info;
     hg_size_t ret = 0;
@@ -1060,7 +1070,7 @@ hg_bulk_get_serialize_size_mem_descs(
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_serialize(
-    void *buf, hg_size_t buf_size, uint8_t flags, struct hg_bulk *hg_bulk)
+    void *buf, hg_size_t buf_size, unsigned long flags, struct hg_bulk *hg_bulk)
 {
     struct hg_bulk_segment *segments = HG_BULK_SEGMENTS(hg_bulk);
     char *buf_ptr = (char *) buf;
@@ -1069,7 +1079,7 @@ hg_bulk_serialize(
     hg_return_t ret;
 
     /* Always reset bulk alloc flag (only local) */
-    desc_info.flags &= (~HG_BULK_ALLOC & 0xff);
+    desc_info.flags &= (uint32_t) ~HG_BULK_ALLOC;
 
     /* Add eager flag to descriptor if requested and bulk handle is read-only,
      * is not virtual (i.e., points to local data), and memory is not on device.
@@ -1080,7 +1090,7 @@ hg_bulk_serialize(
         HG_LOG_SUBSYS_DEBUG(bulk, "HG_BULK_EAGER flag set");
         desc_info.flags |= HG_BULK_EAGER;
     } else
-        desc_info.flags &= (~HG_BULK_EAGER & 0xff);
+        desc_info.flags &= (uint32_t) ~HG_BULK_EAGER;
 
 #ifdef NA_HAS_SM
     /* Add SM flag */
@@ -1088,7 +1098,7 @@ hg_bulk_serialize(
         HG_LOG_SUBSYS_DEBUG(bulk, "HG_BULK_SM flag set");
         desc_info.flags |= HG_BULK_SM;
     } else
-        desc_info.flags &= (~HG_BULK_SM & 0xff);
+        desc_info.flags &= (uint32_t) ~HG_BULK_SM;
 #endif
 
     HG_LOG_SUBSYS_DEBUG(bulk,
@@ -1385,6 +1395,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
     /* Address information */
     if (hg_bulk->desc.info.flags & HG_BULK_BIND) {
         hg_size_t serialize_size;
+        uint64_t addr_flags = 0;
 
         HG_LOG_SUBSYS_DEBUG(
             bulk, "HG_BULK_BIND flag set, deserializing address information");
@@ -1392,8 +1403,15 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
         HG_BULK_DECODE(
             error, ret, buf_ptr, buf_size_left, &serialize_size, hg_size_t);
 
-        ret = HG_Core_addr_deserialize(
-            hg_bulk->core_class, &hg_bulk->addr, buf_ptr, buf_size_left);
+        if (hg_bulk->desc.info.flags & HG_BULK_FIREWALL_ADDR) {
+            HG_LOG_SUBSYS_DEBUG(bulk,
+                "Bind bulk address is behind firewall: %x\n",
+                hg_bulk->desc.info.flags);
+            addr_flags |= NA_FIREWALL_ADDR;
+        }
+
+        ret = HG_Core_addr_deserialize(hg_bulk->core_class, &hg_bulk->addr,
+            buf_ptr, buf_size_left, addr_flags);
         HG_CHECK_SUBSYS_HG_ERROR(
             bulk, error, ret, "Could not deserialize address");
         buf_ptr += serialize_size;
@@ -1917,8 +1935,8 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
         HG_BULK_SEGMENTS(hg_bulk_local);
     uint32_t origin_count = hg_bulk_origin->desc.info.segment_count,
              local_count = hg_bulk_local->desc.info.segment_count;
-    uint8_t origin_flags = hg_bulk_origin->desc.info.flags;
-    uint8_t local_flags = hg_bulk_local->desc.info.flags;
+    uint32_t origin_flags = hg_bulk_origin->desc.info.flags;
+    uint32_t local_flags = hg_bulk_local->desc.info.flags;
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     struct hg_bulk_op_pool *hg_bulk_op_pool =
         hg_core_context_get_bulk_op_pool(core_context);
@@ -2126,9 +2144,9 @@ static hg_return_t
 hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
     uint8_t origin_id, const struct hg_bulk_segment *origin_segments,
     uint32_t origin_count, na_mem_handle_t **origin_mem_handles,
-    uint8_t origin_flags, hg_size_t origin_offset,
+    uint32_t origin_flags, hg_size_t origin_offset,
     const struct hg_bulk_segment *local_segments, uint32_t local_count,
-    na_mem_handle_t **local_mem_handles, uint8_t local_flags,
+    na_mem_handle_t **local_mem_handles, uint32_t local_flags,
     hg_size_t local_offset, hg_size_t size, struct hg_bulk_op_id *hg_bulk_op_id)
 {
     hg_bulk_na_op_id_t *hg_bulk_na_op_ids;
@@ -2678,7 +2696,7 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, unsigned long flags)
     HG_CHECK_ERROR_NORET(
         handle == HG_BULK_NULL, error, "NULL bulk handle passed");
 
-    ret = hg_bulk_get_serialize_size((struct hg_bulk *) handle, flags & 0xff);
+    ret = hg_bulk_get_serialize_size((struct hg_bulk *) handle, flags);
 
     HG_LOG_SUBSYS_DEBUG(bulk,
         "Serialize size with flags eager=%d, sm=%d, is %" PRIu64
@@ -2707,8 +2725,7 @@ HG_Bulk_serialize(
         (void *) handle, (flags & HG_BULK_EAGER) ? true : false,
         (flags & HG_BULK_SM) ? true : false);
 
-    ret = hg_bulk_serialize(
-        buf, buf_size, flags & 0xff, (struct hg_bulk *) handle);
+    ret = hg_bulk_serialize(buf, buf_size, flags, (struct hg_bulk *) handle);
     HG_CHECK_SUBSYS_HG_ERROR(bulk, error, ret, "Could not serialize handle");
 
     return HG_SUCCESS;

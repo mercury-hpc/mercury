@@ -369,7 +369,7 @@ na_psm_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
  *
  * note: the psm library timeouts do not sleep, they spin in a poll loop
  */
-#define SEC_TO_NSEC(X) ((X) *1000000000LL)
+#define SEC_TO_NSEC(X) ((X) * 1000000000LL)
 
 /*
  * psm_enc64: break a uint64 up into two uint32s and encode each in network
@@ -1828,8 +1828,8 @@ na_psm_addr_serialize(
  * is holding a reference to the address.
  */
 static na_return_t
-na_psm_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr, const void *buf, size_t buf_size)
+na_psm_addr_deserialize(na_class_t *na_class, na_addr_t **addr, const void *buf,
+    size_t buf_size, uint64_t)
 {
     uint64_t i64epid;
     na_return_t ret;
