@@ -199,6 +199,16 @@ if(NA_USE_OFI)
       ${NA_OFI_INT_LIB_DEPENDENCIES}
     )
   endif()
+  check_c_source_compiles(
+    "
+    #include <rdma/fi_endpoint.h>
+    int main(void) {
+      (void) FI_OPT_FIREWALL_ADDR;
+      return 0;
+    }
+    "
+    NA_OFI_HAS_FIREWALL_ADDR
+  )
 endif()
 
 # UCX

@@ -394,8 +394,8 @@ NA_Addr_serialize(
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size);
+NA_Addr_deserialize(na_class_t *na_class, na_addr_t **addr_p, const void *buf,
+    size_t buf_size, uint64_t flags);
 
 /**
  * Get the maximum size of messages supported by unexpected send/recv.
@@ -1037,7 +1037,7 @@ struct na_class_ops {
     na_return_t (*addr_serialize)(
         na_class_t *na_class, void *buf, size_t buf_size, na_addr_t *addr);
     na_return_t (*addr_deserialize)(na_class_t *na_class, na_addr_t **addr_p,
-        const void *buf, size_t buf_size);
+        const void *buf, size_t buf_size, uint64_t flags);
     size_t (*msg_get_max_unexpected_size)(const na_class_t *na_class);
     size_t (*msg_get_max_expected_size)(const na_class_t *na_class);
     size_t (*msg_get_unexpected_header_size)(const na_class_t *na_class);

@@ -18,10 +18,6 @@
 /* Public Macros */
 /*****************/
 
-/* Additional internal bulk flags (can hold up to 8 bits) */
-#define HG_BULK_EAGER (1 << 2) /* embeds data along descriptor */
-#define HG_BULK_SM    (1 << 3) /* bulk transfer through shared-memory */
-
 /*********************/
 /* Public Prototypes */
 /*********************/

@@ -798,8 +798,8 @@ na_ucx_addr_serialize(
 
 /* addr_deserialize */
 static na_return_t
-na_ucx_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size);
+na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t **addr_p,
+    const void *buf, size_t buf_size, uint64_t);
 
 /* msg_get_max_unexpected_size */
 static NA_INLINE size_t
@@ -3675,8 +3675,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_deserialize(
-    na_class_t *na_class, na_addr_t **addr_p, const void *buf, size_t buf_size)
+na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t **addr_p,
+    const void *buf, size_t buf_size, uint64_t)
 {
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
     struct na_ucx_addr *na_ucx_addr = NULL;

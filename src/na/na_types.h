@@ -54,6 +54,11 @@ enum na_mem_type {
     NA_MEM_TYPE_UNKNOWN = NA_MEM_TYPE_MAX
 };
 
+/* Flags for addr_deserialize() */
+enum na_addr_flags {
+    NA_FIREWALL_ADDR = (1 << 0),
+};
+
 /* Init info */
 struct na_init_info {
     /* Preferred IP subnet to use. */
@@ -152,6 +157,7 @@ struct na_protocol_info {
     X(NA_TIMEOUT)        /*!< operation reached timeout */                     \
     X(NA_CANCELED)       /*!< operation canceled */                            \
     X(NA_IO_ERROR)       /*!< I/O error */                                     \
+    X(NA_HOSTFIREWALL)   /*!< Host unreachable due to firewall */              \
     X(NA_RETURN_MAX)
 
 #define X(a) a,
@@ -220,6 +226,7 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /* Optional plugin dependent features that can be queried */
 #define NA_OPT_MULTI_RECV (1 << 0) /* multi-recv */
+#define NA_OPT_FIREWALL_ADDR (1 << 1)
 
 /* Max timeout */
 #define NA_MAX_IDLE_TIME (3600 * 1000)
