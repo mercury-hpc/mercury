@@ -25,17 +25,6 @@
 /* Limit for number of segments statically allocated */
 #define HG_BULK_STATIC_MAX (8)
 
-/* Definition of hg_bulk_desc_info::flags
- *
- * Additional internal bulk flags
- * bit 0 ~ 3 are for public use. */
-
-#define HG_BULK_ALLOC         (1 << 4) /* memory is allocated */
-#define HG_BULK_BIND          (1 << 5) /* address is bound to segment */
-#define HG_BULK_REGV          (1 << 6) /* single registration for multiple segments */
-#define HG_BULK_VIRT          (1 << 7) /* addresses are virtual */
-#define HG_BULK_FIREWALL_ADDR (1 << 8) /* if the origin is behind firewall */
-
 /* Op ID status bits */
 #define HG_BULK_OP_COMPLETED (1 << 0)
 #define HG_BULK_OP_CANCELED  (1 << 1)
@@ -1407,7 +1396,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_p,
             HG_LOG_SUBSYS_DEBUG(bulk,
                 "Bind bulk address is behind firewall: %x\n",
                 hg_bulk->desc.info.flags);
-            addr_flags |= NA_FIREWALL_ADDR;
+            addr_flags |= NA_ADDR_FIREWALL;
         }
 
         ret = HG_Core_addr_deserialize(hg_bulk->core_class, &hg_bulk->addr,

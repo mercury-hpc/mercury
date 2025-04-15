@@ -18,16 +18,11 @@
 /* Public Macros */
 /*****************/
 
-/* Definition of hg_bulk_desc_info::flags for public use.
- *
- * The memory attributes associated with the bulk handle
+/* The memory attributes associated with the bulk handle
  * can be defined as read only, write only or read-write. */
-
 #define HG_BULK_READ_ONLY  (1 << 0)
 #define HG_BULK_WRITE_ONLY (1 << 1)
 #define HG_BULK_READWRITE  (HG_BULK_READ_ONLY | HG_BULK_WRITE_ONLY)
-#define HG_BULK_EAGER      (1 << 2) /* embeds data along descriptor */
-#define HG_BULK_SM         (1 << 3) /* bulk transfer through shared-memory */
 
 /*********************/
 /* Public Prototypes */

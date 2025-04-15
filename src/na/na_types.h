@@ -33,6 +33,11 @@ enum na_addr_format {
     NA_ADDR_NATIVE  /* Use native addressing when available */
 };
 
+/* Flags for addr_deserialize() */
+enum na_addr_flags {
+    NA_ADDR_FIREWALL = (1 << 0),
+};
+
 /* Traffic class */
 enum na_traffic_class {
     NA_TC_UNSPEC,           /* Leave it upon plugin to choose */
@@ -52,11 +57,6 @@ enum na_mem_type {
     NA_MEM_TYPE_ZE,   /*!< Intel Level Zero memory */
     NA_MEM_TYPE_MAX,
     NA_MEM_TYPE_UNKNOWN = NA_MEM_TYPE_MAX
-};
-
-/* Flags for addr_deserialize() */
-enum na_addr_flags {
-    NA_FIREWALL_ADDR = (1 << 0),
 };
 
 /* Init info */
@@ -225,8 +225,8 @@ typedef void (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_VERSION_LT(v1, v2)    (v1 < v2)
 
 /* Optional plugin dependent features that can be queried */
-#define NA_OPT_MULTI_RECV (1 << 0) /* multi-recv */
-#define NA_OPT_FIREWALL_ADDR (1 << 1)
+#define NA_OPT_MULTI_RECV    (1 << 0) /* multi-recv */
+#define NA_OPT_FIREWALL_ADDR (1 << 1) /* firewall address */
 
 /* Max timeout */
 #define NA_MAX_IDLE_TIME (3600 * 1000)
