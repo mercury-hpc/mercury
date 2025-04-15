@@ -1829,7 +1829,7 @@ na_psm_addr_serialize(
  */
 static na_return_t
 na_psm_addr_deserialize(na_class_t *na_class, na_addr_t **addr, const void *buf,
-    size_t buf_size, uint64_t)
+    size_t buf_size, uint64_t NA_UNUSED flags)
 {
     uint64_t i64epid;
     na_return_t ret;

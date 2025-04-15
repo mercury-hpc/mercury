@@ -7685,11 +7685,9 @@ na_ofi_initialize(
             NA_PROTONOSUPPORT, "FI_MULTI_RECV is not supported by provider");
         na_ofi_class->opt_features |= NA_OPT_MULTI_RECV;
     }
-    if (na_ofi_class->fi_info->caps & FI_SOURCE_ERR) {
-        na_ofi_class->cq_poll = na_ofi_cq_poll_fi_source;
-    } else {
-        na_ofi_class->cq_poll = na_ofi_cq_poll_no_source;
-    }
+    na_ofi_class->cq_poll = (na_ofi_class->fi_info->caps & FI_SOURCE_ERR)
+                                ? na_ofi_cq_poll_fi_source
+                                : na_ofi_cq_poll_no_source;
 
     /* Open fabric */
     ret = na_ofi_fabric_open(

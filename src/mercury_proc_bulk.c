@@ -8,6 +8,7 @@
 #include "mercury_proc_bulk.h"
 #include "mercury_bulk_proc.h"
 #include "mercury_error.h"
+#include "mercury_private.h"
 
 /****************/
 /* Local Macros */

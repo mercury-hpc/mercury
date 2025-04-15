@@ -90,6 +90,20 @@ struct hg_bulk_op_pool;
         ((type *) ((char *) ptr - offsetof(type, member)))
 #endif
 
+/**
+ * Definition of hg_bulk_desc_info::flags
+ *
+ * Additional internal bulk flags
+ * bit 0 ~ 3 are for public use.
+ */
+#define HG_BULK_EAGER         (1 << 2) /* embeds data along descriptor */
+#define HG_BULK_SM            (1 << 3) /* bulk transfer through shared-memory */
+#define HG_BULK_ALLOC         (1 << 4) /* memory is allocated */
+#define HG_BULK_BIND          (1 << 5) /* address is bound to segment */
+#define HG_BULK_REGV          (1 << 6) /* single registration for multiple segments */
+#define HG_BULK_VIRT          (1 << 7) /* addresses are virtual */
+#define HG_BULK_FIREWALL_ADDR (1 << 8) /* if the origin is behind firewall */
+
 /*********************/
 /* Public Prototypes */
 /*********************/
