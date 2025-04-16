@@ -853,7 +853,7 @@ hg_perf_print_lat(const struct hg_test_info *hg_test_info,
         size_t i, rank_min = 0, rank_max = 0;
 
         for (i = 0; i < comm_size; i++) {
-            if (!rpc_time_min || rpc_times[i] < rpc_time_min) {
+            if (rpc_time_min == 0 || rpc_times[i] < rpc_time_min) {
                 rpc_time_min = rpc_times[i];
                 rank_max = i; /* Min time is max rate */
             }
@@ -1052,7 +1052,7 @@ hg_perf_print_bw(const struct hg_test_info *hg_test_info,
         size_t i, rank_min = 0, rank_max = 0;
 
         for (i = 0; i < comm_size; i++) {
-            if (!bulk_bw_min || bulk_bws[i] < bulk_bw_min) {
+            if (bulk_bw_min == 0 || bulk_bws[i] < bulk_bw_min) {
                 bulk_bw_min = bulk_bws[i];
                 rank_min = i;
             }
