@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#define _GNU_SOURCE /* For dladdr */
 #include "na_plugin.h"
 
 #include "mercury_atomic_queue.h"
@@ -20,6 +21,8 @@
 #        include <Windows.h>
 #    else
 #        include <dirent.h>
+#        include <limits.h>
+#        include <link.h>
 #    endif
 #endif
 
@@ -260,20 +263,61 @@ na_finalize(void) NA_DESTRUCTOR;
 
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_DYNAMIC_PLUGINS
+#    ifdef _WIN32
+#        define resolve_plugin_path(offset) NULL
+#    else
+static char *
+resolve_plugin_path(const char *offset)
+{
+    static int placeholder;
+    Dl_info info;
+    char *libdir;
+    char *libpath;
+    char *slash;
+    int rc;
+
+    if (!dladdr((void *) &placeholder, &info))
+        return NULL;
+
+    libpath = realpath(info.dli_fname, NULL);
+    if (libpath == NULL)
+        return NULL;
+
+    slash = strrchr(libpath, '/');
+    if (slash == NULL) {
+        free(libpath);
+        return NULL;
+    }
+
+    *slash = '\0';
+    rc = asprintf(&libdir, "%s/%s", libpath, offset);
+    free(libpath);
+    if (rc != -1)
+        return libdir;
+
+    return NULL;
+}
+#    endif
+
 static void
 na_initialize(void)
 {
     const char *plugin_path = getenv("NA_PLUGIN_PATH");
+    char *relative_plugin_path = NULL;
     na_return_t ret;
-
-    if (plugin_path == NULL)
-        plugin_path = NA_DEFAULT_PLUGIN_PATH;
+    if (plugin_path == NULL) {
+        relative_plugin_path = resolve_plugin_path(NA_PLUGIN_PATH_OFFSET);
+        plugin_path = (relative_plugin_path != NULL) ? relative_plugin_path
+                                                     : NA_DEFAULT_PLUGIN_PATH;
+    }
 
     ret = na_plugin_scan_path(plugin_path, &na_plugin_dynamic_g);
     NA_CHECK_FATAL_DONE(ret != NA_SUCCESS,
         "No usable plugin found in path (%s), consider setting NA_PLUGIN_PATH "
         "if path indicated is not valid.",
         plugin_path);
+
+    free(relative_plugin_path);
 }
 
 /*---------------------------------------------------------------------------*/
