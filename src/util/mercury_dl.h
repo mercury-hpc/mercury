@@ -15,6 +15,7 @@
 #    include <windows.h>
 #    define HG_DL_HANDLE HMODULE
 #else
+#    define _GNU_SOURCE
 #    include <dlfcn.h>
 #    define HG_DL_HANDLE void *
 #endif
