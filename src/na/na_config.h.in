@@ -80,8 +80,7 @@
 #    define NA_PLUGIN
 #    define NA_PLUGIN_VISIBILITY NA_PRIVATE
 #endif
-#cmakedefine NA_DEFAULT_PLUGIN_PATH "@NA_DEFAULT_PLUGIN_PATH@"
-#cmakedefine NA_PLUGIN_PATH_OFFSET "@NA_PLUGIN_PATH_OFFSET@"
+#cmakedefine NA_PLUGIN_RELATIVE_PATH "@NA_PLUGIN_RELATIVE_PATH@"
 
 /* Build Options */
 #cmakedefine NA_HAS_DEBUG
