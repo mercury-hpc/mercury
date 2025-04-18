@@ -15,7 +15,6 @@
 #    include <windows.h>
 #    define HG_DL_HANDLE HMODULE
 #else
-#    define _GNU_SOURCE
 #    include <dlfcn.h>
 #    define HG_DL_HANDLE void *
 #endif
@@ -62,6 +61,18 @@ hg_dl_close(HG_DL_HANDLE handle);
  */
 static HG_UTIL_INLINE void *
 hg_dl_sym(HG_DL_HANDLE handle, const char *name);
+
+/**
+ * Retrieve library path.
+ *
+ * \param addr [IN]             address of the symbol
+ * \param path [OUT]            buffer to store the path
+ * \param path_size [IN]        size of the buffer
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_PUBLIC int
+hg_dl_get_path(const void *addr, char *path, size_t path_size);
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE const char *

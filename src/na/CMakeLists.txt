@@ -82,16 +82,10 @@ if(NA_USE_DYNAMIC_PLUGINS)
   if(NOT BUILD_SHARED_LIBS)
     message(FATAL_ERROR "Using dynamic plugins requires BUILD_SHARED_LIBS to be ON.")
   endif()
-  execute_process (
-	  COMMAND realpath -m ${NA_INSTALL_PLUGIN_DIR} --relative-to=${NA_INSTALL_LIB_DIR}
-	  OUTPUT_VARIABLE NA_PLUGIN_PATH_OFFSET
-	  OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  message("Based on NA_INSTALL_PLUGIN_DIR, NA_PLUGIN_PATH_OFFSET is ${NA_PLUGIN_PATH_OFFSET}")
+  cmake_path(SET NA_PLUGIN_RELATIVE_PATH ${NA_INSTALL_PLUGIN_DIR})
+  cmake_path(RELATIVE_PATH NA_PLUGIN_RELATIVE_PATH BASE_DIRECTORY ${NA_INSTALL_LIB_DIR})
+  message(STATUS "NA plugin install directory: ${NA_INSTALL_PLUGIN_DIR} (relative path to libraries: ${NA_PLUGIN_RELATIVE_PATH})")
   set(NA_HAS_DYNAMIC_PLUGINS 1)
-  set(NA_DEFAULT_PLUGIN_PATH ${NA_INSTALL_PLUGIN_DIR} CACHE PATH "Default path used to load plugins.")
-  mark_as_advanced(NA_DEFAULT_PLUGIN_PATH)
-  mark_as_advanced(NA_PLUGIN_PATH_OFFSET)
 endif()
 
 # BMI

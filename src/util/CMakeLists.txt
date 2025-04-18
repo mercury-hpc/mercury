@@ -193,6 +193,7 @@ configure_file(
 #------------------------------------------------------------------------------
 set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dl.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_dlog.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c

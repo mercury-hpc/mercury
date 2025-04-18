@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#define _GNU_SOURCE /* For dladdr */
 #include "na_plugin.h"
 
 #include "mercury_atomic_queue.h"
@@ -21,6 +20,7 @@
 #        include <Windows.h>
 #    else
 #        include <dirent.h>
+#        include <errno.h>
 #        include <limits.h>
 #        include <link.h>
 #    endif
@@ -141,6 +141,10 @@ na_plugin_check_protocol(const struct na_class_ops *const class_ops[],
     const struct na_class_ops **ops_p);
 
 #ifdef NA_HAS_DYNAMIC_PLUGINS
+/* Resolve plugin search path */
+static na_return_t
+na_plugin_resolve_path(const char *offset, char *path, size_t path_size);
+
 /* Scan a given path and return a list of plugins */
 static na_return_t
 na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p);
@@ -263,61 +267,30 @@ na_finalize(void) NA_DESTRUCTOR;
 
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_DYNAMIC_PLUGINS
-#    ifdef _WIN32
-#        define resolve_plugin_path(offset) NULL
-#    else
-static char *
-resolve_plugin_path(const char *offset)
-{
-    static int placeholder;
-    Dl_info info;
-    char *libdir;
-    char *libpath;
-    char *slash;
-    int rc;
-
-    if (!dladdr((void *) &placeholder, &info))
-        return NULL;
-
-    libpath = realpath(info.dli_fname, NULL);
-    if (libpath == NULL)
-        return NULL;
-
-    slash = strrchr(libpath, '/');
-    if (slash == NULL) {
-        free(libpath);
-        return NULL;
-    }
-
-    *slash = '\0';
-    rc = asprintf(&libdir, "%s/%s", libpath, offset);
-    free(libpath);
-    if (rc != -1)
-        return libdir;
-
-    return NULL;
-}
-#    endif
-
 static void
 na_initialize(void)
 {
     const char *plugin_path = getenv("NA_PLUGIN_PATH");
-    char *relative_plugin_path = NULL;
+    char resolved_path[NA_PLUGIN_PATH_MAX];
     na_return_t ret;
+
     if (plugin_path == NULL) {
-        relative_plugin_path = resolve_plugin_path(NA_PLUGIN_PATH_OFFSET);
-        plugin_path = (relative_plugin_path != NULL) ? relative_plugin_path
-                                                     : NA_DEFAULT_PLUGIN_PATH;
+        ret = na_plugin_resolve_path(
+            NA_PLUGIN_RELATIVE_PATH, resolved_path, sizeof(resolved_path));
+        NA_CHECK_SUBSYS_NA_FATAL(cls, done, ret,
+            "Could not resolve plugin path using offset (%s)",
+            NA_PLUGIN_RELATIVE_PATH);
+        plugin_path = resolved_path;
     }
 
     ret = na_plugin_scan_path(plugin_path, &na_plugin_dynamic_g);
-    NA_CHECK_FATAL_DONE(ret != NA_SUCCESS,
+    NA_CHECK_SUBSYS_NA_FATAL(cls, done, ret,
         "No usable plugin found in path (%s), consider setting NA_PLUGIN_PATH "
         "if path indicated is not valid.",
         plugin_path);
 
-    free(relative_plugin_path);
+done:
+    return;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -516,6 +489,44 @@ error:
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_DYNAMIC_PLUGINS
 #    ifdef _WIN32
+#        define PATH_MAX       MAX_PATH
+#        define realpath(N, R) _fullpath((R), (N), PATH_MAX)
+#    endif
+static na_return_t
+na_plugin_resolve_path(const char *offset, char *path, size_t path_size)
+{
+    static int placeholder;
+    char libpath[PATH_MAX];
+    char *slash;
+    na_return_t ret;
+    int rc;
+
+    rc = hg_dl_get_path(&placeholder, path, path_size);
+    NA_CHECK_SUBSYS_ERROR(
+        cls, rc != 0, error, ret, NA_NOENTRY, "hg_dl_get_path() failed");
+
+    NA_CHECK_SUBSYS_ERROR(cls, realpath(path, libpath) == NULL, error, ret,
+        NA_NOENTRY, "realpath() failed, %s", strerror(errno));
+
+    slash = strrchr(libpath, '/');
+    NA_CHECK_SUBSYS_ERROR(cls, slash == NULL, error, ret, NA_INVALID_ARG,
+        "Could not find last '/' in %s", libpath);
+    *slash = '\0';
+
+    rc = snprintf(path, path_size, "%s/%s", libpath, offset);
+    NA_CHECK_SUBSYS_ERROR(cls, rc < 0 || rc > (int) path_size, error, ret,
+        NA_OVERFLOW,
+        "snprintf() failed or name truncated, rc: %d (expected %zu)", rc,
+        path_size);
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+#    ifdef _WIN32
 static na_return_t
 na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
 {
@@ -538,7 +549,7 @@ na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
     struct dirent **plugin_list;
     struct na_plugin_entry *entries = NULL;
     na_return_t ret;
-    int n, n_entries = 0;
+    int n, opened_plugins = 0;
 
     n = scandir(path, &plugin_list, na_plugin_filter, alphasort);
     NA_CHECK_SUBSYS_ERROR(
@@ -548,16 +559,20 @@ na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
         (struct na_plugin_entry *) calloc((size_t) n + 1, sizeof(*entries));
     NA_CHECK_SUBSYS_ERROR(cls, entries == NULL, error, ret, NA_NOMEM,
         "Could not allocate %d plugin entries", n);
-    n_entries = n;
 
     while (n--) {
         ret = na_plugin_open(path, plugin_list[n]->d_name, &entries[n]);
         free(plugin_list[n]);
-        NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not open plugin (%s)",
-            plugin_list[n]->d_name);
+        if (ret == NA_SUCCESS)
+            opened_plugins++;
+        else
+            NA_LOG_SUBSYS_FATAL(
+                cls, "Could not open plugin (%s)", plugin_list[n]->d_name);
     }
 
     free(plugin_list);
+    NA_CHECK_SUBSYS_FATAL(cls, opened_plugins == 0, error, ret, NA_NOENTRY,
+        "No usable plugin found in path (%s)", path);
 
     *entries_p = entries;
 
@@ -565,19 +580,11 @@ na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
 
 error:
     if (n > 0) {
-        if (entries != NULL) {
-            int i;
-
-            /* close entry */
-            for (i = n + 1; i < n_entries; i++)
-                na_plugin_close(&entries[i]);
-            free(entries);
-        }
-
         while (n--)
             free(plugin_list[n]);
         free(plugin_list);
     }
+    free(entries);
 
     return ret;
 }
