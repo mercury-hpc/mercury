@@ -3216,7 +3216,7 @@ na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
 #endif
 
 #ifdef NA_OFI_HAS_FIREWALL_ADDR
-    fi_flags |= (flags & NA_FIREWALL_ADDR) ? FI_FIREWALL_ADDR : 0;
+    fi_flags |= (flags & NA_ADDR_FIREWALL) ? FI_FIREWALL_ADDR : 0;
 #endif
 
     /* Insert addr into AV if key not found */
