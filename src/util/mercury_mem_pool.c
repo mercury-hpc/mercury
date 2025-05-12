@@ -77,6 +77,16 @@ struct hg_mem_pool {
 /* Local Prototypes */
 /********************/
 
+/* Check if pool is empty */
+static bool
+hg_mem_pool_empty(struct hg_mem_pool *hg_mem_pool,
+    struct hg_mem_pool_block **hg_mem_pool_block_p);
+
+/* Extend pool */
+static int
+hg_mem_pool_extend(struct hg_mem_pool *hg_mem_pool,
+    struct hg_mem_pool_block **hg_mem_pool_block_p);
+
 /* Allocate new pool block */
 static struct hg_mem_pool_block *
 hg_mem_pool_block_alloc(size_t chunk_size, size_t chunk_count,
@@ -151,6 +161,70 @@ hg_mem_pool_destroy(struct hg_mem_pool *hg_mem_pool)
     hg_thread_cond_destroy(&hg_mem_pool->extend_cond);
     hg_thread_spin_destroy(&hg_mem_pool->block_lock);
     free(hg_mem_pool);
+}
+
+/*---------------------------------------------------------------------------*/
+static bool
+hg_mem_pool_empty(struct hg_mem_pool *hg_mem_pool,
+    struct hg_mem_pool_block **hg_mem_pool_block_p)
+{
+    struct hg_mem_pool_block *hg_mem_pool_block;
+    bool empty = true;
+
+    hg_thread_spin_lock(&hg_mem_pool->block_lock);
+    STAILQ_FOREACH (hg_mem_pool_block, &hg_mem_pool->blocks, entry) {
+        hg_thread_spin_lock(&hg_mem_pool_block->chunk_lock);
+        empty = STAILQ_EMPTY(&hg_mem_pool_block->chunks);
+        hg_thread_spin_unlock(&hg_mem_pool_block->chunk_lock);
+        if (!empty) {
+            *hg_mem_pool_block_p = hg_mem_pool_block;
+            break;
+        }
+    }
+    hg_thread_spin_unlock(&hg_mem_pool->block_lock);
+
+    return empty;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+hg_mem_pool_extend(struct hg_mem_pool *hg_mem_pool,
+    struct hg_mem_pool_block **hg_mem_pool_block_p)
+{
+    struct hg_mem_pool_block *hg_mem_pool_block = NULL;
+    int ret = HG_UTIL_SUCCESS;
+
+    /* Let other threads sleep while the pool is being extended */
+    hg_thread_mutex_lock(&hg_mem_pool->extend_mutex);
+    if (hg_mem_pool->extending) {
+        hg_thread_cond_wait(
+            &hg_mem_pool->extend_cond, &hg_mem_pool->extend_mutex);
+        hg_thread_mutex_unlock(&hg_mem_pool->extend_mutex);
+        *hg_mem_pool_block_p = NULL;
+        return ret;
+    }
+    hg_mem_pool->extending = 1;
+    hg_thread_mutex_unlock(&hg_mem_pool->extend_mutex);
+
+    hg_mem_pool_block = hg_mem_pool_block_alloc(hg_mem_pool->chunk_size,
+        hg_mem_pool->chunk_count, hg_mem_pool->register_func,
+        hg_mem_pool->flags, hg_mem_pool->arg);
+    HG_UTIL_CHECK_ERROR(hg_mem_pool_block == NULL, done, ret, HG_UTIL_FAIL,
+        "Could not allocate block of %zu bytes",
+        hg_mem_pool->chunk_size * hg_mem_pool->chunk_count);
+
+    hg_thread_spin_lock(&hg_mem_pool->block_lock);
+    STAILQ_INSERT_TAIL(&hg_mem_pool->blocks, hg_mem_pool_block, entry);
+    hg_thread_spin_unlock(&hg_mem_pool->block_lock);
+    *hg_mem_pool_block_p = hg_mem_pool_block;
+
+done:
+    hg_thread_mutex_lock(&hg_mem_pool->extend_mutex);
+    hg_mem_pool->extending = 0;
+    hg_thread_cond_broadcast(&hg_mem_pool->extend_cond);
+    hg_thread_mutex_unlock(&hg_mem_pool->extend_mutex);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -240,47 +314,13 @@ hg_mem_pool_alloc(
         NULL, "MR handle is NULL");
 
     do {
-        int found = 0;
-
-        /* Check whether we can get a block from one of the pools */
-        hg_thread_spin_lock(&hg_mem_pool->block_lock);
-        STAILQ_FOREACH (hg_mem_pool_block, &hg_mem_pool->blocks, entry) {
-            hg_thread_spin_lock(&hg_mem_pool_block->chunk_lock);
-            found = !STAILQ_EMPTY(&hg_mem_pool_block->chunks);
-            hg_thread_spin_unlock(&hg_mem_pool_block->chunk_lock);
-            if (found)
-                break;
-        }
-        hg_thread_spin_unlock(&hg_mem_pool->block_lock);
-
-        /* If not, allocate and register a new pool */
-        if (!found) {
-            /* Let other threads sleep while the pool is being extended */
-            hg_thread_mutex_lock(&hg_mem_pool->extend_mutex);
-            if (hg_mem_pool->extending) {
-                hg_thread_cond_wait(
-                    &hg_mem_pool->extend_cond, &hg_mem_pool->extend_mutex);
-                hg_thread_mutex_unlock(&hg_mem_pool->extend_mutex);
+        /* If there are no available pools, allocate and register a new pool */
+        if (hg_mem_pool_empty(hg_mem_pool, &hg_mem_pool_block)) {
+            int ret = hg_mem_pool_extend(hg_mem_pool, &hg_mem_pool_block);
+            HG_UTIL_CHECK_ERROR(ret != HG_UTIL_SUCCESS, done, mem_ptr, NULL,
+                "Could not extend memory pool");
+            if (hg_mem_pool_block == NULL)
                 continue;
-            }
-            hg_mem_pool->extending = 1;
-            hg_thread_mutex_unlock(&hg_mem_pool->extend_mutex);
-
-            hg_mem_pool_block = hg_mem_pool_block_alloc(hg_mem_pool->chunk_size,
-                hg_mem_pool->chunk_count, hg_mem_pool->register_func,
-                hg_mem_pool->flags, hg_mem_pool->arg);
-            HG_UTIL_CHECK_ERROR(hg_mem_pool_block == NULL, done, mem_ptr, NULL,
-                "Could not allocate block of %zu bytes",
-                hg_mem_pool->chunk_size * hg_mem_pool->chunk_count);
-
-            hg_thread_spin_lock(&hg_mem_pool->block_lock);
-            STAILQ_INSERT_TAIL(&hg_mem_pool->blocks, hg_mem_pool_block, entry);
-            hg_thread_spin_unlock(&hg_mem_pool->block_lock);
-
-            hg_thread_mutex_lock(&hg_mem_pool->extend_mutex);
-            hg_mem_pool->extending = 0;
-            hg_thread_cond_broadcast(&hg_mem_pool->extend_cond);
-            hg_thread_mutex_unlock(&hg_mem_pool->extend_mutex);
         }
 
         /* Try to pick a node from one of the available pools */
