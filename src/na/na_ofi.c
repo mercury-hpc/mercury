@@ -1,6 +1,7 @@
 /**
  * Copyright (c) 2013-2022 UChicago Argonne, LLC and The HDF Group.
- * Copyright (c) 2017-2023 Intel Corporation.
+ * Copyright (c) 2017-2024 Intel Corporation.
+ * Copyright (c) 2024-2025 Hewlett Packard Enterprise Development LP.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
