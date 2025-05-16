@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      CLANG_FORMAT_VERSION: 18
+      CLANG_FORMAT_VERSION: 19
 
     steps:
       - name: Checkout source

@@ -354,7 +354,7 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Init info */
 #define NA_OFI_INFO_INITIALIZER                                                \
-    ((struct na_ofi_info){.addr_format = FI_FORMAT_UNSPEC,                     \
+    ((struct na_ofi_info) {.addr_format = FI_FORMAT_UNSPEC,                    \
         .thread_mode = FI_THREAD_UNSPEC,                                       \
         .node = NULL,                                                          \
         .service = NULL,                                                       \
@@ -371,11 +371,11 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
     _op, _context, _fi_op_flags, _cb_type, _cb, _arg, _addr)                   \
     do {                                                                       \
         *_op->completion_data =                                                \
-            (struct na_cb_completion_data){                                    \
+            (struct na_cb_completion_data) {                                   \
                 .callback_info =                                               \
-                    (struct na_cb_info){                                       \
+                    (struct na_cb_info) {                                      \
                         .info.multi_recv_unexpected =                          \
-                            (struct na_cb_info_multi_recv_unexpected){         \
+                            (struct na_cb_info_multi_recv_unexpected) {        \
                                 .actual_buf_size = 0,                          \
                                 .source = NULL,                                \
                                 .tag = 0,                                      \
@@ -2612,7 +2612,7 @@ na_ofi_str_to_opx(const char *str, struct na_ofi_opx_addr *opx_addr)
     NA_CHECK_SUBSYS_ERROR(addr, (rc != 6 && rc != 8), error, ret,
         NA_PROTONOSUPPORT, "Could not convert addr string to OPX addr format");
 
-    *opx_addr = (struct na_ofi_opx_addr){.addr.uid.lid = lid,
+    *opx_addr = (struct na_ofi_opx_addr) {.addr.uid.lid = lid,
         .addr.uid.endpoint_id = endpoint_id,
         .addr.rx_index = rx_index,
         .addr.hfi1_rx = hfi1_rx,
@@ -3637,7 +3637,7 @@ na_ofi_match_provider(
         strcmp(verify_info->domain_name, fi_info->domain_attr->name) != 0)
         return false;
 
-        /* Match loc info as a last resort if nothing else was provided */
+    /* Match loc info as a last resort if nothing else was provided */
 #ifdef NA_HAS_HWLOC
     if (verify_info->loc_info && fi_info->nic && fi_info->nic->bus_attr &&
         fi_info->nic->bus_attr->bus_type == FI_BUS_PCI) {
@@ -3660,7 +3660,7 @@ na_ofi_verify_info(enum na_ofi_prov_type prov_type, struct na_ofi_info *info,
     struct fi_info *prov, *providers = NULL, **prov_array = NULL;
     size_t prov_count = 0, prov_max_count = NA_OFI_PROV_INFO_COUNT;
     struct na_ofi_verify_info verify_info =
-        (struct na_ofi_verify_info){.prov_type = prov_type,
+        (struct na_ofi_verify_info) {.prov_type = prov_type,
             .addr_format = info->addr_format,
             .domain_name = domain_name,
             .loc_info = loc_info};
@@ -6068,7 +6068,7 @@ na_ofi_iov_get_count(const struct iovec *iov, size_t iovcnt,
     size_t i, iov_index;
 
     for (i = 1, iov_index = iov_start_index + 1;
-         remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
+        remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
         /* Decrease remaining len from the len of data */
         remaining_len -= MIN(remaining_len, iov[iov_index].iov_len);
     }
@@ -6094,8 +6094,8 @@ na_ofi_iov_translate(const struct iovec *iov, void *desc, size_t iovcnt,
     remaining_len -= new_iov[0].iov_len;
 
     for (i = 1, iov_index = iov_start_index + 1;
-         remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
-         i++, iov_index++) {
+        remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
+        i++, iov_index++) {
         new_iov[i].iov_base = iov[iov_index].iov_base;
         new_desc[i] = desc;
         new_iov[i].iov_len = MIN(remaining_len, iov[iov_index].iov_len);
@@ -6130,8 +6130,8 @@ na_ofi_rma_iov_translate(const struct fi_info *fi_info, const struct iovec *iov,
     remaining_len -= new_iov[0].len;
 
     for (i = 1, iov_index = iov_start_index + 1;
-         remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
-         i++, iov_index++) {
+        remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
+        i++, iov_index++) {
         addr = (fi_info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
                    ? (uint64_t) iov[iov_index].iov_base
                    : (uint64_t) iov[iov_index].iov_base -
@@ -6569,9 +6569,18 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
 
             NA_CHECK_SUBSYS_ERROR(op,
                 hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED,
-                out, ret, NA_FAULT, "Operation ID was completed");
-            NA_LOG_SUBSYS_DEBUG(op, "FI_ECANCELED event on operation ID %p",
-                (void *) na_ofi_op_id);
+                out, ret, NA_FAULT, "Operation ID was completed (%s)",
+                na_cb_type_to_string(na_ofi_op_id->type));
+            if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELED)
+                NA_LOG_SUBSYS_DEBUG(op, "event %d (%s) on operation ID %p (%s)",
+                    cq_err.err, fi_strerror(cq_err.err), (void *) na_ofi_op_id,
+                    na_cb_type_to_string(na_ofi_op_id->type));
+            else
+                /* Report warning when cancelation was not initiated by user. */
+                NA_LOG_SUBSYS_WARNING(op,
+                    "event %d (%s) on operation ID %p (%s)", cq_err.err,
+                    fi_strerror(cq_err.err), (void *) na_ofi_op_id,
+                    na_cb_type_to_string(na_ofi_op_id->type));
 
             /* When tearing down connections, it is possible that operations
             will be canceled by libfabric itself.
@@ -6585,9 +6594,11 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
              * reported, hence we can only complete the operation if the
              * FI_MULTI_RECV flag is set. */
             if (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
-                complete = (FI_VERSION_LT(fi_version(), FI_VERSION(2, 1)) ||
-                               (na_ofi_op_id->na_ofi_class->fabric->prov_type ==
-                                   NA_OFI_PROV_SOCKETS))
+                enum na_ofi_prov_type prov_type =
+                    na_ofi_op_id->na_ofi_class->fabric->prov_type;
+                complete = (FI_VERSION_LT(fi_version(), FI_VERSION(2, 1)) &&
+                               (prov_type != NA_OFI_PROV_CXI)) ||
+                                   (prov_type == NA_OFI_PROV_SOCKETS)
                                ? true /* workaround issue in providers */
                                : cq_err.flags & FI_MULTI_RECV;
                 NA_LOG_SUBSYS_DEBUG(op,
@@ -6595,7 +6606,7 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
                     complete);
                 na_ofi_cq_process_error_multi_recv_unexpected(
                     &na_ofi_op_id->completion_data->callback_info.info
-                         .multi_recv_unexpected,
+                        .multi_recv_unexpected,
                     complete);
             } else
                 complete = true;
@@ -6646,13 +6657,16 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
 
                 NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, out, ret,
                     NA_INVALID_ARG, "Invalid operation ID");
-                NA_LOG_SUBSYS_DEBUG(op, "error event on operation ID %p",
-                    (void *) na_ofi_op_id);
+                NA_LOG_SUBSYS_ERROR(op,
+                    "error event %d (%s) on operation ID %p (%s)", cq_err.err,
+                    fi_strerror(cq_err.err), (void *) na_ofi_op_id,
+                    na_cb_type_to_string(na_ofi_op_id->type));
 
                 NA_CHECK_SUBSYS_ERROR(op,
                     hg_atomic_get32(&na_ofi_op_id->status) &
                         NA_OFI_OP_COMPLETED,
-                    out, ret, NA_FAULT, "Operation ID was completed");
+                    out, ret, NA_FAULT, "Operation ID was completed (%s)",
+                    na_cb_type_to_string(na_ofi_op_id->type));
 
                 if (hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_ERRORED) &
                     NA_OFI_OP_CANCELED)
@@ -6668,18 +6682,19 @@ na_ofi_cq_readerr(struct fid_cq *cq, struct fi_cq_tagged_entry *cq_event,
                  * been reported, hence we can only complete the operation if
                  * the FI_MULTI_RECV flag is set. */
                 if (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
-                    complete =
-                        (FI_VERSION_LT(fi_version(), FI_VERSION(2, 1)) ||
-                            (na_ofi_op_id->na_ofi_class->fabric->prov_type ==
-                                NA_OFI_PROV_SOCKETS))
-                            ? true /* workaround issue in providers */
-                            : cq_err.flags & FI_MULTI_RECV;
+                    enum na_ofi_prov_type prov_type =
+                        na_ofi_op_id->na_ofi_class->fabric->prov_type;
+                    complete = (FI_VERSION_LT(fi_version(), FI_VERSION(2, 1)) &&
+                                   (prov_type != NA_OFI_PROV_CXI)) ||
+                                       (prov_type == NA_OFI_PROV_SOCKETS)
+                                   ? true /* workaround issue in providers */
+                                   : cq_err.flags & FI_MULTI_RECV;
                     NA_LOG_SUBSYS_DEBUG(op,
                         "error reported on multi-recv (completed=%d)",
                         complete);
                     na_ofi_cq_process_error_multi_recv_unexpected(
                         &na_ofi_op_id->completion_data->callback_info.info
-                             .multi_recv_unexpected,
+                            .multi_recv_unexpected,
                         complete);
                 } else
                     complete = true;
@@ -6842,7 +6857,8 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
     /* Cannot have an already completed operation ID, sanity check */
     NA_CHECK_SUBSYS_ERROR(op,
         hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED, error,
-        ret, NA_FAULT, "Operation ID was completed");
+        ret, NA_FAULT, "Operation ID was completed (%s)",
+        na_cb_type_to_string(na_ofi_op_id->type));
     NA_CHECK_SUBSYS_ERROR(op, !(cq_event->flags & na_ofi_op_id->fi_op_flags),
         error, ret, NA_PROTONOSUPPORT,
         "Unsupported CQ event flags: 0x%" PRIx64 ", expected 0x%" PRIx64,
@@ -6861,7 +6877,7 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
             ret = na_ofi_cq_process_recv_unexpected(na_ofi_class,
                 &na_ofi_op_id->info.msg,
                 &na_ofi_op_id->completion_data->callback_info.info
-                     .recv_unexpected,
+                    .recv_unexpected,
                 na_ofi_op_id->info.msg.buf.ptr, cq_event->len, na_ofi_addr,
                 (cq_event->flags & FI_REMOTE_CQ_DATA) ? cq_event->data
                                                       : cq_event->tag);
@@ -6877,7 +6893,7 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
             ret = na_ofi_cq_process_multi_recv_unexpected(na_ofi_class,
                 &na_ofi_op_id->info.msg,
                 &na_ofi_op_id->completion_data->callback_info.info
-                     .multi_recv_unexpected,
+                    .multi_recv_unexpected,
                 cq_event->buf, cq_event->len, na_ofi_addr, cq_event->data,
                 complete);
             NA_CHECK_SUBSYS_NA_ERROR(msg, error, ret,
@@ -6886,7 +6902,7 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
         case NA_CB_RECV_EXPECTED:
             ret = na_ofi_cq_process_recv_expected(&na_ofi_op_id->info.msg,
                 &na_ofi_op_id->completion_data->callback_info.info
-                     .recv_expected,
+                    .recv_expected,
                 na_ofi_op_id->info.msg.buf.ptr, cq_event->len, cq_event->tag);
             NA_CHECK_SUBSYS_NA_ERROR(
                 msg, error, ret, "Could not process expected recv event");
@@ -8112,7 +8128,8 @@ na_ofi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
         /* Multi-events may not be fully completed when they are destroyed */
         NA_CHECK_SUBSYS_WARNING(op,
             !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED),
-            "Attempting to free OP ID that was not completed");
+            "Attempting to free OP ID that was not completed (%s)",
+            na_cb_type_to_string(na_ofi_op_id->type));
     }
 
     free(na_ofi_op_id);
@@ -8488,7 +8505,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         callback, arg, na_ofi_addr);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.const_ptr = buf,
+    na_ofi_op_id->info.msg = (struct na_ofi_msg_info) {.buf.const_ptr = buf,
         .buf_size = buf_size,
         .fi_addr = na_ofi_class->use_sep ? fi_rx_addr(na_ofi_addr->fi_addr,
                                                dest_id, NA_OFI_SEP_RX_CTX_BITS)
@@ -8546,7 +8563,7 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         callback, arg, NULL);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.ptr = buf,
+    na_ofi_op_id->info.msg = (struct na_ofi_msg_info) {.buf.ptr = buf,
         .buf_size = buf_size,
         .fi_addr = FI_ADDR_UNSPEC,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
@@ -8607,7 +8624,7 @@ na_ofi_msg_multi_recv_unexpected(na_class_t *na_class, na_context_t *context,
     hg_thread_spin_unlock(&na_ofi_context->multi_op_queue.lock);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.ptr = buf,
+    na_ofi_op_id->info.msg = (struct na_ofi_msg_info) {.buf.ptr = buf,
         .buf_size = buf_size,
         .fi_addr = FI_ADDR_UNSPEC,
         .desc = (fi_mr) ? fi_mr_desc(fi_mr) : NULL,
@@ -8670,7 +8687,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         callback, arg, na_ofi_addr);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.const_ptr = buf,
+    na_ofi_op_id->info.msg = (struct na_ofi_msg_info) {.buf.const_ptr = buf,
         .buf_size = buf_size,
         .fi_addr = na_ofi_class->use_sep ? fi_rx_addr(na_ofi_addr->fi_addr,
                                                dest_id, NA_OFI_SEP_RX_CTX_BITS)
@@ -8729,7 +8746,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         callback, arg, na_ofi_addr);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ofi_op_id->info.msg = (struct na_ofi_msg_info){.buf.ptr = buf,
+    na_ofi_op_id->info.msg = (struct na_ofi_msg_info) {.buf.ptr = buf,
         .buf_size = buf_size,
         .fi_addr = na_ofi_class->use_sep
                        ? fi_rx_addr(na_ofi_addr->fi_addr, source_id,
