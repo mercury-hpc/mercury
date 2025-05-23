@@ -1,6 +1,7 @@
 /**
  * Copyright (c) 2013-2022 UChicago Argonne, LLC and The HDF Group.
  * Copyright (c) 2022-2023 Intel Corporation.
+ * Copyright (c) 2025 VDURA, Inc.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -23,7 +24,6 @@ hg_event_create(void)
         fd == -1, done, "eventfd() failed (%s)", strerror(errno));
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
     struct kevent kev;
-    struct timespec timeout = {0, 0};
     int rc;
 
     /* Create kqueue */
@@ -34,7 +34,7 @@ hg_event_create(void)
     EV_SET(&kev, HG_EVENT_IDENT, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
 
     /* Add user-defined event to kqueue */
-    rc = kevent(fd, &kev, 1, NULL, 0, &timeout);
+    rc = kevent(fd, &kev, 1, NULL, 0, NULL);
     HG_UTIL_CHECK_ERROR_NORET(
         rc == -1, error, "kevent() failed (%s)", strerror(errno));
 #else
