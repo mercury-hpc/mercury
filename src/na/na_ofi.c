@@ -1,6 +1,7 @@
 /**
  * Copyright (c) 2013-2022 UChicago Argonne, LLC and The HDF Group.
  * Copyright (c) 2017-2023 Intel Corporation.
+ * Copyright (c) 2025 VDURA, Inc.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -2180,7 +2181,7 @@ na_ofi_errno_to_na(int rc)
             ret = NA_INTERRUPT;
             break;
         case FI_EIO:
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
         case FI_EREMOTEIO:
 #endif
             ret = NA_IO_ERROR;
@@ -2198,7 +2199,7 @@ na_ofi_errno_to_na(int rc)
             ret = NA_NOMEM;
             break;
         case FI_EACCES:
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__FreeBSD__)
         case FI_EKEYREJECTED:
 #endif
             ret = NA_ACCESS;
@@ -2259,7 +2260,9 @@ na_ofi_errno_to_na(int rc)
             ret = NA_CANCELED;
             break;
         case FI_ENOMSG:
+#if !defined(__FreeBSD__)
         case FI_ENODATA:
+#endif
         /* In practice the following codes are not errors but treat them as is
          * in this routine. */
         case FI_EISCONN:
