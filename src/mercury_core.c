@@ -233,6 +233,8 @@ struct hg_core_loopback_notify {
 /* Multi-recv buffer context */
 struct hg_core_multi_recv_op {
     struct hg_core_private_context *context; /* Context */
+    na_class_t *na_class;                    /* NA class */
+    na_context_t *na_context;                /* NA context */
     void *buf;                               /* Multi-recv buffer */
     size_t buf_size;                         /* Multi-recv buffer size */
     void *plugin_data;                       /* NA plugin data */
@@ -487,15 +489,14 @@ hg_core_context_multi_recv_alloc(struct hg_core_private_context *context,
  * Free multi-recv resources.
  */
 static void
-hg_core_context_multi_recv_free(
-    struct hg_core_private_context *context, na_class_t *na_class);
+hg_core_context_multi_recv_free(struct hg_core_private_context *context);
 
 /**
  * Post multi-recv operations.
  */
 static hg_return_t
-hg_core_context_multi_recv_post(struct hg_core_private_context *context,
-    na_class_t *na_class, na_context_t *na_context);
+hg_core_context_multi_recv_post(
+    struct hg_core_private_context *context, na_context_t *na_context);
 
 /**
  * Cancel posted multi-recv operations.
@@ -762,8 +763,7 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle);
  * Post multi-recv operation.
  */
 static hg_return_t
-hg_core_post_multi(struct hg_core_multi_recv_op *multi_recv_op,
-    na_class_t *na_class, na_context_t *na_context);
+hg_core_post_multi(struct hg_core_multi_recv_op *multi_recv_op);
 
 /**
  * Release hold on input buffer so that it can be re-used early.
@@ -1522,7 +1522,7 @@ static void
 hg_core_class_get_counters(const struct hg_core_counters *counters,
     struct hg_diag_counters *diag_counters)
 {
-    *diag_counters = (struct hg_diag_counters){
+    *diag_counters = (struct hg_diag_counters) {
         .rpc_req_sent_count =
             (uint64_t) hg_atomic_get64(counters->rpc_req_sent_count),
         .rpc_req_recv_count =
@@ -1999,9 +1999,8 @@ hg_core_context_post(struct hg_core_private_context *context)
 
     /* Only post multi-recv after pool of handles has been created */
     if (hg_core_class->init_info.multi_recv) {
-        ret = hg_core_context_multi_recv_post(context,
-            hg_core_class->core_class.na_class,
-            context->core_context.na_context);
+        ret = hg_core_context_multi_recv_post(
+            context, context->core_context.na_context);
         HG_CHECK_SUBSYS_HG_ERROR(
             ctx, error, ret, "Could not post multi-recv operations");
     }
@@ -2024,8 +2023,7 @@ error:
     }
 #endif
     if (hg_core_class->init_info.multi_recv)
-        hg_core_context_multi_recv_free(
-            context, hg_core_class->core_class.na_class);
+        hg_core_context_multi_recv_free(context);
 
     return ret;
 }
@@ -2079,8 +2077,7 @@ hg_core_context_unpost(
     HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret, "Could not wait on handle list");
 
     if (hg_core_class->init_info.multi_recv)
-        hg_core_context_multi_recv_free(
-            context, hg_core_class->core_class.na_class);
+        hg_core_context_multi_recv_free(context);
 
     context->posted = false;
 
@@ -2113,6 +2110,7 @@ hg_core_context_multi_recv_alloc(struct hg_core_private_context *context,
             &context->multi_recv_ops[i];
 
         multi_recv_op->context = context;
+        multi_recv_op->na_class = na_class;
         multi_recv_op->op_id = NA_Op_create(na_class, NA_OP_MULTI);
         HG_CHECK_SUBSYS_ERROR(ctx, multi_recv_op->op_id == NULL, error, ret,
             HG_NOMEM, "Could not create new OP ID");
@@ -2156,8 +2154,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_core_context_multi_recv_free(
-    struct hg_core_private_context *context, na_class_t *na_class)
+hg_core_context_multi_recv_free(struct hg_core_private_context *context)
 {
     unsigned int multi_recv_op_max =
         HG_CORE_CONTEXT_CLASS(context)->init_info.multi_recv_op_max;
@@ -2176,10 +2173,10 @@ hg_core_context_multi_recv_free(
             "(%" PRId32 ")",
             hg_atomic_get32(&multi_recv_op->ref_count));
 
-        NA_Op_destroy(na_class, multi_recv_op->op_id);
+        NA_Op_destroy(multi_recv_op->na_class, multi_recv_op->op_id);
         multi_recv_op->op_id = NULL;
-        NA_Msg_buf_free(
-            na_class, multi_recv_op->buf, multi_recv_op->plugin_data);
+        NA_Msg_buf_free(multi_recv_op->na_class, multi_recv_op->buf,
+            multi_recv_op->plugin_data);
         multi_recv_op->buf = NULL;
         multi_recv_op->plugin_data = NULL;
         multi_recv_op->buf_size = 0;
@@ -2189,8 +2186,8 @@ hg_core_context_multi_recv_free(
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_context_multi_recv_post(struct hg_core_private_context *context,
-    na_class_t *na_class, na_context_t *na_context)
+hg_core_context_multi_recv_post(
+    struct hg_core_private_context *context, na_context_t *na_context)
 {
     unsigned int multi_recv_op_max =
         HG_CORE_CONTEXT_CLASS(context)->init_info.multi_recv_op_max;
@@ -2204,9 +2201,10 @@ hg_core_context_multi_recv_post(struct hg_core_private_context *context,
         struct hg_core_multi_recv_op *multi_recv_op =
             &context->multi_recv_ops[i];
 
+        multi_recv_op->na_context = na_context;
         multi_recv_op->id = i;
 
-        ret = hg_core_post_multi(multi_recv_op, na_class, na_context);
+        ret = hg_core_post_multi(multi_recv_op);
         HG_CHECK_SUBSYS_HG_ERROR(
             ctx, error, ret, "Could not post multi-recv buffer %u", i);
     }
@@ -3439,7 +3437,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
 #if defined(HG_HAS_DIAG) && !defined(_WIN32)
     if (hg_core_handle->active) {
         hg_atomic_decr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
-                             ->counters.rpc_req_recv_active_count);
+                ->counters.rpc_req_recv_active_count);
         hg_core_handle->active = false;
     }
 #endif
@@ -3763,7 +3761,7 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle)
     /* Reset handle info */
     if (hg_core_handle->core_handle.info.addr != HG_CORE_ADDR_NULL) {
         hg_core_addr_free_na((struct hg_core_private_addr *)
-                                 hg_core_handle->core_handle.info.addr);
+                hg_core_handle->core_handle.info.addr);
     }
     hg_core_handle->core_handle.info.id = 0;
 
@@ -3810,8 +3808,7 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle)
                 ctx, "Reposting multi-recv buffer %d", multi_recv_op->id);
 
             /* Repost multi recv */
-            ret = hg_core_post_multi(multi_recv_op,
-                hg_core_handle_pool->na_class, hg_core_handle_pool->na_context);
+            ret = hg_core_post_multi(multi_recv_op);
             HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret,
                 "Cannot repost multi-recv operation (%d)", multi_recv_op->id);
             hg_atomic_incr32(&context->multi_recv_op_count);
@@ -3916,8 +3913,7 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_post_multi(struct hg_core_multi_recv_op *multi_recv_op,
-    na_class_t *na_class, na_context_t *na_context)
+hg_core_post_multi(struct hg_core_multi_recv_op *multi_recv_op)
 {
     hg_return_t ret;
     na_return_t na_ret;
@@ -3927,9 +3923,9 @@ hg_core_post_multi(struct hg_core_multi_recv_op *multi_recv_op,
     hg_atomic_init32(&multi_recv_op->op_count, 0);
 
     /* Post a new unexpected receive */
-    na_ret = NA_Msg_multi_recv_unexpected(na_class, na_context,
-        hg_core_multi_recv_input_cb, multi_recv_op, multi_recv_op->buf,
-        multi_recv_op->buf_size, multi_recv_op->plugin_data,
+    na_ret = NA_Msg_multi_recv_unexpected(multi_recv_op->na_class,
+        multi_recv_op->na_context, hg_core_multi_recv_input_cb, multi_recv_op,
+        multi_recv_op->buf, multi_recv_op->buf_size, multi_recv_op->plugin_data,
         multi_recv_op->op_id);
     HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
         (hg_return_t) na_ret, "NA_Msg_multi_recv_unexpected() failed (%s)",
@@ -3950,42 +3946,32 @@ hg_core_release_input(struct hg_core_private_handle *hg_core_handle)
 {
     struct hg_core_private_context *context =
         HG_CORE_HANDLE_CONTEXT(hg_core_handle);
-    struct hg_core_handle_pool *hg_core_handle_pool;
     struct hg_core_multi_recv_op *multi_recv_op = hg_core_handle->multi_recv_op;
     hg_return_t ret;
 
     if (!(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_MULTI_RECV))
         return HG_SUCCESS;
 
-#ifdef NA_HAS_SM
-    hg_core_handle_pool = (hg_core_handle->na_class ==
-                              context->core_context.core_class->na_sm_class)
-                              ? context->sm_handle_pool
-                              : context->handle_pool;
-#else
-    hg_core_handle_pool = context->handle_pool;
-#endif
+    if (multi_recv_op == NULL) /* Already released */
+        return HG_SUCCESS;
 
-    /* Multi-recv buffers */
-    if (multi_recv_op != NULL) {
-        if (!hg_core_handle->multi_recv_copy) {
-            hg_core_handle->core_handle.in_buf = NULL;
-            hg_core_handle->core_handle.in_buf_size = 0;
-        }
-        hg_core_handle->multi_recv_op = NULL;
+    if (!hg_core_handle->multi_recv_copy) {
+        hg_core_handle->core_handle.in_buf = NULL;
+        hg_core_handle->core_handle.in_buf_size = 0;
+    }
+    hg_core_handle->multi_recv_op = NULL;
 
-        if (hg_atomic_decr32(&multi_recv_op->ref_count) == 0 &&
-            hg_atomic_get32(&multi_recv_op->last)) {
-            HG_LOG_SUBSYS_DEBUG(
-                ctx, "Reposting multi-recv buffer %d", multi_recv_op->id);
+    if ((hg_atomic_decr32(&multi_recv_op->ref_count) == 0) &&
+        hg_atomic_get32(&multi_recv_op->last) &&
+        !hg_atomic_get32(&HG_CORE_HANDLE_CONTEXT(hg_core_handle)->unposting)) {
+        HG_LOG_SUBSYS_DEBUG(
+            ctx, "Reposting multi-recv buffer %d", multi_recv_op->id);
 
-            /* Repost multi recv */
-            ret = hg_core_post_multi(multi_recv_op,
-                hg_core_handle_pool->na_class, hg_core_handle_pool->na_context);
-            HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret,
-                "Cannot repost multi-recv operation (%d)", multi_recv_op->id);
-            hg_atomic_incr32(&context->multi_recv_op_count);
-        }
+        /* Repost multi recv */
+        ret = hg_core_post_multi(multi_recv_op);
+        HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret,
+            "Cannot repost multi-recv operation (%d)", multi_recv_op->id);
+        hg_atomic_incr32(&context->multi_recv_op_count);
     }
 
     return HG_SUCCESS;
@@ -4524,7 +4510,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 #if defined(HG_HAS_DIAG) && !defined(_WIN32)
     /* Increment counter */
     hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
-                         ->counters.rpc_req_recv_active_count);
+            ->counters.rpc_req_recv_active_count);
     hg_core_handle->active = true;
 #endif
 
@@ -4624,7 +4610,8 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
     struct hg_core_private_handle *hg_core_handle = NULL;
     hg_return_t ret;
 
-    if (callback_info->ret == NA_SUCCESS) {
+    if (callback_info->ret == NA_SUCCESS &&
+        na_cb_info_multi_recv_unexpected->actual_buf != NULL) {
         /* Get a new handle from the pool */
         ret = hg_core_handle_pool_get(context->handle_pool, &hg_core_handle);
         HG_CHECK_SUBSYS_HG_ERROR(
@@ -4632,7 +4619,7 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
 #if defined(HG_HAS_DIAG) && !defined(_WIN32)
         /* Increment counter */
         hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
-                             ->counters.rpc_req_recv_active_count);
+                ->counters.rpc_req_recv_active_count);
         hg_core_handle->active = true;
 #endif
         hg_core_handle->multi_recv_op = multi_recv_op;
@@ -4689,7 +4676,7 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
 #if defined(HG_HAS_DIAG) && !defined(_WIN32)
             /* Increment counter */
             hg_atomic_incr64(HG_CORE_CONTEXT_CLASS(context)
-                                 ->counters.rpc_multi_recv_copy_count);
+                    ->counters.rpc_multi_recv_copy_count);
 #endif
 
             memcpy(hg_core_handle->in_buf_storage,
@@ -4725,25 +4712,38 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
 
         /* Complete operation */
         hg_core_complete_op(hg_core_handle);
-    } else if (callback_info->ret == NA_CANCELED) {
-        HG_LOG_SUBSYS_DEBUG(
-            rpc, "NA_CANCELED event on multi-recv op %d", multi_recv_op->id);
-        if (na_cb_info_multi_recv_unexpected->last) {
-            HG_LOG_SUBSYS_DEBUG(rpc,
-                "This is the last buffer of multi-recv op %d, marking as last",
-                multi_recv_op->id);
-            hg_atomic_set32(&multi_recv_op->last, true);
-            hg_atomic_decr32(&context->multi_recv_op_count);
-        }
     } else {
-        HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s)",
-            NA_Error_to_string(callback_info->ret));
+        if (callback_info->ret == NA_SUCCESS &&
+            na_cb_info_multi_recv_unexpected->actual_buf == NULL)
+            HG_LOG_SUBSYS_DEBUG(rpc,
+                "Multi-recv buffer %d has been released without any data "
+                "returned",
+                multi_recv_op->id);
+        else if (callback_info->ret == NA_CANCELED)
+            HG_LOG_SUBSYS_DEBUG(rpc, "NA_CANCELED event on multi-recv op %d",
+                multi_recv_op->id);
+        else
+            HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s)",
+                NA_Error_to_string(callback_info->ret));
+
         if (na_cb_info_multi_recv_unexpected->last) {
             HG_LOG_SUBSYS_DEBUG(rpc,
                 "This is the last buffer of multi-recv op %d, marking as last",
                 multi_recv_op->id);
             hg_atomic_set32(&multi_recv_op->last, true);
             hg_atomic_decr32(&context->multi_recv_op_count);
+            if ((hg_atomic_get32(&multi_recv_op->ref_count) == 0) &&
+                !hg_atomic_get32(&context->unposting)) {
+                HG_LOG_SUBSYS_WARNING(
+                    ctx, "Reposting multi-recv buffer %d", multi_recv_op->id);
+
+                /* Repost multi recv */
+                ret = hg_core_post_multi(multi_recv_op);
+                HG_CHECK_SUBSYS_HG_ERROR(ctx, error, ret,
+                    "Cannot repost multi-recv operation (%d)",
+                    multi_recv_op->id);
+                hg_atomic_incr32(&context->multi_recv_op_count);
+            }
         }
     }
 
@@ -5347,8 +5347,7 @@ hg_core_completion_trigger(struct hg_completion_entry *hg_completion_entry)
                 hg_completion_entry->op_id.hg_core_op_id);
             break;
         case HG_RPC:
-            hg_core_trigger_entry(
-                (struct hg_core_private_handle *)
+            hg_core_trigger_entry((struct hg_core_private_handle *)
                     hg_completion_entry->op_id.hg_core_handle);
             break;
         case HG_BULK:
