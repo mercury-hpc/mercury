@@ -6397,13 +6397,15 @@ na_ofi_cq_poll_no_source(struct na_ofi_class *na_ofi_class,
         NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, error, ret,
             NA_INVALID_ARG, "Invalid operation ID");
 
-        if (na_ofi_op_id->type == NA_CB_RECV_UNEXPECTED ||
-            na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED) {
+        if (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED &&
+            cq_events[i].buf != NULL) {
+            ret = na_ofi_cq_process_raw_src_addr(
+                na_ofi_class, cq_events[i].buf, cq_events[i].len, &na_ofi_addr);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                msg, error, ret, "Could not process raw src addr");
+        } else if (na_ofi_op_id->type == NA_CB_RECV_UNEXPECTED) {
             ret = na_ofi_cq_process_raw_src_addr(na_ofi_class,
-                (na_ofi_op_id->type == NA_CB_MULTI_RECV_UNEXPECTED)
-                    ? cq_events[i].buf
-                    : na_ofi_op_id->info.msg.buf.ptr,
-                cq_events[i].len, &na_ofi_addr);
+                na_ofi_op_id->info.msg.buf.ptr, cq_events[i].len, &na_ofi_addr);
             NA_CHECK_SUBSYS_NA_ERROR(
                 msg, error, ret, "Could not process raw src addr");
         }
@@ -6885,16 +6887,14 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
                 msg, error, ret, "Could not process unexpected recv event");
             break;
         case NA_CB_MULTI_RECV_UNEXPECTED:
-            NA_CHECK_SUBSYS_ERROR(msg, !(cq_event->flags & FI_REMOTE_CQ_DATA),
-                error, ret, NA_INVALID_ARG,
-                "FI_REMOTE_CQ_DATA not set in completion event");
             complete = cq_event->flags & FI_MULTI_RECV;
 
             ret = na_ofi_cq_process_multi_recv_unexpected(na_ofi_class,
                 &na_ofi_op_id->info.msg,
                 &na_ofi_op_id->completion_data->callback_info.info
                     .multi_recv_unexpected,
-                cq_event->buf, cq_event->len, na_ofi_addr, cq_event->data,
+                cq_event->buf, cq_event->len, na_ofi_addr,
+                (cq_event->flags & FI_REMOTE_CQ_DATA) ? cq_event->data : 0,
                 complete);
             NA_CHECK_SUBSYS_NA_ERROR(msg, error, ret,
                 "Could not process unexpected multi recv event");
@@ -7092,24 +7092,19 @@ na_ofi_cq_process_retries(
             (void *) na_ofi_op_id, na_cb_type_to_string(cb_type));
 
         /* Retry operation */
-        switch (na_ofi_op_id->fi_op_flags) {
-            case FI_SEND:
-                ret = na_ofi_op_id->retry_op.msg(na_ofi_context->fi_tx,
-                    &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
-                break;
-            case FI_RECV:
-                ret = na_ofi_op_id->retry_op.msg(na_ofi_context->fi_rx,
-                    &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
-                break;
-            case FI_RMA:
-                ret = na_ofi_op_id->retry_op.rma(na_ofi_context->fi_tx,
-                    &na_ofi_op_id->info.rma, &na_ofi_op_id->fi_ctx);
-                break;
-            default:
-                NA_GOTO_SUBSYS_ERROR(op, error, ret, NA_INVALID_ARG,
-                    "Operation type %" PRIu64 " not supported",
-                    na_ofi_op_id->fi_op_flags);
-        }
+        if (na_ofi_op_id->fi_op_flags & FI_SEND)
+            ret = na_ofi_op_id->retry_op.msg(na_ofi_context->fi_tx,
+                &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
+        else if (na_ofi_op_id->fi_op_flags & FI_RECV)
+            ret = na_ofi_op_id->retry_op.msg(na_ofi_context->fi_rx,
+                &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
+        else if (na_ofi_op_id->fi_op_flags & FI_RMA)
+            ret = na_ofi_op_id->retry_op.rma(na_ofi_context->fi_tx,
+                &na_ofi_op_id->info.rma, &na_ofi_op_id->fi_ctx);
+        else
+            NA_GOTO_SUBSYS_ERROR(op, error, ret, NA_INVALID_ARG,
+                "Operation type %" PRIu64 " not supported",
+                na_ofi_op_id->fi_op_flags);
 
         if (ret == NA_SUCCESS) {
             /* If the operation got canceled while we retried it, attempt to
@@ -8612,8 +8607,8 @@ na_ofi_msg_multi_recv_unexpected(na_class_t *na_class, na_context_t *context,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed (%s)",
         na_cb_type_to_string(na_ofi_op_id->type));
 
-    NA_OFI_OP_RESET(na_ofi_op_id, context, FI_RECV, NA_CB_MULTI_RECV_UNEXPECTED,
-        callback, arg, NULL);
+    NA_OFI_OP_RESET(na_ofi_op_id, context, FI_RECV | FI_MULTI_RECV,
+        NA_CB_MULTI_RECV_UNEXPECTED, callback, arg, NULL);
     na_ofi_op_id->completion_data_storage.multi.completion_count = 0;
 
     /* Add operation ID to context multi-op queue for tracking */
