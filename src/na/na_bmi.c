@@ -1229,14 +1229,12 @@ na_bmi_initialize(
     struct na_bmi_class *na_bmi_class = NULL;
     char method_list[NA_BMI_ADDR_NAME_MAX] = {'\0'},
          listen_addr[NA_BMI_ADDR_NAME_MAX] = {'\0'},
-         my_hostname[NA_BMI_ADDR_NAME_MAX] = {'\0'},
-         pref_anyip[16] = {'\0'}; /* for INADDR_ANY */
+         my_hostname[NA_BMI_ADDR_NAME_MAX] = {'\0'};
     char *method_list_p = NULL, *listen_addr_p = NULL;
     int flag = (listen) ? (BMI_INIT_SERVER | BMI_TCP_BIND_SPECIFIC) : 0,
         port = 0;
     na_return_t ret;
     int bmi_ret, i;
-    bool anyaddr = false;
 
     /* Allocate private data */
     na_bmi_class = (struct na_bmi_class *) calloc(1, sizeof(*na_bmi_class));
@@ -1311,15 +1309,17 @@ na_bmi_initialize(
                 strtok_r(my_hostname, ":", &port_str);
                 port = atoi(port_str);
             }
-        } else {
-            /* Addr unspecified but we are in server mode; use INADDR_ANY
-             * and let BMI choose port.
-             */
-            snprintf(my_hostname, sizeof(my_hostname), "0.0.0.0");
         }
 
-        /* get pref IP addr by subnet for INADDR_ANY */
-        if (strcmp(my_hostname, "0.0.0.0") == 0) {
+        if (na_info->host_name == NULL || !strcmp(my_hostname, "0.0.0.0")) {
+            /* Addr unspecified or "0.0.0.0" but we are in server mode;
+             * Use na_ip_pref_addr() to select server IP, honoring
+             * na_init_info->ip_subnet (if provided).   If port is still
+             * zero, then BMI will let the kernel choose the port
+             * (we will read the port back later with BMI_get_info()).
+             * Do not BMI_initialize() with 0.0.0.0 (INADDR_ANY)
+             * as it will confuse BMI's addr_hash code.
+             */
             uint32_t subnet = 0, netmask = 0;
 
             if (na_init_info->ip_subnet) {
@@ -1328,10 +1328,9 @@ na_bmi_initialize(
                 NA_CHECK_NA_ERROR(
                     error, ret, "BMI_initialize() failed - NA_Parse_subnet");
             }
-            ret = na_ip_pref_addr(subnet, netmask, pref_anyip);
+            ret = na_ip_pref_addr(subnet, netmask, my_hostname);
             NA_CHECK_NA_ERROR(
                 error, ret, "BMI_initialize() failed - NA_Pref_ipaddr");
-            anyaddr = true;
         }
 
         /* Pick a default port */
@@ -1361,7 +1360,7 @@ na_bmi_initialize(
         }
 
         desc_len = snprintf(listen_addr, NA_BMI_ADDR_NAME_MAX, "%s://%s:%d",
-            na_info->protocol_name, anyaddr ? pref_anyip : my_hostname, port);
+            na_info->protocol_name, my_hostname, port);
         NA_CHECK_ERROR(desc_len > NA_BMI_ADDR_NAME_MAX, error, ret, NA_OVERFLOW,
             "Exceeding max addr name");
 
@@ -1386,7 +1385,7 @@ na_bmi_initialize(
     return NA_SUCCESS;
 
 error:
-    if (na_class->plugin_class) {
+    if (na_bmi_class) {
         free(na_bmi_class->protocol_name);
         free(na_bmi_class->listen_addr);
 
@@ -1409,7 +1408,7 @@ error:
         }
 
         na_bmi_addr_destroy(na_bmi_class->src_addr);
-        free(na_class->plugin_class);
+        free(na_bmi_class);
     }
 
     return ret;
