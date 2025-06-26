@@ -858,8 +858,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info);
  * Process output.
  */
 static hg_return_t
-hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
-    void (*done_callback)(hg_core_handle_t, hg_return_t));
+hg_core_process_output(struct hg_core_private_handle *hg_core_handle);
 
 /**
  * Callback for HG_CORE_MORE_DATA operation.
@@ -868,10 +867,16 @@ static HG_INLINE void
 hg_core_more_data_complete(hg_core_handle_t handle, hg_return_t ret);
 
 /**
- * Send ack for HG_CORE_MORE_DATA flag on output.
+ * Post recv ack for HG_CORE_MORE_DATA flag (output or one-way RPC).
+ */
+static hg_return_t
+hg_core_ack_recv(struct hg_core_private_handle *hg_core_handle);
+
+/**
+ * Send ack for HG_CORE_MORE_DATA flag (output or one-way RPC).
  */
 static void
-hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret);
+hg_core_ack_send(hg_core_handle_t handle, hg_return_t ret);
 
 /**
  * Ack callback. (HG_CORE_MORE_DATA flag on output)
@@ -4098,6 +4103,8 @@ hg_core_forward_self(struct hg_core_private_handle *hg_core_handle)
 static hg_return_t
 hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
 {
+    uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
+    na_op_id_t *na_recv_op_id = NULL;
     hg_return_t ret;
     na_return_t na_ret;
 
@@ -4107,8 +4114,7 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
     /* Set header */
     hg_core_handle->in_header.msg.request.id =
         hg_core_handle->core_handle.info.id;
-    hg_core_handle->in_header.msg.request.flags =
-        (uint8_t) (hg_atomic_get32(&hg_core_handle->flags) & 0xff);
+    hg_core_handle->in_header.msg.request.flags = (uint8_t) (flags & 0xff);
     /* Set the cookie as origin context ID, so that when the cookie is
      * unpacked by the target and assigned to HG info context_id, the NA
      * layer knows which context ID it needs to send the response to. */
@@ -4125,9 +4131,10 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
         hg_core_gen_request_tag(HG_CORE_HANDLE_CLASS(hg_core_handle));
 
     /* Pre-post recv (output) if response is expected */
-    if (!(hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_NO_RESPONSE)) {
+    if (!(flags & HG_CORE_NO_RESPONSE)) {
         int32_t HG_DEBUG_LOG_USED expected_count;
 
+        na_recv_op_id = hg_core_handle->na_recv_op_id;
         na_ret = NA_Msg_recv_expected(hg_core_handle->na_class,
             hg_core_handle->na_context, hg_core_recv_output_cb, hg_core_handle,
             hg_core_handle->core_handle.out_buf,
@@ -4144,6 +4151,11 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
         HG_LOG_SUBSYS_DEBUG(rpc_ref,
             "Handle (%p) expected_count incr to %" PRId32,
             (void *) hg_core_handle, expected_count);
+    } else if (flags & HG_CORE_MORE_DATA) {
+        ret = hg_core_ack_recv(hg_core_handle);
+        HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not post ack recv");
+
+        na_recv_op_id = hg_core_handle->na_ack_op_id;
     }
 
     /* Mark handle as posted */
@@ -4170,10 +4182,7 @@ error_send:
     hg_atomic_and32(&hg_core_handle->status, ~HG_CORE_OP_POSTED);
     hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
 
-    if (hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_NO_RESPONSE) {
-        /* No recv was posted */
-        return ret;
-    } else {
+    if (!(flags & HG_CORE_NO_RESPONSE) || (flags & HG_CORE_MORE_DATA)) {
         int32_t HG_DEBUG_LOG_USED expected_count =
             hg_atomic_decr32(&hg_core_handle->op_expected_count);
         HG_LOG_SUBSYS_DEBUG(rpc_ref,
@@ -4188,13 +4197,15 @@ error_send:
 
         /* Cancel the above posted recv op */
         na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
-            hg_core_handle->na_recv_op_id);
+            na_recv_op_id);
         HG_CHECK_SUBSYS_ERROR_DONE(rpc, na_ret != NA_SUCCESS,
             "Could not cancel recv op id (%s)", NA_Error_to_string(na_ret));
 
         /* Return success here but callback will return canceled */
         return HG_SUCCESS;
     }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4318,14 +4329,13 @@ hg_core_respond_na(
     struct hg_core_private_handle *hg_core_handle, hg_return_t ret_code)
 {
     int32_t HG_DEBUG_LOG_USED expected_count;
+    uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     hg_return_t ret;
     na_return_t na_ret;
-    bool ack_recv_posted = false;
 
     /* Set header */
     hg_core_handle->out_header.msg.response.ret_code = (int8_t) ret_code;
-    hg_core_handle->out_header.msg.response.flags =
-        (uint8_t) (hg_atomic_get32(&hg_core_handle->flags) & 0xff);
+    hg_core_handle->out_header.msg.response.flags = (uint8_t) (flags & 0xff);
     hg_core_handle->out_header.msg.response.cookie = hg_core_handle->cookie;
 
     /* Encode response header */
@@ -4342,45 +4352,9 @@ hg_core_respond_na(
     hg_core_handle->op_type = HG_CORE_RESPOND;
 
     /* More data on output requires an ack once it is processed */
-    if (hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_MORE_DATA) {
-        size_t buf_size =
-            hg_core_handle->core_handle.na_out_header_offset + sizeof(uint8_t);
-
-        HG_LOG_SUBSYS_WARNING(perf,
-            "Allocating %zu byte(s) to send extra output data for handle %p",
-            buf_size, (void *) hg_core_handle);
-
-        /* Keep the buffer allocated if we are prone to using ack buffers */
-        if (hg_core_handle->ack_buf == NULL) {
-            hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
-                buf_size, NA_RECV, &hg_core_handle->ack_buf_plugin_data);
-            HG_CHECK_SUBSYS_ERROR(rpc, hg_core_handle->ack_buf == NULL, error,
-                ret, HG_NA_ERROR, "Could not allocate buffer for ack");
-
-            na_ret = NA_Msg_init_expected(
-                hg_core_handle->na_class, hg_core_handle->ack_buf, buf_size);
-            HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
-                (hg_return_t) na_ret, "Could not initialize ack buffer (%s)",
-                NA_Error_to_string(na_ret));
-        }
-
-        /* Increment number of expected completions */
-        expected_count = hg_atomic_incr32(&hg_core_handle->op_expected_count);
-        HG_LOG_SUBSYS_DEBUG(rpc_ref,
-            "Handle (%p) expected_count incr to %" PRId32,
-            (void *) hg_core_handle, expected_count);
-
-        /* Pre-post recv (ack) if more data is expected */
-        na_ret = NA_Msg_recv_expected(hg_core_handle->na_class,
-            hg_core_handle->na_context, hg_core_ack_cb, hg_core_handle,
-            hg_core_handle->ack_buf, buf_size,
-            hg_core_handle->ack_buf_plugin_data, hg_core_handle->na_addr,
-            hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
-            hg_core_handle->na_ack_op_id);
-        HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
-            (hg_return_t) na_ret, "Could not post recv for ack buffer (%s)",
-            NA_Error_to_string(na_ret));
-        ack_recv_posted = true;
+    if (flags & HG_CORE_MORE_DATA) {
+        ret = hg_core_ack_recv(hg_core_handle);
+        HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not post ack recv");
     }
 
     /* Mark handle as posted */
@@ -4395,17 +4369,20 @@ hg_core_respond_na(
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         hg_core_handle->na_send_op_id);
     /* Expected sends should always succeed after retry */
-    HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
+    HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error_send, ret,
         (hg_return_t) na_ret, "Could not post send for output buffer (%s)",
         NA_Error_to_string(na_ret));
 
     return HG_SUCCESS;
 
 error:
+    return ret;
+
+error_send:
     hg_atomic_and32(&hg_core_handle->status, ~HG_CORE_OP_POSTED);
     hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
 
-    if (ack_recv_posted) {
+    if (flags & HG_CORE_MORE_DATA) {
         expected_count = hg_atomic_decr32(&hg_core_handle->op_expected_count);
         HG_LOG_SUBSYS_DEBUG(rpc_ref,
             "Handle (%p) expected_count decr to %" PRId32,
@@ -4425,11 +4402,6 @@ error:
 
         /* Return success here but callback will return canceled */
         return HG_SUCCESS;
-    } else if (hg_core_handle->ack_buf != NULL) {
-        NA_Msg_buf_free(hg_core_handle->na_class, hg_core_handle->ack_buf,
-            hg_core_handle->ack_buf_plugin_data);
-        hg_core_handle->ack_buf = NULL;
-        hg_core_handle->ack_buf_plugin_data = NULL;
     }
 
     return ret;
@@ -4768,6 +4740,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
 {
     struct hg_core_private_class *hg_core_class =
         HG_CORE_HANDLE_CLASS(hg_core_handle);
+    uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     hg_return_t ret;
 
 #if defined(HG_HAS_DIAG) && !defined(_WIN32)
@@ -4776,7 +4749,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
 #endif
 
     /* We can skip RPC headers etc if we are sending to ourselves */
-    if (!(hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_SELF_FORWARD)) {
+    if (!(flags & HG_CORE_SELF_FORWARD)) {
         /* Get and verify input header */
         ret = hg_core_proc_header_request(&hg_core_handle->core_handle,
             &hg_core_handle->in_header, HG_DECODE);
@@ -4791,19 +4764,18 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
         hg_core_handle->core_handle.info.context_id = hg_core_handle->cookie;
 
         /* Parse flags */
-        hg_atomic_set32(&hg_core_handle->flags,
-            hg_core_handle->in_header.msg.request.flags);
+        flags = hg_core_handle->in_header.msg.request.flags;
+        hg_atomic_set32(&hg_core_handle->flags, (int32_t) flags);
     }
 
     HG_LOG_SUBSYS_DEBUG(rpc,
         "Processed input for handle %p, ID=%" PRIu64 ", cookie=%" PRIu8
         ", no_response=%d",
         (void *) hg_core_handle, hg_core_handle->core_handle.info.id,
-        hg_core_handle->cookie,
-        hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_NO_RESPONSE);
+        hg_core_handle->cookie, flags & HG_CORE_NO_RESPONSE);
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
-    if (hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_MORE_DATA) {
+    if (flags & HG_CORE_MORE_DATA) {
         int32_t HG_DEBUG_LOG_USED expected_count;
 
         HG_CHECK_SUBSYS_ERROR(rpc, hg_core_class->more_data_cb.acquire == NULL,
@@ -4827,7 +4799,9 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
 
         ret = hg_core_class->more_data_cb.acquire(
             (hg_core_handle_t) hg_core_handle, HG_INPUT,
-            hg_core_more_data_complete);
+            (!(flags & HG_CORE_NO_RESPONSE) || (flags & HG_CORE_SELF_FORWARD))
+                ? hg_core_more_data_complete
+                : hg_core_ack_send);
         HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret,
             "Error in HG core handle more data acquire callback for handle %p",
             (void *) hg_core_handle);
@@ -4896,7 +4870,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
             hg_core_handle->core_handle.out_buf_used);
 
         /* Process output information */
-        ret = hg_core_process_output(hg_core_handle, hg_core_send_ack);
+        ret = hg_core_process_output(hg_core_handle);
         HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret, "Could not process output");
 
     } else if (callback_info->ret == NA_CANCELED) {
@@ -4930,11 +4904,11 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
-    void (*done_callback)(hg_core_handle_t, hg_return_t))
+hg_core_process_output(struct hg_core_private_handle *hg_core_handle)
 {
     struct hg_core_private_class *hg_core_class =
         HG_CORE_HANDLE_CLASS(hg_core_handle);
+    uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     hg_return_t ret;
 
 #if defined(HG_HAS_DIAG) && !defined(_WIN32)
@@ -4942,7 +4916,8 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
     hg_atomic_incr64(hg_core_class->counters.rpc_resp_recv_count);
 #endif
 
-    if (!(hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_SELF_FORWARD)) {
+    /* We can skip RPC headers etc if we are sending to ourselves */
+    if (!(flags & HG_CORE_SELF_FORWARD)) {
         /* Get and verify output header */
         ret = hg_core_proc_header_response(&hg_core_handle->core_handle,
             &hg_core_handle->out_header, HG_DECODE);
@@ -4953,8 +4928,8 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
             (int32_t) hg_core_handle->out_header.msg.response.ret_code);
 
         /* Parse flags */
-        hg_atomic_set32(&hg_core_handle->flags,
-            hg_core_handle->out_header.msg.response.flags);
+        flags = hg_core_handle->out_header.msg.response.flags;
+        hg_atomic_set32(&hg_core_handle->flags, (int32_t) flags);
     }
 
     HG_LOG_SUBSYS_DEBUG(rpc,
@@ -4963,7 +4938,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
         hg_atomic_get32(&hg_core_handle->ret_status));
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
-    if (hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_MORE_DATA) {
+    if (flags & HG_CORE_MORE_DATA) {
         int32_t HG_DEBUG_LOG_USED expected_count;
 
         HG_CHECK_SUBSYS_ERROR(rpc, hg_core_class->more_data_cb.acquire == NULL,
@@ -4986,7 +4961,9 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
 #endif
 
         ret = hg_core_class->more_data_cb.acquire(
-            (hg_core_handle_t) hg_core_handle, HG_OUTPUT, done_callback);
+            (hg_core_handle_t) hg_core_handle, HG_OUTPUT,
+            (flags & HG_CORE_SELF_FORWARD) ? hg_core_more_data_complete
+                                           : hg_core_ack_send);
         HG_CHECK_SUBSYS_HG_ERROR(rpc, error, ret,
             "Error in HG core handle more data acquire callback for handle %p",
             (void *) hg_core_handle);
@@ -5020,7 +4997,7 @@ hg_core_more_data_complete(hg_core_handle_t handle, hg_return_t ret)
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret)
+hg_core_ack_send(hg_core_handle_t handle, hg_return_t ret)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
@@ -5043,6 +5020,9 @@ hg_core_send_ack(hg_core_handle_t handle, hg_return_t ret)
             (hg_return_t) na_ret, "Could not initialize ack buffer (%s)",
             NA_Error_to_string(na_ret));
     }
+
+    HG_LOG_SUBSYS_DEBUG(rpc, "Sending ack for handle %p, tag=%u, buf_size=%zu",
+        (void *) hg_core_handle, hg_core_handle->tag, buf_size);
 
     /* Post expected send (ack) */
     na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
@@ -5072,6 +5052,66 @@ error:
 
     /* Complete and add to completion queue */
     hg_core_complete_op(hg_core_handle);
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_ack_recv(struct hg_core_private_handle *hg_core_handle)
+{
+    int32_t HG_DEBUG_LOG_USED expected_count;
+    size_t buf_size =
+        hg_core_handle->core_handle.na_out_header_offset + sizeof(uint8_t);
+    hg_return_t ret;
+    na_return_t na_ret;
+
+    HG_LOG_SUBSYS_WARNING(perf,
+        "Allocating %zu byte(s) to recv extra output data for handle %p",
+        buf_size, (void *) hg_core_handle);
+
+    /* Keep the buffer allocated if we are prone to using ack buffers */
+    if (hg_core_handle->ack_buf == NULL) {
+        hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
+            buf_size, NA_RECV, &hg_core_handle->ack_buf_plugin_data);
+        HG_CHECK_SUBSYS_ERROR(rpc, hg_core_handle->ack_buf == NULL, error, ret,
+            HG_NA_ERROR, "Could not allocate buffer for ack");
+
+        na_ret = NA_Msg_init_expected(
+            hg_core_handle->na_class, hg_core_handle->ack_buf, buf_size);
+        HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
+            (hg_return_t) na_ret, "Could not initialize ack buffer (%s)",
+            NA_Error_to_string(na_ret));
+    }
+
+    HG_LOG_SUBSYS_DEBUG(rpc,
+        "Pre-posting recv for ack buffer %p, tag=%u, buf_size=%zu",
+        (void *) hg_core_handle->ack_buf, hg_core_handle->tag, buf_size);
+
+    /* Pre-post recv (ack) if more data is expected */
+    na_ret = NA_Msg_recv_expected(hg_core_handle->na_class,
+        hg_core_handle->na_context, hg_core_ack_cb, hg_core_handle,
+        hg_core_handle->ack_buf, buf_size, hg_core_handle->ack_buf_plugin_data,
+        hg_core_handle->na_addr, hg_core_handle->core_handle.info.context_id,
+        hg_core_handle->tag, hg_core_handle->na_ack_op_id);
+    HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error, ret,
+        (hg_return_t) na_ret, "Could not post recv for ack buffer (%s)",
+        NA_Error_to_string(na_ret));
+
+    /* Increment number of expected completions */
+    expected_count = hg_atomic_incr32(&hg_core_handle->op_expected_count);
+    HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) expected_count incr to %" PRId32,
+        (void *) hg_core_handle, expected_count);
+
+    return HG_SUCCESS;
+
+error:
+    if (hg_core_handle->ack_buf != NULL) {
+        NA_Msg_buf_free(hg_core_handle->na_class, hg_core_handle->ack_buf,
+            hg_core_handle->ack_buf_plugin_data);
+        hg_core_handle->ack_buf = NULL;
+        hg_core_handle->ack_buf_plugin_data = NULL;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -5853,13 +5893,13 @@ static void
 hg_core_trigger_process(struct hg_core_private_handle *hg_core_handle)
 {
     hg_return_t ret;
-    int32_t flags;
+    uint32_t flags;
 
     /* Silently exit if error occurred */
     if (hg_core_handle->ret != HG_SUCCESS)
         return;
 
-    flags = hg_atomic_get32(&hg_core_handle->flags);
+    flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     /* Take another reference to make sure the handle only gets freed
      * after the response is sent (when forwarding to self, always take a
      * refcount to make sure the handle does not get re-used too early) */
@@ -5872,7 +5912,7 @@ hg_core_trigger_process(struct hg_core_private_handle *hg_core_handle)
 
     /* Run RPC callback */
     ret = hg_core_process(hg_core_handle);
-    if (ret != HG_SUCCESS && !(flags & HG_CORE_NO_RESPONSE)) {
+    if ((ret != HG_SUCCESS) && !(flags & HG_CORE_NO_RESPONSE)) {
         hg_size_t header_size =
             hg_core_header_response_get_size() +
             hg_core_handle->core_handle.na_out_header_offset;
@@ -5944,7 +5984,7 @@ hg_core_trigger_self_respond_cb(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->op_type = HG_CORE_FORWARD;
 
     /* Process output */
-    ret = hg_core_process_output(hg_core_handle, hg_core_more_data_complete);
+    ret = hg_core_process_output(hg_core_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_SUBSYS_ERROR(rpc, "Could not process output");
         hg_atomic_set32(&hg_core_handle->ret_status, (int32_t) ret);
