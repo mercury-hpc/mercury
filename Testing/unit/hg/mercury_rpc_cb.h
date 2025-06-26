@@ -19,6 +19,8 @@ hg_test_rpc_open_cb(hg_handle_t handle);
 hg_return_t
 hg_test_rpc_open_no_resp_cb(hg_handle_t handle);
 hg_return_t
+hg_test_string_cb(hg_handle_t handle);
+hg_return_t
 hg_test_overflow_cb(hg_handle_t handle);
 hg_return_t
 hg_test_cancel_rpc_cb(hg_handle_t handle);

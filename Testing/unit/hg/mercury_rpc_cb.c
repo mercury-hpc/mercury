@@ -98,6 +98,7 @@ hg_test_bulk_bind_forward_fwd_cb(const struct hg_cb_info *hg_cb_info);
 /*******************/
 
 extern hg_id_t hg_test_bulk_bind_write_id_g;
+extern hg_id_t hg_test_string_oneway_id_g;
 
 // extern hg_id_t hg_test_nested2_id_g;
 // hg_addr_t *hg_addr_table;
@@ -281,11 +282,41 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_string, handle)
+{
+    const struct hg_info *hg_info = HG_Get_info(handle);
+    hg_string_t string;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Get input buffer */
+    ret = HG_Get_input(handle, &string);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Get_input() failed (%s)", HG_Error_to_string(ret));
+
+    /* Send response back */
+    if (hg_info->id != hg_test_string_oneway_id_g) {
+        ret = HG_Respond(handle, NULL, NULL, NULL);
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
+    }
+
+    ret = HG_Free_input(handle, &string);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Free_input() failed (%s)", HG_Error_to_string(ret));
+
+done:
+    ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_overflow, handle)
 {
     size_t max_size =
         HG_Class_get_output_eager_size(HG_Get_info(handle)->hg_class);
-    overflow_out_t out_struct;
     hg_string_t string;
     size_t string_len = max_size * 2;
     hg_return_t ret = HG_SUCCESS;
@@ -297,12 +328,8 @@ HG_TEST_RPC_CB(hg_test_overflow, handle)
     memset(string, 'h', string_len);
     string[string_len] = '\0';
 
-    /* Fill output structure */
-    out_struct.string = string;
-    out_struct.string_len = string_len;
-
     /* Send response back */
-    ret = HG_Respond(handle, NULL, NULL, &out_struct);
+    ret = HG_Respond(handle, NULL, NULL, &string);
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
 
@@ -809,6 +836,7 @@ HG_TEST_RPC_CB(hg_test_killed_rpc, handle)
 HG_TEST_THREAD_CB(hg_test_rpc_null)
 HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_rpc_open_no_resp)
+HG_TEST_THREAD_CB(hg_test_string)
 HG_TEST_THREAD_CB(hg_test_overflow)
 HG_TEST_THREAD_CB(hg_test_cancel_rpc)
 

@@ -16,7 +16,6 @@
 #include "mercury_thread_pool.h"
 
 #include "test_bulk.h"
-#include "test_overflow.h"
 #include "test_rpc.h"
 
 /*************************************/
