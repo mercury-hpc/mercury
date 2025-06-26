@@ -65,6 +65,10 @@ hg_test_rpc_inv(
     hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id, hg_request_t *request);
 
 static hg_return_t
+hg_test_rpc_string(hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id,
+    hg_cb_t callback, size_t string_len, hg_request_t *request);
+
+static hg_return_t
 hg_test_rpc_output_cb(const struct hg_cb_info *callback_info);
 
 static hg_return_t
@@ -117,6 +121,8 @@ hg_test_rpc_no_req_create_cb(const struct hg_cb_info *callback_info);
 extern hg_id_t hg_test_rpc_null_id_g;
 extern hg_id_t hg_test_rpc_open_id_g;
 extern hg_id_t hg_test_rpc_open_id_no_resp_g;
+extern hg_id_t hg_test_string_id_g;
+extern hg_id_t hg_test_string_oneway_id_g;
 extern hg_id_t hg_test_overflow_id_g;
 extern hg_id_t hg_test_cancel_rpc_id_g;
 
@@ -267,6 +273,58 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
+hg_test_rpc_string(hg_handle_t handle, hg_addr_t addr, hg_id_t rpc_id,
+    hg_cb_t callback, size_t string_len, hg_request_t *request)
+{
+    hg_return_t ret;
+    struct forward_cb_args forward_cb_args = {.request = request,
+        .rpc_handle = NULL,
+        .ret = HG_SUCCESS,
+        .no_entry = false};
+    hg_string_t string;
+    unsigned int flag;
+    int rc;
+
+    string = (hg_string_t) malloc(string_len);
+    HG_TEST_CHECK_ERROR(string == NULL, error, ret, HG_NOMEM_ERROR,
+        "Could not allocate string of length %zu", string_len);
+    memset(string, 'a', string_len - 1); /* Fill with 'a's */
+    string[string_len - 1] = '\0';       /* Ensure null termination */
+
+    hg_request_reset(request);
+
+    ret = HG_Reset(handle, addr, rpc_id);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
+
+    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %" PRIu64 "...", rpc_id);
+
+    ret = HG_Forward(handle, callback, &forward_cb_args, &string);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+
+    rc = hg_request_wait(request, HG_TEST_WAIT_TIMEOUT, &flag);
+    HG_TEST_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_PROTOCOL_ERROR,
+        "hg_request_wait() failed");
+
+    HG_TEST_CHECK_ERROR(
+        !flag, error, ret, HG_TIMEOUT, "hg_request_wait() timed out");
+    ret = forward_cb_args.ret;
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "Error in HG callback (%s)", HG_Error_to_string(ret));
+
+    free(string);
+
+    return HG_SUCCESS;
+
+error:
+    free(string);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
 hg_test_rpc_output_cb(const struct hg_cb_info *callback_info)
 {
     hg_handle_t handle = callback_info->info.forward.handle;
@@ -340,11 +398,7 @@ hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info)
     hg_handle_t handle = callback_info->info.forward.handle;
     struct forward_cb_args *args =
         (struct forward_cb_args *) callback_info->arg;
-    overflow_out_t out_struct;
-#    ifdef HG_HAS_DEBUG
     hg_string_t string;
-    size_t string_len;
-#    endif
     hg_return_t ret = callback_info->ret;
     hg_size_t payload_size = HG_Get_output_payload_size(handle);
 #ifdef HG_HAS_XDR
@@ -353,12 +407,11 @@ hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info)
     /* note xdr rounding rules on data length and is_const/is_owned */
     /* format: size + data_with_null + is_const + is_owned + size */
     size_t expected_string_payload_size =
-        sizeof(uint64_t) + RNDUP((sz * 2) + 1) + (RNDUP(sizeof(uint8_t)) * 2) +
-        sizeof(uint64_t);
+        sizeof(uint64_t) + RNDUP((sz * 2) + 1) + (RNDUP(sizeof(uint8_t)) * 2);
 #else
     size_t expected_string_payload_size =
         HG_Class_get_output_eager_size(HG_Get_info(handle)->hg_class) * 2 + 3 +
-        2 * sizeof(uint64_t);
+        sizeof(uint64_t);
 #endif
 
     HG_TEST_CHECK_HG_ERROR(done, ret, "Error in HG callback (%s)",
@@ -368,19 +421,16 @@ hg_test_rpc_output_overflow_cb(const struct hg_cb_info *callback_info)
         payload_size, expected_string_payload_size);
 
     /* Get output */
-    ret = HG_Get_output(handle, &out_struct);
+    ret = HG_Get_output(handle, &string);
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Get_output() failed (%s)", HG_Error_to_string(ret));
 
     /* Get output parameters */
-#    ifdef HG_HAS_DEBUG
-    string = out_struct.string;
-    string_len = out_struct.string_len;
-#    endif
-    HG_TEST_LOG_DEBUG("Returned string (length %zu): %s", string_len, string);
+    HG_TEST_LOG_DEBUG(
+        "Returned string (length %zu): %s", strlen(string), string);
 
     /* Free output */
-    ret = HG_Free_output(handle, &out_struct);
+    ret = HG_Free_output(handle, &string);
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
 
@@ -992,7 +1042,7 @@ main(int argc, char *argv[])
     }
 
     /* RPC test with no response */
-    HG_TEST("RPC without response");
+    HG_TEST("RPC without response (one-way)");
     if (info.hg_test_info.na_test_info.self_send) {
         hg_ret = HG_Create(info.context, info.target_addr,
             hg_test_rpc_open_id_no_resp_g, &handle);
@@ -1022,6 +1072,22 @@ main(int argc, char *argv[])
     }
 
     /* Overflow RPC test */
+    HG_TEST("RPC with input overflow");
+    hg_ret = hg_test_rpc_string(info.handles[0], info.target_addr,
+        hg_test_string_id_g, hg_test_rpc_no_output_cb,
+        HG_Class_get_input_eager_size(info.hg_class) * 2, info.request);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_rpc_no_input() failed (%s)",
+        HG_Error_to_string(hg_ret));
+    HG_PASSED();
+
+    HG_TEST("RPC with input overflow (one-way)");
+    hg_ret = hg_test_rpc_string(info.handles[0], info.target_addr,
+        hg_test_string_oneway_id_g, hg_test_rpc_no_output_cb,
+        HG_Class_get_input_eager_size(info.hg_class) * 2, info.request);
+    HG_TEST_CHECK_HG_ERROR(error, hg_ret, "hg_test_rpc_no_input() failed (%s)",
+        HG_Error_to_string(hg_ret));
+    HG_PASSED();
+
     HG_TEST("RPC with output overflow");
     hg_ret = hg_test_rpc_no_input(info.handles[0], info.target_addr,
         hg_test_overflow_id_g, hg_test_rpc_output_overflow_cb, info.request);

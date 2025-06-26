@@ -62,6 +62,8 @@ hg_test_register(hg_class_t *hg_class);
 hg_id_t hg_test_rpc_null_id_g = 0;
 hg_id_t hg_test_rpc_open_id_g = 0;
 hg_id_t hg_test_rpc_open_id_no_resp_g = 0;
+hg_id_t hg_test_string_id_g = 0;
+hg_id_t hg_test_string_oneway_id_g = 0;
 hg_id_t hg_test_overflow_id_g = 0;
 hg_id_t hg_test_cancel_rpc_id_g = 0;
 
@@ -208,16 +210,24 @@ hg_test_register(hg_class_t *hg_class)
         hg_class, "hg_test_rpc_null", void, void, hg_test_rpc_null_cb);
     hg_test_rpc_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_rpc_open",
         rpc_open_in_t, rpc_open_out_t, hg_test_rpc_open_cb);
+
+    /* Disable response */
     hg_test_rpc_open_id_no_resp_g =
         MERCURY_REGISTER(hg_class, "hg_test_rpc_open_no_resp", rpc_open_in_t,
             rpc_open_out_t, hg_test_rpc_open_no_resp_cb);
-
-    /* Disable response */
     HG_Registered_disable_response(
         hg_class, hg_test_rpc_open_id_no_resp_g, HG_TRUE);
 
-    hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow", void,
-        overflow_out_t, hg_test_overflow_cb);
+    hg_test_string_id_g = MERCURY_REGISTER(
+        hg_class, "hg_test_string", hg_string_t, void, hg_test_string_cb);
+
+    hg_test_string_oneway_id_g = MERCURY_REGISTER(hg_class,
+        "hg_test_string_oneway", hg_string_t, void, hg_test_string_cb);
+    HG_Registered_disable_response(
+        hg_class, hg_test_string_oneway_id_g, HG_TRUE);
+
+    hg_test_overflow_id_g = MERCURY_REGISTER(
+        hg_class, "hg_test_overflow", void, hg_string_t, hg_test_overflow_cb);
     hg_test_cancel_rpc_id_g = MERCURY_REGISTER(
         hg_class, "hg_test_cancel_rpc", void, void, hg_test_cancel_rpc_cb);
 
