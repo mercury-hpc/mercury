@@ -1069,8 +1069,9 @@ na_ofi_match_provider(const struct na_ofi_verify_info *verify_info,
  */
 static na_return_t
 na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
-    const char *hostname_info, int addr_format, char **domain_name_p,
-    char **node_p, char **service_p, void **src_addr_p, size_t *src_addrlen_p);
+    const char *hostname_info, const char *subnet_info, int addr_format,
+    char **domain_name_p, char **node_p, char **service_p, void **src_addr_p,
+    size_t *src_addrlen_p);
 
 /**
  * Free hostname info.
@@ -3755,8 +3756,9 @@ error:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
-    const char *hostname_info, int addr_format, char **domain_name_p,
-    char **node_p, char **service_p, void **src_addr_p, size_t *src_addrlen_p)
+    const char *hostname_info, const char *subnet_info, int addr_format,
+    char **domain_name_p, char **node_p, char **service_p, void **src_addr_p,
+    size_t *src_addrlen_p)
 {
     char *hostname = NULL;
     char *domain_name = NULL;
@@ -3774,21 +3776,34 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             na_return_t na_ret;
 #endif
 
-            ret = na_ofi_parse_sin_info(
-                hostname_info, &domain_name, &hostname, &port);
-            NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse sin info");
-
+            if (hostname_info != NULL) {
+                ret = na_ofi_parse_sin_info(
+                    hostname_info, &domain_name, &hostname, &port);
+                NA_CHECK_SUBSYS_NA_ERROR(
+                    cls, out, ret, "Could not parse sin info");
+            }
             if (hostname == NULL) {
                 char host[NA_OFI_MAX_URI_LEN];
                 int rc;
 
-                if (!port)
+                /* Try to use IP subnet */
+                if (subnet_info) {
+                    uint32_t subnet = 0, netmask = 0;
+
+                    ret = na_ip_parse_subnet(subnet_info, &subnet, &netmask);
+                    NA_CHECK_SUBSYS_NA_ERROR(
+                        cls, out, ret, "na_ip_parse_subnet() failed");
+                    ret = na_ip_pref_addr(subnet, netmask, host);
+                    NA_CHECK_SUBSYS_NA_ERROR(
+                        cls, out, ret, "na_ip_pref_addr() failed");
+                } else if (!port)
                     break; /* nothing to do */
-
-                rc = gethostname(host, sizeof(host));
-                NA_CHECK_SUBSYS_ERROR(cls, rc != 0, out, ret, NA_PROTOCOL_ERROR,
-                    "gethostname() failed (%s)", strerror(errno));
-
+                else {
+                    rc = gethostname(host, sizeof(host));
+                    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, out, ret,
+                        NA_PROTOCOL_ERROR, "gethostname() failed (%s)",
+                        strerror(errno));
+                }
                 hostname = strdup(host);
                 NA_CHECK_SUBSYS_ERROR(cls, hostname == NULL, out, ret, NA_NOMEM,
                     "strdup() of host failed");
@@ -3832,6 +3847,9 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             /* Nothing to do */
             break;
         case FI_SOCKADDR_IB:
+            NA_CHECK_SUBSYS_ERROR(cls, hostname_info == NULL, out, ret,
+                NA_PROTONOSUPPORT,
+                "FI_SOCKADDR_IB address format requires hostname_info");
             /* TODO we could potentially add support for native addresses */
             /* Simply dup info */
             domain_name = strdup(hostname_info);
@@ -3840,6 +3858,11 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             break;
 
         case FI_ADDR_CXI:
+            NA_CHECK_SUBSYS_ERROR(cls, hostname_info == NULL, out, ret,
+                NA_PROTONOSUPPORT,
+                "FI_ADDR_CXI address format requires "
+                "hostname_info");
+
             ret = na_ofi_parse_cxi_info(hostname_info, node_p, service_p);
             NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse cxi info");
 
@@ -3853,6 +3876,11 @@ na_ofi_parse_hostname_info(enum na_ofi_prov_type prov_type,
             break;
 
         case FI_ADDR_OPX:
+            NA_CHECK_SUBSYS_ERROR(cls, hostname_info == NULL, out, ret,
+                NA_PROTONOSUPPORT,
+                "FI_ADDR_OPX address format requires "
+                "hostname_info");
+
             ret = na_ofi_parse_opx_info(
                 hostname_info, (struct na_ofi_opx_addr **) src_addr_p);
             NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not parse opx info");
@@ -7696,10 +7724,10 @@ na_ofi_initialize(
                            : FI_THREAD_SAFE;
 
     /* Parse hostname info and get domain name etc */
-    if (na_info->host_name != NULL) {
+    if (na_info->host_name != NULL || na_init_info->ip_subnet != NULL) {
         ret = na_ofi_parse_hostname_info(prov_type, na_info->host_name,
-            info.addr_format, &domain_name, &info.node, &info.service,
-            &info.src_addr, &info.src_addrlen);
+            na_init_info->ip_subnet, info.addr_format, &domain_name, &info.node,
+            &info.service, &info.src_addr, &info.src_addrlen);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "na_ofi_parse_hostname_info() failed");
     }
