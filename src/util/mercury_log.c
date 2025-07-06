@@ -216,7 +216,7 @@ hg_log_outlet_active(const char *name)
 {
     int i = 0;
 
-    while (hg_log_subsys_g[i][0] != '\0' && i < HG_LOG_SUBSYS_MAX) {
+    while (i < HG_LOG_SUBSYS_MAX && hg_log_subsys_g[i][0] != '\0') {
         /* Force a subsystem to be inactive */
         if ((hg_log_subsys_g[i][0] == '~') &&
             (strcmp(&hg_log_subsys_g[i][1], name) == 0))
