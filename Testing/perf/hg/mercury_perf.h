@@ -64,6 +64,7 @@ struct hg_perf_class_info {
     bool verify;
     bool bidir;
     bool barrier; /* Use barriers for perf measurements */
+    bool no_shutdown; /* Do not shutdown server */
 };
 
 struct hg_perf_request {
