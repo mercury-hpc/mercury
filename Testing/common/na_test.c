@@ -223,6 +223,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'T': /* tclass */
                 na_test_info->tclass = strdup(na_test_opt_arg_g);
                 break;
+            case 'N': /* no-shutdown */
+                na_test_info->no_shutdown = true;
+                break;
             default:
                 break;
         }

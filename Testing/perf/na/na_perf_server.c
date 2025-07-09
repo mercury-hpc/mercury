@@ -77,7 +77,8 @@ na_perf_loop(struct na_perf_info *info, na_perf_recv_op_t recv_op,
         error, ret, "%s() failed (%s)", recv_op_name, NA_Error_to_string(ret));
 
     /* Progress loop */
-    while (!recv_info.done || (info->exp_op_id_in_use > 0)) {
+    while (!recv_info.done || (info->exp_op_id_in_use > 0) ||
+           info->na_test_info.no_shutdown) {
         unsigned int count = 0, actual_count = 0;
 
         if (info->poll_set) {

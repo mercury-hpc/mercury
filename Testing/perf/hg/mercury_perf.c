@@ -275,6 +275,7 @@ hg_perf_class_init(const struct hg_test_info *hg_test_info, int class_id,
     info->verify = hg_test_info->na_test_info.verify;
     info->bidir = hg_test_info->bidirectional;
     info->barrier = hg_test_info->barrier;
+    info->no_shutdown = hg_test_info->na_test_info.no_shutdown;
 
     /* Add extra info to handles created */
     ret = HG_Class_set_handle_create_callback(
@@ -1268,7 +1269,7 @@ hg_perf_rpc_rate_cb(hg_handle_t handle)
     hg_return_t ret;
 
     /* Get input struct */
-    iov = (struct iovec){
+    iov = (struct iovec) {
         .iov_base = info->rpc_buf, .iov_len = info->buf_size_max};
     if (info->verify)
         memset(iov.iov_base, 0, iov.iov_len);
@@ -1430,7 +1431,7 @@ hg_perf_bulk_common(hg_handle_t handle, hg_bulk_op_t op)
                       : info->remote_bulk_handles[bulk_info.handle_id];
 
     /* Initialize request */
-    *request = (struct hg_perf_request){.complete_count = 0,
+    *request = (struct hg_perf_request) {.complete_count = 0,
         .expected_count = (int32_t) info->bulk_count,
         .completed = HG_ATOMIC_VAR_INIT(0)};
 
@@ -1518,9 +1519,28 @@ hg_perf_done_cb(hg_handle_t handle)
     const struct hg_info *hg_info = HG_Get_info(handle);
     struct hg_perf_class_info *info = HG_Context_get_data(hg_info->context);
     hg_return_t ret;
+    size_t i;
 
     /* Set done for context data */
     info->done = true;
+
+    /* Free up resources */
+    if (info->remote_bulk_handles != NULL) {
+        for (i = 0; i < info->handle_max; i++)
+            HG_Bulk_free(info->remote_bulk_handles[i]);
+        free(info->remote_bulk_handles);
+    }
+
+    hg_perf_bulk_buf_free(info);
+
+    if (info->rpc_buf != NULL) {
+        hg_mem_aligned_free(info->rpc_buf);
+        info->rpc_buf = NULL;
+    }
+    if (info->rpc_verify_buf != NULL) {
+        hg_mem_aligned_free(info->rpc_verify_buf);
+        info->rpc_verify_buf = NULL;
+    }
 
     /* Send response back */
     ret = HG_Respond(handle, NULL, NULL, NULL);

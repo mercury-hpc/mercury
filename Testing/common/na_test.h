@@ -62,6 +62,7 @@ struct na_test_info {
     bool verify;         /* Verify data */
     bool mbps;           /* OSU-style of output in MB/s */
     bool no_multi_recv;  /* Disable multi-recv */
+    bool no_shutdown;    /* Do not shutdown server */
 };
 
 /*****************/

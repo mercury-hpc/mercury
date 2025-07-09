@@ -115,7 +115,7 @@ hg_perf_loop(struct hg_perf_class_info *info)
 {
     hg_return_t ret;
 
-    while (!info->done) {
+    while (!info->done || info->no_shutdown) {
         unsigned int count = 0, actual_count = 0;
 
         if (info->poll_set) {
