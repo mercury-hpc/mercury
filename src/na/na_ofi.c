@@ -1159,11 +1159,13 @@ static na_return_t
 na_ofi_gni_set_domain_ops(struct na_ofi_domain *na_ofi_domain);
 #endif
 
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
 /**
  * Set CXI specific domain ops.
  */
 static void
 na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain);
+#endif
 
 /**
  * Parse auth key.
@@ -4329,7 +4331,9 @@ na_ofi_set_domain_ops(
             return NA_PROTONOSUPPORT;
 #endif
         case NA_OFI_PROV_CXI:
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
             na_ofi_cxi_set_domain_ops(na_ofi_domain);
+#endif
             break;
         case NA_OFI_PROV_SHM:
         case NA_OFI_PROV_SOCKETS:
@@ -4434,6 +4438,7 @@ error:
 #endif
 
 /*---------------------------------------------------------------------------*/
+#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
 static void
 na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain)
 {
@@ -4480,6 +4485,7 @@ na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain)
     NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
         "could not set CXI MR_MATCH_EVENTS property (%s)", fi_strerror(-rc));
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
