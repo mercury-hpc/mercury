@@ -7873,11 +7873,10 @@ na_ofi_initialize(
     {
         int val = 0;
         size_t len = sizeof(int);
-        ret = fi_getopt(&na_ofi_class->endpoint->fi_ep->fid, FI_OPT_ENDPOINT,
+        int rc = fi_getopt(&na_ofi_class->endpoint->fi_ep->fid, FI_OPT_ENDPOINT,
             FI_OPT_FIREWALL_ADDR, &val, &len);
-        if (ret == 0 && val != 0) {
+        if (rc == 0 && val != 0)
             na_ofi_class->opt_features |= NA_OPT_FIREWALL_ADDR;
-        }
     }
 #endif
 
