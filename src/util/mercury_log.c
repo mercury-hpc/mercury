@@ -321,7 +321,7 @@ hg_log_get_subsys(void)
     char *p = log_subsys;
     int i = 0;
 
-    while (hg_log_subsys_g[i][0] != '\0' && i < HG_LOG_SUBSYS_MAX) {
+    while (i < HG_LOG_SUBSYS_MAX && hg_log_subsys_g[i][0] != '\0') {
         strcpy(p, hg_log_subsys_g[i]);
         p += strlen(hg_log_subsys_g[i]);
         *p = ',';
