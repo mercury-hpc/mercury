@@ -313,7 +313,8 @@ na_bmi_finalize(na_class_t *na_class);
 
 /* context_create */
 static na_return_t
-na_bmi_context_create(na_class_t *na_class, void **context, uint8_t id);
+na_bmi_context_create(
+    na_class_t *na_class, na_context_t *context, void **context_p, uint8_t id);
 
 /* context_destroy */
 static na_return_t
@@ -1481,8 +1482,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_context_create(
-    na_class_t NA_UNUSED *na_class, void **context, uint8_t NA_UNUSED id)
+na_bmi_context_create(na_class_t NA_UNUSED *na_class,
+    na_context_t NA_UNUSED *context, void **context_p, uint8_t NA_UNUSED id)
 {
     struct na_bmi_context *na_bmi_context = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1498,7 +1499,7 @@ na_bmi_context_create(
     NA_CHECK_ERROR(bmi_ret < 0, error, ret, NA_PROTOCOL_ERROR,
         "BMI_open_context() failed");
 
-    *context = na_bmi_context;
+    *context_p = na_bmi_context;
 
     return ret;
 

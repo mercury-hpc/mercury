@@ -315,7 +315,7 @@ na_info_parse(
     na_info = (struct na_info *) malloc(sizeof(struct na_info));
     NA_CHECK_SUBSYS_ERROR(cls, na_info == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA info struct");
-    *na_info = (struct na_info){.host_name = NULL,
+    *na_info = (struct na_info) {.host_name = NULL,
         .protocol_name = NULL,
         .na_init_info = NA_INIT_INFO_INITIALIZER};
 
@@ -609,7 +609,7 @@ na_plugin_close_all(struct na_plugin_entry *entries)
         return;
 
     for (i = 0, entry = &entries[0]; entry->ops != NULL;
-         i++, entry = &entries[i])
+        i++, entry = &entries[i])
         na_plugin_close(entry);
 
     free(entries);
@@ -757,8 +757,8 @@ NA_Get_protocol_info(
         int i;
 
         for (i = 0, ops = na_plugin_dynamic_g[0].ops;
-             i < NA_PLUGIN_MAX && ops != NULL;
-             i++, ops = na_plugin_dynamic_g[i].ops)
+            i < NA_PLUGIN_MAX && ops != NULL;
+            i++, ops = na_plugin_dynamic_g[i].ops)
             na_plugin_dynamic[i] = ops;
 
         ret = na_plugin_get_protocol_info(
@@ -769,7 +769,7 @@ NA_Get_protocol_info(
             struct na_protocol_info *tail = NULL;
 
             for (tail = dynamic_protocol_info; tail->next != NULL;
-                 tail = tail->next)
+                tail = tail->next)
                 /* nothing */;
             tail->next = na_protocol_info;
             na_protocol_info = dynamic_protocol_info;
@@ -896,8 +896,8 @@ NA_Initialize_opt2(const char *info_string, bool listen, unsigned int version,
             NA_NOENTRY, "No dynamic plugins were found");
 
         for (i = 0, ops = na_plugin_dynamic_g[0].ops;
-             i < NA_PLUGIN_MAX && ops != NULL;
-             i++, ops = na_plugin_dynamic_g[i].ops)
+            i < NA_PLUGIN_MAX && ops != NULL;
+            i++, ops = na_plugin_dynamic_g[i].ops)
             na_plugin_dynamic[i] = ops;
 
         /* Check list of dynamic plugins */
@@ -982,7 +982,7 @@ NA_Cleanup(void)
     int i;
 
     for (i = 0, ops = na_plugin_static_g[0]; ops != NULL;
-         i++, ops = na_plugin_static_g[i])
+        i++, ops = na_plugin_static_g[i])
         if (ops->cleanup)
             ops->cleanup();
 }
@@ -1066,8 +1066,9 @@ NA_Context_create_id(na_class_t *na_class, uint8_t id)
 
     /* Initialize plugin context */
     if (na_class->ops && na_class->ops->context_create) {
-        ret = na_class->ops->context_create(
-            na_class, &na_private_context->context.plugin_context, id);
+        ret = na_class->ops->context_create(na_class,
+            (na_context_t *) na_private_context,
+            &na_private_context->context.plugin_context, id);
         NA_CHECK_SUBSYS_NA_ERROR(
             ctx, error, ret, "Could not create plugin context");
     }
