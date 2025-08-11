@@ -130,7 +130,7 @@
         __op->completion_data.callback = __cb;                                 \
         __op->completion_data.callback_info.arg = __arg;                       \
         __op->completion_data.callback_info.info.recv_unexpected =             \
-            (struct na_cb_info_recv_unexpected){                               \
+            (struct na_cb_info_recv_unexpected) {                              \
                 .actual_buf_size = 0, .source = NULL, .tag = 0};               \
         __op->addr = NULL;                                                     \
         hg_atomic_set32(&__op->status, 0);                                     \
@@ -909,7 +909,8 @@ na_sm_finalize(na_class_t *na_class);
 
 /* context_create */
 static na_return_t
-na_sm_context_create(na_class_t *na_class, void **context_p, uint8_t id);
+na_sm_context_create(
+    na_class_t *na_class, na_context_t *context, void **context_p, uint8_t id);
 
 /* context_destroy */
 static na_return_t
@@ -2763,7 +2764,7 @@ na_sm_addr_resolve(struct na_sm_addr *na_sm_addr)
     }
 
     /* Fill cmd header */
-    cmd_hdr = (union na_sm_cmd_hdr){.hdr.type = NA_SM_RESERVED,
+    cmd_hdr = (union na_sm_cmd_hdr) {.hdr.type = NA_SM_RESERVED,
         .hdr.pid = (unsigned int) na_sm_endpoint->source_addr->addr_key.pid,
         .hdr.id = na_sm_endpoint->source_addr->addr_key.id & 0xff,
         .hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff};
@@ -2883,7 +2884,7 @@ na_sm_addr_release(struct na_sm_addr *na_sm_addr)
         union na_sm_cmd_hdr cmd_hdr = {.val = 0};
 
         /* Fill cmd header */
-        cmd_hdr = (union na_sm_cmd_hdr){.hdr.type = NA_SM_RELEASED,
+        cmd_hdr = (union na_sm_cmd_hdr) {.hdr.type = NA_SM_RELEASED,
             .hdr.pid = (unsigned int) na_sm_endpoint->source_addr->addr_key.pid,
             .hdr.id = na_sm_endpoint->source_addr->addr_key.id & 0xff,
             .hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff};
@@ -3101,7 +3102,7 @@ na_sm_msg_send(struct na_sm_class *na_sm_class, na_context_t *context,
 
     /* TODO we assume that buf remains valid (safe because we pre-allocate
      * buffers) */
-    na_sm_op_id->info.msg = (struct na_sm_msg_info){
+    na_sm_op_id->info.msg = (struct na_sm_msg_info) {
         .buf.const_ptr = buf, .buf_size = buf_size, .tag = tag};
 
     ret = na_sm_msg_send_post(
@@ -3164,7 +3165,7 @@ na_sm_msg_send_post(struct na_sm_endpoint *na_sm_endpoint, na_cb_type_t cb_type,
     }
 
     /* Post message to queue */
-    msg_hdr = (union na_sm_msg_hdr){.hdr.type = cb_type,
+    msg_hdr = (union na_sm_msg_hdr) {.hdr.type = cb_type,
         .hdr.buf_idx = buf_idx & 0xff,
         .hdr.buf_size = buf_size & 0xffff,
         .hdr.tag = tag};
@@ -3437,7 +3438,7 @@ na_sm_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
     unsigned long i, iov_index;
 
     for (i = 1, iov_index = iov_start_index + 1;
-         remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
+        remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
         /* Decrease remaining len from the len of data */
         remaining_len -= MIN(remaining_len, iov[iov_index].iov_len);
     }
@@ -3462,8 +3463,8 @@ na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
     remaining_len -= new_iov[0].iov_len;
 
     for (i = 1, iov_index = iov_start_index + 1;
-         remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
-         i++, iov_index++) {
+        remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
+        i++, iov_index++) {
         new_iov[i].iov_base = iov[iov_index].iov_base;
         new_iov[i].iov_len = MIN(remaining_len, iov[iov_index].iov_len);
 
@@ -3992,7 +3993,7 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
     if (likely(na_sm_op_id)) {
         /* Fill info */
         na_sm_op_id->completion_data.callback_info.info.recv_unexpected =
-            (struct na_cb_info_recv_unexpected){
+            (struct na_cb_info_recv_unexpected) {
                 .tag = (na_tag_t) msg_hdr.hdr.tag,
                 .actual_buf_size = (size_t) msg_hdr.hdr.buf_size,
                 .source = (na_addr_t *) poll_addr};
@@ -4358,8 +4359,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_context_create(
-    na_class_t NA_UNUSED *na_class, void **context_p, uint8_t NA_UNUSED id)
+na_sm_context_create(na_class_t NA_UNUSED *na_class,
+    na_context_t NA_UNUSED *context, void **context_p, uint8_t NA_UNUSED id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -4704,8 +4705,8 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     NA_SM_OP_RESET_UNEXPECTED_RECV(na_sm_op_id, context, callback, arg);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_sm_op_id->info.msg =
-        (struct na_sm_msg_info){.buf.ptr = buf, .buf_size = buf_size, .tag = 0};
+    na_sm_op_id->info.msg = (struct na_sm_msg_info) {
+        .buf.ptr = buf, .buf_size = buf_size, .tag = 0};
 
     /* Look for an unexpected message already received */
     hg_thread_spin_lock(&unexpected_msg_queue->lock);
@@ -4717,7 +4718,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     if (unlikely(na_sm_unexpected_info)) {
         /* Fill unexpected info */
         na_sm_op_id->completion_data.callback_info.info.recv_unexpected =
-            (struct na_cb_info_recv_unexpected){
+            (struct na_cb_info_recv_unexpected) {
                 .tag = (na_tag_t) na_sm_unexpected_info->tag,
                 .actual_buf_size = (size_t) na_sm_unexpected_info->buf_size,
                 .source = (na_addr_t *) na_sm_unexpected_info->na_sm_addr};
@@ -4797,7 +4798,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
     /* TODO we assume that buf remains valid (safe because we pre-allocate
      * buffers) */
-    na_sm_op_id->info.msg = (struct na_sm_msg_info){
+    na_sm_op_id->info.msg = (struct na_sm_msg_info) {
         .buf.ptr = buf, .buf_size = buf_size, .tag = tag};
 
     /* Expected messages must always be pre-posted, therefore a message should
@@ -4829,7 +4830,7 @@ na_sm_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
         "Could not allocate NA SM memory handle");
 
     na_sm_mem_handle->iov.s[0] =
-        (struct iovec){.iov_base = buf, .iov_len = buf_size};
+        (struct iovec) {.iov_base = buf, .iov_len = buf_size};
     na_sm_mem_handle->info.iovcnt = 1;
     na_sm_mem_handle->info.flags = flags & 0xff;
     na_sm_mem_handle->info.len = buf_size;

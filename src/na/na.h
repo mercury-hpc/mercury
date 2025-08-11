@@ -1018,8 +1018,8 @@ struct na_class_ops {
     na_return_t (*finalize)(na_class_t *na_class);
     void (*cleanup)(void);
     bool (*has_opt_feature)(na_class_t *na_class, unsigned long flags);
-    na_return_t (*context_create)(
-        na_class_t *na_class, void **plugin_context_p, uint8_t id);
+    na_return_t (*context_create)(na_class_t *na_class,
+        na_context_t *na_context, void **plugin_context_p, uint8_t id);
     na_return_t (*context_destroy)(na_class_t *na_class, void *plugin_context);
     na_op_id_t *(*op_create)(na_class_t *na_class, unsigned long flags);
     void (*op_destroy)(na_class_t *na_class, na_op_id_t *op_id);
@@ -1112,7 +1112,7 @@ static NA_INLINE void
 na_init_info_dup_4_0(
     struct na_init_info *new_info, const struct na_init_info_4_0 *old_info)
 {
-    *new_info = (struct na_init_info){.ip_subnet = old_info->ip_subnet,
+    *new_info = (struct na_init_info) {.ip_subnet = old_info->ip_subnet,
         .auth_key = old_info->auth_key,
         .max_unexpected_size = old_info->max_unexpected_size,
         .max_expected_size = old_info->max_expected_size,
