@@ -419,11 +419,15 @@ error:
 void
 na_perf_cleanup(struct na_perf_info *info)
 {
-    if (info->msg_unexp_op_id != NULL)
+    if (info->msg_unexp_op_id != NULL) {
         NA_Op_destroy(info->na_class, info->msg_unexp_op_id);
+        info->msg_unexp_op_id = NULL;
+    }
 
-    if (info->msg_exp_op_id != NULL)
+    if (info->msg_exp_op_id != NULL) {
         NA_Op_destroy(info->na_class, info->msg_exp_op_id);
+        info->msg_exp_op_id = NULL;
+    }
 
     while (!STAILQ_EMPTY(&info->exp_op_id_queue)) {
         struct na_perf_exp_op_id *exp_op_id =
@@ -439,39 +443,56 @@ na_perf_cleanup(struct na_perf_info *info)
             if (info->rma_op_ids[i] != NULL)
                 NA_Op_destroy(info->na_class, info->rma_op_ids[i]);
         free(info->rma_op_ids);
+        info->rma_op_ids = NULL;
     }
 
-    if (info->msg_unexp_buf != NULL)
+    if (info->msg_unexp_buf != NULL) {
         NA_Msg_buf_free(
             info->na_class, info->msg_unexp_buf, info->msg_unexp_data);
+        info->msg_unexp_buf = NULL;
+    }
 
-    if (info->msg_exp_buf != NULL)
+    if (info->msg_exp_buf != NULL) {
         NA_Msg_buf_free(info->na_class, info->msg_exp_buf, info->msg_exp_data);
+        info->msg_exp_buf = NULL;
+    }
 
     if (info->local_handle != NULL) {
         NA_Mem_deregister(info->na_class, info->local_handle);
         NA_Mem_handle_free(info->na_class, info->local_handle);
+        info->local_handle = NULL;
     }
     if (info->verify_handle != NULL) {
         NA_Mem_deregister(info->na_class, info->verify_handle);
         NA_Mem_handle_free(info->na_class, info->verify_handle);
+        info->verify_handle = NULL;
     }
-    if (info->remote_handle != NULL)
+    if (info->remote_handle != NULL) {
         NA_Mem_handle_free(info->na_class, info->remote_handle);
+        info->remote_handle = NULL;
+    }
     hg_mem_aligned_free(info->rma_buf);
+    info->rma_buf = NULL;
     hg_mem_aligned_free(info->verify_buf);
+    info->verify_buf = NULL;
 
-    if (info->target_addr != NULL)
+    if (info->target_addr != NULL) {
         NA_Addr_free(info->na_class, info->target_addr);
+        info->target_addr = NULL;
+    }
 
     if (info->poll_fd > 0)
         hg_poll_remove(info->poll_set, info->poll_fd);
 
-    if (info->poll_set != NULL)
+    if (info->poll_set != NULL) {
         hg_poll_destroy(info->poll_set);
+        info->poll_set = NULL;
+    }
 
-    if (info->context != NULL)
+    if (info->context != NULL) {
         NA_Context_destroy(info->na_class, info->context);
+        info->context = NULL;
+    }
 
     NA_Test_finalize(&info->na_test_info);
 }

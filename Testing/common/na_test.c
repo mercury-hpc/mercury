@@ -111,19 +111,24 @@ na_test_usage(const char *execname)
            "                         Default: any\n");
     printf("    -S, --self_send      Send to self\n");
     printf("    -k, --key            Pass auth key\n");
-    printf("    -T, --tclass         Traffic class to use\n");
     printf("    -l, --loop           Number of loops (default: 1)\n");
     printf("    -b, --busy           Busy wait\n");
+    printf("    -C, --classes        Number of classes to use\n");
+    printf("    -X, --contexts       Number of contexts to use\n");
     printf("    -y  --buf_size_min   Min buffer size (in bytes)\n");
     printf("    -z, --buf_size_max   Max buffer size (in bytes)\n");
     printf("    -w  --buf_count      Number of buffers used\n");
+    printf("    -Z, --msg-size       Max unexpected/expected message size\n");
     printf("    -R, --force-register Force registration of buffers\n");
+    printf("    -v, --verify         Verify data\n");
+    printf("    -V, --verbose        Print verbose output\n");
     printf("    -M, --mbps           Output in MB/s instead of MiB/s\n");
     printf("    -U, --no-multi-recv  Disable multi-recv\n");
     printf("    -f, --hostfile       Specify hostfile to use\n"
            "                         "
            "Default: " HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME "\n");
-    printf("    -V, --verbose        Print verbose output\n");
+    printf("    -T, --tclass         Traffic class to use\n");
+    printf("    -N, --no-shutdown    Do not shutdown server\n");
 }
 
 /*---------------------------------------------------------------------------*/
