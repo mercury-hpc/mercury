@@ -69,6 +69,9 @@ static na_return_t
 na_test_free_svc(struct na_test_cxi_info *cxi_info);
 #endif
 
+static void
+na_test_gen_key(char *key, size_t key_size, const char *base_key, int rank);
+
 static char *
 na_test_gen_config(struct na_test_info *na_test_info, unsigned int i);
 
@@ -129,6 +132,7 @@ na_test_usage(const char *execname)
            "Default: " HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME "\n");
     printf("    -T, --tclass         Traffic class to use\n");
     printf("    -N, --no-shutdown    Do not shutdown server\n");
+    printf("    -K, --key-rank       Increment key based on rank\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -230,6 +234,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'N': /* no-shutdown */
                 na_test_info->no_shutdown = true;
+                break;
+            case 'K': /* key-rank */
+                na_test_info->key_rank = true;
                 break;
             default:
                 break;
@@ -393,6 +400,23 @@ error:
     return ret;
 }
 #endif
+
+/*---------------------------------------------------------------------------*/
+static void
+na_test_gen_key(char *key, size_t key_size, const char *base_key, int rank)
+{
+    int c0, c1;
+    int ret;
+
+    /* Check number of components in the key */
+    ret = sscanf(base_key, "%d:%d", &c0, &c1);
+    if (ret == 2)
+        snprintf(key, key_size, "%d:%d", c0, c1 + rank);
+    else if (ret == 1)
+        snprintf(key, key_size, "%d", c0 + rank);
+    else /* Just passthrough */
+        snprintf(key, key_size, "%s", base_key);
+}
 
 /*---------------------------------------------------------------------------*/
 static char *
@@ -588,9 +612,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
     const char *log_subsys = getenv("HG_LOG_SUBSYS");
-#ifdef HG_TEST_HAS_CXI
     char auth_key[64];
-#endif
     size_t i;
 
     if (!log_subsys) {
@@ -640,8 +662,15 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     if (na_test_info->key != NULL)
         na_init_info.auth_key = auth_key;
 #else
-    na_init_info.auth_key = na_test_info->key;
+    if (na_test_info->key_rank && na_test_info->key != NULL) {
+        na_test_gen_key(auth_key, sizeof(auth_key), na_test_info->key,
+            na_test_info->mpi_info.rank);
+        na_init_info.auth_key = auth_key;
+    } else
+        na_init_info.auth_key = na_test_info->key;
 #endif
+    NA_TEST_LOG_DEBUG("Using auth key: %s", na_init_info.auth_key);
+
     if (na_test_info->max_contexts != 0)
         na_init_info.max_contexts = na_test_info->max_contexts;
     na_init_info.max_unexpected_size = (size_t) na_test_info->max_msg_size;
