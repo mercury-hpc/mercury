@@ -16,7 +16,7 @@
 int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
 const char *na_test_short_opt_g =
-    "hc:d:p:H:P:sSk:l:bC:X:VZ:y:z:w:x:mt:BRvMUf:T:u:i:N";
+    "hc:d:p:H:P:sSk:l:bC:X:VZ:y:z:w:x:mt:BRvMUf:T:u:i:NK";
 /* clang-format off */
 const struct na_test_opt na_test_opt_g[] = {
     {"help", no_arg, 'h'},
@@ -50,6 +50,7 @@ const struct na_test_opt na_test_opt_g[] = {
     {"mrecv-ops", require_arg, 'u'},
     {"post-init", require_arg, 'i'},
     {"no-shutdown", no_arg, 'N'},
+    {"key-rank", no_arg, 'K'},
     {NULL, 0, '\0'} /* Must add this at the end */
 };
 /* clang-format on */
