@@ -63,6 +63,7 @@ struct na_test_info {
     bool mbps;           /* OSU-style of output in MB/s */
     bool no_multi_recv;  /* Disable multi-recv */
     bool no_shutdown;    /* Do not shutdown server */
+    bool key_rank;       /* Increment key based on rank */
 };
 
 /*****************/

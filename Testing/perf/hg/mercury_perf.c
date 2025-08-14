@@ -424,14 +424,15 @@ hg_perf_class_cleanup(struct hg_perf_class_info *info)
     if (info->handles != NULL) {
         for (i = 0; i < info->handle_max; i++)
             HG_Destroy(info->handles[i]);
-
         free(info->handles);
+        info->handles = NULL;
     }
 
     if (info->remote_bulk_handles != NULL) {
         for (i = 0; i < info->handle_max; i++)
             HG_Bulk_free(info->remote_bulk_handles[i]);
         free(info->remote_bulk_handles);
+        info->remote_bulk_handles = NULL;
     }
 
     hg_perf_bulk_buf_free(info);
@@ -449,16 +450,21 @@ hg_perf_class_cleanup(struct hg_perf_class_info *info)
         for (i = 0; i < info->target_addr_max; i++)
             HG_Addr_free(info->hg_class, info->target_addrs[i]);
         free(info->target_addrs);
+        info->target_addrs = NULL;
     }
 
     if (info->wait_fd > 0)
         hg_poll_remove(info->poll_set, info->wait_fd);
 
-    if (info->poll_set != NULL)
+    if (info->poll_set != NULL) {
         hg_poll_destroy(info->poll_set);
+        info->poll_set = NULL;
+    }
 
-    if (info->context)
+    if (info->context != NULL) {
         HG_Context_destroy(info->context);
+        info->context = NULL;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1529,6 +1535,7 @@ hg_perf_done_cb(hg_handle_t handle)
         for (i = 0; i < info->handle_max; i++)
             HG_Bulk_free(info->remote_bulk_handles[i]);
         free(info->remote_bulk_handles);
+        info->remote_bulk_handles = NULL;
     }
 
     hg_perf_bulk_buf_free(info);
