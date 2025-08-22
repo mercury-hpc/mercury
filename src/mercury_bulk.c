@@ -188,6 +188,7 @@ struct hg_bulk_op_id {
     LIST_ENTRY(hg_bulk_op_id) pending; /* Pending list entry */
     struct hg_bulk_op_pool *op_pool;   /* Pool that op ID belongs to */
     hg_cb_t callback;                  /* Pointer to function */
+    struct hg_core_addr *origin_addr;  /* Origin address */
     hg_bulk_na_op_id_t na_op_ids;      /* NA operations IDs */
 #ifdef NA_HAS_SM
     hg_bulk_na_op_id_t na_sm_op_ids; /* NA SM operations IDs */
@@ -281,6 +282,13 @@ hg_bulk_register_segments(na_class_t *na_class, struct na_segment *segments,
 static hg_return_t
 hg_bulk_deregister(
     na_class_t *na_class, na_mem_handle_t *mem_handle, bool registered);
+
+/**
+ * Convert core addr to string (debug/error messages).
+ */
+static HG_INLINE const char *
+hg_bulk_core_addr_to_string(
+    char *buf, hg_size_t *buf_size, struct hg_core_addr *addr);
 
 /**
  * Get serialize size.
@@ -968,6 +976,23 @@ hg_bulk_deregister(
 
 error:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const char *
+hg_bulk_core_addr_to_string(
+    char *buf, hg_size_t *buf_size, struct hg_core_addr *addr)
+{
+    hg_return_t ret;
+
+    ret = HG_Core_addr_to_string(buf, buf_size, addr);
+    HG_CHECK_SUBSYS_HG_ERROR(addr, error, ret,
+        "Could not convert address (%p) to string", (void *) addr);
+
+    return buf;
+
+error:
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1963,6 +1988,8 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
     hg_atomic_incr32(&hg_bulk_local->ref_count);
     hg_bulk_op_id->callback_info.info.bulk.op = op;
     hg_bulk_op_id->callback_info.info.bulk.size = size;
+    hg_bulk_op_id->origin_addr = origin_addr;
+    hg_core_addr_ref_incr(origin_addr);
 
     /* Reset status */
     hg_atomic_set32(&hg_bulk_op_id->status, 0);
@@ -2035,6 +2062,7 @@ error:
         /* decrement ref_count */
         (void) hg_bulk_free(hg_bulk_origin);
         (void) hg_bulk_free(hg_bulk_local);
+        (void) HG_Core_addr_free(hg_bulk_op_id->origin_addr);
         hg_bulk_op_destroy(hg_bulk_op_id);
     }
 
@@ -2154,6 +2182,8 @@ hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
 
     if (((origin_flags & HG_BULK_REGV) || origin_count == 1) &&
         ((local_flags & HG_BULK_REGV) || local_count == 1)) {
+        char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+        size_t addr_buf_size = sizeof(addr_buf);
         na_return_t na_ret;
 
         HG_LOG_SUBSYS_DEBUG(
@@ -2164,8 +2194,10 @@ hg_bulk_transfer_na(hg_bulk_op_t op, na_addr_t *na_origin_addr,
             local_offset, origin_mem_handles[0], origin_offset, size,
             na_origin_addr, origin_id, hg_bulk_na_op_ids->s[0]);
         HG_CHECK_SUBSYS_ERROR(bulk, na_ret != NA_SUCCESS, error, ret,
-            (hg_return_t) na_ret, "Could not transfer data (%s)",
-            NA_Error_to_string(na_ret));
+            (hg_return_t) na_ret, "Could not transfer data (%s, origin=\"%s\")",
+            NA_Error_to_string(na_ret),
+            hg_core_na_addr_to_string(hg_bulk_op_id->na_class, na_origin_addr,
+                addr_buf, &addr_buf_size));
     } else {
         uint32_t origin_segment_start_index = 0, local_segment_start_index = 0;
         hg_size_t origin_segment_start_offset = 0,
@@ -2303,6 +2335,8 @@ hg_bulk_transfer_segments_na(na_class_t *na_class, na_context_t *na_context,
     hg_size_t local_segment_start_offset, hg_size_t size,
     na_op_id_t *na_op_ids[], uint32_t na_op_count)
 {
+    char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+    size_t addr_buf_size = sizeof(addr_buf);
     hg_size_t origin_segment_index = origin_segment_start_index;
     hg_size_t local_segment_index = local_segment_start_index;
     hg_size_t origin_segment_offset = origin_segment_start_offset;
@@ -2327,8 +2361,10 @@ hg_bulk_transfer_segments_na(na_class_t *na_class, na_context_t *na_context,
             origin_mem_handles[origin_segment_index], origin_segment_offset,
             transfer_size, origin_addr, origin_id, na_op_ids[count]);
         HG_CHECK_SUBSYS_ERROR(bulk, na_ret != NA_SUCCESS, error, ret,
-            (hg_return_t) na_ret, "Could not transfer data (%s)",
-            NA_Error_to_string(na_ret));
+            (hg_return_t) na_ret, "Could not transfer data (%s, origin=\"%s\")",
+            NA_Error_to_string(na_ret),
+            hg_core_na_addr_to_string(
+                na_class, origin_addr, addr_buf, &addr_buf_size));
 
         count++;
 
@@ -2383,14 +2419,19 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         hg_atomic_cas32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);
     } else { /* All other errors */
+        char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+        hg_size_t addr_buf_size = sizeof(addr_buf);
+
         /* Mark handle as errored */
         hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_ERRORED);
 
         /* Keep first non-success ret status */
         hg_atomic_cas32(&hg_bulk_op_id->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) callback_info->ret);
-        HG_LOG_ERROR("NA callback returned error (%s)",
-            NA_Error_to_string(callback_info->ret));
+        HG_LOG_ERROR("NA callback returned error (%s, origin=\"%s\")",
+            NA_Error_to_string(callback_info->ret),
+            hg_bulk_core_addr_to_string(
+                addr_buf, &addr_buf_size, hg_bulk_op_id->origin_addr));
     }
 
     /* When all NA transfers that correspond to the bulk operation complete,
@@ -2474,6 +2515,9 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
     /* Decrement ref_count */
     (void) hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.origin_handle);
     (void) hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.local_handle);
+
+    /* Decrement ref_count on origin_addr */
+    (void) HG_Core_addr_free(hg_bulk_op_id->origin_addr);
 
     /* Release bulk op ID (can be released after callback execution since
      * op IDs are managed internally) */
