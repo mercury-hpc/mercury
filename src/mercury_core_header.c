@@ -199,8 +199,16 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     /* RPC ID */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->id, uint64_t, op);
 
-    /* Flags */
+/* Flags */
+#ifdef HG_HAS_CHECKSUMS
+    header->flags |= HG_CORE_HAS_CHECKSUMS;
+#endif
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, uint8_t, op);
+#ifndef HG_HAS_CHECKSUMS
+    HG_CHECK_SUBSYS_ERROR(rpc, header->flags & HG_CORE_HAS_CHECKSUMS, error,
+        ret, HG_INVALID_ARG,
+        "Checksum flag set but not supported by current build");
+#endif
 
     /* Cookie */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->cookie, uint8_t, op);
@@ -255,8 +263,16 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     /* Return code */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->ret_code, int8_t, op);
 
-    /* Flags */
+/* Flags */
+#ifdef HG_HAS_CHECKSUMS
+    header->flags |= HG_CORE_HAS_CHECKSUMS;
+#endif
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, uint8_t, op);
+#ifndef HG_HAS_CHECKSUMS
+    HG_CHECK_SUBSYS_ERROR(rpc, header->flags & HG_CORE_HAS_CHECKSUMS, error,
+        ret, HG_INVALID_ARG,
+        "Checksum flag set but not supported by current build");
+#endif
 
     /* Cookie */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->cookie, uint16_t, op);
