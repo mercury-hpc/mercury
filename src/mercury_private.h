@@ -10,6 +10,7 @@
 #define MERCURY_PRIVATE_H
 
 #include "mercury_core.h"
+#include "mercury_error.h"
 
 #include "mercury_queue.h"
 
@@ -91,6 +92,9 @@ struct hg_bulk_op_pool;
         ((type *) ((char *) ptr - offsetof(type, member)))
 #endif
 
+/* Addr string format */
+#define HG_CORE_ADDR_MAX_SIZE (256)
+
 /**
  * Definition of hg_bulk_desc_info::flags
  *
@@ -122,6 +126,19 @@ hg_init_info_dup_2_3(
 static HG_INLINE void
 hg_init_info_dup_2_2(
     struct hg_init_info *new_info, const struct hg_init_info_2_2 *old_info);
+
+/**
+ * Convert NA addr to string (debug/error messages).
+ */
+static HG_INLINE const char *
+hg_core_na_addr_to_string(
+    na_class_t *na_class, na_addr_t *addr, char *buf, size_t *buf_size);
+
+/**
+ * Increment addr ref count.
+ */
+HG_PRIVATE void
+hg_core_addr_ref_incr(hg_core_addr_t addr);
 
 /**
  * Increment bulk handle counter.
@@ -172,7 +189,7 @@ static HG_INLINE void
 hg_init_info_dup_2_3(
     struct hg_init_info *new_info, const struct hg_init_info_2_3 *old_info)
 {
-    *new_info = (struct hg_init_info){.na_init_info = old_info->na_init_info,
+    *new_info = (struct hg_init_info) {.na_init_info = old_info->na_init_info,
         .na_class = old_info->na_class,
         .request_post_init = old_info->request_post_init,
         .request_post_incr = (int32_t) old_info->request_post_incr,
@@ -195,7 +212,7 @@ static HG_INLINE void
 hg_init_info_dup_2_2(
     struct hg_init_info *new_info, const struct hg_init_info_2_2 *old_info)
 {
-    *new_info = (struct hg_init_info){.na_init_info = old_info->na_init_info,
+    *new_info = (struct hg_init_info) {.na_init_info = old_info->na_init_info,
         .na_class = old_info->na_class,
         .request_post_init = old_info->request_post_init,
         .request_post_incr = (int32_t) old_info->request_post_incr,
@@ -211,6 +228,24 @@ hg_init_info_dup_2_2(
         .no_overflow = false,
         .multi_recv_op_max = 0,
         .multi_recv_copy_threshold = 0};
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const char *
+hg_core_na_addr_to_string(
+    na_class_t *na_class, na_addr_t *addr, char *buf, size_t *buf_size)
+{
+    na_return_t na_ret;
+
+    na_ret = NA_Addr_to_string(na_class, buf, buf_size, addr);
+    HG_CHECK_SUBSYS_ERROR_NORET(addr, na_ret != NA_SUCCESS, error,
+        "Could not convert address (%p) to string (%s)", (void *) addr,
+        NA_Error_to_string(na_ret));
+
+    return buf;
+
+error:
+    return NULL;
 }
 
 #ifdef __cplusplus

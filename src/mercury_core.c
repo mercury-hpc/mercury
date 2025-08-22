@@ -58,9 +58,8 @@
 /* 32-bit lock value for serial progress */
 #define HG_CORE_PROGRESS_LOCK (0x80000000)
 
-#ifdef NA_HAS_SM
 /* Addr string format */
-#    define HG_CORE_ADDR_MAX_SIZE      (256)
+#ifdef NA_HAS_SM
 #    define HG_CORE_PROTO_DELIMITER    ":"
 #    define HG_CORE_ADDR_DELIMITER     "#"
 #    define HG_CORE_ADDR_DELIMITER_LEN (1)
@@ -2995,6 +2994,13 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+void
+hg_core_addr_ref_incr(hg_core_addr_t addr)
+{
+    hg_atomic_incr32(&((struct hg_core_private_addr *) addr)->ref_count);
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_addr_dup(struct hg_core_private_addr *hg_core_addr,
     struct hg_core_private_addr **hg_core_addr_p)
@@ -4103,6 +4109,8 @@ hg_core_forward_self(struct hg_core_private_handle *hg_core_handle)
 static hg_return_t
 hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
 {
+    char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+    size_t addr_buf_size = sizeof(addr_buf);
     uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     na_op_id_t *na_recv_op_id = NULL;
     hg_return_t ret;
@@ -4170,8 +4178,11 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         hg_core_handle->na_send_op_id);
     HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error_send, ret,
-        (hg_return_t) na_ret, "Could not post send for input buffer (%s)",
-        NA_Error_to_string(na_ret));
+        (hg_return_t) na_ret,
+        "Could not post send for input buffer (%s, dest=\"%s\")",
+        NA_Error_to_string(na_ret),
+        hg_core_na_addr_to_string(hg_core_handle->na_class,
+            hg_core_handle->na_addr, addr_buf, &addr_buf_size));
 
     return HG_SUCCESS;
 
@@ -4328,6 +4339,8 @@ static hg_return_t
 hg_core_respond_na(
     struct hg_core_private_handle *hg_core_handle, hg_return_t ret_code)
 {
+    char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+    size_t addr_buf_size = sizeof(addr_buf);
     int32_t HG_DEBUG_LOG_USED expected_count;
     uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     hg_return_t ret;
@@ -4370,8 +4383,11 @@ hg_core_respond_na(
         hg_core_handle->na_send_op_id);
     /* Expected sends should always succeed after retry */
     HG_CHECK_SUBSYS_ERROR(rpc, na_ret != NA_SUCCESS, error_send, ret,
-        (hg_return_t) na_ret, "Could not post send for output buffer (%s)",
-        NA_Error_to_string(na_ret));
+        (hg_return_t) na_ret,
+        "Could not post send for output buffer (%s, dest=\"%s\")",
+        NA_Error_to_string(na_ret),
+        hg_core_na_addr_to_string(hg_core_handle->na_class,
+            hg_core_handle->na_addr, addr_buf, &addr_buf_size));
 
     return HG_SUCCESS;
 
@@ -4426,6 +4442,8 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);
     } else { /* All other errors */
+        char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+        size_t addr_buf_size = sizeof(addr_buf);
         int32_t status;
 
         /* Mark handle as errored */
@@ -4434,8 +4452,10 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         /* Keep first non-success ret status */
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) callback_info->ret);
-        HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s)",
-            NA_Error_to_string(callback_info->ret));
+        HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s, dest=\"%s\")",
+            NA_Error_to_string(callback_info->ret),
+            hg_core_na_addr_to_string(hg_core_handle->na_class,
+                hg_core_handle->na_addr, addr_buf, &addr_buf_size));
 
         if (!(status & HG_CORE_OP_CANCELED) &&
             !(hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_NO_RESPONSE)) {
@@ -4832,14 +4852,19 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) HG_CANCELED);
     } else {
+        char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+        size_t addr_buf_size = sizeof(addr_buf);
+
         /* Mark handle as errored */
         hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
 
         /* Keep first non-success ret status */
         hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
             (int32_t) callback_info->ret);
-        HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s)",
-            NA_Error_to_string(callback_info->ret));
+        HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s, dest=\"%s\")",
+            NA_Error_to_string(callback_info->ret),
+            hg_core_na_addr_to_string(hg_core_handle->na_class,
+                hg_core_handle->na_addr, addr_buf, &addr_buf_size));
     }
 
     /* Complete operation */
