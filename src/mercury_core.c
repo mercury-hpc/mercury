@@ -35,8 +35,10 @@
 /****************/
 
 /* Private flags */
+/* HG_CORE_MORE_DATA (1 << 0) is public */
 #define HG_CORE_NO_RESPONSE  (1 << 1) /* No response required */
 #define HG_CORE_SELF_FORWARD (1 << 2) /* Forward to self */
+/* HG_CORE_HAS_CHECKSUMS (1 << 7) private to mercury_core_header */
 
 /* Size of comletion queue used for holding completed requests */
 #define HG_CORE_ATOMIC_QUEUE_SIZE (1024)
