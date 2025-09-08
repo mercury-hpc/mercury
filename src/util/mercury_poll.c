@@ -2,6 +2,7 @@
  * Copyright (c) 2013-2022 UChicago Argonne, LLC and The HDF Group.
  * Copyright (c) 2022-2024 Intel Corporation.
  * Copyright (c) 2024-2025 Hewlett Packard Enterprise Development LP.
+ * Copyright (c) 2025 VDURA, Inc.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -186,9 +187,8 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, struct hg_poll_event *event)
     uint32_t poll_flags = 0;
     int rc;
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    struct kevent ev;
-    struct timespec timeout = {0, 0};
-    int16_t poll_flags = 0;
+    struct kevent ev[2];
+    int ev_cnt = 0;
     int rc;
 #else
     struct pollfd ev;
@@ -217,13 +217,13 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, struct hg_poll_event *event)
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
     /* Translate flags */
     if (event->events & HG_POLLIN)
-        poll_flags |= EVFILT_READ;
+        EV_SET(&ev[ev_cnt++], (uintptr_t) fd, EVFILT_READ, EV_ADD, 0, 0,
+            event->data.ptr);
     if (event->events & HG_POLLOUT)
-        poll_flags |= EVFILT_WRITE;
+        EV_SET(&ev[ev_cnt++], (uintptr_t) fd, EVFILT_WRITE, EV_ADD, 0, 0,
+            event->data.ptr);
 
-    EV_SET(&ev, (uintptr_t) fd, poll_flags, EV_ADD, 0, 0, event->data.ptr);
-
-    rc = kevent(poll_set->fd, &ev, 1, NULL, 0, &timeout);
+    rc = kevent(poll_set->fd, ev, ev_cnt, NULL, 0, NULL);
     HG_UTIL_CHECK_ERROR(rc == -1, done, ret, HG_UTIL_FAIL,
         "kevent() failed (%s)", strerror(errno));
 #else
@@ -285,8 +285,7 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
     int rc;
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    struct kevent ev;
-    struct timespec timeout = {0, 0};
+    struct kevent ev[2];
     int rc;
 #else
     int i, found = -1;
@@ -304,11 +303,10 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
         "epoll_ctl() failed (%s)", strerror(errno));
     hg_thread_mutex_lock(&poll_set->lock);
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    /* Events which are attached to file descriptors are automatically
-     * deleted on the last close of the descriptor. */
-    EV_SET(&ev, (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
-    rc = kevent(poll_set->fd, &ev, 1, NULL, 0, &timeout);
-    HG_UTIL_CHECK_ERROR(rc == -1, done, ret, HG_UTIL_FAIL,
+    EV_SET(&ev[0], (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+    EV_SET(&ev[1], (uintptr_t) fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+    rc = kevent(poll_set->fd, ev, 2, NULL, 0, NULL);
+    HG_UTIL_CHECK_ERROR(rc == -1 && errno != ENOENT, done, ret, HG_UTIL_FAIL,
         "kevent() failed (%s)", strerror(errno));
     hg_thread_mutex_lock(&poll_set->lock);
 #else
@@ -427,11 +425,17 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
         events[i].events = 0;
         events[i].data.ptr = poll_set->events[i].udata;
 
-        if (poll_set->events[i].flags & EVFILT_READ)
+        if (poll_set->events[i].filter == EVFILT_READ)
             events[i].events |= HG_POLLIN;
 
-        if (poll_set->events[i].flags & EVFILT_WRITE)
+        if (poll_set->events[i].filter == EVFILT_WRITE)
             events[i].events |= HG_POLLOUT;
+
+        if (poll_set->events[i].flags & EV_ERROR) {
+            events[i].events |= HG_POLLERR;
+        } else if (poll_set->events[i].flags & EV_EOF) {
+            events[i].events |= HG_POLLHUP;
+        }
     }
 
     /* Grow array if reached max number */
