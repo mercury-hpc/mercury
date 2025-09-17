@@ -365,20 +365,14 @@ na_ucp_context_destroy(ucp_context_h context);
  */
 static na_return_t
 na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
-    ucp_worker_h *worker_p);
+    ucp_worker_h *worker_p, ucp_address_t **worker_addr_p,
+    size_t *worker_addr_len_p);
 
 /**
  * Destroy worker.
  */
 static void
 na_ucp_worker_destroy(ucp_worker_h worker);
-
-/**
- * Retrieve worker address.
- */
-static na_return_t
-na_ucp_worker_get_address(
-    ucp_worker_h worker, ucp_address_t **addr_p, size_t *addr_len_p);
 
 /**
  * Set handler for receiving active messages.
@@ -1508,7 +1502,8 @@ na_ucp_context_destroy(ucp_context_h context)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
-    ucp_worker_h *worker_p)
+    ucp_worker_h *worker_p, ucp_address_t **worker_addr_p,
+    size_t *worker_addr_len_p)
 {
     ucp_worker_h worker = NULL;
     ucp_worker_params_t worker_params = {
@@ -1516,7 +1511,8 @@ na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
         .thread_mode = thread_mode};
     ucp_worker_attr_t worker_attrs = {
         .field_mask = UCP_WORKER_ATTR_FIELD_THREAD_MODE |
-                      UCP_WORKER_ATTR_FIELD_MAX_AM_HEADER};
+                      UCP_WORKER_ATTR_FIELD_MAX_AM_HEADER |
+                      UCP_WORKER_ATTR_FIELD_ADDRESS};
     ucs_status_t status;
     na_return_t ret;
 
@@ -1558,6 +1554,17 @@ na_ucp_worker_create(ucp_context_h context, ucs_thread_mode_t thread_mode,
         "UCP worker thread mode (%s) is not supported",
         ucs_thread_mode_names[worker_attrs.thread_mode]);
 
+    /* Check address */
+    NA_CHECK_SUBSYS_ERROR(cls,
+        (worker_attrs.field_mask & UCP_WORKER_ATTR_FIELD_ADDRESS) == 0, error,
+        ret, NA_PROTONOSUPPORT, "worker attributes contain no address");
+    NA_CHECK_SUBSYS_ERROR(cls, worker_attrs.address_length == 0, error, ret,
+        NA_PROTONOSUPPORT, "worker address length is 0");
+    NA_CHECK_SUBSYS_ERROR(cls, worker_attrs.address == NULL, error, ret,
+        NA_PROTONOSUPPORT, "worker address is NULL");
+    *worker_addr_p = worker_attrs.address;
+    *worker_addr_len_p = worker_attrs.address_length;
+
     *worker_p = worker;
 
     return NA_SUCCESS;
@@ -1574,23 +1581,6 @@ static void
 na_ucp_worker_destroy(ucp_worker_h worker)
 {
     ucp_worker_destroy(worker);
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_ucp_worker_get_address(
-    ucp_worker_h worker, ucp_address_t **addr_p, size_t *addr_len_p)
-{
-    ucs_status_t status;
-    na_return_t ret = NA_SUCCESS;
-
-    status = ucp_worker_get_address(worker, addr_p, addr_len_p);
-    NA_CHECK_SUBSYS_ERROR(cls, status != UCS_OK, done, ret,
-        na_ucs_status_to_na(status), "ucp_worker_get_address() failed (%s)",
-        ucs_status_string(status));
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3231,6 +3221,8 @@ na_ucx_initialize(
     struct sockaddr *src_sockaddr = NULL;
     socklen_t src_addrlen = 0;
     struct sockaddr_storage ucp_listener_ss_addr;
+    ucp_address_t *worker_addr = NULL;
+    size_t worker_addr_len = 0;
     ucs_sock_addr_t addr_key = {.addr = NULL, .addrlen = 0};
     ucp_config_t *config = NULL;
     bool no_wait = false;
@@ -3335,7 +3327,7 @@ na_ucx_initialize(
 
     /* Create single worker */
     ret = na_ucp_worker_create(na_ucx_class->ucp_context, worker_thread_mode,
-        &na_ucx_class->ucp_worker);
+        &na_ucx_class->ucp_worker, &worker_addr, &worker_addr_len);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create UCX worker");
 
     /* Set AM handler for unexpected messages */
@@ -3370,12 +3362,10 @@ na_ucx_initialize(
     /* Create self address */
     ret = na_ucx_addr_create(na_ucx_class, &addr_key, &na_ucx_class->self_addr);
     NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not create self address");
-
-    /* Attach worker address */
-    ret = na_ucp_worker_get_address(na_ucx_class->ucp_worker,
-        &na_ucx_class->self_addr->worker_addr,
-        &na_ucx_class->self_addr->worker_addr_len);
-    NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not get worker address");
+    na_ucx_class->self_addr->worker_addr = worker_addr;
+    na_ucx_class->self_addr->worker_addr_len = worker_addr_len;
+    worker_addr = NULL;
+    worker_addr_len = 0;
 
     /* Register initial mempool */
 #ifdef NA_UCX_HAS_MEM_POOL
@@ -3401,6 +3391,8 @@ na_ucx_initialize(
 error:
     free(net_device);
     free(src_sockaddr);
+    if (worker_addr)
+        ucp_worker_release_address(na_ucx_class->ucp_worker, worker_addr);
     if (na_ucx_class)
         na_ucx_class_free(na_ucx_class);
 
