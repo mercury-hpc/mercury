@@ -81,11 +81,11 @@
 #define NA_UCX_OP_RESET(_op, _context, _cb_type, _cb, _arg, _addr)             \
     do {                                                                       \
         _op->context = _context;                                               \
-        _op->completion_data = (struct na_cb_completion_data){                 \
+        _op->completion_data = (struct na_cb_completion_data) {                \
             .callback_info =                                                   \
-                (struct na_cb_info){                                           \
+                (struct na_cb_info) {                                          \
                     .info.recv_unexpected =                                    \
-                        (struct na_cb_info_recv_unexpected){                   \
+                        (struct na_cb_info_recv_unexpected) {                  \
                             .actual_buf_size = 0, .source = NULL, .tag = 0},   \
                     .arg = _arg,                                               \
                     .type = _cb_type,                                          \
@@ -1630,8 +1630,8 @@ na_ucp_listener_create(ucp_worker_h worker, const struct sockaddr *addr,
     ucp_listener_params_t listener_params = {
         .field_mask = UCP_LISTENER_PARAM_FIELD_SOCK_ADDR |
                       UCP_LISTENER_PARAM_FIELD_CONN_HANDLER,
-        .sockaddr = (ucs_sock_addr_t){.addr = addr, .addrlen = addrlen},
-        .conn_handler = (ucp_listener_conn_handler_t){
+        .sockaddr = (ucs_sock_addr_t) {.addr = addr, .addrlen = addrlen},
+        .conn_handler = (ucp_listener_conn_handler_t) {
             .cb = na_ucp_listener_conn_cb, .arg = listener_arg}};
     ucp_listener_attr_t listener_attrs = {
         .field_mask = UCP_LISTENER_ATTR_FIELD_SOCKADDR};
@@ -1695,7 +1695,7 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
         error, "conn attributes contain no client addr");
 
     /* Lookup address from table */
-    addr_key = (ucs_sock_addr_t){
+    addr_key = (ucs_sock_addr_t) {
         .addr = (const struct sockaddr *) &conn_request_attrs.client_address,
         .addrlen = sizeof(conn_request_attrs.client_address)};
     na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key);
@@ -1735,7 +1735,7 @@ na_ucp_connect(ucp_worker_h worker, const struct sockaddr *src_addr,
     ucp_ep_params_t ep_params = {
         .field_mask = UCP_EP_PARAM_FIELD_FLAGS | UCP_EP_PARAM_FIELD_SOCK_ADDR,
         .flags = UCP_EP_PARAMS_FLAGS_CLIENT_SERVER,
-        .sockaddr = (ucs_sock_addr_t){.addr = dst_addr, .addrlen = addrlen},
+        .sockaddr = (ucs_sock_addr_t) {.addr = dst_addr, .addrlen = addrlen},
         .conn_request = NULL};
     struct sockaddr_storage src_ss_addr;
     na_return_t ret;
@@ -2049,7 +2049,7 @@ na_ucp_am_recv(
 
         /* Fill unexpected info */
         na_ucx_op_id->completion_data.callback_info.info.recv_unexpected =
-            (struct na_cb_info_recv_unexpected){
+            (struct na_cb_info_recv_unexpected) {
                 .tag = (na_tag_t) na_ucx_unexpected_info->tag,
                 .actual_buf_size = (size_t) na_ucx_unexpected_info->length,
                 .source = (na_addr_t *) na_ucx_unexpected_info->na_ucx_addr};
@@ -2110,7 +2110,7 @@ na_ucp_am_recv_cb(void *arg, const void *header, size_t header_length,
     if (likely(na_ucx_op_id)) {
         /* Fill info */
         na_ucx_op_id->completion_data.callback_info.info.recv_unexpected =
-            (struct na_cb_info_recv_unexpected){.tag = (na_tag_t) tag,
+            (struct na_cb_info_recv_unexpected) {.tag = (na_tag_t) tag,
                 .actual_buf_size = (size_t) length,
                 .source = (na_addr_t *) source_addr};
         na_ucx_addr_ref_incr(source_addr);
@@ -2891,7 +2891,7 @@ na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key)
         na_ucx_addr->addr_key.addrlen = addr_key->addrlen;
     } else {
         memset(&na_ucx_addr->ss_addr, 0, sizeof(na_ucx_addr->ss_addr));
-        na_ucx_addr->addr_key = (ucs_sock_addr_t){.addr = NULL, .addrlen = 0};
+        na_ucx_addr->addr_key = (ucs_sock_addr_t) {.addr = NULL, .addrlen = 0};
     }
 }
 
@@ -3352,12 +3352,12 @@ na_ucx_initialize(
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not create UCX listener");
 
-        addr_key = (ucs_sock_addr_t){
+        addr_key = (ucs_sock_addr_t) {
             .addr = (const struct sockaddr *) &ucp_listener_ss_addr,
             .addrlen = sizeof(ucp_listener_ss_addr)};
     } else if (!multi_dev)
         addr_key =
-            (ucs_sock_addr_t){.addr = src_sockaddr, .addrlen = src_addrlen};
+            (ucs_sock_addr_t) {.addr = src_sockaddr, .addrlen = src_addrlen};
 
 #ifdef NA_UCX_HAS_ADDR_POOL
     /* Create pool of addresses */
@@ -3524,7 +3524,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
         "getaddrinfo() failed (%s)", gai_strerror(rc));
 
     /* Lookup address from table */
-    addr_key = (ucs_sock_addr_t){
+    addr_key = (ucs_sock_addr_t) {
         .addr = hostname_res->ai_addr, .addrlen = hostname_res->ai_addrlen};
     na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key);
 
@@ -3822,7 +3822,7 @@ na_ucx_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
         na_ucx_addr);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ucx_op_id->info.msg = (struct na_ucx_msg_info){
+    na_ucx_op_id->info.msg = (struct na_ucx_msg_info) {
         .buf.const_ptr = buf, .buf_size = buf_size, .tag = (ucp_tag_t) tag};
 
     ret = na_ucp_am_send(na_ucx_addr->ucp_ep, buf, buf_size,
@@ -3859,7 +3859,7 @@ na_ucx_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_ucx_op_id, context, NA_CB_RECV_UNEXPECTED, callback, arg, NULL);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ucx_op_id->info.msg = (struct na_ucx_msg_info){
+    na_ucx_op_id->info.msg = (struct na_ucx_msg_info) {
         .buf.ptr = buf, .buf_size = buf_size, .tag = (ucp_tag_t) 0};
 
     na_ucp_am_recv(NA_UCX_CLASS(na_class), na_ucx_op_id);
@@ -3905,7 +3905,7 @@ na_ucx_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         na_ucx_op_id, context, NA_CB_SEND_EXPECTED, callback, arg, na_ucx_addr);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ucx_op_id->info.msg = (struct na_ucx_msg_info){
+    na_ucx_op_id->info.msg = (struct na_ucx_msg_info) {
         .buf.const_ptr = buf, .buf_size = buf_size, .tag = (ucp_tag_t) tag};
 
     ret = na_ucp_msg_send(
@@ -3944,7 +3944,7 @@ na_ucx_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_ucx_op_id, context, NA_CB_RECV_EXPECTED, callback, arg, na_ucx_addr);
 
     /* We assume buf remains valid (safe because we pre-allocate buffers) */
-    na_ucx_op_id->info.msg = (struct na_ucx_msg_info){
+    na_ucx_op_id->info.msg = (struct na_ucx_msg_info) {
         .buf.ptr = buf, .buf_size = buf_size, .tag = (ucp_tag_t) tag};
 
     ret = na_ucp_msg_recv(NA_UCX_CLASS(na_class)->ucp_worker, buf, buf_size,
