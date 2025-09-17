@@ -129,16 +129,18 @@
 
 /* Address */
 struct na_ucx_addr {
-    STAILQ_ENTRY(na_ucx_addr) entry;   /* Entry in addr pool */
-    struct sockaddr_storage ss_addr;   /* Sock addr */
-    ucs_sock_addr_t addr_key;          /* Address key */
-    struct na_ucx_class *na_ucx_class; /* NA UCX class */
-    ucp_address_t *worker_addr;        /* Worker addr */
-    size_t worker_addr_len;            /* Worker addr len */
-    bool worker_addr_alloc;            /* Worker addr was allocated by us */
-    ucp_ep_h ucp_ep;                   /* Currently only one EP per address */
-    hg_atomic_int32_t refcount;        /* Reference counter */
-    hg_atomic_int32_t status;          /* Connection state */
+    STAILQ_ENTRY(na_ucx_addr) entry;          /* Entry in addr pool */
+    LIST_ENTRY(na_ucx_addr) close_list_entry; /* Entry in close list */
+    struct sockaddr_storage ss_addr;          /* Sock addr */
+    ucs_sock_addr_t addr_key;                 /* Address key */
+    struct na_ucx_class *na_ucx_class;        /* NA UCX class */
+    ucp_address_t *worker_addr;               /* Worker addr */
+    size_t worker_addr_len;                   /* Worker addr len */
+    bool worker_addr_alloc;     /* Worker addr was allocated by us */
+    ucp_ep_h ucp_ep;            /* Currently only one EP per address */
+    void *close_request;        /* Close request */
+    hg_atomic_int32_t refcount; /* Reference counter */
+    hg_atomic_int32_t status;   /* Connection state */
 };
 
 /* Map (used to cache addresses) */
@@ -217,6 +219,12 @@ struct na_ucx_addr_pool {
     hg_thread_spin_t lock;
 };
 
+/* Addr list */
+struct na_ucx_addr_list {
+    LIST_HEAD(, na_ucx_addr) list;
+    hg_thread_spin_t lock;
+};
+
 /* Unexpected msg info */
 struct na_ucx_unexpected_info {
     STAILQ_ENTRY(na_ucx_unexpected_info) entry;
@@ -246,6 +254,7 @@ struct na_ucx_class {
     struct na_ucx_map addr_map;                 /* Address map */
     struct na_ucx_op_queue unexpected_op_queue; /* Unexpected op queue */
     struct na_ucx_addr_pool addr_pool;          /* Addr pool */
+    struct na_ucx_addr_list addr_close_list;    /* List of addresses to close */
     ucp_context_h ucp_context;                  /* UCP context */
     ucp_worker_h ucp_worker;                    /* Shared UCP worker */
     ucp_listener_h ucp_listener;   /* Listener handle if listening */
@@ -440,7 +449,7 @@ na_ucp_ep_error_cb(void *arg, ucp_ep_h ep, ucs_status_t status);
  * Close endpoint.
  */
 static void
-na_ucp_ep_close(ucp_ep_h ep);
+na_ucp_ep_close(ucp_ep_h ep, bool force, void **request_p);
 
 #ifndef NA_UCX_HAS_MEM_POOL
 /**
@@ -653,7 +662,12 @@ na_ucx_addr_pool_get(struct na_ucx_class *na_ucx_class);
  * Release address without destroying it.
  */
 static void
-na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr);
+na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr, bool force,
+    void (*free_cb)(struct na_ucx_addr *));
+
+/* Check close list and free entries. */
+static unsigned int
+na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class);
 
 /**
  * Reset address.
@@ -667,6 +681,10 @@ na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key);
 static na_return_t
 na_ucx_addr_create(struct na_ucx_class *na_ucx_class, ucs_sock_addr_t *addr_key,
     struct na_ucx_addr **na_ucx_addr_p);
+
+/* Free address once EP is closed. */
+static void
+na_ucx_addr_free_cb(struct na_ucx_addr *na_ucx_addr);
 
 /**
  * Increment ref count.
@@ -1936,13 +1954,25 @@ na_ucp_ep_error_cb(
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ucp_ep_close(ucp_ep_h ep)
+na_ucp_ep_close(ucp_ep_h ep, bool force, void **request_p)
 {
-    ucs_status_ptr_t status_ptr = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FORCE);
-    NA_CHECK_SUBSYS_ERROR_DONE(addr,
-        status_ptr != NULL && UCS_PTR_IS_ERR(status_ptr),
-        "ucp_ep_close_nb() failed (%s)",
-        ucs_status_string(UCS_PTR_STATUS(status_ptr)));
+    const ucp_request_param_t close_params = {
+        .op_attr_mask = UCP_OP_ATTR_FIELD_FLAGS,
+        .flags = force ? UCP_EP_CLOSE_FLAG_FORCE : 0};
+    ucs_status_ptr_t status_ptr;
+
+    status_ptr = ucp_ep_close_nbx(ep, &close_params);
+    if (status_ptr == NULL) /* Check for immediate completion */
+        NA_LOG_SUBSYS_DEBUG(addr, "ucp_ep_close_nbx() completed immediately");
+    else if (UCS_PTR_IS_ERR(status_ptr)) {
+        /* Keep as debug as we can't do anything anyway */
+        NA_LOG_SUBSYS_DEBUG(addr, "ucp_ep_close_nbx() failed (%s)",
+            ucs_status_string(UCS_PTR_STATUS(status_ptr)));
+    } else {
+        NA_LOG_SUBSYS_DEBUG(
+            addr, "ucp_ep_close_nbx() did not immediately complete");
+        *request_p = status_ptr;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2413,6 +2443,12 @@ na_ucx_class_alloc(void)
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
     STAILQ_INIT(&na_ucx_class->addr_pool.queue);
 
+    /* Initialize addr close list */
+    rc = hg_thread_spin_init(&na_ucx_class->addr_close_list.lock);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
+    LIST_INIT(&na_ucx_class->addr_close_list.list);
+
     /* Create address map */
     na_ucx_class->addr_map.key_map =
         hg_hash_table_new(na_ucx_addr_key_hash, na_ucx_addr_key_equal);
@@ -2460,6 +2496,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_op_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_msg_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->addr_pool.lock);
+    (void) hg_thread_spin_destroy(&na_ucx_class->addr_close_list.lock);
 
     free(na_ucx_class->protocol_name);
     free(na_ucx_class);
@@ -2670,6 +2707,7 @@ static na_return_t
 na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
     struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr)
 {
+    void *request = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -2688,9 +2726,11 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
     NA_CHECK_SUBSYS_ERROR(addr, rc != 1, unlock, ret, NA_NOENTRY,
         "hg_hash_table_remove() failed");
 
-    /* Close previous EP */
-    na_ucp_ep_close(na_ucx_addr->ucp_ep);
+    /* Close previous EP (force closure) */
+    na_ucp_ep_close(na_ucx_addr->ucp_ep, true, &request);
     na_ucx_addr->ucp_ep = NULL;
+    NA_CHECK_SUBSYS_ERROR(addr, request != NULL, unlock, ret, NA_BUSY,
+        "Could not close UCP endpoint");
 
     /* Create new endpoint */
     ret = na_ucp_connect(na_ucx_class->ucp_worker,
@@ -2807,7 +2847,7 @@ na_ucx_addr_destroy(struct na_ucx_addr *na_ucx_addr)
 {
     NA_LOG_SUBSYS_DEBUG(addr, "Destroying address %p", (void *) na_ucx_addr);
 
-    na_ucx_addr_release(na_ucx_addr);
+    na_ucx_addr_release(na_ucx_addr, true, NULL);
     free(na_ucx_addr);
 }
 
@@ -2835,7 +2875,8 @@ na_ucx_addr_pool_get(struct na_ucx_class *na_ucx_class)
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr)
+na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr, bool force,
+    void (*free_cb)(struct na_ucx_addr *))
 {
     /* Make sure we remove from map before we close the EP */
     if (na_ucx_addr->addr_key.addr) {
@@ -2843,14 +2884,6 @@ na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr)
 
         na_ucx_addr_map_remove(
             &na_ucx_addr->na_ucx_class->addr_map, &na_ucx_addr->addr_key);
-    }
-
-    if (na_ucx_addr->ucp_ep != NULL) {
-        /* NB. for deserialized addresses that are not "connected" addresses, do
-         * not close the EP */
-        if (na_ucx_addr->worker_addr == NULL)
-            na_ucp_ep_close(na_ucx_addr->ucp_ep);
-        na_ucx_addr->ucp_ep = NULL;
     }
 
     if (na_ucx_addr->worker_addr != NULL) {
@@ -2862,6 +2895,57 @@ na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr)
         na_ucx_addr->worker_addr = NULL;
         na_ucx_addr->worker_addr_len = 0;
     }
+
+    if (na_ucx_addr->ucp_ep != NULL) {
+        /* Close endpoint (if force is not passed, operations will flush) */
+        na_ucp_ep_close(
+            na_ucx_addr->ucp_ep, force, &na_ucx_addr->close_request);
+        na_ucx_addr->ucp_ep = NULL;
+
+        if (na_ucx_addr->close_request != NULL) {
+            NA_LOG_SUBSYS_DEBUG(addr, "EP close for addr %p still pending",
+                (void *) na_ucx_addr);
+            /* Keep addr in close list to progress later */
+            hg_thread_spin_lock(
+                &na_ucx_addr->na_ucx_class->addr_close_list.lock);
+            LIST_INSERT_HEAD(&na_ucx_addr->na_ucx_class->addr_close_list.list,
+                na_ucx_addr, close_list_entry);
+            hg_thread_spin_unlock(
+                &na_ucx_addr->na_ucx_class->addr_close_list.lock);
+        } else if (free_cb)
+            free_cb(na_ucx_addr);
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static unsigned int
+na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class)
+{
+    unsigned int count = 0;
+
+    hg_thread_spin_lock(&na_ucx_class->addr_close_list.lock);
+    if (!LIST_EMPTY(&na_ucx_class->addr_close_list.list)) {
+        struct na_ucx_addr *na_ucx_addr =
+            LIST_FIRST(&na_ucx_class->addr_close_list.list);
+        while (na_ucx_addr != NULL) {
+            struct na_ucx_addr *next = LIST_NEXT(na_ucx_addr, close_list_entry);
+            ucs_status_t status =
+                ucp_request_check_status(na_ucx_addr->close_request);
+            if (status != UCS_INPROGRESS) {
+                NA_LOG_SUBSYS_DEBUG(addr, "EP close for addr %p completed",
+                    (void *) na_ucx_addr);
+                ucp_request_free(na_ucx_addr->close_request);
+                na_ucx_addr->close_request = NULL;
+                LIST_REMOVE(na_ucx_addr, close_list_entry);
+                na_ucx_addr_free_cb(na_ucx_addr);
+                count++;
+            }
+            na_ucx_addr = next;
+        }
+    }
+    hg_thread_spin_unlock(&na_ucx_class->addr_close_list.lock);
+
+    return count;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2917,6 +3001,22 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+na_ucx_addr_free_cb(struct na_ucx_addr *na_ucx_addr)
+{
+#ifdef NA_UCX_HAS_ADDR_POOL
+    struct na_ucx_addr_pool *addr_pool = &na_ucx_addr->na_ucx_class->addr_pool;
+
+    /* Push address back to addr pool */
+    hg_thread_spin_lock(&addr_pool->lock);
+    STAILQ_INSERT_TAIL(&addr_pool->queue, na_ucx_addr, entry);
+    hg_thread_spin_unlock(&addr_pool->lock);
+#else
+    free(na_ucx_addr);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ucx_addr_ref_incr(struct na_ucx_addr *na_ucx_addr)
 {
@@ -2935,20 +3035,8 @@ na_ucx_addr_ref_decr(struct na_ucx_addr *na_ucx_addr)
         (void *) na_ucx_addr, refcount);
 
     if (refcount == 0) {
-#ifdef NA_UCX_HAS_ADDR_POOL
-        struct na_ucx_addr_pool *addr_pool =
-            &na_ucx_addr->na_ucx_class->addr_pool;
-
         NA_LOG_SUBSYS_DEBUG(addr, "Releasing address %p", (void *) na_ucx_addr);
-        na_ucx_addr_release(na_ucx_addr);
-
-        /* Push address back to addr pool */
-        hg_thread_spin_lock(&addr_pool->lock);
-        STAILQ_INSERT_TAIL(&addr_pool->queue, na_ucx_addr, entry);
-        hg_thread_spin_unlock(&addr_pool->lock);
-#else
-        na_ucx_addr_destroy(na_ucx_addr);
-#endif
+        na_ucx_addr_release(na_ucx_addr, false, na_ucx_addr_free_cb);
     }
 }
 
@@ -3431,6 +3519,10 @@ na_ucx_finalize(na_class_t *na_class)
         na_ucx_addr_destroy(na_ucx_addr);
     }
 #endif
+
+    NA_CHECK_SUBSYS_WARNING(cls,
+        !LIST_EMPTY(&na_ucx_class->addr_close_list.list),
+        "There are still addresses with an EP being closed");
 
     na_ucx_class_free(na_ucx_class);
     na_class->plugin_class = NULL;
@@ -4267,9 +4359,16 @@ static NA_INLINE bool
 na_ucx_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
+    bool addr_list_empty;
     ucs_status_t status;
 
     if (na_ucx_class->no_wait)
+        return false;
+
+    hg_thread_spin_lock(&na_ucx_class->addr_close_list.lock);
+    addr_list_empty = LIST_EMPTY(&na_ucx_class->addr_close_list.list);
+    hg_thread_spin_unlock(&na_ucx_class->addr_close_list.lock);
+    if (!addr_list_empty)
         return false;
 
     status = ucp_worker_arm(na_ucx_class->ucp_worker);
@@ -4290,8 +4389,10 @@ static NA_INLINE na_return_t
 na_ucx_poll(na_class_t *na_class, na_context_t NA_UNUSED *context,
     unsigned int *count_p)
 {
-    unsigned int count =
-        ucp_worker_progress(NA_UCX_CLASS(na_class)->ucp_worker);
+    struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
+    unsigned int count = ucp_worker_progress(na_ucx_class->ucp_worker);
+    count += na_ucx_addr_close_list_progress(na_ucx_class);
+
     if (count_p != NULL)
         *count_p = count;
 
