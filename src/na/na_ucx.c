@@ -3099,6 +3099,21 @@ na_ucx_rma(struct na_ucx_class NA_UNUSED *na_ucx_class, na_context_t *context,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed (%s)",
         na_cb_type_to_string(na_ucx_op_id->completion_data.callback_info.type));
 
+    /* There is no need to have a fully resolved address to start an RMA.
+     * This is only necessary for two-sided communication. */
+    /* The above assumption is now in question, so the following will resolve
+     * the address if required. */
+
+    /* Check addr to ensure the EP for that addr is still valid */
+    if (!(hg_atomic_get32(&na_ucx_addr->status) & NA_UCX_ADDR_RESOLVED)) {
+        ret = na_ucx_addr_map_update(
+            na_ucx_class, &na_ucx_class->addr_map, na_ucx_addr);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, error, ret, "Could not update NA UCX address");
+    }
+    NA_CHECK_SUBSYS_ERROR(rma, na_ucx_addr->ucp_ep == NULL, error, ret,
+        NA_ADDRNOTAVAIL, "UCP endpoint is NULL for that address");
+
     NA_UCX_OP_RESET(na_ucx_op_id, context, cb_type, callback, arg, na_ucx_addr);
 
     na_ucx_op_id->info.rma.ucp_rma_op =
@@ -3109,9 +3124,6 @@ na_ucx_rma(struct na_ucx_class NA_UNUSED *na_ucx_class, na_context_t *context,
         remote_mem_handle->desc.base + remote_offset;
     na_ucx_op_id->info.rma.buf_size = length;
     na_ucx_op_id->info.rma.remote_key = NULL;
-
-    /* There is no need to have a fully resolved address to start an RMA.
-     * This is only necessary for two-sided communication. */
 
     /* TODO UCX requires the remote key to be bound to the origin, do we need a
      * new API? */
