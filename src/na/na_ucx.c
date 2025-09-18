@@ -57,6 +57,9 @@
 /* Addr status bits */
 #define NA_UCX_ADDR_RESOLVED (1 << 0)
 
+/* Timeout (ms) until we give up on connection */
+#define NA_UCX_ADDR_CONN_TIMEOUT (120 * 1000)
+
 /* Max tag */
 #define NA_UCX_MAX_TAG UINT32_MAX
 
@@ -150,6 +153,13 @@ struct na_ucx_map {
     hg_hash_table_t *ep_map;
 };
 
+/* Connnection request */
+struct na_ucx_conn_request {
+    LIST_ENTRY(na_ucx_conn_request) entry; /* Entry in conn request list */
+    ucp_conn_request_h request;            /* Connection request */
+    hg_time_t deadline;                    /* Deadline to accept conn */
+};
+
 /* Memory descriptor */
 NA_PACKED(struct na_ucx_mem_desc {
     uint64_t base;          /* Base address */
@@ -225,6 +235,12 @@ struct na_ucx_addr_list {
     hg_thread_spin_t lock;
 };
 
+/* Connection request list */
+struct na_ucx_conn_request_list {
+    LIST_HEAD(, na_ucx_conn_request) list;
+    hg_thread_spin_t lock;
+};
+
 /* Unexpected msg info */
 struct na_ucx_unexpected_info {
     STAILQ_ENTRY(na_ucx_unexpected_info) entry;
@@ -255,8 +271,10 @@ struct na_ucx_class {
     struct na_ucx_op_queue unexpected_op_queue; /* Unexpected op queue */
     struct na_ucx_addr_pool addr_pool;          /* Addr pool */
     struct na_ucx_addr_list addr_close_list;    /* List of addresses to close */
-    ucp_context_h ucp_context;                  /* UCP context */
-    ucp_worker_h ucp_worker;                    /* Shared UCP worker */
+    struct na_ucx_conn_request_list
+        conn_request_list;         /* List of deferred connection requests */
+    ucp_context_h ucp_context;     /* UCP context */
+    ucp_worker_h ucp_worker;       /* Shared UCP worker */
     ucp_listener_h ucp_listener;   /* Listener handle if listening */
     struct na_ucx_addr *self_addr; /* Self address */
     struct hg_mem_pool *mem_pool;  /* Msg buf pool */
@@ -409,6 +427,12 @@ na_ucp_listener_destroy(ucp_listener_h listener);
  */
 static void
 na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg);
+
+/**
+ * Reject connection request.
+ */
+static na_return_t
+na_ucp_conn_reject(ucp_listener_h listener, ucp_conn_request_h conn_request);
 
 /**
  * Accept connection.
@@ -618,7 +642,7 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
  */
 static na_return_t
 na_ucx_addr_map_remove(
-    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key);
+    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key, ucp_ep_h ep);
 
 /**
  * Hash connection ID.
@@ -668,6 +692,10 @@ na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr, bool force,
 /* Check close list and free entries. */
 static unsigned int
 na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class);
+
+/* Check connection request list and reject expired entries. */
+static unsigned int
+na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class);
 
 /**
  * Reset address.
@@ -1688,11 +1716,10 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
     struct na_ucx_class *na_ucx_class = (struct na_ucx_class *) arg;
     ucp_conn_request_attr_t conn_request_attrs = {
         .field_mask = UCP_CONN_REQUEST_ATTR_FIELD_CLIENT_ADDR};
-    struct na_ucx_addr *na_ucx_addr = NULL;
     ucs_sock_addr_t addr_key;
     ucs_status_t status;
-    na_return_t na_ret;
 
+    /* Get address of incoming connection */
     status = ucp_conn_request_query(conn_request, &conn_request_attrs);
     NA_CHECK_SUBSYS_ERROR_NORET(addr, status != UCS_OK, error,
         "ucp_conn_request_query() failed (%s)", ucs_status_string(status));
@@ -1702,24 +1729,69 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
             UCP_CONN_REQUEST_ATTR_FIELD_CLIENT_ADDR) == 0,
         error, "conn attributes contain no client addr");
 
-    /* Lookup address from table */
     addr_key = (ucs_sock_addr_t) {
         .addr = (const struct sockaddr *) &conn_request_attrs.client_address,
         .addrlen = sizeof(conn_request_attrs.client_address)};
-    na_ucx_addr = na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key);
-    NA_CHECK_SUBSYS_ERROR_NORET(addr, na_ucx_addr != NULL, error,
-        "An entry is already present for this address");
 
-    /* Insert new entry and create new address */
-    na_ret = na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
-        &addr_key, conn_request, &na_ucx_addr);
-    NA_CHECK_SUBSYS_NA_ERROR(
-        addr, error, na_ret, "Could not insert new address");
+    if (na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) == NULL) {
+        /* Insert new entry and create new address */
+        na_return_t ret =
+            na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
+                &addr_key, conn_request, NULL /* addr remains in table */);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            addr, error, ret, "Could not insert new address");
+    } else {
+        struct na_ucx_conn_request *na_ucx_conn_request;
+        char host_string[NI_MAXHOST];
+        char serv_string[NI_MAXSERV];
+
+        (void) getnameinfo(addr_key.addr, addr_key.addrlen, host_string,
+            sizeof(host_string), serv_string, sizeof(serv_string),
+            NI_NUMERICHOST | NI_NUMERICSERV);
+        NA_LOG_SUBSYS_WARNING(addr,
+            "An entry is already present for this "
+            "address (%s:%s), deferring connection",
+            host_string, serv_string);
+
+        na_ucx_conn_request =
+            (struct na_ucx_conn_request *) malloc(sizeof(*na_ucx_conn_request));
+        NA_CHECK_SUBSYS_ERROR_NORET(addr, na_ucx_conn_request == NULL, error,
+            "Could not allocate connection entry");
+        na_ucx_conn_request->request = conn_request;
+        hg_time_get_current_ms(&na_ucx_conn_request->deadline);
+        na_ucx_conn_request->deadline =
+            hg_time_add(na_ucx_conn_request->deadline,
+                hg_time_from_ms(NA_UCX_ADDR_CONN_TIMEOUT));
+
+        /* Keep request to progress later */
+        hg_thread_spin_lock(&na_ucx_class->conn_request_list.lock);
+        LIST_INSERT_HEAD(
+            &na_ucx_class->conn_request_list.list, na_ucx_conn_request, entry);
+        hg_thread_spin_unlock(&na_ucx_class->conn_request_list.lock);
+    }
 
     return;
 
 error:
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ucp_conn_reject(ucp_listener_h listener, ucp_conn_request_h conn_request)
+{
+    ucs_status_t status;
+    na_return_t ret;
+
+    status = ucp_listener_reject(listener, conn_request);
+    NA_CHECK_SUBSYS_ERROR(addr, status != UCS_OK, error, ret,
+        na_ucs_status_to_na(status), "ucp_listener_reject() failed (%s)",
+        ucs_status_string(status));
+
+    return NA_SUCCESS;
+
+error:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1937,12 +2009,13 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ucp_ep_error_cb(
-    void *arg, ucp_ep_h NA_UNUSED ep, ucs_status_t NA_DEBUG_LOG_USED status)
+na_ucp_ep_error_cb(void *arg, ucp_ep_h NA_DEBUG_LOG_USED ep,
+    ucs_status_t NA_DEBUG_LOG_USED status)
 {
     struct na_ucx_addr *na_ucx_addr = (struct na_ucx_addr *) arg;
 
-    NA_LOG_SUBSYS_DEBUG(addr, "ep_err_handler() returned (%s) for address (%p)",
+    NA_LOG_SUBSYS_DEBUG(addr,
+        "ep_err_handler(ep=%p) returned (%s) for address (%p)", (void *) ep,
         ucs_status_string(status), (void *) na_ucx_addr);
 
     /* Mark addr as no longer resolved to force reconnection */
@@ -2449,6 +2522,12 @@ na_ucx_class_alloc(void)
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
     LIST_INIT(&na_ucx_class->addr_close_list.list);
 
+    /* Initialize conn request list */
+    rc = hg_thread_spin_init(&na_ucx_class->conn_request_list.lock);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
+    LIST_INIT(&na_ucx_class->conn_request_list.list);
+
     /* Create address map */
     na_ucx_class->addr_map.key_map =
         hg_hash_table_new(na_ucx_addr_key_hash, na_ucx_addr_key_equal);
@@ -2497,6 +2576,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_msg_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->addr_pool.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->addr_close_list.lock);
+    (void) hg_thread_spin_destroy(&na_ucx_class->conn_request_list.lock);
 
     free(na_ucx_class->protocol_name);
     free(na_ucx_class);
@@ -2690,7 +2770,8 @@ na_ucx_addr_map_insert(struct na_ucx_class *na_ucx_class,
 done:
     hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
 
-    *na_ucx_addr_p = na_ucx_addr;
+    if (na_ucx_addr_p)
+        *na_ucx_addr_p = na_ucx_addr;
 
     return ret;
 
@@ -2763,17 +2844,16 @@ unlock:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ucx_addr_map_remove(struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key)
+na_ucx_addr_map_remove(
+    struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key, ucp_ep_h ep)
 {
-    struct na_ucx_addr *na_ucx_addr = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ucx_map->lock);
 
-    na_ucx_addr = hg_hash_table_lookup(
-        na_ucx_map->key_map, (hg_hash_table_key_t) addr_key);
-    if (na_ucx_addr == HG_HASH_TABLE_NULL)
+    if (hg_hash_table_lookup(na_ucx_map->key_map,
+            (hg_hash_table_key_t) addr_key) == HG_HASH_TABLE_NULL)
         goto unlock;
 
     /* Remove addr key from primary map */
@@ -2783,8 +2863,7 @@ na_ucx_addr_map_remove(struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key)
         "hg_hash_table_remove() failed");
 
     /* Remove EP handle from secondary map */
-    rc = hg_hash_table_remove(
-        na_ucx_map->ep_map, (hg_hash_table_key_t) na_ucx_addr->ucp_ep);
+    rc = hg_hash_table_remove(na_ucx_map->ep_map, (hg_hash_table_key_t) ep);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 1, unlock, ret, NA_NOENTRY,
         "hg_hash_table_remove() failed");
 
@@ -2882,8 +2961,8 @@ na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr, bool force,
     if (na_ucx_addr->addr_key.addr) {
         NA_UCX_PRINT_ADDR_KEY_INFO("Removing address", &na_ucx_addr->addr_key);
 
-        na_ucx_addr_map_remove(
-            &na_ucx_addr->na_ucx_class->addr_map, &na_ucx_addr->addr_key);
+        na_ucx_addr_map_remove(&na_ucx_addr->na_ucx_class->addr_map,
+            &na_ucx_addr->addr_key, na_ucx_addr->ucp_ep);
     }
 
     if (na_ucx_addr->worker_addr != NULL) {
@@ -2924,26 +3003,98 @@ na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class)
     unsigned int count = 0;
 
     hg_thread_spin_lock(&na_ucx_class->addr_close_list.lock);
-    if (!LIST_EMPTY(&na_ucx_class->addr_close_list.list)) {
-        struct na_ucx_addr *na_ucx_addr =
-            LIST_FIRST(&na_ucx_class->addr_close_list.list);
-        while (na_ucx_addr != NULL) {
-            struct na_ucx_addr *next = LIST_NEXT(na_ucx_addr, close_list_entry);
-            ucs_status_t status =
-                ucp_request_check_status(na_ucx_addr->close_request);
-            if (status != UCS_INPROGRESS) {
-                NA_LOG_SUBSYS_DEBUG(addr, "EP close for addr %p completed",
-                    (void *) na_ucx_addr);
-                ucp_request_free(na_ucx_addr->close_request);
-                na_ucx_addr->close_request = NULL;
-                LIST_REMOVE(na_ucx_addr, close_list_entry);
-                na_ucx_addr_free_cb(na_ucx_addr);
-                count++;
-            }
-            na_ucx_addr = next;
+    struct na_ucx_addr *na_ucx_addr =
+        LIST_FIRST(&na_ucx_class->addr_close_list.list);
+    while (na_ucx_addr != NULL) {
+        struct na_ucx_addr *next = LIST_NEXT(na_ucx_addr, close_list_entry);
+        ucs_status_t status =
+            ucp_request_check_status(na_ucx_addr->close_request);
+        if (status != UCS_INPROGRESS) {
+            NA_LOG_SUBSYS_DEBUG(
+                addr, "EP close for addr %p completed", (void *) na_ucx_addr);
+            ucp_request_free(na_ucx_addr->close_request);
+            na_ucx_addr->close_request = NULL;
+            LIST_REMOVE(na_ucx_addr, close_list_entry);
+            na_ucx_addr_free_cb(na_ucx_addr);
+            count++;
         }
+        na_ucx_addr = next;
     }
     hg_thread_spin_unlock(&na_ucx_class->addr_close_list.lock);
+
+    return count;
+}
+
+/*---------------------------------------------------------------------------*/
+static unsigned int
+na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class)
+{
+    struct na_ucx_conn_request *conn_request;
+    unsigned int count = 0;
+
+    hg_thread_spin_lock(&na_ucx_class->conn_request_list.lock);
+
+    conn_request = LIST_FIRST(&na_ucx_class->conn_request_list.list);
+    while (conn_request != NULL) {
+        struct na_ucx_conn_request *next = LIST_NEXT(conn_request, entry);
+        ucp_conn_request_attr_t conn_request_attrs = {
+            .field_mask = UCP_CONN_REQUEST_ATTR_FIELD_CLIENT_ADDR};
+        ucs_sock_addr_t addr_key;
+        ucs_status_t status;
+
+        /* Get address of incoming connection */
+        status =
+            ucp_conn_request_query(conn_request->request, &conn_request_attrs);
+        NA_CHECK_SUBSYS_ERROR_NORET(addr, status != UCS_OK, unlock,
+            "ucp_conn_request_query() failed (%s)", ucs_status_string(status));
+
+        NA_CHECK_SUBSYS_ERROR_NORET(addr,
+            (conn_request_attrs.field_mask &
+                UCP_CONN_REQUEST_ATTR_FIELD_CLIENT_ADDR) == 0,
+            unlock, "conn attributes contain no client addr");
+
+        addr_key = (ucs_sock_addr_t) {
+            .addr =
+                (const struct sockaddr *) &conn_request_attrs.client_address,
+            .addrlen = sizeof(conn_request_attrs.client_address)};
+
+        if (na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) ==
+            NULL) {
+            NA_LOG_SUBSYS_DEBUG(addr, "Now accepting deffered connection");
+
+            /* Insert new entry and create new address */
+            (void) na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
+                &addr_key, conn_request->request,
+                NULL /* addr remains in table */);
+            LIST_REMOVE(conn_request, entry);
+            free(conn_request);
+            count++;
+        } else {
+            hg_time_t now;
+
+            hg_time_get_current_ms(&now);
+            if (hg_time_less(conn_request->deadline, now)) {
+                char host_string[NI_MAXHOST];
+                char serv_string[NI_MAXSERV];
+
+                (void) getnameinfo(addr_key.addr, addr_key.addrlen, host_string,
+                    sizeof(host_string), serv_string, sizeof(serv_string),
+                    NI_NUMERICHOST | NI_NUMERICSERV);
+                NA_LOG_SUBSYS_WARNING(addr,
+                    "Connection request timed out for address (%s:%s)",
+                    host_string, serv_string);
+                LIST_REMOVE(conn_request, entry);
+                (void) na_ucp_conn_reject(
+                    na_ucx_class->ucp_listener, conn_request->request);
+                free(conn_request);
+                count++;
+            }
+        }
+        conn_request = next;
+    }
+
+unlock:
+    hg_thread_spin_unlock(&na_ucx_class->conn_request_list.lock);
 
     return count;
 }
@@ -3535,6 +3686,19 @@ na_ucx_finalize(na_class_t *na_class)
     NA_CHECK_SUBSYS_WARNING(cls,
         !LIST_EMPTY(&na_ucx_class->addr_close_list.list),
         "There are still addresses with an EP being closed");
+
+    /* Reject pending connections if any */
+    if (!LIST_EMPTY(&na_ucx_class->conn_request_list.list)) {
+        struct na_ucx_conn_request *conn_request =
+            LIST_FIRST(&na_ucx_class->conn_request_list.list);
+        while (conn_request != NULL) {
+            struct na_ucx_conn_request *next = LIST_NEXT(conn_request, entry);
+            (void) na_ucp_conn_reject(
+                na_ucx_class->ucp_listener, conn_request->request);
+            free(conn_request);
+            conn_request = next;
+        }
+    }
 
     na_ucx_class_free(na_ucx_class);
     na_class->plugin_class = NULL;
@@ -4371,16 +4535,22 @@ static NA_INLINE bool
 na_ucx_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
-    bool addr_list_empty;
+    bool list_empty;
     ucs_status_t status;
 
     if (na_ucx_class->no_wait)
         return false;
 
     hg_thread_spin_lock(&na_ucx_class->addr_close_list.lock);
-    addr_list_empty = LIST_EMPTY(&na_ucx_class->addr_close_list.list);
+    list_empty = LIST_EMPTY(&na_ucx_class->addr_close_list.list);
     hg_thread_spin_unlock(&na_ucx_class->addr_close_list.lock);
-    if (!addr_list_empty)
+    if (!list_empty)
+        return false;
+
+    hg_thread_spin_lock(&na_ucx_class->conn_request_list.lock);
+    list_empty = LIST_EMPTY(&na_ucx_class->conn_request_list.list);
+    hg_thread_spin_unlock(&na_ucx_class->conn_request_list.lock);
+    if (!list_empty)
         return false;
 
     status = ucp_worker_arm(na_ucx_class->ucp_worker);
@@ -4404,6 +4574,7 @@ na_ucx_poll(na_class_t *na_class, na_context_t NA_UNUSED *context,
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
     unsigned int count = ucp_worker_progress(na_ucx_class->ucp_worker);
     count += na_ucx_addr_close_list_progress(na_ucx_class);
+    count += na_ucx_conn_request_list_progress(na_ucx_class);
 
     if (count_p != NULL)
         *count_p = count;
