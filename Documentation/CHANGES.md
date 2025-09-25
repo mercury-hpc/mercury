@@ -18,6 +18,7 @@ This new version brings both bug fixes and feature updates to mercury.
     - Add min/max measurements when barrier is not used
   - Print only first and last targets when reading config
   - Re-organize and clean up printed fields
+  - Add `-K` option to increment key based on rank (used for testing)
 - __[HG Util]__
   - Add `fatal` and `info` log levels
   - This replaces the previous fatal log subsys, default log level is now `fatal`
@@ -33,8 +34,13 @@ This new version brings both bug fixes and feature updates to mercury.
   - Enable HG proc overflow when using XDR
     - Fix hg_proc_save_ptr() error handling and allocation with XDR
     - Multiple proc fixes for XDR encoding
+- __[HG Core]__
+  - Check for mismatching builds when using checksums
+- __[HG Core/Bulk]__
+  - Print destination address string in error messages
 - __[NA]__
   - Fix plugin scan to continue if one plugin cannot load
+  - Add `na_context` parameter to `context_create` plugin callback
 - __[NA OFI]__
   - Check against `FI_REMOTE_CQ_DATA` before accessing `cq_event->data`
   - Fix case of `FI_MULTI_RECV` event returned without buffer
@@ -45,6 +51,14 @@ This new version brings both bug fixes and feature updates to mercury.
   - Add missing op type from op completed error log
   - Fix compile error on older prov/cxi platforms
   - Attempt to use `ip_subnet` with `FI_SOCKADDR_IN` format
+  - Refactor msg_send/msg_recv calls and add debug info
+  - Fix compilation under FreeBSD
+- __[NA UCX]__
+  - Use `ucp_worker_query()` instead of deprecated `ucp_worker_get_address()`
+  - Switch to using `ucp_ep_close_nbx()`
+  - Rework address EP close to be async and check on address close list during progress
+  - Ensure address is resolved on RMA
+  - Queue up pending connection if address exists and reject connection after timeout if no progress is made
 - __[NA BMI]__
   - Do not BMI_initialize() servers with address `0.0.0.0` and detect address to use
 - __[HG/NA Perf]__
@@ -52,8 +66,9 @@ This new version brings both bug fixes and feature updates to mercury.
   - Add spin_flag to prevent from excessively sleeping
     - Reduce overhead of hg_poll_wait()
 - __[HG util]__
-  - Fix global buffer overflow in `hg_log_outlet_active`
+  - Fix global buffer overflow in `hg_log_outlet_active` and `hg_log_get_subsys(void)`
   - Fix error return of `hg_mem_pool_extend()`
+  - Fix `kqueue` implementation
 - __[CMake]__
   - Fix tirpc to be an external dependency
 
