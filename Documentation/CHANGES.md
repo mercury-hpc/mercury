@@ -69,6 +69,8 @@ This new version brings both bug fixes and feature updates to mercury.
   - Fix global buffer overflow in `hg_log_outlet_active` and `hg_log_get_subsys(void)`
   - Fix error return of `hg_mem_pool_extend()`
   - Fix `kqueue` implementation
+  - Ensure parent log is registered first
+    - Fix rare case where log was not being printed even if environment variables were set
 - __[CMake]__
   - Fix tirpc to be an external dependency
 
