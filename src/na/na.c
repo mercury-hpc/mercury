@@ -562,13 +562,14 @@ na_plugin_scan_path(const char *path, struct na_plugin_entry **entries_p)
         "Could not allocate %d plugin entries", n);
 
     while (n--) {
-        ret = na_plugin_open(path, plugin_list[n]->d_name, &entries[n]);
-        free(plugin_list[n]);
+        ret = na_plugin_open(
+            path, plugin_list[n]->d_name, &entries[opened_plugins]);
         if (ret == NA_SUCCESS)
             opened_plugins++;
         else
             NA_LOG_SUBSYS_FATAL(
                 cls, "Could not open plugin (%s)", plugin_list[n]->d_name);
+        free(plugin_list[n]);
     }
 
     free(plugin_list);
@@ -585,7 +586,7 @@ error:
             free(plugin_list[n]);
         free(plugin_list);
     }
-    free(entries);
+    na_plugin_close_all(entries);
 
     return ret;
 }
@@ -666,6 +667,8 @@ na_plugin_open(
     return NA_SUCCESS;
 
 error:
+    na_plugin_close(entry);
+
     return ret;
 }
 
@@ -676,9 +679,12 @@ na_plugin_close(struct na_plugin_entry *entry)
     if (entry->path) {
         NA_LOG_SUBSYS_DEBUG(cls, "Closing plugin %s", entry->path);
         free(entry->path);
+        entry->path = NULL;
     }
-    if (entry->dl_handle != NULL)
+    if (entry->dl_handle != NULL) {
         (void) hg_dl_close(entry->dl_handle);
+        entry->dl_handle = NULL;
+    }
     entry->ops = NULL;
 }
 #endif /* NA_HAS_DYNAMIC_PLUGINS */
