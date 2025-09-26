@@ -464,6 +464,9 @@ hg_log_get_stream_error(void)
 void
 hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 {
+    if (hg_log_outlet->registered)
+        return;
+
 #ifndef HG_UTIL_HAS_ATTR_CONSTRUCTOR_PRIORITY
     if (!hg_log_init_g) {
         /* Set here to prevent infinite loop */
@@ -471,6 +474,12 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
         hg_log_init();
     }
 #endif
+
+    /* Register parent first if constructors are executed out of order */
+    if (hg_log_outlet->parent && !hg_log_outlet->parent->registered)
+        hg_log_outlet_register(hg_log_outlet->parent);
+
+    /* Update level */
     hg_log_outlet_update_level(hg_log_outlet);
 
     /* Inherit debug log if not set and parent has one */
@@ -486,6 +495,9 @@ hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 void
 hg_log_outlet_deregister(struct hg_log_outlet *hg_log_outlet)
 {
+    if (!hg_log_outlet->registered)
+        return;
+
     if (hg_log_outlet->debug_log &&
         !(hg_log_outlet->parent &&
             hg_log_outlet->parent->debug_log == hg_log_outlet->debug_log)) {
