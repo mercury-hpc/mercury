@@ -3571,8 +3571,11 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
         if (FI_VERSION_GE(fi_version(), FI_VERSION(1, 21)) &&
             (prov_type == NA_OFI_PROV_CXI)) {
             char *env = getenv("NA_OFI_CXI_PROTO_RNR");
-            if (env == NULL || atoi(env) != 0) /* Enabled by default */
-                hints->ep_attr->protocol = (uint32_t) FI_PROTO_CXI_RNR;
+            /* Disabled by default */
+            hints->ep_attr->protocol =
+                (env != NULL && atoi(env) != 0)
+                    ? (uint32_t) FI_PROTO_CXI_RNR
+                    : (uint32_t) na_ofi_prov_ep_proto[prov_type];
         } else
 #endif
             hints->ep_attr->protocol =
