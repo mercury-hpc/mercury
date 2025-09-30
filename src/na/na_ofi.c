@@ -759,6 +759,7 @@ struct na_ofi_domain {
     struct na_ofi_map addr_map;         /* Address map */
     hg_hash_table_t *auth_key_map;      /* Auth key map (FI_AV_AUTH_KEY) */
     struct fid_domain *fi_domain;       /* Domain handle */
+    union na_ofi_auth_key *auth_key;    /* Global auth key */
     struct fid_av *fi_av;               /* Address vector handle */
     char *name;                         /* Domain name */
     size_t context_max;                 /* Max contexts available */
@@ -910,8 +911,8 @@ na_ofi_addr_prov(const char *str);
  * Get native address from string.
  */
 static NA_INLINE na_return_t
-na_ofi_str_to_raw_addr(
-    const char *str, int addr_format, union na_ofi_raw_addr *addr);
+na_ofi_str_to_raw_addr(const char *str, int addr_format,
+    const union na_ofi_auth_key *auth_key, union na_ofi_raw_addr *addr);
 static na_return_t
 na_ofi_str_to_sin(const char *str, struct sockaddr_in *sin_addr);
 static na_return_t
@@ -927,7 +928,8 @@ na_ofi_str_to_opx(const char *str, struct na_ofi_opx_addr *opx_addr);
 static na_return_t
 na_ofi_str_to_gni(const char *str, struct na_ofi_gni_addr *gni_addr);
 static na_return_t
-na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr);
+na_ofi_str_to_cxi(const char *str, const struct cxi_auth_key *cxi_auth_key,
+    struct na_ofi_cxi_addr *cxi_addr);
 static na_return_t
 na_ofi_str_to_str(const char *str, struct na_ofi_str_addr *str_addr);
 
@@ -2427,8 +2429,8 @@ na_ofi_addr_prov(const char *str)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
-na_ofi_str_to_raw_addr(
-    const char *str, int addr_format, union na_ofi_raw_addr *addr)
+na_ofi_str_to_raw_addr(const char *str, int addr_format,
+    const union na_ofi_auth_key *auth_key, union na_ofi_raw_addr *addr)
 {
     switch (addr_format) {
         case FI_SOCKADDR_IN:
@@ -2446,7 +2448,9 @@ na_ofi_str_to_raw_addr(
         case FI_ADDR_GNI:
             return na_ofi_str_to_gni(str, &addr->gni);
         case FI_ADDR_CXI:
-            return na_ofi_str_to_cxi(str, &addr->cxi);
+            return na_ofi_str_to_cxi(str,
+                (auth_key != NULL) ? &auth_key->cxi_auth_key : NULL,
+                &addr->cxi);
         case FI_ADDR_STR:
             return na_ofi_str_to_str(str, &addr->str);
         default:
@@ -2709,7 +2713,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr)
+na_ofi_str_to_cxi(const char *str, const struct cxi_auth_key *cxi_auth_key,
+    struct na_ofi_cxi_addr *cxi_addr)
 {
     na_return_t ret;
     int rc;
@@ -2720,8 +2725,17 @@ na_ofi_str_to_cxi(const char *str, struct na_ofi_cxi_addr *cxi_addr)
     rc = sscanf(str, "%*[^:]://%" SCNx32, (uint32_t *) cxi_addr);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Could not convert addr string to CXI addr format");
+
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(1, 20))
     NA_LOG_SUBSYS_DEBUG(addr, "CXI addr is: nic=%" PRIu32 ", pid=%" PRIu32,
         cxi_addr->nic, cxi_addr->pid);
+#else
+    if (cxi_auth_key != NULL)
+        cxi_addr->vni = cxi_auth_key->vni;
+    NA_LOG_SUBSYS_DEBUG(addr,
+        "CXI addr is: nic=%" PRIu32 ", pid=%" PRIu32 ", vni=%" PRIu16,
+        cxi_addr->nic, cxi_addr->pid, cxi_addr->vni);
+#endif
 
     return NA_SUCCESS;
 
@@ -3614,11 +3628,10 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 #if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
         /* Ask for auth keys */
         if ((na_ofi_prov_flags[prov_type] & NA_OFI_AV_AUTH_KEY) &&
-            (info->num_auth_keys > 0)) {
+            info->num_auth_keys > 1) {
             /* The CXI provider does not support FI_DIRECTED_RECV if
              * max_ep_auth_key > 1 */
-            if (info->num_auth_keys > 1)
-                hints->caps &= ~FI_DIRECTED_RECV;
+            hints->caps &= ~FI_DIRECTED_RECV;
             hints->domain_attr->max_ep_auth_key = info->num_auth_keys;
             hints->domain_attr->auth_key_size = FI_AV_AUTH_KEY;
         }
@@ -4943,19 +4956,15 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
             &auth_key_size);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not parse auth key");
 
-        /* If we're using FI_AV_AUTH_KEY, use same mechanism to handle single
-         * auth key in order to keep addr fields populated */
-#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
-        if (na_ofi_prov_flags[na_ofi_fabric->prov_type] & NA_OFI_AV_AUTH_KEY) {
-            na_ofi_domain->av_auth_key = true;
-            base_auth_key_p = &base_auth_key;
-        } else {
-#endif
-            domain_attr->auth_key = (void *) &base_auth_key;
-            domain_attr->auth_key_size = auth_key_size;
-#if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
-        }
-#endif
+        /* Keep a copy of the domain auth key for later use */
+        na_ofi_domain->auth_key =
+            (union na_ofi_auth_key *) malloc(sizeof(*na_ofi_domain->auth_key));
+        NA_CHECK_SUBSYS_ERROR(cls, na_ofi_domain->auth_key == NULL, error, ret,
+            NA_NOMEM, "Could not allocate auth_key");
+        memcpy(na_ofi_domain->auth_key, &base_auth_key, sizeof(base_auth_key));
+
+        domain_attr->auth_key = (void *) &base_auth_key;
+        domain_attr->auth_key_size = auth_key_size;
     }
 
     /* Traffic class */
@@ -5031,6 +5040,7 @@ error:
         if (na_ofi_domain->fi_domain)
             (void) fi_close(&na_ofi_domain->fi_domain->fid);
 
+        free(na_ofi_domain->auth_key);
         free(na_ofi_domain->name);
         free(na_ofi_domain);
     }
@@ -5063,6 +5073,7 @@ na_ofi_domain_close(
         na_ofi_domain->fi_domain = NULL;
     }
 
+    free(na_ofi_domain->auth_key);
     free(na_ofi_domain->name);
     free(na_ofi_domain);
 
@@ -8367,7 +8378,8 @@ na_ofi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
         name);
 
     /* Convert name to raw address */
-    ret = na_ofi_str_to_raw_addr(name, addr_format, &addr_key.addr);
+    ret = na_ofi_str_to_raw_addr(
+        name, addr_format, na_ofi_class->domain->auth_key, &addr_key.addr);
     NA_CHECK_SUBSYS_NA_ERROR(
         addr, error, ret, "Could not convert string to address");
 
