@@ -53,6 +53,8 @@ This new version brings both bug fixes and feature updates to mercury.
   - Attempt to use `ip_subnet` with `FI_SOCKADDR_IN` format
   - Refactor msg_send/msg_recv calls and add debug info
   - Fix compilation under FreeBSD
+  - Disable RNR protocol by default when using prov/cxi
+  - Prevent the use of FI_AV_AUTH_KEY with prov/cxi when number of auth keys is 1
 - __[NA UCX]__
   - Use `ucp_worker_query()` instead of deprecated `ucp_worker_get_address()`
   - Switch to using `ucp_ep_close_nbx()`
