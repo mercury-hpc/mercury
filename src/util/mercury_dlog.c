@@ -55,8 +55,8 @@ hg_dlog_alloc(char *name, unsigned int lesize, int leloop)
     snprintf(
         d->dlog_magic, sizeof(d->dlog_magic), "%s%s", HG_DLOG_STDMAGIC, name);
     hg_thread_mutex_init(&d->dlock);
-    SLIST_INIT(&d->cnts32);
-    SLIST_INIT(&d->cnts64);
+    TAILQ_INIT(&d->cnts32);
+    TAILQ_INIT(&d->cnts64);
     d->le = le;
     d->lesize = lesize;
     d->leloop = leloop;
@@ -69,22 +69,22 @@ hg_dlog_alloc(char *name, unsigned int lesize, int leloop)
 void
 hg_dlog_free(struct hg_dlog *d)
 {
-    struct hg_dlog_dcount32 *cp32 = SLIST_FIRST(&d->cnts32);
-    struct hg_dlog_dcount64 *cp64 = SLIST_FIRST(&d->cnts64);
+    struct hg_dlog_dcount32 *cp32 = TAILQ_FIRST(&d->cnts32);
+    struct hg_dlog_dcount64 *cp64 = TAILQ_FIRST(&d->cnts64);
 
     while (cp32) {
         struct hg_dlog_dcount32 *cp = cp32;
-        cp32 = SLIST_NEXT(cp, l);
+        cp32 = TAILQ_NEXT(cp, l);
         free(cp);
     }
-    SLIST_INIT(&d->cnts32);
+    TAILQ_INIT(&d->cnts32);
 
     while (cp64) {
         struct hg_dlog_dcount64 *cp = cp64;
-        cp64 = SLIST_NEXT(cp, l);
+        cp64 = TAILQ_NEXT(cp, l);
         free(cp);
     }
-    SLIST_INIT(&d->cnts64);
+    TAILQ_INIT(&d->cnts64);
 
     if (d->mallocd) {
         free(d->le);
@@ -109,7 +109,7 @@ hg_dlog_mkcount32(struct hg_dlog *d, hg_atomic_int32_t **cptr, const char *name,
         dcnt->name = name;
         dcnt->descr = descr;
         hg_atomic_init32(&dcnt->c, 0);
-        SLIST_INSERT_HEAD(&d->cnts32, dcnt, l);
+        TAILQ_INSERT_TAIL(&d->cnts32, dcnt, l);
         *cptr = &dcnt->c; /* set it in caller's variable */
     }
     hg_thread_mutex_unlock(&d->dlock);
@@ -132,7 +132,7 @@ hg_dlog_mkcount64(struct hg_dlog *d, hg_atomic_int64_t **cptr, const char *name,
         dcnt->name = name;
         dcnt->descr = descr;
         hg_atomic_init64(&dcnt->c, 0);
-        SLIST_INSERT_HEAD(&d->cnts64, dcnt, l);
+        TAILQ_INSERT_TAIL(&d->cnts64, dcnt, l);
         *cptr = &dcnt->c; /* set it in caller's variable */
     }
     hg_thread_mutex_unlock(&d->dlock);
@@ -155,7 +155,7 @@ hg_dlog_addlog(struct hg_dlog *d, const char *file, unsigned int line,
     d->lefree = (d->lefree + 1) % d->lesize;
     if (d->leadds < d->lesize)
         d->leadds++;
-    d->le[idx] = (struct hg_dlog_entry){.file = file,
+    d->le[idx] = (struct hg_dlog_entry) {.file = file,
         .line = line,
         .func = func,
         .msg = msg,
@@ -210,13 +210,13 @@ hg_dlog_dump(struct hg_dlog *d, int (*log_func)(FILE *, const char *, ...),
             "### (%s) debug log summary\n"
             "### ----------------------\n",
             (d->dlog_magic + strlen(HG_DLOG_STDMAGIC)));
-        if (!SLIST_EMPTY(&d->cnts32) && !SLIST_EMPTY(&d->cnts64)) {
+        if (!TAILQ_EMPTY(&d->cnts32) && !TAILQ_EMPTY(&d->cnts64)) {
             log_func(stream, "# Counters\n");
-            SLIST_FOREACH (dc32, &d->cnts32, l) {
+            TAILQ_FOREACH (dc32, &d->cnts32, l) {
                 log_func(stream, "# %s: %" PRId32 " [%s]\n", dc32->name,
                     hg_atomic_get32(&dc32->c), dc32->descr);
             }
-            SLIST_FOREACH (dc64, &d->cnts64, l) {
+            TAILQ_FOREACH (dc64, &d->cnts64, l) {
                 log_func(stream, "# %s: %" PRId64 " [%s]\n", dc64->name,
                     hg_atomic_get64(&dc64->c), dc64->descr);
             }
@@ -256,18 +256,18 @@ hg_dlog_dump_counters(struct hg_dlog *d,
     } else
         hg_thread_mutex_lock(&d->dlock);
 
-    if (!SLIST_EMPTY(&d->cnts32) || !SLIST_EMPTY(&d->cnts64)) {
+    if (!TAILQ_EMPTY(&d->cnts32) || !TAILQ_EMPTY(&d->cnts64)) {
         log_func(stream,
             "### --------------------------\n"
             "### (%s) counter log summary\n"
             "### --------------------------\n",
             (d->dlog_magic + strlen(HG_DLOG_STDMAGIC)));
 
-        SLIST_FOREACH (dc32, &d->cnts32, l) {
-            log_func(stream, "# %s: %" PRId32 " [%s]\n", dc32->name,
+        TAILQ_FOREACH (dc32, &d->cnts32, l) {
+            fprintf(stderr, "# %s: %" PRId32 " [%s]\n", dc32->name,
                 hg_atomic_get32(&dc32->c), dc32->descr);
         }
-        SLIST_FOREACH (dc64, &d->cnts64, l) {
+        TAILQ_FOREACH (dc64, &d->cnts64, l) {
             log_func(stream, "# %s: %" PRId64 " [%s]\n", dc64->name,
                 hg_atomic_get64(&dc64->c), dc64->descr);
         }
@@ -315,11 +315,11 @@ hg_dlog_dump_file(struct hg_dlog *d, const char *base, int addpid, int trylock)
         hg_thread_mutex_lock(&d->dlock);
 
     fprintf(fp, "# START COUNTERS\n");
-    SLIST_FOREACH (dc32, &d->cnts32, l) {
+    TAILQ_FOREACH (dc32, &d->cnts32, l) {
         fprintf(fp, "%s %d %" PRId32 " # %s\n", dc32->name, pid,
             hg_atomic_get32(&dc32->c), dc32->descr);
     }
-    SLIST_FOREACH (dc64, &d->cnts64, l) {
+    TAILQ_FOREACH (dc64, &d->cnts64, l) {
         fprintf(fp, "%s %d %" PRId64 " # %s\n", dc64->name, pid,
             hg_atomic_get64(&dc64->c), dc64->descr);
     }

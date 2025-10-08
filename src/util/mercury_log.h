@@ -280,7 +280,8 @@
 
 /* HG_LOG_DLOG_INITIALIZER: initializer for a debug log */
 #define HG_LOG_DLOG_INITIALIZER(name, size)                                    \
-    HG_DLOG_INITIALIZER(HG_UTIL_STRINGIFY(name), HG_LOG_DEBUG_LE(name), size, 1)
+    HG_DLOG_INITIALIZER(HG_UTIL_STRINGIFY(name), HG_LOG_DEBUG_DLOG(name),      \
+        HG_LOG_DEBUG_LE(name), size, 1)
 
 /* HG_LOG_OUTLET_SUBSYS_DLOG_INITIALIZER: initializer for a sub-system with
  * debug log. */
