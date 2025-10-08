@@ -1156,6 +1156,7 @@ na_ucs_log_level_to_hg(ucs_log_level_t level)
             return HG_LOG_LEVEL_WARNING;
         case UCS_LOG_LEVEL_DIAG:
             return HG_LOG_LEVEL_MIN_DEBUG;
+        case UCS_LOG_LEVEL_PRINT: /* Requires UCX_LOG_PRINT_ENABLE=y */
         case UCS_LOG_LEVEL_INFO:
             return HG_LOG_LEVEL_INFO;
         case UCS_LOG_LEVEL_DEBUG:
@@ -1167,7 +1168,6 @@ na_ucs_log_level_to_hg(ucs_log_level_t level)
         case UCS_LOG_LEVEL_TRACE_POLL:
             return HG_LOG_LEVEL_DEBUG;
         case UCS_LOG_LEVEL_LAST:
-        case UCS_LOG_LEVEL_PRINT:
         default:
             return HG_LOG_LEVEL_MAX;
     }
