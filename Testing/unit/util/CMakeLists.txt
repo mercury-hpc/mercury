@@ -48,6 +48,7 @@ set(MERCURY_util_tests
   atomic
   atomic_queue
   hash_table
+  dlog
   mem
   mem_pool
   poll

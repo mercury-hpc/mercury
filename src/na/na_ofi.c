@@ -766,7 +766,7 @@ struct na_ofi_domain {
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
     int64_t max_key;                 /* Max key if not FI_MR_PROV_KEY */
     uint64_t max_tag;                /* Max tag from CQ data size */
-    hg_atomic_int32_t *mr_reg_count; /* Number of MR registered */
+    hg_atomic_int32_t mr_reg_count;  /* Number of MR registered */
     bool no_wait;                    /* Wait disabled on domain */
     bool av_auth_key;                /* Use FI_AV_AUTH_KEY */
     bool av_user_id;                 /* Use FI_AV_USER_ID */
@@ -4933,11 +4933,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     hg_atomic_init64(&na_ofi_domain->requested_key, 0);
     /* No need to take a refcount on fabric */
     na_ofi_domain->fabric = na_ofi_fabric;
-
-#ifndef _WIN32
-    HG_LOG_ADD_COUNTER32(
-        na, &na_ofi_domain->mr_reg_count, "mr_reg_count", "MR reg count");
-#endif
+    hg_atomic_init32(&na_ofi_domain->mr_reg_count, 0);
 
     /* Dup name */
     na_ofi_domain->name = strdup(domain_attr->name);
@@ -5936,9 +5932,9 @@ na_ofi_mem_buf_register(const void *buf, size_t len, unsigned long flags,
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, HG_UTIL_FAIL,
             "fi_mr_reg() failed, rc: %d (%s), mr_reg_count: %d", rc,
             fi_strerror(-rc),
-            hg_atomic_get32(na_ofi_class->domain->mr_reg_count));
+            hg_atomic_get32(&na_ofi_class->domain->mr_reg_count));
 
-        hg_atomic_incr32(na_ofi_class->domain->mr_reg_count);
+        hg_atomic_incr32(&na_ofi_class->domain->mr_reg_count);
         *handle_p = (void *) mr_hdl;
     } else
         *handle_p = NULL;
@@ -5960,7 +5956,7 @@ na_ofi_mem_buf_deregister(void *handle, void *arg)
         int rc = fi_close(&mr_hdl->fid);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, HG_UTIL_FAIL,
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        hg_atomic_decr32(na_ofi_class->domain->mr_reg_count);
+        hg_atomic_decr32(&na_ofi_class->domain->mr_reg_count);
     }
 
 out:
@@ -8951,7 +8947,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
         (struct na_ofi_mem_handle *) mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     const struct fi_info *fi_info = NA_OFI_CLASS(na_class)->fi_info;
-    int32_t mr_cnt = hg_atomic_get32(domain->mr_reg_count);
+    int32_t mr_cnt = hg_atomic_get32(&domain->mr_reg_count);
     struct fi_mr_attr fi_mr_attr = {
         .mr_iov = NA_OFI_IOV(
             na_ofi_mem_handle->desc.iov, na_ofi_mem_handle->desc.info.iovcnt),
@@ -9016,7 +9012,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_mr_regattr() failed, rc: %d (%s), mr_reg_count: %d", rc,
         fi_strerror(-rc), mr_cnt);
-    hg_atomic_incr32(domain->mr_reg_count);
+    hg_atomic_incr32(&domain->mr_reg_count);
 
     /* Attach MR to endpoint when provider requests it */
     if (fi_info->domain_attr->mr_mode & FI_MR_ENDPOINT) {
@@ -9041,7 +9037,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
 error:
     if (na_ofi_mem_handle->fi_mr) {
         (void) fi_close(&na_ofi_mem_handle->fi_mr->fid);
-        hg_atomic_decr32(domain->mr_reg_count);
+        hg_atomic_decr32(&domain->mr_reg_count);
     }
     return ret;
 }
@@ -9061,7 +9057,7 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
         rc = fi_close(&na_ofi_mem_handle->fi_mr->fid);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        hg_atomic_decr32(domain->mr_reg_count);
+        hg_atomic_decr32(&domain->mr_reg_count);
     }
 
     return NA_SUCCESS;

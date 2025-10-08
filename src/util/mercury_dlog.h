@@ -37,12 +37,11 @@
  * struct hg_dlog_entry foo_le[FOO_NENTS];
  * struct hg_dlog foo_dlog = HG_DLOG_INITIALIZER("foo", foo_le, FOO_NENTS, 0);
  */
-#define HG_DLOG_INITIALIZER(NAME, LE, LESIZE, LELOOP)                          \
-    {                                                                          \
-        HG_DLOG_STDMAGIC NAME, HG_THREAD_MUTEX_INITIALIZER,                    \
-            SLIST_HEAD_INITIALIZER(cnts32), SLIST_HEAD_INITIALIZER(cnts64),    \
-            LE, LESIZE, LELOOP, 0, 0, 0, 0                                     \
-    }
+#define HG_DLOG_INITIALIZER(NAME, VARNAME, LE, LESIZE, LELOOP)                 \
+    {HG_DLOG_STDMAGIC NAME, HG_THREAD_MUTEX_INITIALIZER,                       \
+        TAILQ_HEAD_INITIALIZER((VARNAME).cnts32),                              \
+        TAILQ_HEAD_INITIALIZER((VARNAME).cnts64), LE, LESIZE, LELOOP, 0, 0, 0, \
+        0}
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -67,7 +66,7 @@ struct hg_dlog_dcount32 {
     const char *name;                /* counter name (short) */
     const char *descr;               /* description of counter */
     hg_atomic_int32_t c;             /* the counter itself */
-    SLIST_ENTRY(hg_dlog_dcount32) l; /* linkage */
+    TAILQ_ENTRY(hg_dlog_dcount32) l; /* linkage */
 };
 
 /*
@@ -77,7 +76,7 @@ struct hg_dlog_dcount64 {
     const char *name;                /* counter name (short) */
     const char *descr;               /* description of counter */
     hg_atomic_int64_t c;             /* the counter itself */
-    SLIST_ENTRY(hg_dlog_dcount64) l; /* linkage */
+    TAILQ_ENTRY(hg_dlog_dcount64) l; /* linkage */
 };
 
 /*
@@ -88,8 +87,8 @@ struct hg_dlog {
     hg_thread_mutex_t dlock;           /* lock for this data struct */
 
     /* counter lists */
-    SLIST_HEAD(, hg_dlog_dcount32) cnts32; /* counter list */
-    SLIST_HEAD(, hg_dlog_dcount64) cnts64; /* counter list */
+    TAILQ_HEAD(, hg_dlog_dcount32) cnts32; /* counter list */
+    TAILQ_HEAD(, hg_dlog_dcount64) cnts64; /* counter list */
 
     /* log */
     struct hg_dlog_entry *le; /* array of log entries */
