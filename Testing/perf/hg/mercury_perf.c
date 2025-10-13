@@ -497,8 +497,14 @@ hg_perf_bulk_buf_alloc(struct hg_perf_class_info *info, uint8_t bulk_flags,
             info->buf_size_max);
 
         /* Initialize data */
-        if (init_data)
-            hg_perf_init_data(info->bulk_bufs[i], alloc_size);
+        if (init_data) {
+            size_t j;
+            for (j = 0; j < info->bulk_count; j++) {
+                char *buf_p =
+                    (char *) info->bulk_bufs[i] + info->buf_size_max * j;
+                hg_perf_init_data(buf_p, info->buf_size_max);
+            }
+        }
 
         if (bulk_create) {
             ret = HG_Bulk_create(info->hg_class, 1, &info->bulk_bufs[i],
@@ -795,7 +801,7 @@ hg_perf_verify_data(const void *buf, size_t buf_size)
 
     /* Skip first integer */
     for (i = 1; i < buf_size / sizeof(int); i++) {
-        HG_TEST_CHECK_ERROR(buf_ptr[i] != (char) i, error, ret, HG_FAULT,
+        HG_TEST_CHECK_ERROR(buf_ptr[i] != (int) i, error, ret, HG_FAULT,
             "Error detected in bulk transfer, buf[%zu] = %d, "
             "was expecting %d!",
             i, buf_ptr[i], (int) i);
