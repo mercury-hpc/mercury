@@ -434,6 +434,8 @@ hg_perf_class_cleanup(struct hg_perf_class_info *info)
         free(info->remote_bulk_handles);
         info->remote_bulk_handles = NULL;
     }
+    free(info->remote_bulk_handle_ids);
+    info->remote_bulk_handle_ids = NULL;
 
     hg_perf_bulk_buf_free(info);
 
@@ -577,8 +579,8 @@ hg_perf_set_handles(const struct hg_test_info *hg_test_info,
     size_t i;
 
     for (i = 0; i < info->handle_max; i++) {
-        size_t handle_global_id = comm_rank + i * comm_size,
-               target_rank = handle_global_id % info->target_addr_max;
+        size_t global_handle_id = comm_rank + i * comm_size,
+               target_rank = global_handle_id % info->target_addr_max;
         /* Round-robin to targets depending on rank */
         ret = HG_Reset(info->handles[i], info->target_addrs[target_rank],
             (hg_id_t) rpc_id);
@@ -704,28 +706,39 @@ hg_perf_bulk_buf_init(const struct hg_test_info *hg_test_info,
         HG_Error_to_string(ret));
 
     for (i = 0; i < info->handle_max; i++) {
-        size_t handle_global_id = comm_rank + i * comm_size,
-               target_rank = handle_global_id % info->target_addr_max;
+        size_t global_handle_id = comm_rank + i * comm_size,
+               target_rank = global_handle_id % info->target_addr_max;
         struct hg_perf_bulk_init_info bulk_info = {
             .bulk = (hg_test_info->na_test_info.force_register)
                         ? HG_BULK_NULL
                         : info->local_bulk_handles[i],
             .bulk_op = bulk_op,
-            .handle_id = (uint32_t) (handle_global_id / info->target_addr_max),
+            .global_handle_id = (uint32_t) global_handle_id,
             .bulk_count = (uint32_t) info->bulk_count,
             .size_max = (uint32_t) info->buf_size_max,
             .handle_max = (uint32_t) info->handle_max,
             .comm_size = (uint32_t) comm_size,
             .target_rank = (uint32_t) target_rank,
-            .target_addr_max = (uint32_t) info->target_addr_max};
+            .target_addr_max = (uint32_t) info->target_addr_max,
+            .verify = (uint8_t) info->verify};
 
         ret = HG_Reset(info->handles[i], info->target_addrs[target_rank],
             (hg_id_t) HG_PERF_BW_INIT);
         HG_TEST_CHECK_HG_ERROR(
             error, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
 
-        HG_TEST_LOG_DEBUG("(%zu) handle_id %" PRIu32 " (%zu) to %zu", comm_rank,
-            bulk_info.handle_id, handle_global_id, target_rank);
+        HG_TEST_LOG_DEBUG("(%zu) global handle ID %zu to %zu", comm_rank,
+            global_handle_id, target_rank);
+
+        if (info->verify && bulk_op == HG_BULK_PULL) {
+            size_t j;
+            /* Store target rank in first int */
+            for (j = 0; j < info->bulk_count; j++) {
+                char *buf_p =
+                    (char *) info->bulk_bufs[i] + j * info->buf_size_max;
+                ((int *) buf_p)[0] = (int) global_handle_id;
+            }
+        }
 
         /* Forward call to target addr */
         ret = HG_Forward(
@@ -764,26 +777,28 @@ error:
 static void
 hg_perf_init_data(void *buf, size_t buf_size)
 {
-    char *buf_ptr = (char *) buf;
+    int *buf_ptr = (int *) buf;
     size_t i;
 
-    for (i = 0; i < buf_size; i++)
-        buf_ptr[i] = (char) i;
+    /* Skip first integer (used for checking rank) */
+    for (i = 1; i < buf_size / sizeof(int); i++)
+        buf_ptr[i] = (int) i;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 hg_perf_verify_data(const void *buf, size_t buf_size)
 {
-    const char *buf_ptr = (const char *) buf;
+    const int *buf_ptr = (const int *) buf;
     hg_return_t ret;
     size_t i;
 
-    for (i = 0; i < buf_size; i++) {
+    /* Skip first integer */
+    for (i = 1; i < buf_size / sizeof(int); i++) {
         HG_TEST_CHECK_ERROR(buf_ptr[i] != (char) i, error, ret, HG_FAULT,
             "Error detected in bulk transfer, buf[%zu] = %d, "
             "was expecting %d!",
-            i, buf_ptr[i], (char) i);
+            i, buf_ptr[i], (int) i);
     }
 
     return HG_SUCCESS;
@@ -1160,7 +1175,7 @@ hg_perf_proc_bulk_init_info(hg_proc_t proc, void *arg)
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "hg_proc_uint32_t() failed (%s)", HG_Error_to_string(ret));
 
-    ret = hg_proc_uint32_t(proc, &info->handle_id);
+    ret = hg_proc_uint32_t(proc, &info->global_handle_id);
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "hg_proc_uint32_t() failed (%s)", HG_Error_to_string(ret));
 
@@ -1187,6 +1202,10 @@ hg_perf_proc_bulk_init_info(hg_proc_t proc, void *arg)
     ret = hg_proc_uint32_t(proc, &info->target_addr_max);
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "hg_proc_uint32_t() failed (%s)", HG_Error_to_string(ret));
+
+    ret = hg_proc_uint8_t(proc, &info->verify);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "hg_proc_uint8_t() failed (%s)", HG_Error_to_string(ret));
 
     return HG_SUCCESS;
 
@@ -1340,7 +1359,9 @@ hg_perf_bulk_init_cb(hg_handle_t handle)
     const struct hg_info *hg_info = HG_Get_info(handle);
     struct hg_perf_class_info *info = HG_Context_get_data(hg_info->context);
     struct hg_perf_bulk_init_info bulk_info;
+    uint32_t handle_id;
     hg_return_t ret;
+    size_t i;
 
     ret = HG_Get_input(handle, &bulk_info);
     HG_TEST_CHECK_HG_ERROR(
@@ -1351,6 +1372,7 @@ hg_perf_bulk_init_cb(hg_handle_t handle)
                                     ? HG_BULK_WRITE_ONLY
                                     : HG_BULK_READ_ONLY;
 
+        info->verify = bulk_info.verify;
         info->handle_max = (bulk_info.handle_max * bulk_info.comm_size) /
                            bulk_info.target_addr_max;
         if (((bulk_info.handle_max * bulk_info.comm_size) %
@@ -1373,13 +1395,29 @@ hg_perf_bulk_init_cb(hg_handle_t handle)
         HG_TEST_CHECK_ERROR(info->remote_bulk_handles == NULL, error_free, ret,
             HG_NOMEM, "malloc(%zu) failed",
             info->handle_max * sizeof(hg_bulk_t));
+
+        info->remote_bulk_handle_ids = (uint32_t *) calloc(
+            info->handle_max, sizeof(*info->remote_bulk_handle_ids));
+        HG_TEST_CHECK_ERROR(info->remote_bulk_handle_ids == NULL, error_free,
+            ret, HG_NOMEM, "malloc(%zu) failed",
+            info->handle_max * sizeof(int));
     }
 
-    HG_TEST_CHECK_ERROR(bulk_info.handle_id >= info->handle_max, error_free,
-        ret, HG_OVERFLOW, "(%d,%" PRIu32 ") Handle ID is %" PRIu32 " >= %zu",
-        info->class_id, bulk_info.target_rank, bulk_info.handle_id,
-        info->handle_max);
-    info->remote_bulk_handles[bulk_info.handle_id] = bulk_info.bulk;
+    handle_id = bulk_info.global_handle_id / bulk_info.target_addr_max;
+    HG_TEST_CHECK_ERROR(handle_id >= info->handle_max, error_free, ret,
+        HG_OVERFLOW, "(%d,%" PRIu32 ") Handle ID is %" PRIu32 " >= %zu",
+        info->class_id, bulk_info.target_rank, handle_id, info->handle_max);
+
+    if (info->verify && bulk_info.bulk_op == HG_BULK_PUSH) {
+        /* Store target rank in first int */
+        for (i = 0; i < info->bulk_count; i++) {
+            char *buf_p =
+                (char *) info->bulk_bufs[handle_id] + i * info->buf_size_max;
+            ((int *) buf_p)[0] = (int) bulk_info.global_handle_id;
+        }
+    }
+    info->remote_bulk_handle_ids[handle_id] = bulk_info.global_handle_id;
+    info->remote_bulk_handles[handle_id] = bulk_info.bulk;
     if (bulk_info.bulk != HG_BULK_NULL)
         HG_Bulk_ref_incr(bulk_info.bulk);
 
@@ -1394,6 +1432,10 @@ hg_perf_bulk_init_cb(hg_handle_t handle)
     return HG_SUCCESS;
 
 error_free:
+    free(info->remote_bulk_handles);
+    info->remote_bulk_handles = NULL;
+    free(info->remote_bulk_handle_ids);
+    info->remote_bulk_handle_ids = NULL;
     (void) HG_Free_input(handle, &bulk_info);
 error:
     (void) HG_Destroy(handle);
@@ -1439,7 +1481,14 @@ hg_perf_bulk_common(hg_handle_t handle, hg_bulk_op_t op)
     /* Initialize request */
     *request = (struct hg_perf_request) {.complete_count = 0,
         .expected_count = (int32_t) info->bulk_count,
-        .completed = HG_ATOMIC_VAR_INIT(0)};
+        .completed = HG_ATOMIC_VAR_INIT(0),
+        .handle_id = bulk_info.handle_id};
+
+    if (info->verify && op == HG_BULK_PULL) {
+        /* Reset local buffer */
+        memset(info->bulk_bufs[bulk_info.handle_id], 0,
+            info->buf_size_max * info->bulk_count);
+    }
 
     /* Post bulk push */
     for (i = 0; i < info->bulk_count; i++) {
@@ -1478,11 +1527,13 @@ hg_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 
 done:
     if ((++request->complete_count) == request->expected_count) {
-        if (hg_cb_info->info.bulk.op == HG_BULK_PULL && info->verify) {
+        if (info->verify && hg_cb_info->info.bulk.op == HG_BULK_PULL) {
             void *buf;
             hg_size_t buf_size;
             hg_uint32_t actual_count;
             hg_return_t ret;
+            int global_handle_id =
+                (int) info->remote_bulk_handle_ids[request->handle_id];
             size_t i;
 
             ret = HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0,
@@ -1498,6 +1549,13 @@ done:
 
             for (i = 0; i < info->bulk_count; i++) {
                 char *buf_p = (char *) buf + info->buf_size_max * i;
+
+                HG_TEST_CHECK_ERROR(((int *) buf_p)[0] != global_handle_id,
+                    error, ret, HG_FAULT,
+                    "Error detected in bulk transfer, buf target ID is %d, "
+                    "was expecting %d! (Target mismatch)",
+                    ((int *) buf_p)[0], global_handle_id);
+
                 ret = hg_perf_verify_data(buf_p, hg_cb_info->info.bulk.size);
                 HG_TEST_CHECK_HG_ERROR(error, ret,
                     "hg_perf_verify_data() failed (%s, %p)",
@@ -1537,6 +1595,8 @@ hg_perf_done_cb(hg_handle_t handle)
         free(info->remote_bulk_handles);
         info->remote_bulk_handles = NULL;
     }
+    free(info->remote_bulk_handle_ids);
+    info->remote_bulk_handle_ids = NULL;
 
     hg_perf_bulk_buf_free(info);
 

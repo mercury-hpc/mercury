@@ -56,6 +56,7 @@ struct hg_perf_class_info {
     size_t buf_size_max;
     hg_bulk_t *local_bulk_handles;
     hg_bulk_t *remote_bulk_handles;
+    uint32_t *remote_bulk_handle_ids;
     int wait_fd;             /* Wait fd */
     hg_time_t spin_deadline; /* Spin deadline */
     bool spin_flag;          /* Spin flag */
@@ -63,7 +64,7 @@ struct hg_perf_class_info {
     bool done;
     bool verify;
     bool bidir;
-    bool barrier; /* Use barriers for perf measurements */
+    bool barrier;     /* Use barriers for perf measurements */
     bool no_shutdown; /* Do not shutdown server */
 };
 
@@ -71,18 +72,20 @@ struct hg_perf_request {
     int32_t expected_count;      /* Expected count */
     int32_t complete_count;      /* Completed count */
     hg_atomic_int32_t completed; /* Request */
+    uint32_t handle_id;          /* Handle ID (for bulk) */
 };
 
 struct hg_perf_bulk_init_info {
     hg_bulk_t bulk;
     uint32_t bulk_op;
-    uint32_t handle_id;
+    uint32_t global_handle_id;
     uint32_t handle_max;
     uint32_t bulk_count;
     uint32_t size_max;
     uint32_t comm_size;
     uint32_t target_rank;
     uint32_t target_addr_max;
+    uint8_t verify;
 };
 
 struct hg_perf_bulk_info {

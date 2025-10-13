@@ -50,6 +50,13 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
             .completed = HG_ATOMIC_VAR_INIT(0)};
         size_t j;
 
+        if (info->verify) {
+            /* Reset bulk buffers */
+            for (j = 0; j < info->handle_max; j++)
+                memset(info->bulk_bufs[j], 0,
+                    info->buf_size_max * info->bulk_count);
+        }
+
         if (i == skip) {
             if (comm_size > 1)
                 NA_Test_barrier(&hg_test_info->na_test_info);
@@ -94,10 +101,18 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
 
         if (info->verify) {
             for (j = 0; j < info->handle_max; j++) {
+                int global_handle_id = (int) (comm_rank + j * comm_size);
                 size_t k;
                 for (k = 0; k < info->bulk_count; k++) {
                     char *buf_p =
                         (char *) info->bulk_bufs[j] + info->buf_size_max * k;
+
+                    HG_TEST_CHECK_ERROR(((int *) buf_p)[0] != global_handle_id,
+                        error, ret, HG_FAULT,
+                        "Error detected in bulk transfer, buf target ID is %d, "
+                        "was expecting %d! (Target mismatch)",
+                        ((int *) buf_p)[0], global_handle_id);
+
                     ret = hg_perf_verify_data(buf_p, buf_size);
                     HG_TEST_CHECK_HG_ERROR(error, ret,
                         "hg_perf_verify_data() failed (%s)",
@@ -166,7 +181,7 @@ main(int argc, char *argv[])
 
     /* Bulk RPC with different sizes */
     for (size = MAX(1, info->buf_size_min); size <= info->buf_size_max;
-         size *= 2) {
+        size *= 2) {
         hg_ret = hg_perf_run(hg_test_info, info, size,
             (size > HG_PERF_LARGE_SIZE) ? HG_PERF_LAT_SKIP_LARGE
                                         : HG_PERF_LAT_SKIP_SMALL);
