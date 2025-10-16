@@ -1989,8 +1989,7 @@ na_ucp_ep_create(ucp_worker_h worker, ucp_ep_params_t *ep_params,
 
     ep_params->field_mask |=
         UCP_EP_PARAM_FIELD_ERR_HANDLER | UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
-    if (!(ep_params->field_mask & UCP_EP_PARAM_FIELD_REMOTE_ADDRESS))
-        ep_params->err_mode = UCP_ERR_HANDLING_MODE_PEER;
+    ep_params->err_mode = UCP_ERR_HANDLING_MODE_PEER;
     ep_params->err_handler.cb = err_handler_cb;
     ep_params->err_handler.arg = err_handler_arg;
 
