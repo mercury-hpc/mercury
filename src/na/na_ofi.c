@@ -314,6 +314,25 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_TAG_MASK       ((uint64_t) 0x0FFFFFFFF)
 #define NA_OFI_UNEXPECTED_TAG (NA_OFI_TAG_MASK + 1)
 
+/**
+ * TX/RX sizes (listeners typically have a larger number of outstanding
+ * operations)
+ * prov: default / max
+ * shm: 1024 / ?
+ * sockets: 256 / 256
+ * tcp: 256 / 64k
+ * rxm: 2048 / 16k
+ * psm2: ? / ?
+ * opx: ? / ?
+ * verbs: 384 / ?
+ * gni: - / -
+ * cxi: 1024 / 16k
+ */
+#define NA_OFI_TX_SIZE_LISTENER (4096)
+#define NA_OFI_TX_SIZE          (512)
+#define NA_OFI_RX_SIZE_LISTENER (4096)
+#define NA_OFI_RX_SIZE          (512)
+
 /* Number of CQ event provided for fi_cq_read() */
 #define NA_OFI_CQ_EVENT_NUM (16)
 /**
@@ -325,7 +344,7 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
  * - gni: 256
  * Override default to 128k
  */
-#define NA_OFI_CQ_DEPTH (131072)
+#define NA_OFI_CQ_SIZE (131072)
 
 /* Default OP multi CQ size */
 #define NA_OFI_OP_MULTI_CQ_SIZE (NA_OFI_CQ_EVENT_NUM * 4)
@@ -362,7 +381,8 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
         .src_addr = NULL,                                                      \
         .src_addrlen = 0,                                                      \
         .num_auth_keys = 0,                                                    \
-        .use_hmem = false})
+        .use_hmem = false,                                                     \
+        .listen = false})
 
 /* Get IOV */
 #define NA_OFI_IOV(iov, iovcnt) (iovcnt > NA_OFI_IOV_STATIC_MAX) ? iov.d : iov.s
@@ -798,6 +818,7 @@ struct na_ofi_info {
     size_t src_addrlen;            /* Native src addr len */
     size_t num_auth_keys;          /* Requested number of auth keys */
     bool use_hmem;                 /* Use FI_HMEM */
+    bool listen;                   /* Listen mode */
 };
 
 /* Verify info */
@@ -3542,7 +3563,9 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
 
     /* msg_order, comp_order */
     hints->tx_attr->msg_order = 0;
-    hints->tx_attr->comp_order = 0;
+    hints->rx_attr->msg_order = 0;
+    hints->tx_attr->comp_order = 0; /* deprecated */
+    hints->rx_attr->comp_order = 0; /* deprecated */
 
     /* Generate completion event when it is safe to re-use buffer */
     hints->tx_attr->op_flags = FI_INJECT_COMPLETE;
@@ -3614,6 +3637,39 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
     }
 
     if (info) {
+        char *env;
+
+        /* Set tx size attribute */
+        env = getenv("NA_OFI_TX_SIZE");
+        if (env != NULL && atoi(env) > 0)
+            hints->tx_attr->size = (size_t) atoi(env);
+        else
+            /* Change default limits for tcp and cxi, listeners may end up with
+             * a large number of outstanding sends for RPC responses */
+            if (prov_type == NA_OFI_PROV_TCP || prov_type == NA_OFI_PROV_CXI)
+                hints->tx_attr->size =
+                    (info->listen) ? NA_OFI_TX_SIZE_LISTENER : NA_OFI_TX_SIZE;
+        if (hints->tx_attr->size > 0)
+            NA_LOG_SUBSYS_DEBUG(
+                cls, "Setting tx size to %zu", hints->tx_attr->size);
+
+        /* Set rx size attribute */
+        env = getenv("NA_OFI_RX_SIZE");
+        if (env != NULL && atoi(env) > 0)
+            hints->rx_attr->size = (size_t) atoi(env);
+        else
+            /* When using multi-recv the number of recv buffers posted is
+             * reduced so use a smaller value for rx size */
+            if (prov_type == NA_OFI_PROV_TCP || prov_type == NA_OFI_PROV_CXI)
+                hints->rx_attr->size =
+                    ((na_ofi_prov_extra_caps[prov_type] & FI_MULTI_RECV) ||
+                        !info->listen)
+                        ? NA_OFI_RX_SIZE
+                        : NA_OFI_RX_SIZE_LISTENER;
+        if (hints->rx_attr->size > 0)
+            NA_LOG_SUBSYS_DEBUG(
+                cls, "Setting rx size to %zu", hints->rx_attr->size);
+
         /* Use addr format if not FI_FORMAT_UNSPEC */
         NA_CHECK_SUBSYS_ERROR(cls,
             (prov_type != NA_OFI_PROV_NULL) &&
@@ -5508,7 +5564,7 @@ na_ofi_eq_open(const struct na_ofi_fabric *na_ofi_fabric,
     }
     cq_attr.wait_cond = FI_CQ_COND_NONE;
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    cq_attr.size = NA_OFI_CQ_DEPTH;
+    cq_attr.size = NA_OFI_CQ_SIZE;
     if (cpu >= 0) {
         NA_LOG_SUBSYS_DEBUG(ctx, "Setting CQ signaling_vector to cpu %d", cpu);
         cq_attr.flags = FI_AFFINITY;
@@ -7862,7 +7918,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_initialize(
-    na_class_t *na_class, const struct na_info *na_info, bool NA_UNUSED listen)
+    na_class_t *na_class, const struct na_info *na_info, bool listen)
 {
     const struct na_init_info *na_init_info = &na_info->na_init_info;
     struct na_ofi_class *na_ofi_class = NULL;
@@ -7903,6 +7959,9 @@ na_ofi_initialize(
         "Please run this executable with "
         "\"export MPICH_GNI_NDREG_ENTRIES=1024\" to ensure compatibility.");
 #endif
+
+    /* Listening */
+    info.listen = listen;
 
     /* Get addr format */
     info.addr_format =
