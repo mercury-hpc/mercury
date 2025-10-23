@@ -38,7 +38,7 @@
 #define HG_LOG_SUBSYS_NAME_MAX (16)
 
 /* Log buffer size */
-#define HG_LOG_BUF_MAX (256)
+#define HG_LOG_BUF_MAX (1024)
 
 #ifdef HG_UTIL_HAS_LOG_COLOR
 #    define HG_LOG_ESC     "\033"
