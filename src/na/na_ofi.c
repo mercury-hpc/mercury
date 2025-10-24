@@ -7028,7 +7028,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_process_addrnotavail(struct na_ofi_class *na_ofi_class,
+na_ofi_cq_process_addrnotavail(
+    struct na_ofi_class NA_DEBUG_LOG_USED *na_ofi_class,
     const struct fi_cq_err_entry *cq_err, struct fi_cq_tagged_entry *cq_event,
     struct na_ofi_src_err *src_err, unsigned int *count_p)
 {
