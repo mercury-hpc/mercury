@@ -9268,7 +9268,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
         &na_ofi_mem_handle->fi_mr);
     NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_mr_regattr(mr_iov[0].iov_base=%p, mr_iov[0].iov_len=%zu, "
-        "iov_count=%zu, access=%" PRIu64 ", iface=%d, requested_key=%" PRIu64
+        "iov_count=%zu, access=%" PRIx64 ", iface=%d, requested_key=%" PRIu64
         ") failed, rc: %d (%s), mr_reg_count=%d",
         fi_mr_attr.mr_iov[0].iov_base, fi_mr_attr.mr_iov[0].iov_len,
         fi_mr_attr.iov_count, fi_mr_attr.access, fi_mr_attr.iface,
@@ -9282,7 +9282,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
         rc = fi_mr_bind(na_ofi_mem_handle->fi_mr, &endpoint->fi_ep->fid, 0);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_mr_bind(mr_iov[0].iov_base=%p, mr_iov[0].iov_len=%zu, "
-            "iov_count=%zu, access=%" PRIu64
+            "iov_count=%zu, access=%" PRIx64
             ", iface=%d, requested_key=%" PRIu64
             ") failed, rc: %d (%s), mr_reg_count=%d",
             fi_mr_attr.mr_iov[0].iov_base, fi_mr_attr.mr_iov[0].iov_len,
@@ -9292,7 +9292,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
         rc = fi_mr_enable(na_ofi_mem_handle->fi_mr);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_mr_enable(mr_iov[0].iov_base=%p, mr_iov[0].iov_len=%zu, "
-            "iov_count=%zu, access=%" PRIu64
+            "iov_count=%zu, access=%" PRIx64
             ", iface=%d, requested_key=%" PRIu64
             ") failed, rc: %d (%s), mr_reg_count=%d",
             fi_mr_attr.mr_iov[0].iov_base, fi_mr_attr.mr_iov[0].iov_len,
@@ -9307,7 +9307,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
     NA_LOG_SUBSYS_DEBUG(mem,
         "Registered memory region: mr_iov[0].iov_base=%p, "
         "mr_iov[0].iov_len=%zu, "
-        "iov_count=%zu, access=%" PRIu64 ", iface=%d, fi_mr_key=%" PRIu64
+        "iov_count=%zu, access=%" PRIx64 ", iface=%d, fi_mr_key=%" PRIx64
         ", mr_reg_count=%d",
         fi_mr_attr.mr_iov[0].iov_base, fi_mr_attr.mr_iov[0].iov_len,
         fi_mr_attr.iov_count, fi_mr_attr.access, fi_mr_attr.iface,
@@ -9347,7 +9347,7 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
         NA_LOG_SUBSYS_DEBUG(mem,
             "Deregistered memory region: mr_iov[0].iov_base=%p, "
             "mr_iov[0].iov_len=%zu, "
-            "iov_count=%" PRIu64 ", fi_mr_key=%" PRIu64 ", mr_reg_count=%d",
+            "iov_count=%" PRIu64 ", fi_mr_key=%" PRIx64 ", mr_reg_count=%d",
             mr_iov[0].iov_base, mr_iov[0].iov_len,
             na_ofi_mem_handle->desc.info.iovcnt,
             na_ofi_mem_handle->desc.info.fi_mr_key, mr_cnt);
