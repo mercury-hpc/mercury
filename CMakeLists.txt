@@ -171,6 +171,12 @@ else()
 endif()
 
 #------------------------------------------------------------------------------
+# Set debug lib name as release.
+#------------------------------------------------------------------------------
+option(MERCURY_LIB_DEBUG_NAME_IS_RELEASE "Set debug library name as release." OFF)
+mark_as_advanced(MERCURY_LIB_DEBUG_NAME_IS_RELEASE)
+
+#------------------------------------------------------------------------------
 # Enable debug output.
 #------------------------------------------------------------------------------
 option(MERCURY_ENABLE_DEBUG "Enable debug statements." OFF)
@@ -237,16 +243,29 @@ function(mercury_set_lib_options libtarget libname libtype var_prefix)
     endif()
   endif()
 
-  set_target_properties(${libtarget}
-      PROPERTIES
-      OUTPUT_NAME_DEBUG          ${LIB_DEBUG_NAME}
-      OUTPUT_NAME_RELEASE        ${LIB_RELEASE_NAME}
-      OUTPUT_NAME_MINSIZEREL     ${LIB_RELEASE_NAME}
-      OUTPUT_NAME_RELWITHDEBINFO ${LIB_RELEASE_NAME}
-      OUTPUT_NAME_ASAN           ${LIB_DEBUG_NAME}
-      OUTPUT_NAME_TSAN           ${LIB_DEBUG_NAME}
-      OUTPUT_NAME_UBSAN          ${LIB_DEBUG_NAME}
-  )
+  if(NOT MERCURY_LIB_DEBUG_NAME_IS_RELEASE)
+    set_target_properties(${libtarget}
+        PROPERTIES
+        OUTPUT_NAME_DEBUG          ${LIB_DEBUG_NAME}
+        OUTPUT_NAME_RELEASE        ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_MINSIZEREL     ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_RELWITHDEBINFO ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_ASAN           ${LIB_DEBUG_NAME}
+        OUTPUT_NAME_TSAN           ${LIB_DEBUG_NAME}
+        OUTPUT_NAME_UBSAN          ${LIB_DEBUG_NAME}
+    )
+  else()
+    set_target_properties(${libtarget}
+        PROPERTIES
+        OUTPUT_NAME_DEBUG          ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_RELEASE        ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_MINSIZEREL     ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_RELWITHDEBINFO ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_ASAN           ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_TSAN           ${LIB_RELEASE_NAME}
+        OUTPUT_NAME_UBSAN          ${LIB_RELEASE_NAME}
+    )
+  endif()
   if(${libtype} MATCHES "SHARED")
     set_target_properties(${libtarget}
         PROPERTIES
