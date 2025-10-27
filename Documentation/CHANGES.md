@@ -19,6 +19,7 @@ This new version brings both bug fixes and feature updates to mercury.
   - Print only first and last targets when reading config
   - Re-organize and clean up printed fields
   - Add `-K` option to increment key based on rank (used for testing)
+  - Verify source handle matching on RMA when `-v` option is passed
 - __[HG Util]__
   - Add `fatal` and `info` log levels
   - This replaces the previous fatal log subsys, default log level is now `fatal`
@@ -54,13 +55,19 @@ This new version brings both bug fixes and feature updates to mercury.
   - Refactor msg_send/msg_recv calls and add debug info
   - Fix compilation under FreeBSD
   - Disable RNR protocol by default when using prov/cxi
-  - Prevent the use of FI_AV_AUTH_KEY with prov/cxi when number of auth keys is 1
+  - Prevent the use of `FI_AV_AUTH_KEY` with prov/cxi when number of auth keys is 1
+  - Fix tx/rx sizes to appropriate values with prov/tcp and prov/cxi
+    - Add `NA_OFI_TX_SIZE`/`NA_OFI_RX_SIZE` env vars to manually control sizes
+  - Ensure rx message ordering is set to `FI_ORDER_NONE`
+  - Improve error and debug logs
 - __[NA UCX]__
   - Use `ucp_worker_query()` instead of deprecated `ucp_worker_get_address()`
   - Switch to using `ucp_ep_close_nbx()`
   - Rework address EP close to be async and check on address close list during progress
   - Ensure address is resolved on RMA
   - Queue up pending connection if address exists and reject connection after timeout if no progress is made
+  - Enable `UCS_LOG_LEVEL_PRINT` as info log
+  - Set `UCP_ERR_HANDLING_MODE_PEER` for all endpoint types
 - __[NA BMI]__
   - Do not BMI_initialize() servers with address `0.0.0.0` and detect address to use
 - __[HG/NA Perf]__
@@ -73,8 +80,11 @@ This new version brings both bug fixes and feature updates to mercury.
   - Fix `kqueue` implementation
   - Ensure parent log is registered first
     - Fix rare case where log was not being printed even if environment variables were set
+  - Fix dlog to use tail queue
+  - Bump max log buffer size
 - __[CMake]__
   - Fix tirpc to be an external dependency
+  - Add `MERCURY_LIB_DEBUG_NAME_IS_RELEASE` option to set `OUTPUT_NAME_DEBUG` to `LIB_RELEASE_NAME`
 
 ## :warning: Known Issues
 
