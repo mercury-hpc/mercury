@@ -6661,8 +6661,8 @@ na_ofi_rma_post(
     NA_LOG_SUBSYS_DEBUG(rma,
         "Posting %s(iov_count=%zu, desc[0]=%p, msg_iov[0].iov_base=%p, "
         "msg_iov[0].iov_len=%zu, addr=%" PRIu64
-        ", rma_iov_count=%zu, rma_iov[0].addr=%" PRIu64
-        ", rma_iov[0].len=%zu, rma_iov[0].key=%" PRIu64
+        ", rma_iov_count=%zu, rma_iov[0].addr=0x%" PRIx64
+        ", rma_iov[0].len=%zu, rma_iov[0].key=0x%" PRIx64
         ", context=%p, data=%" PRIu64 ")",
         rma_info->fi_rma_op_string, fi_msg_rma.iov_count, fi_msg_rma.desc[0],
         fi_msg_rma.msg_iov[0].iov_base, fi_msg_rma.msg_iov[0].iov_len,
@@ -6680,8 +6680,8 @@ na_ofi_rma_post(
         NA_LOG_SUBSYS_ERROR(rma,
             "%s(iov_count=%zu, desc[0]=%p, "
             "msg_iov[0].iov_base=%p, msg_iov[0].iov_len=%zu, addr=%" PRIu64
-            ", rma_iov_count=%zu, rma_iov[0].addr=%" PRIu64
-            ", rma_iov[0].len=%zu, rma_iov[0].key=%" PRIu64
+            ", rma_iov_count=%zu, rma_iov[0].addr=0x%" PRIx64
+            ", rma_iov[0].len=%zu, rma_iov[0].key=0x%" PRIx64
             ", context=%p, data=%" PRIu64 ") failed, rc: %zd (%s)",
             rma_info->fi_rma_op_string, fi_msg_rma.iov_count,
             fi_msg_rma.desc[0], fi_msg_rma.msg_iov[0].iov_base,
@@ -7124,8 +7124,8 @@ na_ofi_cq_process_error(
                 "error event on operation ID %p (%s), "
                 "%s(iov_count=%zu, desc[0]=%p, "
                 "msg_iov[0].iov_base=%p, msg_iov[0].iov_len=%zu, addr=%" PRIu64
-                ", rma_iov_count=%zu, rma_iov[0].addr=%" PRIu64
-                ", rma_iov[0].len=%zu, rma_iov[0].key=%" PRIu64
+                ", rma_iov_count=%zu, rma_iov[0].addr=0x%" PRIx64
+                ", rma_iov[0].len=%zu, rma_iov[0].key=0x%" PRIx64
                 ", context=%p, data=%" PRIu64 ") failed, rc: %d (%s)",
                 (void *) na_ofi_op_id, na_cb_type_to_string(na_ofi_op_id->type),
                 rma_info->fi_rma_op_string, fi_msg_rma.iov_count,
@@ -9103,6 +9103,13 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_ofi_mem_handle->desc.info.flags = flags & 0xff;
     na_ofi_mem_handle->desc.info.len = buf_size;
 
+    NA_LOG_SUBSYS_DEBUG(mem,
+        "Created mem handle %p (iov_base=%p, iov_len=%zu, iovcnt=1, "
+        "flags=0x%lx, len=%zu)",
+        (void *) na_ofi_mem_handle, na_ofi_mem_handle->desc.iov.s[0].iov_base,
+        na_ofi_mem_handle->desc.iov.s[0].iov_len,
+        na_ofi_mem_handle->desc.info.flags, na_ofi_mem_handle->desc.info.len);
+
     *mem_handle_p = (na_mem_handle_t *) na_ofi_mem_handle;
 
     return NA_SUCCESS;
@@ -9435,6 +9442,14 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 
     NA_DECODE_ARRAY(error, ret, buf_ptr, buf_size_left, iov, struct iovec,
         na_ofi_mem_handle->desc.info.iovcnt);
+
+    NA_LOG_SUBSYS_DEBUG(mem,
+        "Deserialized mem handle %p (iov_base=%p, iov_len=%zu, iovcnt=%zu, "
+        "flags=0x%lx, len=%zu)",
+        (void *) na_ofi_mem_handle, na_ofi_mem_handle->desc.iov.s[0].iov_base,
+        na_ofi_mem_handle->desc.iov.s[0].iov_len,
+        na_ofi_mem_handle->desc.info.iovcnt, na_ofi_mem_handle->desc.info.flags,
+        na_ofi_mem_handle->desc.info.len);
 
     *mem_handle_p = (na_mem_handle_t *) na_ofi_mem_handle;
 
