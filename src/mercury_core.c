@@ -1210,7 +1210,8 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
     /* Prevent newer versions */
     HG_CHECK_SUBSYS_ERROR(cls,
         HG_VERSION_LT(HG_VERSION(HG_VERSION_MAJOR, HG_VERSION_MINOR), version),
-        error, ret, HG_INVALID_ARG, "API version cannot be newer than library");
+        error_free, ret, HG_INVALID_ARG,
+        "API version cannot be newer than library");
 
     /* Create new HG class */
     hg_core_class =
