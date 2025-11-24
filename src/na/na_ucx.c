@@ -3433,7 +3433,17 @@ na_ucx_check_protocol(const char *protocol_name)
         .field_mask = UCP_PARAM_FIELD_FEATURES, .features = NA_UCX_FEATURES};
     ucp_context_h context = NULL;
     ucs_status_t status;
+    unsigned int runtime_major_version, runtime_minor_version,
+        runtime_patch_version;
     bool accept = false;
+
+    ucp_get_version(
+        &runtime_major_version, &runtime_minor_version, &runtime_patch_version);
+
+    NA_LOG_SUBSYS_INFO(cls,
+        "Querying info on UCX (runtime v%u.%u.%u, API v%u.%u)",
+        runtime_major_version, runtime_minor_version, runtime_patch_version,
+        UCP_API_MAJOR, UCP_API_MINOR);
 
     status = ucp_config_read(NULL, NULL, &config);
     NA_CHECK_SUBSYS_ERROR_NORET(cls, status != UCS_OK, done,

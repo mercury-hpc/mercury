@@ -8048,8 +8048,10 @@ na_ofi_check_protocol(const char *protocol_name)
     uint32_t runtime_version = fi_version();
     na_return_t na_ret;
 
-    NA_LOG_SUBSYS_DEBUG(cls, "Querying info on libfabric v%d.%d",
-        FI_MAJOR(runtime_version), FI_MINOR(runtime_version));
+    NA_LOG_SUBSYS_INFO(cls,
+        "Querying info on libfabric (runtime v%d.%d, API v%d.%d)",
+        FI_MAJOR(runtime_version), FI_MINOR(runtime_version),
+        FI_MAJOR(FI_COMPILE_VERSION), FI_MINOR(FI_COMPILE_VERSION));
     NA_CHECK_SUBSYS_ERROR(cls, FI_VERSION_LT(runtime_version, NA_OFI_VERSION),
         out, accept, false,
         "runtime libfabric version (v%d.%d) is lower than required version "
@@ -9105,7 +9107,7 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
 
     NA_LOG_SUBSYS_DEBUG(mem,
         "Created mem handle %p (iov_base=%p, iov_len=%zu, iovcnt=1, "
-        "flags=0x%lx, len=%zu)",
+        "flags=0x%" PRIx8 ", len=%" PRIu64 ")",
         (void *) na_ofi_mem_handle, na_ofi_mem_handle->desc.iov.s[0].iov_base,
         na_ofi_mem_handle->desc.iov.s[0].iov_len,
         na_ofi_mem_handle->desc.info.flags, na_ofi_mem_handle->desc.info.len);
@@ -9444,8 +9446,8 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
         na_ofi_mem_handle->desc.info.iovcnt);
 
     NA_LOG_SUBSYS_DEBUG(mem,
-        "Deserialized mem handle %p (iov_base=%p, iov_len=%zu, iovcnt=%zu, "
-        "flags=0x%lx, len=%zu)",
+        "Deserialized mem handle %p (iov_base=%p, iov_len=%zu, iovcnt=%" PRIu64
+        ", flags=0x%" PRIx8 ", len=%" PRIu64 ")",
         (void *) na_ofi_mem_handle, na_ofi_mem_handle->desc.iov.s[0].iov_base,
         na_ofi_mem_handle->desc.iov.s[0].iov_len,
         na_ofi_mem_handle->desc.info.iovcnt, na_ofi_mem_handle->desc.info.flags,
