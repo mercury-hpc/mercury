@@ -139,6 +139,40 @@ hg_dlog_mkcount64(struct hg_dlog *d, hg_atomic_int64_t **cptr, const char *name,
 }
 
 /*---------------------------------------------------------------------------*/
+void
+hg_dlog_rmcount32(struct hg_dlog *d, hg_atomic_int32_t *cptr)
+{
+    struct hg_dlog_dcount32 *dcnt;
+
+    hg_thread_mutex_lock(&d->dlock);
+    TAILQ_FOREACH (dcnt, &d->cnts32, l) {
+        if (&dcnt->c == cptr) {
+            TAILQ_REMOVE(&d->cnts32, dcnt, l);
+            free(dcnt);
+            break;
+        }
+    }
+    hg_thread_mutex_unlock(&d->dlock);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_dlog_rmcount64(struct hg_dlog *d, hg_atomic_int64_t *cptr)
+{
+    struct hg_dlog_dcount64 *dcnt;
+
+    hg_thread_mutex_lock(&d->dlock);
+    TAILQ_FOREACH (dcnt, &d->cnts64, l) {
+        if (&dcnt->c == cptr) {
+            TAILQ_REMOVE(&d->cnts64, dcnt, l);
+            free(dcnt);
+            break;
+        }
+    }
+    hg_thread_mutex_unlock(&d->dlock);
+}
+
+/*---------------------------------------------------------------------------*/
 unsigned int
 hg_dlog_addlog(struct hg_dlog *d, const char *file, unsigned int line,
     const char *func, const char *msg, const void *data)
@@ -210,8 +244,9 @@ hg_dlog_dump(struct hg_dlog *d, int (*log_func)(FILE *, const char *, ...),
             "### (%s) debug log summary\n"
             "### ----------------------\n",
             (d->dlog_magic + strlen(HG_DLOG_STDMAGIC)));
-        if (!TAILQ_EMPTY(&d->cnts32) && !TAILQ_EMPTY(&d->cnts64)) {
+        if (!TAILQ_EMPTY(&d->cnts32) || !TAILQ_EMPTY(&d->cnts64)) {
             log_func(stream, "# Counters\n");
+
             TAILQ_FOREACH (dc32, &d->cnts32, l) {
                 log_func(stream, "# %s: %" PRId32 " [%s]\n", dc32->name,
                     hg_atomic_get32(&dc32->c), dc32->descr);

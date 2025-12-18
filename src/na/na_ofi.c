@@ -262,6 +262,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* Prov info array init count */
 #define NA_OFI_PROV_INFO_COUNT (32)
 
+/* Max counter name length */
+#define NA_OFI_MAX_COUNTER_NAME (64)
+
 /* Address / URI max len */
 #define NA_OFI_MAX_URI_LEN (128)
 
@@ -787,7 +790,6 @@ struct na_ofi_domain {
     hg_atomic_int64_t requested_key; /* Requested key if not FI_MR_PROV_KEY */
     int64_t max_key;                 /* Max key if not FI_MR_PROV_KEY */
     uint64_t max_tag;                /* Max tag from CQ data size */
-    hg_atomic_int32_t mr_reg_count;  /* Number of MR registered */
     bool no_wait;                    /* Wait disabled on domain */
     bool av_auth_key;                /* Use FI_AV_AUTH_KEY */
     bool av_user_id;                 /* Use FI_AV_USER_ID */
@@ -830,15 +832,22 @@ struct na_ofi_verify_info {
     enum na_ofi_prov_type prov_type;    /* Provider type */
 };
 
-/* OFI class */
-struct na_ofi_class {
-    struct na_ofi_addr_pool addr_pool; /* Addr pool                */
-    struct fi_info *fi_info;           /* OFI info                 */
-    struct na_ofi_fabric *fabric;      /* Fabric pointer           */
-    struct na_ofi_domain *domain;      /* Domain pointer           */
-    struct na_ofi_endpoint *endpoint;  /* Endpoint pointer         */
-    struct hg_mem_pool *send_pool;     /* Msg send buf pool        */
-    struct hg_mem_pool *recv_pool;     /* Msg recv buf pool        */
+/* OFI counters */
+struct na_ofi_counters {
+    char tx_count_string[NA_OFI_MAX_COUNTER_NAME];   /* TX count string */
+    char rx_count_string[NA_OFI_MAX_COUNTER_NAME];   /* RX count string */
+    char rma_count_string[NA_OFI_MAX_COUNTER_NAME];  /* RMA count string */
+    char mr_count_string[NA_OFI_MAX_COUNTER_NAME];   /* MR count string */
+    char addr_count_string[NA_OFI_MAX_COUNTER_NAME]; /* Addr count string */
+    hg_atomic_int32_t *tx_count;   /* Number of active sends */
+    hg_atomic_int32_t *rx_count;   /* Number of active receives */
+    hg_atomic_int32_t *rma_count;  /* Number of active RMAs */
+    hg_atomic_int32_t *mr_count;   /* Number of active MRs */
+    hg_atomic_int32_t *addr_count; /* Number of addresses inserted */
+};
+
+/* OFI ops */
+struct na_ofi_ops {
     na_return_t (*msg_send_unexpected)(
         struct fid_ep *, const struct na_ofi_msg_info *, void *);
     na_return_t (*msg_recv_unexpected)(
@@ -853,14 +862,27 @@ struct na_ofi_class {
     const char *msg_recv_unexpected_string; /* Error log string */
     const char *msg_send_expected_string;   /* Error log string */
     const char *msg_recv_expected_string;   /* Error log string */
-    unsigned long opt_features;             /* Optional feature flags   */
-    hg_atomic_int32_t n_contexts;           /* Number of context        */
-    unsigned int op_retry_timeout;          /* Retry timeout            */
-    unsigned int op_retry_period;           /* Time elapsed until next retry */
-    uint8_t context_max;                    /* Max number of contexts   */
-    bool no_wait;                           /* Ignore wait object       */
-    bool use_sep;                           /* Use scalable endpoints */
-    bool finalizing;                        /* Class being destroyed    */
+};
+
+/* OFI class */
+struct na_ofi_class {
+    struct na_ofi_addr_pool addr_pool; /* Addr pool                */
+    struct fi_info *fi_info;           /* OFI info                 */
+    struct na_ofi_fabric *fabric;      /* Fabric pointer           */
+    struct na_ofi_domain *domain;      /* Domain pointer           */
+    struct na_ofi_endpoint *endpoint;  /* Endpoint pointer         */
+    struct hg_mem_pool *send_pool;     /* Msg send buf pool        */
+    struct hg_mem_pool *recv_pool;     /* Msg recv buf pool        */
+    struct na_ofi_ops ops;             /* OFI operations           */
+    struct na_ofi_counters counters;   /* OFI counters             */
+    unsigned long opt_features;        /* Optional feature flags   */
+    hg_atomic_int32_t n_contexts;      /* Number of context        */
+    unsigned int op_retry_timeout;     /* Retry timeout            */
+    unsigned int op_retry_period;      /* Time elapsed until next retry */
+    uint8_t context_max;               /* Max number of contexts   */
+    bool no_wait;                      /* Ignore wait object       */
+    bool use_sep;                      /* Use scalable endpoints */
+    bool finalizing;                   /* Class being destroyed    */
 };
 
 /********************/
@@ -1144,6 +1166,18 @@ na_ofi_class_alloc(void);
  */
 static na_return_t
 na_ofi_class_free(struct na_ofi_class *na_ofi_class);
+
+/**
+ * Init counters.
+ */
+static void
+na_ofi_counters_init(struct na_ofi_counters *counters, int class_id);
+
+/**
+ * Finalize counters.
+ */
+static void
+na_ofi_counters_finalize(struct na_ofi_counters *counters);
 
 /**
  * Configure class parameters from environment variables.
@@ -1761,6 +1795,12 @@ na_ofi_op_retry(struct na_ofi_context *na_ofi_context, unsigned int timeout_ms,
 static void
 na_ofi_op_retry_abort_addr(
     struct na_ofi_context *na_ofi_context, fi_addr_t fi_addr, na_return_t ret);
+
+/**
+ * Process counters.
+ */
+static void
+na_ofi_cq_process_counters(struct na_ofi_op_id *na_ofi_op_id);
 
 /**
  * Complete operation ID.
@@ -3307,6 +3347,10 @@ na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
                 na_ofi_errno_to_na(-rc),
                 "fi_av_remove(%" PRIu64 ") failed, rc: %d (%s)",
                 na_ofi_addr->fi_addr, rc, fi_strerror(-rc));
+
+            /* Counters */
+            hg_atomic_decr32(na_ofi_class->counters.addr_count);
+
             addr_map_exist = true;
         }
     } else {
@@ -3352,6 +3396,9 @@ na_ofi_addr_map_insert(struct na_ofi_class *na_ofi_class,
         fi_av_straddr(na_ofi_class->domain->fi_av, &na_ofi_addr->addr_key.addr,
             addr_str, &addr_str_len),
         rc);
+
+    /* Counters */
+    hg_atomic_incr32(na_ofi_class->counters.addr_count);
 
 #if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
     if (na_ofi_class->domain->av_auth_key) {
@@ -3457,6 +3504,9 @@ na_ofi_addr_map_remove(
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, unlock, ret, na_ofi_errno_to_na(-rc),
         "fi_av_remove(%" PRIu64 ") failed, rc: %d (%s)", na_ofi_addr->fi_addr,
         rc, fi_strerror(-rc));
+
+    /* Counters */
+    hg_atomic_decr32(na_ofi_addr->class->counters.addr_count);
 
     NA_LOG_SUBSYS_DEBUG(
         addr, "Removed addr for FI addr %" PRIu64, na_ofi_addr->fi_addr);
@@ -4314,6 +4364,43 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+na_ofi_counters_init(struct na_ofi_counters *counters, int class_id)
+{
+    snprintf(counters->tx_count_string, sizeof(counters->tx_count_string),
+        "[%d] na_ofi_tx_count  ", class_id);
+    snprintf(counters->rx_count_string, sizeof(counters->rx_count_string),
+        "[%d] na_ofi_rx_count  ", class_id);
+    snprintf(counters->rma_count_string, sizeof(counters->rma_count_string),
+        "[%d] na_ofi_rma_count ", class_id);
+    snprintf(counters->mr_count_string, sizeof(counters->mr_count_string),
+        "[%d] na_ofi_mr_count  ", class_id);
+    snprintf(counters->addr_count_string, sizeof(counters->addr_count_string),
+        "[%d] na_ofi_addr_count", class_id);
+    HG_LOG_ADD_COUNTER32(na, &counters->tx_count, counters->tx_count_string,
+        "Number of active sends");
+    HG_LOG_ADD_COUNTER32(na, &counters->rx_count, counters->rx_count_string,
+        "Number of active recvs");
+    HG_LOG_ADD_COUNTER32(na, &counters->rma_count, counters->rma_count_string,
+        "Number of active RMAs");
+    HG_LOG_ADD_COUNTER32(na, &counters->mr_count, counters->mr_count_string,
+        "Number of active MRs");
+    HG_LOG_ADD_COUNTER32(na, &counters->addr_count, counters->addr_count_string,
+        "Number of addresses inserted");
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_counters_finalize(struct na_ofi_counters *counters)
+{
+    HG_LOG_DEL_COUNTER32(na, counters->tx_count);
+    HG_LOG_DEL_COUNTER32(na, counters->rx_count);
+    HG_LOG_DEL_COUNTER32(na, counters->rma_count);
+    HG_LOG_DEL_COUNTER32(na, counters->mr_count);
+    HG_LOG_DEL_COUNTER32(na, counters->addr_count);
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_class_env_config(struct na_ofi_class *na_ofi_class)
 {
@@ -4323,26 +4410,26 @@ na_ofi_class_env_config(struct na_ofi_class *na_ofi_class)
     /* Set unexpected msg callbacks */
     env = getenv("NA_OFI_UNEXPECTED_TAG_MSG");
     if (env == NULL || env[0] == '0' || tolower(env[0]) == 'n') {
-        na_ofi_class->msg_send_unexpected = na_ofi_msg_send;
-        na_ofi_class->msg_send_unexpected_string = "fi_senddata";
-        na_ofi_class->msg_recv_unexpected = na_ofi_msg_recv;
-        na_ofi_class->msg_recv_unexpected_string = "fi_recv";
+        na_ofi_class->ops.msg_send_unexpected = na_ofi_msg_send;
+        na_ofi_class->ops.msg_send_unexpected_string = "fi_senddata";
+        na_ofi_class->ops.msg_recv_unexpected = na_ofi_msg_recv;
+        na_ofi_class->ops.msg_recv_unexpected_string = "fi_recv";
     } else {
         NA_LOG_SUBSYS_DEBUG(cls,
             "NA_OFI_UNEXPECTED_TAG_MSG set to %s, forcing unexpected messages "
             "to use tagged recvs",
             env);
-        na_ofi_class->msg_send_unexpected = na_ofi_tag_send;
-        na_ofi_class->msg_send_unexpected_string = "fi_tsend";
-        na_ofi_class->msg_recv_unexpected = na_ofi_tag_recv;
-        na_ofi_class->msg_recv_unexpected_string = "fi_trecv";
+        na_ofi_class->ops.msg_send_unexpected = na_ofi_tag_send;
+        na_ofi_class->ops.msg_send_unexpected_string = "fi_tsend";
+        na_ofi_class->ops.msg_recv_unexpected = na_ofi_tag_recv;
+        na_ofi_class->ops.msg_recv_unexpected_string = "fi_trecv";
     }
 
     /* Set expected msg callbacks */
-    na_ofi_class->msg_send_expected = na_ofi_tag_send;
-    na_ofi_class->msg_send_expected_string = "fi_tsend";
-    na_ofi_class->msg_recv_expected = na_ofi_tag_recv;
-    na_ofi_class->msg_recv_expected_string = "fi_trecv";
+    na_ofi_class->ops.msg_send_expected = na_ofi_tag_send;
+    na_ofi_class->ops.msg_send_expected_string = "fi_tsend";
+    na_ofi_class->ops.msg_recv_expected = na_ofi_tag_recv;
+    na_ofi_class->ops.msg_recv_expected_string = "fi_trecv";
 
     /* Default retry timeouts in ms */
     if ((env = getenv("NA_OFI_OP_RETRY_TIMEOUT")) != NULL) {
@@ -5073,7 +5160,6 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     hg_atomic_init64(&na_ofi_domain->requested_key, 0);
     /* No need to take a refcount on fabric */
     na_ofi_domain->fabric = na_ofi_fabric;
-    hg_atomic_init32(&na_ofi_domain->mr_reg_count, 0);
 
     /* Dup name */
     na_ofi_domain->name = strdup(domain_attr->name);
@@ -6073,9 +6159,9 @@ na_ofi_mem_buf_register(const void *buf, size_t len, unsigned long flags,
             "fi_mr_reg(buf=%p, len=%zu, flags=%lu) failed, rc: %d (%s), "
             "mr_reg_count: %d",
             buf, len, flags, rc, fi_strerror(-rc),
-            hg_atomic_get32(&na_ofi_class->domain->mr_reg_count));
+            hg_atomic_get32(na_ofi_class->counters.mr_count));
 
-        hg_atomic_incr32(&na_ofi_class->domain->mr_reg_count);
+        hg_atomic_incr32(na_ofi_class->counters.mr_count);
         *handle_p = (void *) mr_hdl;
     } else
         *handle_p = NULL;
@@ -6097,7 +6183,7 @@ na_ofi_mem_buf_deregister(void *handle, void *arg)
         int rc = fi_close(&mr_hdl->fid);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, out, ret, HG_UTIL_FAIL,
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        hg_atomic_decr32(&na_ofi_class->domain->mr_reg_count);
+        hg_atomic_decr32(na_ofi_class->counters.mr_count);
     }
 
 out:
@@ -6159,9 +6245,13 @@ na_ofi_msg_send_common(struct na_ofi_class *na_ofi_class,
     if ((int) na_ofi_class->fi_info->addr_format == FI_ADDR_OPX)
         na_ofi_op_id->fi_ctx[0].internal[0] = &na_ofi_addr->addr_key.addr.opx;
 
+    /* Counters */
+    hg_atomic_incr32(na_ofi_class->counters.tx_count);
+
     ret = msg_op(
         na_ofi_context->fi_tx, &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
     if (ret != NA_SUCCESS) {
+        hg_atomic_decr32(na_ofi_class->counters.tx_count);
         if (ret == NA_AGAIN) {
             na_ofi_op_id->retry_op.msg = msg_op;
             na_ofi_op_retry(
@@ -6224,9 +6314,13 @@ na_ofi_msg_recv_common(struct na_ofi_class *na_ofi_class,
         .tag = tag,
         .tag_mask = tag_mask};
 
+    /* Counters */
+    hg_atomic_incr32(na_ofi_class->counters.rx_count);
+
     ret = msg_op(
         na_ofi_context->fi_rx, &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
     if (ret != NA_SUCCESS) {
+        hg_atomic_decr32(na_ofi_class->counters.rx_count);
         if (ret == NA_AGAIN) {
             na_ofi_op_id->retry_op.msg = msg_op;
             na_ofi_op_retry(
@@ -6620,10 +6714,14 @@ na_ofi_rma_common(struct na_ofi_class *na_ofi_class, na_context_t *context,
                                   NA_OFI_SEP_RX_CTX_BITS)
                             : na_ofi_addr->fi_addr;
 
+    /* Counters */
+    hg_atomic_incr32(na_ofi_class->counters.rma_count);
+
     /* Post the OFI RMA operation */
     ret =
         na_ofi_rma_post(na_ofi_context->fi_tx, rma_info, &na_ofi_op_id->fi_ctx);
     if (ret != NA_SUCCESS) {
+        hg_atomic_decr32(na_ofi_class->counters.rma_count);
         if (ret == NA_AGAIN) {
             na_ofi_op_id->retry_op.rma = na_ofi_rma_post;
             na_ofi_op_retry(
@@ -6990,6 +7088,7 @@ na_ofi_cq_process_canceled(const struct na_ofi_class *na_ofi_class,
         NA_LOG_SUBSYS_WARNING(op, "event %d (%s) on operation ID %p (%s)",
             cq_err->err, fi_strerror(cq_err->err), (void *) na_ofi_op_id,
             na_cb_type_to_string(na_ofi_op_id->type));
+    na_ofi_cq_process_counters(na_ofi_op_id);
 
     /* When tearing down connections, it is possible that operations will be
     canceled by libfabric itself.
@@ -7014,6 +7113,8 @@ na_ofi_cq_process_canceled(const struct na_ofi_class *na_ofi_class,
             &na_ofi_op_id->completion_data->callback_info.info
                 .multi_recv_unexpected,
             complete);
+        if (complete)
+            hg_atomic_decr32(na_ofi_class->counters.rx_count);
     } else
         complete = true;
 
@@ -7151,6 +7252,8 @@ na_ofi_cq_process_error(
         NA_OFI_OP_CANCELED)
         return NA_SUCCESS; /* already handled */
 
+    na_ofi_cq_process_counters(na_ofi_op_id);
+
     /* Abort other retries if peer is unreachable */
     if (na_ret == NA_HOSTUNREACH && na_ofi_op_id->addr)
         na_ofi_op_retry_abort_addr(na_ofi_op_id->na_ofi_context,
@@ -7172,6 +7275,8 @@ na_ofi_cq_process_error(
             &na_ofi_op_id->completion_data->callback_info.info
                 .multi_recv_unexpected,
             complete);
+        if (complete)
+            hg_atomic_decr32(na_ofi_class->counters.rx_count);
     } else
         complete = true;
 
@@ -7345,6 +7450,7 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
         na_cb_type_to_string(na_ofi_op_id->type), (void *) na_ofi_op_id,
         cq_event->op_context, cq_event->flags, cq_event->len, cq_event->buf,
         cq_event->data, cq_event->tag);
+    na_ofi_cq_process_counters(na_ofi_op_id);
 
     switch (na_ofi_op_id->type) {
         case NA_CB_RECV_UNEXPECTED:
@@ -7361,6 +7467,8 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
             break;
         case NA_CB_MULTI_RECV_UNEXPECTED:
             complete = cq_event->flags & FI_MULTI_RECV;
+            if (complete)
+                hg_atomic_decr32(na_ofi_class->counters.rx_count);
 
             ret = na_ofi_cq_process_multi_recv_unexpected(na_ofi_class,
                 &na_ofi_op_id->info.msg,
@@ -7688,6 +7796,30 @@ na_ofi_op_retry_abort_addr(
         na_ofi_op_id->complete(na_ofi_op_id, true, ret);
     }
     hg_thread_spin_unlock(&op_queue->lock);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_cq_process_counters(struct na_ofi_op_id *na_ofi_op_id)
+{
+    switch (na_ofi_op_id->type) {
+        case NA_CB_RECV_UNEXPECTED:
+        case NA_CB_RECV_EXPECTED:
+            hg_atomic_decr32(na_ofi_op_id->na_ofi_class->counters.rx_count);
+            break;
+        case NA_CB_SEND_UNEXPECTED:
+        case NA_CB_SEND_EXPECTED:
+            hg_atomic_decr32(na_ofi_op_id->na_ofi_class->counters.tx_count);
+            break;
+        case NA_CB_PUT:
+        case NA_CB_GET:
+            hg_atomic_decr32(na_ofi_op_id->na_ofi_class->counters.rma_count);
+            break;
+        case NA_CB_MULTI_RECV_UNEXPECTED:
+        /* TODO currently treated outside of switch */
+        default:
+            break;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -8124,6 +8256,7 @@ na_ofi_initialize(
     struct na_ofi_info info = NA_OFI_INFO_INITIALIZER;
     union na_ofi_auth_key base_auth_key;
     struct na_loc_info *loc_info = NULL;
+    static int class_id = 0;
     na_return_t ret;
 #ifdef NA_OFI_HAS_MEM_POOL
     size_t pool_chunk_size;
@@ -8203,6 +8336,7 @@ na_ofi_initialize(
     na_ofi_class = na_ofi_class_alloc();
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_class == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI class");
+    na_ofi_counters_init(&na_ofi_class->counters, class_id++);
 
     /* Check env config */
     ret = na_ofi_class_env_config(na_ofi_class);
@@ -8230,15 +8364,15 @@ na_ofi_initialize(
 
     /* Set/check optional features */
     if ((na_ofi_prov_extra_caps[prov_type] & FI_MULTI_RECV) &&
-        (na_ofi_class->msg_recv_unexpected == na_ofi_msg_recv)) {
+        (na_ofi_class->ops.msg_recv_unexpected == na_ofi_msg_recv)) {
         NA_CHECK_SUBSYS_ERROR(cls,
             !(na_ofi_class->fi_info->caps & FI_MULTI_RECV), error, ret,
             NA_PROTONOSUPPORT, "FI_MULTI_RECV is not supported by provider");
         na_ofi_class->opt_features |= NA_OPT_MULTI_RECV;
     }
-    na_ofi_class->cq_poll = (na_ofi_class->fi_info->caps & FI_SOURCE_ERR)
-                                ? na_ofi_cq_poll_fi_source
-                                : na_ofi_cq_poll_no_source;
+    na_ofi_class->ops.cq_poll = (na_ofi_class->fi_info->caps & FI_SOURCE_ERR)
+                                    ? na_ofi_cq_poll_fi_source
+                                    : na_ofi_cq_poll_no_source;
 
     /* Open fabric */
     ret = na_ofi_fabric_open(
@@ -8372,6 +8506,9 @@ na_ofi_finalize(na_class_t *na_class)
         if (na_ofi_addr->class == na_ofi_class)
             na_ofi_addr_ref_decr(na_ofi_addr);
     }
+
+    /* Remove counters */
+    na_ofi_counters_finalize(&na_ofi_class->counters);
 
     /* Free class */
     ret = na_ofi_class_free(na_ofi_class);
@@ -8959,8 +9096,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 {
     return na_ofi_msg_send_common(NA_OFI_CLASS(na_class),
         NA_OFI_CONTEXT(context), NA_CB_SEND_UNEXPECTED, callback, arg,
-        NA_OFI_CLASS(na_class)->msg_send_unexpected,
-        NA_OFI_CLASS(na_class)->msg_send_unexpected_string, buf, buf_size,
+        NA_OFI_CLASS(na_class)->ops.msg_send_unexpected,
+        NA_OFI_CLASS(na_class)->ops.msg_send_unexpected_string, buf, buf_size,
         NA_OFI_CLASS(na_class)->endpoint->unexpected_msg_size_max,
         (struct na_ofi_msg_buf_handle *) plugin_data,
         (struct na_ofi_addr *) dest_addr, dest_id,
@@ -8975,8 +9112,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 {
     return na_ofi_msg_recv_common(NA_OFI_CLASS(na_class),
         NA_OFI_CONTEXT(context), NA_CB_RECV_UNEXPECTED, callback, arg,
-        NA_OFI_CLASS(na_class)->msg_recv_unexpected,
-        NA_OFI_CLASS(na_class)->msg_recv_unexpected_string, buf, buf_size,
+        NA_OFI_CLASS(na_class)->ops.msg_recv_unexpected,
+        NA_OFI_CLASS(na_class)->ops.msg_recv_unexpected_string, buf, buf_size,
         NA_OFI_CLASS(na_class)->endpoint->unexpected_msg_size_max,
         (struct na_ofi_msg_buf_handle *) plugin_data, NULL, 0,
         NA_OFI_UNEXPECTED_TAG, NA_OFI_TAG_MASK, (struct na_ofi_op_id *) op_id);
@@ -9027,9 +9164,13 @@ na_ofi_msg_multi_recv_unexpected(na_class_t *na_class, na_context_t *context,
         .tag = 0 /* unused */,
         .tag_mask = 0 /* unused */};
 
+    /* Counters */
+    hg_atomic_incr32(na_ofi_class->counters.rx_count);
+
     ret = na_ofi_msg_multi_recv(
         na_ofi_context->fi_rx, &na_ofi_op_id->info.msg, &na_ofi_op_id->fi_ctx);
     if (ret != NA_SUCCESS) {
+        hg_atomic_decr32(na_ofi_class->counters.rx_count);
         if (ret == NA_AGAIN) {
             na_ofi_op_id->retry_op.msg = na_ofi_msg_multi_recv;
             na_ofi_op_retry(
@@ -9061,8 +9202,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 {
     return na_ofi_msg_send_common(NA_OFI_CLASS(na_class),
         NA_OFI_CONTEXT(context), NA_CB_SEND_EXPECTED, callback, arg,
-        NA_OFI_CLASS(na_class)->msg_send_expected,
-        NA_OFI_CLASS(na_class)->msg_send_expected_string, buf, buf_size,
+        NA_OFI_CLASS(na_class)->ops.msg_send_expected,
+        NA_OFI_CLASS(na_class)->ops.msg_send_expected_string, buf, buf_size,
         NA_OFI_CLASS(na_class)->endpoint->expected_msg_size_max,
         (struct na_ofi_msg_buf_handle *) plugin_data,
         (struct na_ofi_addr *) dest_addr, dest_id, (uint64_t) tag,
@@ -9077,8 +9218,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 {
     return na_ofi_msg_recv_common(NA_OFI_CLASS(na_class),
         NA_OFI_CONTEXT(context), NA_CB_RECV_EXPECTED, callback, arg,
-        NA_OFI_CLASS(na_class)->msg_recv_expected,
-        NA_OFI_CLASS(na_class)->msg_recv_expected_string, buf, buf_size,
+        NA_OFI_CLASS(na_class)->ops.msg_recv_expected,
+        NA_OFI_CLASS(na_class)->ops.msg_recv_expected_string, buf, buf_size,
         NA_OFI_CLASS(na_class)->endpoint->expected_msg_size_max,
         (struct na_ofi_msg_buf_handle *) plugin_data,
         (struct na_ofi_addr *) source_addr, source_id, (uint64_t) tag, 0,
@@ -9214,7 +9355,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
         (struct na_ofi_mem_handle *) mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     const struct fi_info *fi_info = NA_OFI_CLASS(na_class)->fi_info;
-    int32_t mr_cnt = hg_atomic_get32(&domain->mr_reg_count);
+    int32_t mr_cnt = hg_atomic_get32(NA_OFI_CLASS(na_class)->counters.mr_count);
     struct fi_mr_attr fi_mr_attr = {
         .mr_iov = NA_OFI_IOV(
             na_ofi_mem_handle->desc.iov, na_ofi_mem_handle->desc.info.iovcnt),
@@ -9283,7 +9424,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
         fi_mr_attr.mr_iov[0].iov_base, fi_mr_attr.mr_iov[0].iov_len,
         fi_mr_attr.iov_count, fi_mr_attr.access, fi_mr_attr.iface,
         fi_mr_attr.requested_key, rc, fi_strerror(-rc), mr_cnt);
-    mr_cnt = hg_atomic_incr32(&domain->mr_reg_count);
+    mr_cnt = hg_atomic_incr32(NA_OFI_CLASS(na_class)->counters.mr_count);
 
     /* Attach MR to endpoint when provider requests it */
     if (fi_info->domain_attr->mr_mode & FI_MR_ENDPOINT) {
@@ -9327,7 +9468,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t *mem_handle,
 error:
     if (na_ofi_mem_handle->fi_mr) {
         (void) fi_close(&na_ofi_mem_handle->fi_mr->fid);
-        hg_atomic_decr32(&domain->mr_reg_count);
+        hg_atomic_decr32(NA_OFI_CLASS(na_class)->counters.mr_count);
     }
     return ret;
 }
@@ -9336,7 +9477,6 @@ error:
 static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
     na_return_t ret;
@@ -9351,7 +9491,7 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t *mem_handle)
         rc = fi_close(&na_ofi_mem_handle->fi_mr->fid);
         NA_CHECK_SUBSYS_ERROR(mem, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
-        mr_cnt = hg_atomic_decr32(&domain->mr_reg_count);
+        mr_cnt = hg_atomic_decr32(NA_OFI_CLASS(na_class)->counters.mr_count);
 
         NA_LOG_SUBSYS_DEBUG(mem,
             "Deregistered memory region: mr_iov[0].iov_base=%p, "
@@ -9575,7 +9715,7 @@ na_ofi_poll(na_class_t *na_class, na_context_t *context, unsigned int *count_p)
         return NA_SUCCESS;
 
     /* Read from CQ and process events */
-    ret = na_ofi_class->cq_poll(na_ofi_class, na_ofi_context, &count);
+    ret = na_ofi_class->ops.cq_poll(na_ofi_class, na_ofi_context, &count);
     NA_CHECK_SUBSYS_NA_ERROR(poll, error, ret, "Could not poll context CQ");
 
     /* Attempt to process retries */
