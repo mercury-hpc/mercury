@@ -1178,6 +1178,7 @@ HG_Diag_dump_counters(void)
 #ifndef _WIN32
     hg_log_dump_counters(&HG_LOG_OUTLET(hg_diag));
 #endif
+    NA_Diag_dump_counters();
 }
 
 /*---------------------------------------------------------------------------*/

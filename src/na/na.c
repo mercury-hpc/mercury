@@ -1011,6 +1011,15 @@ NA_Set_log_level(const char *level)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+NA_Diag_dump_counters(void)
+{
+#ifndef _WIN32
+    hg_log_dump_counters(&HG_LOG_OUTLET(NA_SUBSYS_NAME));
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
 na_context_t *
 NA_Context_create(na_class_t *na_class)
 {

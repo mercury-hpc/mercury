@@ -154,6 +154,12 @@ NA_PUBLIC void
 NA_Set_log_level(const char *level);
 
 /**
+ * Dump diagnostic counters into the existing log stream.
+ */
+NA_PUBLIC void
+NA_Diag_dump_counters(void);
+
+/**
  * Return the name of the NA class.
  *
  * \param na_class [IN]         pointer to NA class

@@ -308,10 +308,18 @@
     hg_dlog_mkcount32(HG_LOG_OUTLET(name).debug_log, counter_ptr,              \
         counter_name, counter_desc)
 
+/* HG_LOG_DEL_COUNTER32: delete 32-bit debug log counter */
+#define HG_LOG_DEL_COUNTER32(name, counter_ptr)                                \
+    hg_dlog_rmcount32(HG_LOG_OUTLET(name).debug_log, counter_ptr)
+
 /* HG_LOG_ADD_COUNTER64: add 64-bit debug log counter */
 #define HG_LOG_ADD_COUNTER64(name, counter_ptr, counter_name, counter_desc)    \
     hg_dlog_mkcount64(HG_LOG_OUTLET(name).debug_log, counter_ptr,              \
         counter_name, counter_desc)
+
+/* HG_LOG_DEL_COUNTER64: delete 64-bit debug log counter */
+#define HG_LOG_DEL_COUNTER64(name, counter_ptr)                                \
+    hg_dlog_rmcount64(HG_LOG_OUTLET(name).debug_log, counter_ptr)
 
 /*************************************/
 /* Public Type and Struct Definition */
