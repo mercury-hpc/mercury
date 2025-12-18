@@ -59,6 +59,11 @@ set(NA_BUILD_INCLUDE_DEPENDENCIES
 #------------------------------------------------------------------------------
 # Internal dependencies
 #------------------------------------------------------------------------------
+# Diagnostics counters
+if(HG_HAS_DIAG)
+  set(NA_HAS_DIAG 1)
+endif()
+
 # Multi progress
 if(NOT HG_ALLOW_MULTI_PROGRESS)
   option(NA_ALLOW_MULTI_PROGRESS "Allow concurrent progress on single context." ON)

@@ -500,16 +500,9 @@ hg_log_outlet_deregister(struct hg_log_outlet *hg_log_outlet)
 
     if (hg_log_outlet->debug_log &&
         !(hg_log_outlet->parent &&
-            hg_log_outlet->parent->debug_log == hg_log_outlet->debug_log)) {
-        if (hg_log_outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
-            FILE *stream = hg_log_streams_g[hg_log_outlet->level]
-                               ? hg_log_streams_g[hg_log_outlet->level]
-                               : *hg_log_std_streams_g[hg_log_outlet->level];
-            hg_dlog_dump_counters(
-                hg_log_outlet->debug_log, hg_log_func_g, stream, 0);
-        }
+            hg_log_outlet->parent->debug_log == hg_log_outlet->debug_log))
         hg_dlog_free(hg_log_outlet->debug_log);
-    }
+
     STAILQ_REMOVE(&hg_log_outlets_g, hg_log_outlet, hg_log_outlet, entry);
     hg_log_outlet->registered = false;
 }
@@ -593,7 +586,8 @@ hg_log_vwrite(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
         no_return ? "" : "\n");
 #endif
 
-    if (log_level == HG_LOG_LEVEL_ERROR && hg_log_outlet->debug_log &&
+    if ((log_level == HG_LOG_LEVEL_ERROR || log_level == HG_LOG_LEVEL_FATAL) &&
+        hg_log_outlet->debug_log &&
         hg_log_outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
         hg_dlog_dump(hg_log_outlet->debug_log, hg_log_func_g, stream, 0);
         hg_dlog_resetlog(hg_log_outlet->debug_log);

@@ -185,7 +185,7 @@ struct hg_core_private_class {
     struct hg_core_map rpc_map;               /* RPC Map */
     struct hg_core_more_data_cb more_data_cb; /* More data callbacks */
     na_tag_t request_max_tag;                 /* Max value for tag */
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     struct hg_core_counters counters; /* Diag counters */
 #endif
     hg_atomic_int32_t n_contexts;  /* Total number of contexts */
@@ -369,7 +369,7 @@ struct hg_core_private_handle {
     uint8_t cookie;               /* Cookie */
     bool multi_recv_copy;         /* Copy on multi-recv */
     bool reuse;                   /* Re-use handle once ref_count is 0 */
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     bool active;
 #endif
 };
@@ -405,7 +405,7 @@ hg_core_op_type_to_string(enum hg_core_op_type op_type);
 /**
  * Init counters.
  */
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
 static void
 hg_core_counters_init(struct hg_core_counters *hg_core_counters);
 #endif
@@ -447,7 +447,7 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class);
 /**
  * Get counters.
  */
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
 static void
 hg_core_class_get_counters(const struct hg_core_counters *counters,
     struct hg_diag_counters *diag_counters);
@@ -1091,7 +1091,7 @@ hg_core_op_type_to_string(enum hg_core_op_type op_type)
 #endif
 
 /*---------------------------------------------------------------------------*/
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
 static void
 hg_core_counters_init(struct hg_core_counters *hg_core_counters)
 {
@@ -1326,7 +1326,7 @@ hg_core_init(const char *na_info_string, bool na_listen, unsigned int version,
     hg_core_class->init_info.listen = na_listen;
 
     /* Stats / counters */
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     hg_core_counters_init(&hg_core_class->counters);
 #endif
 
@@ -1522,7 +1522,7 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
 static void
 hg_core_class_get_counters(const struct hg_core_counters *counters,
     struct hg_diag_counters *diag_counters)
@@ -3446,7 +3446,7 @@ hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
         return HG_SUCCESS; /* Cannot free yet */
     }
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     if (hg_core_handle->active) {
         hg_atomic_decr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
                 ->counters.rpc_req_recv_active_count);
@@ -4049,7 +4049,7 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
     hg_core_handle->request_callback = callback;
     hg_core_handle->request_arg = arg;
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     /* Increment counter */
     hg_atomic_incr64(
         HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_req_sent_count);
@@ -4264,7 +4264,7 @@ hg_core_respond(struct hg_core_private_handle *hg_core_handle,
     hg_core_handle->response_callback = callback;
     hg_core_handle->response_arg = arg;
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     /* Increment counter */
     hg_atomic_incr64(
         HG_CORE_HANDLE_CLASS(hg_core_handle)->counters.rpc_resp_sent_count);
@@ -4500,7 +4500,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_thread_spin_lock(&hg_core_handle_pool->pending_list.lock);
     LIST_REMOVE(hg_core_handle, pending);
     hg_thread_spin_unlock(&hg_core_handle_pool->pending_list.lock);
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     /* Increment counter */
     hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
             ->counters.rpc_req_recv_active_count);
@@ -4609,7 +4609,7 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
         ret = hg_core_handle_pool_get(context->handle_pool, &hg_core_handle);
         HG_CHECK_SUBSYS_HG_ERROR(
             rpc, error, ret, "Could not get handle from pool");
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
         /* Increment counter */
         hg_atomic_incr64(HG_CORE_HANDLE_CLASS(hg_core_handle)
                 ->counters.rpc_req_recv_active_count);
@@ -4666,7 +4666,7 @@ hg_core_multi_recv_input_cb(const struct na_cb_info *callback_info)
                 "Copying multi-recv payload of size %zu for handle (%p)",
                 hg_core_handle->core_handle.in_buf_used,
                 (void *) hg_core_handle);
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
             /* Increment counter */
             hg_atomic_incr64(HG_CORE_CONTEXT_CLASS(context)
                     ->counters.rpc_multi_recv_copy_count);
@@ -4764,7 +4764,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
     uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     hg_return_t ret;
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     /* Increment counter */
     hg_atomic_incr64(hg_core_class->counters.rpc_req_recv_count);
 #endif
@@ -4813,7 +4813,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle)
             "Handle (%p) expected_count incr to %" PRId32,
             (void *) hg_core_handle, expected_count);
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
         /* Increment counter */
         hg_atomic_incr64(hg_core_class->counters.rpc_req_extra_count);
 #endif
@@ -4937,7 +4937,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle)
     uint32_t flags = (uint32_t) hg_atomic_get32(&hg_core_handle->flags);
     hg_return_t ret;
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     /* Increment counter */
     hg_atomic_incr64(hg_core_class->counters.rpc_resp_recv_count);
 #endif
@@ -4981,7 +4981,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle)
             "Handle (%p) expected_count incr to %" PRId32,
             (void *) hg_core_handle, expected_count);
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
         /* Increment counter */
         hg_atomic_incr64(hg_core_class->counters.rpc_resp_extra_count);
 #endif
@@ -5320,7 +5320,7 @@ hg_core_completion_add(struct hg_core_context *core_context,
     struct hg_core_completion_queue *backfill_queue = &context->backfill_queue;
     int rc;
 
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     /* Increment counter */
     if (hg_completion_entry->op_type == HG_BULK)
         hg_atomic_incr64(HG_CORE_CONTEXT_CLASS(context)->counters.bulk_count);
@@ -6213,7 +6213,7 @@ hg_return_t
 HG_Core_class_get_counters(const hg_core_class_t *hg_core_class,
     struct hg_diag_counters *diag_counters)
 {
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     const struct hg_core_private_class *private_class =
         (const struct hg_core_private_class *) hg_core_class;
 #endif
@@ -6223,7 +6223,7 @@ HG_Core_class_get_counters(const hg_core_class_t *hg_core_class,
         HG_INVALID_ARG, "NULL HG core class");
     HG_CHECK_SUBSYS_ERROR(cls, diag_counters == NULL, error, ret,
         HG_INVALID_ARG, "NULL pointer to diag_counters");
-#if defined(HG_HAS_DIAG) && !defined(_WIN32)
+#ifdef HG_HAS_DIAG
     hg_core_class_get_counters(&private_class->counters, diag_counters);
 #else
     HG_LOG_SUBSYS_ERROR(cls, "Counters not supported in current build, please "

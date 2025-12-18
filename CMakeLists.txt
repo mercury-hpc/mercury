@@ -192,7 +192,7 @@ endif()
 # Enable diagnostics counters separately from debug.
 #------------------------------------------------------------------------------
 option(MERCURY_ENABLE_COUNTERS "Enable diagnostics counters." OFF)
-if(MERCURY_ENABLE_COUNTERS)
+if(MERCURY_ENABLE_COUNTERS AND NOT WIN32)
   set(HG_HAS_DIAG 1)
 else()
   set(HG_HAS_DIAG 0)
