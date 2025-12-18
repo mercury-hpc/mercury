@@ -156,6 +156,15 @@ hg_dlog_mkcount32(struct hg_dlog *d, hg_atomic_int32_t **cptr, const char *name,
     const char *descr);
 
 /**
+ * remove a 32-bit counter from a dlog.
+ *
+ * \param d [IN]                dlog to remove the counter from
+ * \param cptr [IN]             pointer to counter to remove
+ */
+HG_UTIL_PUBLIC void
+hg_dlog_rmcount32(struct hg_dlog *d, hg_atomic_int32_t *cptr);
+
+/**
  * make a named atomic64 counter in a dlog and return a pointer to
  * it.  we use the dlock to ensure a counter under a given name only
  * gets created once (makes it easy to share a counter across files).
@@ -177,6 +186,15 @@ hg_dlog_mkcount32(struct hg_dlog *d, hg_atomic_int32_t **cptr, const char *name,
 HG_UTIL_PUBLIC void
 hg_dlog_mkcount64(struct hg_dlog *d, hg_atomic_int64_t **cptr, const char *name,
     const char *descr);
+
+/**
+ * remove a 64-bit counter from a dlog.
+ *
+ * \param d [IN]                dlog to remove the counter from
+ * \param cptr [IN]             pointer to counter to remove
+ */
+HG_UTIL_PUBLIC void
+hg_dlog_rmcount64(struct hg_dlog *d, hg_atomic_int64_t *cptr);
 
 /**
  * attempt to add a log record to a dlog.  the id and msg should point
