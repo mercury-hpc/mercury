@@ -4295,6 +4295,9 @@ static struct na_ofi_class *
 na_ofi_class_alloc(void)
 {
     struct na_ofi_class *na_ofi_class = NULL;
+#ifdef NA_HAS_DIAG
+    static int class_id = 0;
+#endif
     int rc;
 
     /* Create private data */
@@ -4302,6 +4305,10 @@ na_ofi_class_alloc(void)
     NA_CHECK_SUBSYS_ERROR_NORET(cls, na_ofi_class == NULL, error,
         "Could not allocate NA private data class");
     hg_atomic_init32(&na_ofi_class->n_contexts, 0);
+
+#ifdef NA_HAS_DIAG
+    na_ofi_counters_init(&na_ofi_class->counters, class_id++);
+#endif
 
     /* Initialize addr pool */
     rc = hg_thread_spin_init(&na_ofi_class->addr_pool.lock);
@@ -4366,6 +4373,11 @@ na_ofi_class_free(struct na_ofi_class *na_ofi_class)
         NA_CHECK_SUBSYS_NA_ERROR(cls, out, ret, "Could not close fabric");
         na_ofi_class->fabric = NULL;
     }
+
+#ifdef NA_HAS_DIAG
+    /* Remove counters */
+    na_ofi_counters_finalize(&na_ofi_class->counters);
+#endif
 
     /* Free info */
     if (na_ofi_class->fi_info)
@@ -8339,9 +8351,6 @@ na_ofi_initialize(
     struct na_ofi_info info = NA_OFI_INFO_INITIALIZER;
     union na_ofi_auth_key base_auth_key;
     struct na_loc_info *loc_info = NULL;
-#ifdef NA_HAS_DIAG
-    static int class_id = 0;
-#endif
     na_return_t ret;
 #ifdef NA_OFI_HAS_MEM_POOL
     size_t pool_chunk_size;
@@ -8421,9 +8430,6 @@ na_ofi_initialize(
     na_ofi_class = na_ofi_class_alloc();
     NA_CHECK_SUBSYS_ERROR(cls, na_ofi_class == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI class");
-#ifdef NA_HAS_DIAG
-    na_ofi_counters_init(&na_ofi_class->counters, class_id++);
-#endif
 
     /* Check env config */
     ret = na_ofi_class_env_config(na_ofi_class);
@@ -8593,11 +8599,6 @@ na_ofi_finalize(na_class_t *na_class)
         if (na_ofi_addr->class == na_ofi_class)
             na_ofi_addr_ref_decr(na_ofi_addr);
     }
-
-#ifdef NA_HAS_DIAG
-    /* Remove counters */
-    na_ofi_counters_finalize(&na_ofi_class->counters);
-#endif
 
     /* Free class */
     ret = na_ofi_class_free(na_ofi_class);
