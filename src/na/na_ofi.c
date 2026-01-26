@@ -5220,7 +5220,7 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
             NA_NOMEM, "Could not allocate auth_key");
         memcpy(na_ofi_domain->auth_key, &base_auth_key, sizeof(base_auth_key));
 
-        domain_attr->auth_key = (void *) &base_auth_key;
+        domain_attr->auth_key = (void *) na_ofi_domain->auth_key;
         domain_attr->auth_key_size = auth_key_size;
     }
 
