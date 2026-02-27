@@ -432,13 +432,25 @@ if(NA_HAS_SM)
   )
 endif()
 
+if(NA_HAS_DYNAMIC_PLUGINS)
+  set(NA_PUBLIC_HEADERS
+    ${NA_PUBLIC_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
+  )
+endif()
+
 #------------------------------------------------------------------------------
 # Specify project private header files
 #------------------------------------------------------------------------------
-set(NA_PRIVATE_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
-)
+if(NA_HAS_DYNAMIC_PLUGINS)
+  set(NA_PRIVATE_HEADERS)
+else()
+  set(NA_PRIVATE_HEADERS
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_plugin.h
+  )
+endif()
 
 if(NOT WIN32)
   set(NA_PRIVATE_HEADERS
@@ -469,10 +481,17 @@ target_include_directories(na
   SYSTEM PUBLIC  ${NA_EXT_INCLUDE_DEPENDENCIES}
          PRIVATE ${NA_INT_INCLUDE_DEPENDENCIES}
 )
-target_link_libraries(na
-  PUBLIC  ${NA_EXT_LIB_DEPENDENCIES}
-  PRIVATE ${NA_INT_LIB_DEPENDENCIES} mercury_util
-)
+if(NA_HAS_DYNAMIC_PLUGINS)
+  target_link_libraries(na
+    PUBLIC  ${NA_EXT_LIB_DEPENDENCIES} mercury_util
+    PRIVATE ${NA_INT_LIB_DEPENDENCIES}
+  )
+else()
+  target_link_libraries(na
+    PUBLIC  ${NA_EXT_LIB_DEPENDENCIES}
+    PRIVATE ${NA_INT_LIB_DEPENDENCIES} mercury_util
+  )
+endif()
 mercury_set_lib_options(na "na" ${NA_LIBTYPE} ${PROJECT_NAME})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)

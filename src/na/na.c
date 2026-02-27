@@ -264,6 +264,10 @@ na_initialize(void) NA_CONSTRUCTOR;
 /* Free list of plugins etc */
 static void
 na_finalize(void) NA_DESTRUCTOR;
+
+/* Load plugins from a list of colon-separated paths */
+static void
+na_plugin_parse_path_list(const char *path_list);
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -271,24 +275,27 @@ na_finalize(void) NA_DESTRUCTOR;
 static void
 na_initialize(void)
 {
-    const char *plugin_path = getenv("NA_PLUGIN_PATH");
+    const char *plugin_path_env = getenv("NA_PLUGIN_PATH");
     char resolved_path[NA_PLUGIN_PATH_MAX];
     na_return_t ret;
 
-    if (plugin_path == NULL) {
+    if (plugin_path_env == NULL) {
+        /* NA_PLUGIN_PATH not set: resolve and scan NA_PLUGIN_RELATIVE_PATH */
         ret = na_plugin_resolve_path(
             NA_PLUGIN_RELATIVE_PATH, resolved_path, sizeof(resolved_path));
         NA_CHECK_SUBSYS_NA_FATAL(cls, done, ret,
             "Could not resolve plugin path using offset (%s)",
             NA_PLUGIN_RELATIVE_PATH);
-        plugin_path = resolved_path;
-    }
 
-    ret = na_plugin_scan_path(plugin_path, &na_plugin_dynamic_g);
-    NA_CHECK_SUBSYS_NA_FATAL(cls, done, ret,
-        "No usable plugin found in path (%s), consider setting NA_PLUGIN_PATH "
-        "if path indicated is not valid.",
-        plugin_path);
+        ret = na_plugin_scan_path(resolved_path, &na_plugin_dynamic_g);
+        NA_CHECK_SUBSYS_NA_FATAL(cls, done, ret,
+            "No usable plugin found in path (%s), consider setting "
+            "NA_PLUGIN_PATH if path indicated is not valid.",
+            resolved_path);
+    } else {
+        /* NA_PLUGIN_PATH set: scan each colon-separated path */
+        na_plugin_parse_path_list(plugin_path_env);
+    }
 
 done:
     return;
@@ -299,6 +306,76 @@ static void
 na_finalize(void)
 {
     na_plugin_close_all(na_plugin_dynamic_g);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_plugin_parse_path_list(const char *path_list)
+{
+    char resolved_path[NA_PLUGIN_PATH_MAX];
+    na_return_t ret;
+    char *path_list_copy = strdup(path_list);
+    if (path_list_copy == NULL) {
+        NA_LOG_SUBSYS_FATAL(cls, "Could not duplicate path list string");
+        return;
+    }
+
+    char *saveptr = NULL, *token;
+    struct na_plugin_entry *combined = NULL;
+    int total_count = 0;
+
+    for (token = strtok_r(path_list_copy, ":", &saveptr); token != NULL;
+        token = strtok_r(NULL, ":", &saveptr)) {
+        struct na_plugin_entry *entries = NULL;
+        struct na_plugin_entry *tmp;
+        const char *scan_path = token;
+        int count;
+
+        if (strcmp(token, "<default>") == 0) {
+            ret = na_plugin_resolve_path(
+                NA_PLUGIN_RELATIVE_PATH, resolved_path, sizeof(resolved_path));
+            if (ret != NA_SUCCESS) {
+                NA_LOG_SUBSYS_DEBUG(
+                    cls, "Could not resolve default plugin path, skipping");
+                continue;
+            }
+            scan_path = resolved_path;
+        }
+
+        ret = na_plugin_scan_path(scan_path, &entries);
+        if (ret != NA_SUCCESS)
+            continue;
+
+        /* Count entries in this batch */
+        for (count = 0; entries[count].ops != NULL; count++)
+            /* nothing */;
+
+        /* Grow combined array */
+        tmp = (struct na_plugin_entry *) realloc(
+            combined, sizeof(*combined) * (size_t) (total_count + count + 1));
+        if (tmp == NULL) {
+            na_plugin_close_all(entries);
+            continue;
+        }
+        combined = tmp;
+
+        memcpy(
+            &combined[total_count], entries, sizeof(*entries) * (size_t) count);
+        total_count += count;
+        memset(&combined[total_count], 0, sizeof(*combined));
+
+        free(entries); /* Free container; contents now owned by combined */
+    }
+
+    free(path_list_copy);
+
+    if (total_count == 0) {
+        free(combined);
+        NA_LOG_SUBSYS_FATAL(
+            cls, "No usable plugin found in NA_PLUGIN_PATH (%s)", path_list);
+    } else {
+        na_plugin_dynamic_g = combined;
+    }
 }
 #endif
 
