@@ -53,7 +53,7 @@ if [[ ${CC} == 'icx' ]]; then
   source /opt/intel/oneapi/compiler/"$ICX_LATEST_VERSION"/env/vars.sh
 
   IMPI_LATEST_VERSION=$(ls -1 /opt/intel/oneapi/mpi/ | grep -v latest | sort | tail -1)
-  source /opt/intel/oneapi/mpi/"$IMPI_LATEST_VERSION"/env/vars.sh
+  source /opt/intel/oneapi/mpi/"$IMPI_LATEST_VERSION"/env/vars.sh -i_mpi_ofi_internal=0
 fi
 
 export COV=`which gcov`
