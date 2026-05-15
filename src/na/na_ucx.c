@@ -3670,9 +3670,28 @@ na_ucx_finalize(na_class_t *na_class)
     if (na_ucx_class == NULL)
         return ret;
 
-    NA_CHECK_SUBSYS_ERROR(cls, hg_atomic_get32(&na_ucx_class->ncontexts) != 0,
-        done, ret, NA_BUSY, "Contexts were not destroyed (%d remaining)",
-        hg_atomic_get32(&na_ucx_class->ncontexts));
+    /* Progress worker until all pending EP close requests complete.
+     * This is necessary to ensure endpoints are fully closed before
+     * destroying the worker, otherwise ucp_worker_destroy() may crash
+     * in ucp_ep_purge_lanes() if stale messages arrive during teardown.
+     */
+    if (!LIST_EMPTY(&na_ucx_class->addr_close_list.list)) {
+        hg_time_t deadline, now;
+
+        hg_time_get_current_ms(&deadline);
+        deadline = hg_time_add(deadline, hg_time_from_ms(5000)); /* 5s timeout */
+
+        do {
+            (void) ucp_worker_progress(na_ucx_class->ucp_worker);
+            (void) na_ucx_addr_close_list_progress(na_ucx_class);
+            hg_time_get_current_ms(&now);
+        } while (!LIST_EMPTY(&na_ucx_class->addr_close_list.list) &&
+                 hg_time_less(now, deadline));
+
+        NA_CHECK_SUBSYS_WARNING(cls,
+            !LIST_EMPTY(&na_ucx_class->addr_close_list.list),
+            "Timed out waiting for EP close to complete");
+    }
 
     /* Iterate over remaining addresses and free them */
     hg_hash_table_iterate(na_ucx_class->addr_map.key_map, &addr_table_iter);
