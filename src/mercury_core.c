@@ -4433,30 +4433,36 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
 
     if (callback_info->ret == NA_SUCCESS) {
         /* Nothing */
-    } else if (callback_info->ret == NA_CANCELED) {
-        HG_CHECK_SUBSYS_WARNING(rpc,
-            hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED,
-            "Operation was completed");
-        HG_LOG_SUBSYS_DEBUG(
-            rpc, "NA_CANCELED event on handle %p", (void *) hg_core_handle);
-
-        hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
-            (int32_t) HG_CANCELED);
-    } else { /* All other errors */
-        char addr_buf[HG_CORE_ADDR_MAX_SIZE];
-        size_t addr_buf_size = sizeof(addr_buf);
+    } else {
         int32_t status;
 
-        /* Mark handle as errored */
-        status = hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
+        if (callback_info->ret == NA_CANCELED) {
+            status = hg_atomic_get32(&hg_core_handle->status);
 
-        /* Keep first non-success ret status */
-        hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
-            (int32_t) callback_info->ret);
-        HG_LOG_SUBSYS_ERROR(rpc, "NA callback returned error (%s, dest=\"%s\")",
-            NA_Error_to_string(callback_info->ret),
-            hg_core_na_addr_to_string(hg_core_handle->na_class,
-                hg_core_handle->na_addr, addr_buf, &addr_buf_size));
+            HG_CHECK_SUBSYS_WARNING(
+                rpc, status & HG_CORE_OP_COMPLETED, "Operation was completed");
+            HG_LOG_SUBSYS_DEBUG(
+                rpc, "NA_CANCELED event on handle %p", (void *) hg_core_handle);
+
+            hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
+                (int32_t) HG_CANCELED);
+        } else { /* All other errors */
+            char addr_buf[HG_CORE_ADDR_MAX_SIZE];
+            size_t addr_buf_size = sizeof(addr_buf);
+
+            /* Mark handle as errored */
+            status =
+                hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
+
+            /* Keep first non-success ret status */
+            hg_atomic_cas32(&hg_core_handle->ret_status, (int32_t) HG_SUCCESS,
+                (int32_t) callback_info->ret);
+            HG_LOG_SUBSYS_ERROR(rpc,
+                "NA callback returned error (%s, dest=\"%s\")",
+                NA_Error_to_string(callback_info->ret),
+                hg_core_na_addr_to_string(hg_core_handle->na_class,
+                    hg_core_handle->na_addr, addr_buf, &addr_buf_size));
+        }
 
         if (!(status & HG_CORE_OP_CANCELED) &&
             !(hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_NO_RESPONSE)) {
