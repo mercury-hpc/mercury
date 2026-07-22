@@ -521,11 +521,17 @@ struct na_ofi_cxi_addr {
     uint32_t nic : C_DFA_NIC_BITS;
     /* ignore other bits */
 };
-#else
+#elif FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 7))
 struct na_ofi_cxi_addr {
     uint32_t pid : C_DFA_PID_BITS_MAX;
     uint32_t nic : C_DFA_NIC_BITS;
     uint16_t vni;
+};
+#else
+struct na_ofi_cxi_addr {
+    uint64_t pid : C_DFA_PID_BITS_MAX; /* PID in lower bits */
+    uint64_t nic : 32;                 /* 32-bit NIC */
+    uint64_t vni : 16;                 /* VNI */
 };
 #endif
 
@@ -2828,6 +2834,7 @@ na_ofi_str_to_cxi(const char *str, const struct cxi_auth_key *cxi_auth_key,
     /* Make sure unused fields are set to 0 */
     memset(cxi_addr, 0, sizeof(*cxi_addr));
 
+#if FI_VERSION_LT(FI_COMPILE_VERSION, FI_VERSION(2, 7))
     rc = sscanf(str, "%*[^:]://%" SCNx32, (uint32_t *) cxi_addr);
     NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Could not convert addr string to CXI addr format");
@@ -2841,6 +2848,25 @@ na_ofi_str_to_cxi(const char *str, const struct cxi_auth_key *cxi_auth_key,
     NA_LOG_SUBSYS_DEBUG(addr,
         "CXI addr is: nic=%" PRIu32 ", pid=%" PRIu32 ", vni=%" PRIu16,
         cxi_addr->nic, cxi_addr->pid, cxi_addr->vni);
+#endif
+#else /* FI >= 2.7 */
+    {
+        uint64_t raw = 0;
+
+        rc = sscanf(str, "%*[^:]://%" SCNx64, &raw);
+        NA_CHECK_SUBSYS_ERROR(addr, rc != 1, error, ret, NA_PROTONOSUPPORT,
+            "Could not convert addr string to CXI addr format");
+
+        cxi_addr->pid = raw & ((UINT64_C(1) << C_DFA_PID_BITS_MAX) - 1);
+        cxi_addr->nic = (raw >> C_DFA_PID_BITS_MAX) & UINT64_C(0xFFFFFFFF);
+    }
+
+    if (cxi_auth_key != NULL)
+        cxi_addr->vni = cxi_auth_key->vni;
+    NA_LOG_SUBSYS_DEBUG(addr,
+        "CXI addr is: nic=0x%" PRIx32 ", pid=%" PRIu32 ", vni=%" PRIu16,
+        (uint32_t) cxi_addr->nic, (uint32_t) cxi_addr->pid,
+        (uint16_t) cxi_addr->vni);
 #endif
 
     return NA_SUCCESS;
@@ -2962,7 +2988,7 @@ na_ofi_gni_to_key(const struct na_ofi_gni_addr *addr)
 static NA_INLINE uint64_t
 na_ofi_cxi_to_key(const struct na_ofi_cxi_addr *addr)
 {
-    return (uint64_t) (*(const uint32_t *) addr);
+    return ((uint64_t) addr->nic << C_DFA_PID_BITS_MAX) | addr->pid;
 }
 
 /*---------------------------------------------------------------------------*/
