@@ -5241,8 +5241,18 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     /* Create the fi access domain */
     rc = fi_domain(
         na_ofi_fabric->fi_fabric, fi_info, &na_ofi_domain->fi_domain, NULL);
-    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, error, ret, na_ofi_errno_to_na(-rc),
-        "fi_domain() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    if (unlikely(rc != 0)) {
+        if (rc == -FI_ENOSYS && na_ofi_fabric->prov_type == NA_OFI_PROV_CXI) {
+            NA_GOTO_SUBSYS_ERROR(cls, error, ret, na_ofi_errno_to_na(-rc),
+                "fi_domain() failed with FI_ENOSYS, please ensure that the "
+                "default cxi service is enabled (\"cxi_service list -v\") or "
+                "that a valid cxi svc_id and vni are passed through auth_key "
+                "params.");
+        } else {
+            NA_GOTO_SUBSYS_ERROR(cls, error, ret, na_ofi_errno_to_na(-rc),
+                "fi_domain() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        }
+    }
 
     /* Cache max number of contexts */
     na_ofi_domain->context_max =
