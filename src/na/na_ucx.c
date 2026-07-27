@@ -3900,9 +3900,8 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
     if (*host_start == '[') {
         host_start++;
         host_end = strchr(host_start, ']');
-        NA_CHECK_SUBSYS_ERROR(addr,
-            host_end == NULL || host_end[1] != ':', error, ret,
-            NA_PROTONOSUPPORT, "Malformed address string");
+        NA_CHECK_SUBSYS_ERROR(addr, host_end == NULL || host_end[1] != ':',
+            error, ret, NA_PROTONOSUPPORT, "Malformed address string");
         serv_start = host_end + 2;
     } else {
         host_end = strrchr(host_start, ':');
@@ -4034,11 +4033,10 @@ na_ucx_addr_to_string(
     buf_size = strlen(host_string) + strlen(serv_string) +
                strlen(na_ucx_class->protocol_name) + (ipv6 ? 7 : 5);
     if (buf) {
-        rc = ipv6
-                 ? snprintf(buf, buf_size, "%s://[%s]:%s",
-                       na_ucx_class->protocol_name, host_string, serv_string)
-                 : snprintf(buf, buf_size, "%s://%s:%s",
-                       na_ucx_class->protocol_name, host_string, serv_string);
+        rc = ipv6 ? snprintf(buf, buf_size, "%s://[%s]:%s",
+                        na_ucx_class->protocol_name, host_string, serv_string)
+                  : snprintf(buf, buf_size, "%s://%s:%s",
+                        na_ucx_class->protocol_name, host_string, serv_string);
         NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > (int) buf_size, error, ret,
             NA_OVERFLOW, "snprintf() failed or name truncated, rc: %d", rc);
 
