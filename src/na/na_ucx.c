@@ -619,7 +619,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class);
  */
 static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
-    bool listen, char **net_device_p, struct sockaddr **sockaddr_p,
+    bool listen, int family, char **net_device_p, struct sockaddr **sockaddr_p,
     socklen_t *addrlen_p);
 
 /**
@@ -2690,7 +2690,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
-    bool listen, char **net_device_p, struct sockaddr **sockaddr_p,
+    bool listen, int family, char **net_device_p, struct sockaddr **sockaddr_p,
     socklen_t *addrlen_p)
 {
     char **ifa_name_p = NULL;
@@ -2747,7 +2747,7 @@ na_ucx_parse_hostname_info(const char *hostname_info, const char *subnet_info,
     if (hostname && strcmp(hostname, "0.0.0.0") != 0) {
         /* Try to get matching IP/device */
         ret = na_ip_check_interface(
-            hostname, port, AF_UNSPEC, ifa_name_p, sockaddr_p, addrlen_p);
+            hostname, port, family, ifa_name_p, sockaddr_p, addrlen_p);
         NA_CHECK_SUBSYS_NA_ERROR(cls, done, ret, "Could not check interfaces");
     } else {
         char pref_anyip[NI_MAXHOST];
@@ -3598,6 +3598,7 @@ na_ucx_initialize(
     bool no_wait = false;
     size_t unexpected_size_max = 0, expected_size_max = 0;
     ucs_thread_mode_t context_thread_mode, worker_thread_mode;
+    int family = AF_UNSPEC;
     na_return_t ret;
 #ifdef NA_UCX_HAS_ADDR_POOL
     unsigned int i;
@@ -3626,6 +3627,10 @@ na_ucx_initialize(
         context_thread_mode = UCS_THREAD_MODE_MULTI;
         worker_thread_mode = UCS_THREAD_MODE_MULTI;
     }
+    if (na_init_info->addr_format == NA_ADDR_IPV4)
+        family = AF_INET;
+    else if (na_init_info->addr_format == NA_ADDR_IPV6)
+        family = AF_INET6;
 
 #ifdef NA_UCX_HAS_LIB_QUERY
     ucp_lib_attrs.field_mask = UCP_LIB_ATTR_FIELD_MAX_THREAD_LEVEL;
@@ -3651,7 +3656,7 @@ na_ucx_initialize(
     /* Parse hostname info and get device / listener IP */
     ret = na_ucx_parse_hostname_info(na_info->host_name,
         na_init_info->ip_subnet ? na_init_info->ip_subnet : NULL, listen,
-        &net_device, &src_sockaddr, &src_addrlen);
+        family, &net_device, &src_sockaddr, &src_addrlen);
     NA_CHECK_SUBSYS_NA_ERROR(
         cls, error, ret, "na_ucx_parse_hostname_info() failed");
 
@@ -3869,10 +3874,12 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
 {
     char host_string[NI_MAXHOST];
     char serv_string[NI_MAXSERV];
+    const char *addr_string, *host_start, *host_end, *serv_start;
     struct addrinfo hints, *hostname_res = NULL;
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
     struct na_ucx_addr *na_ucx_addr = NULL;
     ucs_sock_addr_t addr_key = {.addr = NULL, .addrlen = 0};
+    size_t host_len, serv_len;
     na_return_t ret;
     int rc;
 
@@ -3886,9 +3893,31 @@ na_ucx_addr_lookup(na_class_t *na_class, const char *name, na_addr_t **addr_p)
         na_ucx_class->protocol_name);
 
     /* Retrieve address */
-    rc = sscanf(name, "%*[^:]://%[^:]:%s", host_string, serv_string);
-    NA_CHECK_SUBSYS_ERROR(addr, rc != 2, error, ret, NA_PROTONOSUPPORT,
-        "Malformed address string");
+    addr_string = strstr(name, "://");
+    NA_CHECK_SUBSYS_ERROR(addr, addr_string == NULL, error, ret,
+        NA_PROTONOSUPPORT, "Malformed address string");
+    host_start = addr_string + 3;
+    if (*host_start == '[') {
+        host_start++;
+        host_end = strchr(host_start, ']');
+        NA_CHECK_SUBSYS_ERROR(addr, host_end == NULL || host_end[1] != ':',
+            error, ret, NA_PROTONOSUPPORT, "Malformed address string");
+        serv_start = host_end + 2;
+    } else {
+        host_end = strrchr(host_start, ':');
+        NA_CHECK_SUBSYS_ERROR(addr, host_end == NULL, error, ret,
+            NA_PROTONOSUPPORT, "Malformed address string");
+        serv_start = host_end + 1;
+    }
+    host_len = (size_t) (host_end - host_start);
+    serv_len = strlen(serv_start);
+    NA_CHECK_SUBSYS_ERROR(addr,
+        host_len == 0 || host_len >= sizeof(host_string) || serv_len == 0 ||
+            serv_len >= sizeof(serv_string),
+        error, ret, NA_PROTONOSUPPORT, "Malformed address string");
+    memcpy(host_string, host_start, host_len);
+    host_string[host_len] = '\0';
+    memcpy(serv_string, serv_start, serv_len + 1);
 
     NA_LOG_SUBSYS_DEBUG(addr, "Host %s, Serv %s", host_string, serv_string);
 
@@ -3986,6 +4015,7 @@ na_ucx_addr_to_string(
     struct na_ucx_addr *na_ucx_addr = (struct na_ucx_addr *) addr;
     char host_string[NI_MAXHOST];
     char serv_string[NI_MAXSERV];
+    bool ipv6;
     size_t buf_size;
     na_return_t ret;
     int rc;
@@ -3999,11 +4029,14 @@ na_ucx_addr_to_string(
     NA_CHECK_SUBSYS_ERROR(addr, rc != 0, error, ret, NA_PROTOCOL_ERROR,
         "getnameinfo() failed (%s)", gai_strerror(rc));
 
+    ipv6 = na_ucx_addr->addr_key.addr->sa_family == AF_INET6;
     buf_size = strlen(host_string) + strlen(serv_string) +
-               strlen(na_ucx_class->protocol_name) + 5;
+               strlen(na_ucx_class->protocol_name) + (ipv6 ? 7 : 5);
     if (buf) {
-        rc = snprintf(buf, buf_size, "%s://%s:%s", na_ucx_class->protocol_name,
-            host_string, serv_string);
+        rc = ipv6 ? snprintf(buf, buf_size, "%s://[%s]:%s",
+                        na_ucx_class->protocol_name, host_string, serv_string)
+                  : snprintf(buf, buf_size, "%s://%s:%s",
+                        na_ucx_class->protocol_name, host_string, serv_string);
         NA_CHECK_SUBSYS_ERROR(addr, rc < 0 || rc > (int) buf_size, error, ret,
             NA_OVERFLOW, "snprintf() failed or name truncated, rc: %d", rc);
 
