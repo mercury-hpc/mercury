@@ -968,6 +968,8 @@ hg_perf_print_header_bw(const struct hg_test_info *hg_test_info,
         printf("# WARNING verifying data, output will be slower\n");
     if (hg_test_info->na_test_info.force_register)
         printf("# WARNING forcing registration on every iteration\n");
+    if (hg_test_info->bulk_bind)
+        printf("# WARNING binding bulk handles\n");
     if (!info->barrier && comm_size > 1) {
         const char *bw_rank_label = (hg_test_info->na_test_info.mbps)
                                         ? "\"BW/rank (MB/s)\""
@@ -1474,15 +1476,18 @@ hg_perf_bulk_common(hg_handle_t handle, hg_bulk_op_t op)
     struct hg_perf_bulk_info bulk_info;
     hg_bulk_t remote_bulk;
     hg_return_t ret;
+    bool bulk_bind = false;
     size_t i;
 
     /* Get input struct */
     ret = HG_Get_input(handle, &bulk_info);
     HG_TEST_CHECK_HG_ERROR(
         error, ret, "HG_Get_input() failed (%s)", HG_Error_to_string(ret));
-    remote_bulk = bulk_info.bulk != HG_BULK_NULL
-                      ? bulk_info.bulk
-                      : info->remote_bulk_handles[bulk_info.handle_id];
+    if (bulk_info.bulk != HG_BULK_NULL) {
+        remote_bulk = bulk_info.bulk;
+        bulk_bind = HG_Bulk_get_addr(remote_bulk) != HG_ADDR_NULL;
+    } else
+        remote_bulk = info->remote_bulk_handles[bulk_info.handle_id];
 
     /* Initialize request */
     *request = (struct hg_perf_request) {.complete_count = 0,
@@ -1497,13 +1502,24 @@ hg_perf_bulk_common(hg_handle_t handle, hg_bulk_op_t op)
     }
 
     /* Post bulk push */
-    for (i = 0; i < info->bulk_count; i++) {
-        ret = HG_Bulk_transfer(info->context, hg_perf_bulk_transfer_cb, handle,
-            op, hg_info->addr, remote_bulk, i * info->buf_size_max,
-            info->local_bulk_handles[bulk_info.handle_id],
-            i * info->buf_size_max, bulk_info.size, HG_OP_ID_IGNORE);
-        HG_TEST_CHECK_HG_ERROR(error_free, ret,
-            "HG_Bulk_transfer() failed (%s)", HG_Error_to_string(ret));
+    if (bulk_bind) {
+        for (i = 0; i < info->bulk_count; i++) {
+            ret = HG_Bulk_bind_transfer(info->context, hg_perf_bulk_transfer_cb,
+                handle, op, remote_bulk, i * info->buf_size_max,
+                info->local_bulk_handles[bulk_info.handle_id],
+                i * info->buf_size_max, bulk_info.size, HG_OP_ID_IGNORE);
+            HG_TEST_CHECK_HG_ERROR(error_free, ret,
+                "HG_Bulk_bind_transfer() failed (%s)", HG_Error_to_string(ret));
+        }
+    } else {
+        for (i = 0; i < info->bulk_count; i++) {
+            ret = HG_Bulk_transfer(info->context, hg_perf_bulk_transfer_cb,
+                handle, op, hg_info->addr, remote_bulk, i * info->buf_size_max,
+                info->local_bulk_handles[bulk_info.handle_id],
+                i * info->buf_size_max, bulk_info.size, HG_OP_ID_IGNORE);
+            HG_TEST_CHECK_HG_ERROR(error_free, ret,
+                "HG_Bulk_transfer() failed (%s)", HG_Error_to_string(ret));
+        }
     }
 
     (void) HG_Free_input(handle, &bulk_info);
