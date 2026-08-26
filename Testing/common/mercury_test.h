@@ -28,6 +28,7 @@ struct hg_test_info {
     bool auto_sm;                     /* Use shared-memory */
     bool bidirectional;               /* Bidirectional tests */
     bool barrier;                     /* Use barriers for perf measurements */
+    bool bulk_bind; /* Bind bulk handles (combine with force register) */
 };
 
 /*****************/

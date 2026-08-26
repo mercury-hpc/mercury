@@ -66,6 +66,12 @@ hg_perf_run(const struct hg_test_info *hg_test_info,
                     &info->local_bulk_handles[j]);
                 HG_TEST_CHECK_HG_ERROR(error, ret,
                     "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
+                if (hg_test_info->bulk_bind) {
+                    ret = HG_Bulk_bind(
+                        info->local_bulk_handles[j], info->context);
+                    HG_TEST_CHECK_HG_ERROR(error, ret,
+                        "HG_Bulk_bind() failed (%s)", HG_Error_to_string(ret));
+                }
             }
             if (i >= skip) {
                 hg_time_get_current(&t4);

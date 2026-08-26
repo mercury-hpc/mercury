@@ -69,6 +69,7 @@ hg_test_usage(const char *execname)
     printf("    -B, --barrier       Use barriers for perf measurements\n");
     printf("    -u, --mrecv-ops     Number of multi-recv ops (server only)\n");
     printf("    -i, --post-init     Number of handles posted (server only)\n");
+    printf("    -D, --bulk-bind     Bind bulk handles (force register only)\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -110,6 +111,9 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
             case 'i': /* request_post_init */
                 hg_test_info->request_post_init =
                     (unsigned int) atoi(na_test_opt_arg_g);
+                break;
+            case 'D': /* bulk_bind */
+                hg_test_info->bulk_bind = true;
                 break;
             default:
                 break;
