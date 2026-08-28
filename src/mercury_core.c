@@ -581,6 +581,12 @@ static HG_INLINE int
 hg_core_map_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2);
 
 /**
+ * Decrement reference count on RPC info and free it when it reaches zero.
+ */
+static void
+hg_core_rpc_info_decref(struct hg_core_rpc_info *hg_core_rpc_info);
+
+/**
  * Free value in map.
  */
 static void
@@ -591,6 +597,18 @@ hg_core_map_value_free(hg_hash_table_value_t value);
  */
 static HG_INLINE struct hg_core_rpc_info *
 hg_core_map_lookup(struct hg_core_map *hg_core_map, hg_id_t *id);
+
+/**
+ * Lookup entry for RPC ID and take a reference on it under the map lock.
+ */
+static HG_INLINE struct hg_core_rpc_info *
+hg_core_map_lookup_ref(struct hg_core_map *hg_core_map, hg_id_t *id);
+
+/**
+ * Lookup user data for RPC ID and read it under the map lock.
+ */
+static HG_INLINE void *
+hg_core_map_lookup_data(struct hg_core_map *hg_core_map, hg_id_t *id);
 
 /**
  * Insert new entry for RPC ID.
@@ -734,6 +752,20 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
  */
 static void
 hg_core_free_na(struct hg_core_private_handle *hg_core_handle);
+
+/**
+ * Cache RPC info on a handle, taking ownership of the passed reference and
+ * releasing any reference previously cached on the handle.
+ */
+static HG_INLINE void
+hg_core_handle_set_rpc_info(struct hg_core_private_handle *hg_core_handle,
+    struct hg_core_rpc_info *hg_core_rpc_info);
+
+/**
+ * Release the RPC info reference cached on a handle, if any.
+ */
+static HG_INLINE void
+hg_core_handle_release_rpc_info(struct hg_core_private_handle *hg_core_handle);
 
 /**
  * Reset handle.
@@ -2659,14 +2691,24 @@ hg_core_map_equal(hg_hash_table_key_t key1, hg_hash_table_key_t key2)
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_core_map_value_free(hg_hash_table_value_t value)
+hg_core_rpc_info_decref(struct hg_core_rpc_info *hg_core_rpc_info)
 {
-    struct hg_core_rpc_info *hg_core_rpc_info =
-        (struct hg_core_rpc_info *) value;
+    /* Keep the record alive while any handle or lookup still references it */
+    if (hg_atomic_decr32(&hg_core_rpc_info->ref_count))
+        return;
 
     if (hg_core_rpc_info->free_callback)
         hg_core_rpc_info->free_callback(hg_core_rpc_info->data);
     free(hg_core_rpc_info);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_core_map_value_free(hg_hash_table_value_t value)
+{
+    /* Drop the map's reference. The record is freed only once no handle or
+     * lookup still points to it. */
+    hg_core_rpc_info_decref((struct hg_core_rpc_info *) value);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2685,6 +2727,45 @@ hg_core_map_lookup(struct hg_core_map *hg_core_map, hg_id_t *id)
 }
 
 /*---------------------------------------------------------------------------*/
+static HG_INLINE struct hg_core_rpc_info *
+hg_core_map_lookup_ref(struct hg_core_map *hg_core_map, hg_id_t *id)
+{
+    hg_hash_table_value_t value = NULL;
+
+    /* Take a reference under the read lock. hg_core_map_remove() drops the
+     * map's reference under the write lock, so the two cannot overlap: the
+     * caller either grabs a reference before the record is removed, or sees the
+     * entry already gone and gets NULL. */
+    hg_thread_rwlock_rdlock(&hg_core_map->lock);
+    value = hg_hash_table_lookup(hg_core_map->map, (hg_hash_table_key_t) id);
+    if (value != HG_HASH_TABLE_NULL)
+        hg_atomic_incr32(&((struct hg_core_rpc_info *) value)->ref_count);
+    hg_thread_rwlock_release_rdlock(&hg_core_map->lock);
+
+    return (value == HG_HASH_TABLE_NULL) ? NULL
+                                         : (struct hg_core_rpc_info *) value;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+hg_core_map_lookup_data(struct hg_core_map *hg_core_map, hg_id_t *id)
+{
+    hg_hash_table_value_t value = NULL;
+    void *data;
+
+    /* Read the user data under the read lock so the record cannot be freed
+     * between the lookup and the read. */
+    hg_thread_rwlock_rdlock(&hg_core_map->lock);
+    value = hg_hash_table_lookup(hg_core_map->map, (hg_hash_table_key_t) id);
+    data = (value == HG_HASH_TABLE_NULL)
+               ? NULL
+               : ((struct hg_core_rpc_info *) value)->data;
+    hg_thread_rwlock_release_rdlock(&hg_core_map->lock);
+
+    return data;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_map_insert(struct hg_core_map *hg_core_map, hg_id_t *id,
     struct hg_core_rpc_info **hg_core_rpc_info_p)
@@ -2699,6 +2780,7 @@ hg_core_map_insert(struct hg_core_map *hg_core_map, hg_id_t *id,
     HG_CHECK_SUBSYS_ERROR(cls, hg_core_rpc_info == NULL, error, ret, HG_NOMEM,
         "Could not allocate HG core RPC info");
     hg_core_rpc_info->id = *id;
+    hg_atomic_init32(&hg_core_rpc_info->ref_count, 1); /* Map reference */
 
     hg_thread_rwlock_wrlock(&hg_core_map->lock);
     rc = hg_hash_table_insert(hg_core_map->map,
@@ -3563,6 +3645,10 @@ error:
 static void
 hg_core_free(struct hg_core_private_handle *hg_core_handle)
 {
+    /* Release cached RPC info reference (a handle can reach hg_core_free()
+     * without passing through hg_core_reset_post()) */
+    hg_core_handle_release_rpc_info(hg_core_handle);
+
     /* Remove reference to HG addr */
     hg_core_addr_free(
         (struct hg_core_private_addr *) hg_core_handle->core_handle.info.addr);
@@ -3724,6 +3810,28 @@ hg_core_free_na(struct hg_core_private_handle *hg_core_handle)
 }
 
 /*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_core_handle_set_rpc_info(struct hg_core_private_handle *hg_core_handle,
+    struct hg_core_rpc_info *hg_core_rpc_info)
+{
+    /* Release any reference previously cached on the handle (handle reused for
+     * a different RPC ID) and take ownership of the passed reference. */
+    if (hg_core_handle->core_handle.rpc_info != NULL)
+        hg_core_rpc_info_decref(hg_core_handle->core_handle.rpc_info);
+    hg_core_handle->core_handle.rpc_info = hg_core_rpc_info;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_core_handle_release_rpc_info(struct hg_core_private_handle *hg_core_handle)
+{
+    if (hg_core_handle->core_handle.rpc_info != NULL) {
+        hg_core_rpc_info_decref(hg_core_handle->core_handle.rpc_info);
+        hg_core_handle->core_handle.rpc_info = NULL;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 static void
 hg_core_reset(struct hg_core_private_handle *hg_core_handle)
 {
@@ -3782,7 +3890,7 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle)
 
     /* Also reset additional handle parameters */
     hg_atomic_set32(&hg_core_handle->ref_count, 1);
-    hg_core_handle->core_handle.rpc_info = NULL;
+    hg_core_handle_release_rpc_info(hg_core_handle);
     HG_LOG_SUBSYS_DEBUG(rpc_ref, "Handle (%p) ref_count set to %" PRId32,
         (void *) hg_core_handle, 1);
 
@@ -3874,15 +3982,17 @@ hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
     if (id && info->id != id) {
         struct hg_core_rpc_info *hg_core_rpc_info;
 
-        /* Retrieve ID function from function map */
-        hg_core_rpc_info = hg_core_map_lookup(&hg_core_class->rpc_map, &id);
+        /* Retrieve ID function from function map, taking a reference so the
+         * record cannot be freed by a concurrent HG_Core_deregister() while
+         * the handle caches it */
+        hg_core_rpc_info = hg_core_map_lookup_ref(&hg_core_class->rpc_map, &id);
         HG_CHECK_SUBSYS_ERROR(rpc, hg_core_rpc_info == NULL, error, ret,
             HG_NOENTRY, "Could not find RPC ID (%" PRIu64 ") in RPC map", id);
 
         info->id = id;
 
-        /* Cache RPC info */
-        hg_core_handle->core_handle.rpc_info = hg_core_rpc_info;
+        /* Cache RPC info (takes ownership of the reference) */
+        hg_core_handle_set_rpc_info(hg_core_handle, hg_core_rpc_info);
         if (hg_core_rpc_info->no_response)
             hg_atomic_or32(&hg_core_handle->flags, HG_CORE_NO_RESPONSE);
         else
@@ -5191,10 +5301,12 @@ hg_core_process(struct hg_core_private_handle *hg_core_handle)
     if (hg_atomic_get32(&hg_core_handle->flags) & HG_CORE_SELF_FORWARD)
         hg_core_rpc_info = hg_core_handle->core_handle.rpc_info;
     else {
-        /* Retrieve exe function from function map */
-        hg_core_rpc_info =
-            hg_core_map_lookup(&HG_CORE_HANDLE_CLASS(hg_core_handle)->rpc_map,
-                &hg_core_handle->core_handle.info.id);
+        /* Retrieve exe function from function map, taking a reference so the
+         * record stays alive if the RPC ID is deregistered while this received
+         * request is still being processed */
+        hg_core_rpc_info = hg_core_map_lookup_ref(
+            &HG_CORE_HANDLE_CLASS(hg_core_handle)->rpc_map,
+            &hg_core_handle->core_handle.info.id);
         if (hg_core_rpc_info == NULL) {
             HG_LOG_SUBSYS_WARNING(rpc,
                 "Could not find RPC ID (%" PRIu64 ") in RPC map",
@@ -5206,8 +5318,8 @@ hg_core_process(struct hg_core_private_handle *hg_core_handle)
         //     "Could not find RPC ID (%" PRIu64 ") in RPC map",
         //     hg_core_handle->core_handle.info.id);
 
-        /* Cache RPC info */
-        hg_core_handle->core_handle.rpc_info = hg_core_rpc_info;
+        /* Cache RPC info (takes ownership of the reference) */
+        hg_core_handle_set_rpc_info(hg_core_handle, hg_core_rpc_info);
     }
     HG_CHECK_SUBSYS_ERROR(rpc, hg_core_rpc_info->rpc_cb == NULL, error, ret,
         HG_INVALID_ARG, "No RPC callback registered");
@@ -6502,16 +6614,14 @@ HG_Core_registered_data(hg_core_class_t *hg_core_class, hg_id_t id)
 {
     struct hg_core_private_class *private_class =
         (struct hg_core_private_class *) hg_core_class;
-    struct hg_core_rpc_info *hg_core_rpc_info = NULL;
 
     HG_CHECK_SUBSYS_ERROR_NORET(
         cls, hg_core_class == NULL, error, "NULL HG core class");
 
-    hg_core_rpc_info = hg_core_map_lookup(&private_class->rpc_map, &id);
-    HG_CHECK_SUBSYS_ERROR_NORET(cls, hg_core_rpc_info == NULL, error,
-        "Could not find RPC ID (%" PRIu64 ") in RPC map", id);
-
-    return hg_core_rpc_info->data;
+    /* Read the data under the map lock. A concurrent HG_Core_deregister()
+     * cannot free the record between the lookup and the read, so a removed ID
+     * returns NULL instead of a dangling pointer. */
+    return hg_core_map_lookup_data(&private_class->rpc_map, &id);
 
 error:
     return NULL;

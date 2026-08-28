@@ -12,6 +12,8 @@
 #include "mercury_core_header.h"
 #include "mercury_core_types.h"
 
+#include "mercury_atomic.h"
+
 #include "na.h"
 
 /*************************************/
@@ -1117,6 +1119,7 @@ struct hg_core_rpc_info {
     void *data;                    /* User data */
     void (*free_callback)(void *); /* User data free callback */
     hg_id_t id;                    /* RPC ID */
+    hg_atomic_int32_t ref_count;   /* Reference count */
     uint8_t no_response;           /* RPC response not expected */
 };
 
