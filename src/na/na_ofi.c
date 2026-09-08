@@ -47,6 +47,7 @@
 #    include <Windows.h>
 #else
 #    include <netdb.h>
+#    include <sys/mman.h>
 #    include <sys/socket.h>
 #    include <sys/uio.h> /* for struct iovec */
 #    include <unistd.h>
@@ -6113,7 +6114,7 @@ na_ofi_mem_alloc(struct na_ofi_class *na_ofi_class, size_t size,
     }
 
     /* Allocate backend buffer */
-    if (mem_ptr != NULL) {
+    if (mem_ptr != NULL && mem_ptr != MAP_FAILED) {
         NA_LOG_SUBSYS_DEBUG(mem,
             "Allocated %zu bytes using hugepages at address %p", alloc_size,
             mem_ptr);
