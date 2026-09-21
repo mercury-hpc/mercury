@@ -3141,6 +3141,8 @@ na_ofi_raw_addr_deserialize(int addr_format, union na_ofi_raw_addr *addr,
             size_t buf_size_left = (size_t) buf_size;
 
             memset(&addr->sin6, 0, sizeof(addr->sin6));
+            /* Address family is implicit in addr_format and not serialized. */
+            addr->sin6.sin6_family = AF_INET6;
             NA_DECODE(error, ret, buf_ptr, buf_size_left, &addr->sin6.sin6_addr,
                 struct in6_addr);
             NA_DECODE(error, ret, buf_ptr, buf_size_left, &addr->sin6.sin6_port,
