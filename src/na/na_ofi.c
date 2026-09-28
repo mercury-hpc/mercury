@@ -756,12 +756,18 @@ enum {
     /* fid_nic control operation to refresh NIC attributes. */
     FI_OPT_CXI_NIC_REFRESH_ATTR,
 
-    FI_OPT_CXI_SET_MR_MATCH_EVENTS, /* bool */
-    FI_OPT_CXI_GET_MR_MATCH_EVENTS, /* bool */
-    FI_OPT_CXI_SET_OPTIMIZED_MRS,   /* bool */
-    FI_OPT_CXI_GET_OPTIMIZED_MRS,   /* bool */
-    FI_OPT_CXI_SET_PROV_KEY_CACHE,  /* bool */
-    FI_OPT_CXI_GET_PROV_KEY_CACHE,  /* bool */
+    FI_OPT_CXI_SET_MR_MATCH_EVENTS,           /* bool */
+    FI_OPT_CXI_GET_MR_MATCH_EVENTS,           /* bool */
+    FI_OPT_CXI_SET_OPTIMIZED_MRS,             /* bool */
+    FI_OPT_CXI_GET_OPTIMIZED_MRS,             /* bool */
+    FI_OPT_CXI_SET_PROV_KEY_CACHE,            /* bool */
+    FI_OPT_CXI_GET_PROV_KEY_CACHE,            /* bool */
+    FI_OPT_CXI_SET_RNR_MAX_RETRY_TIME,        /* uint64_t */
+    FI_OPT_CXI_SET_RX_MATCH_MODE_OVERRIDE,    /* char string */
+    FI_OPT_CXI_GET_RX_MATCH_MODE_OVERRIDE,    /* char string */
+    FI_OPT_CXI_SET_REQ_BUF_SIZE_OVERRIDE,     /* size_t */
+    FI_OPT_CXI_GET_REQ_BUF_SIZE_OVERRIDE,     /* size_t */
+    FI_OPT_CXI_GET_RNR_APPEND_RETRY_ATTEMPTS, /* uint64_t */
 };
 
 /* CXI Authorization Key */
@@ -1210,8 +1216,8 @@ na_ofi_fabric_close(struct na_ofi_fabric *na_ofi_fabric);
  * Set optional domain ops.
  */
 static na_return_t
-na_ofi_set_domain_ops(
-    enum na_ofi_prov_type prov_type, struct na_ofi_domain *na_ofi_domain);
+na_ofi_set_domain_ops(enum na_ofi_prov_type prov_type,
+    struct na_ofi_domain *na_ofi_domain, const struct fi_info *fi_info);
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
 /**
@@ -1240,7 +1246,8 @@ na_ofi_gni_set_domain_ops(struct na_ofi_domain *na_ofi_domain);
  * Set CXI specific domain ops.
  */
 static void
-na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain);
+na_ofi_cxi_set_domain_ops(
+    struct na_ofi_domain *na_ofi_domain, const struct fi_info *fi_info);
 #endif
 
 /**
@@ -4616,8 +4623,8 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_set_domain_ops(
-    enum na_ofi_prov_type prov_type, struct na_ofi_domain *na_ofi_domain)
+na_ofi_set_domain_ops(enum na_ofi_prov_type prov_type,
+    struct na_ofi_domain *na_ofi_domain, const struct fi_info *fi_info)
 {
     switch (prov_type) {
         case NA_OFI_PROV_GNI:
@@ -4628,7 +4635,7 @@ na_ofi_set_domain_ops(
 #endif
         case NA_OFI_PROV_CXI:
 #if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
-            na_ofi_cxi_set_domain_ops(na_ofi_domain);
+            na_ofi_cxi_set_domain_ops(na_ofi_domain, fi_info);
 #endif
             break;
         case NA_OFI_PROV_SHM:
@@ -4736,22 +4743,12 @@ error:
 /*---------------------------------------------------------------------------*/
 #if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(1, 20))
 static void
-na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain)
+na_ofi_cxi_set_domain_ops(
+    struct na_ofi_domain *na_ofi_domain, const struct fi_info *fi_info)
 {
+    char *env_str;
     bool val = false;
     int rc;
-
-    /* PROV_KEY_CACHE: The provider key cache is a performance optimization for
-     * FI_MR_PROV_KEY. The performance gain is fi_mr_close() becomes a no-op but
-     * at the cost of the corresponding MR being left exposed to the network.
-     * This is intended to be used for applications where fi_mr_close() is on
-     * the critical path. For storage use-cases, leaving MRs exposed is an
-     * issue. This could result in MR operations unexpectedly completing and
-     * reading/writing to unknown memory. */
-    rc = fi_control(
-        &na_ofi_domain->fi_domain->fid, FI_OPT_CXI_SET_PROV_KEY_CACHE, &val);
-    NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
-        "could not set CXI PROV_KEY_CACHE property (%s)", fi_strerror(-rc));
 
     /* OPTIMIZED_MRS: Optimized MRs offer a higher operation rate over
      * standard/unoptimized MRs. Because optimized MR allocation/deallocation is
@@ -4767,6 +4764,44 @@ na_ofi_cxi_set_domain_ops(struct na_ofi_domain *na_ofi_domain)
         &na_ofi_domain->fi_domain->fid, FI_OPT_CXI_SET_OPTIMIZED_MRS, &val);
     NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
         "could not set CXI OPTIMIZED_MRS property (%s)", fi_strerror(-rc));
+
+#    if FI_VERSION_GE(FI_COMPILE_VERSION, FI_VERSION(2, 4))
+    /* Set RX match mode to hybrid if RNR is disabled. When RNR is enabled,
+     * RX matching is done in hardware and retried if queues are full. */
+    if (FI_VERSION_GE(fi_version(), FI_VERSION(2, 4)) &&
+        fi_info->ep_attr->protocol != (uint32_t) FI_PROTO_CXI_RNR) {
+        char *match_mode = "hybrid";
+        rc = fi_control(&na_ofi_domain->fi_domain->fid,
+            FI_OPT_CXI_SET_RX_MATCH_MODE_OVERRIDE, match_mode);
+        NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
+            "could not set CXI RX_MATCH_MODE_OVERRIDE property to %s (%s)",
+            match_mode, fi_strerror(-rc));
+    }
+#    else
+    (void) fi_info;
+#    endif
+
+    /* Do not set additional cache properties if MR caching is disabled */
+    if ((env_str = getenv("FI_MR_CACHE_MAX_COUNT")) != NULL) {
+        if (strtoull(env_str, NULL, 10) == 0)
+            return; /* MR caching disabled */
+    }
+    if ((env_str = getenv("FI_MR_CACHE_MONITOR")) != NULL) {
+        if (strcmp(env_str, "disabled") == 0)
+            return; /* MR caching disabled */
+    }
+
+    /* PROV_KEY_CACHE: The provider key cache is a performance optimization for
+     * FI_MR_PROV_KEY. The performance gain is fi_mr_close() becomes a no-op but
+     * at the cost of the corresponding MR being left exposed to the network.
+     * This is intended to be used for applications where fi_mr_close() is on
+     * the critical path. For storage use-cases, leaving MRs exposed is an
+     * issue. This could result in MR operations unexpectedly completing and
+     * reading/writing to unknown memory. */
+    rc = fi_control(
+        &na_ofi_domain->fi_domain->fid, FI_OPT_CXI_SET_PROV_KEY_CACHE, &val);
+    NA_CHECK_SUBSYS_WARNING(cls, rc != 0,
+        "could not set CXI PROV_KEY_CACHE property (%s)", fi_strerror(-rc));
 
     /* MR_MATCH_EVENTS: While standard/unoptimized MRs do not have a call into
      * the kernel for MR allocation, there is still a call into the kernel for
@@ -5283,7 +5318,8 @@ na_ofi_domain_open(const struct na_ofi_fabric *na_ofi_fabric,
     if (env != NULL)
         skip_domain_ops = (atoi(env) != 0);
     if (!skip_domain_ops) {
-        ret = na_ofi_set_domain_ops(na_ofi_fabric->prov_type, na_ofi_domain);
+        ret = na_ofi_set_domain_ops(
+            na_ofi_fabric->prov_type, na_ofi_domain, fi_info);
         NA_CHECK_SUBSYS_NA_ERROR(cls, error, ret, "Could not set domain ops");
     }
 
