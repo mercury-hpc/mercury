@@ -65,7 +65,7 @@
 
 /* Reserved tags */
 #define NA_UCX_AM_MSG_ID (0)
-#define NA_UCX_TAG_MASK  ((uint64_t) 0x00000000FFFFFFFF)
+#define NA_UCX_TAG_MASK  ((ucp_tag_t) UINT64_MAX)
 
 /* Op ID status bits */
 #define NA_UCX_OP_COMPLETED (1 << 0)
