@@ -6,7 +6,8 @@ MPI_VERSION=5.0.2
 #OFI_PR=
 OFI_VERSION=2.7.0
 # PSM_VERSION=updates
-UCX_VERSION=1.22.0
+UCX_VERSION=1.23.0
+UCX_RC_VERSION=rc2
 
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
@@ -64,9 +65,14 @@ if [[ ${RUNNER_OS} == 'Linux' ]]; then
 
   if [[ ${BUILD_UCX} != '0' ]]; then
     # UCX
-    cd $HOME && wget --secure-protocol=TLSv1_2 https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}/ucx-${UCX_VERSION}.tar.gz
+    if [[ -z ${UCX_RC_VERSION} ]]; then
+      cd $HOME && wget --secure-protocol=TLSv1_2 https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}/ucx-${UCX_VERSION}.tar.gz
+    else
+      cd $HOME && wget --secure-protocol=TLSv1_2 https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}-${UCX_RC_VERSION}/ucx-${UCX_VERSION}.tar.gz
+    fi
     tar -xzf ucx-${UCX_VERSION}.tar.gz;
     cd ucx-${UCX_VERSION};
+    patch -p1 < ${GITHUB_WORKSPACE}/Testing/script/ucx_werror.patch
     ./configure --prefix=$PREFIX --enable-profiling --enable-frame-pointer --enable-stats --enable-memtrack --enable-fault-injection --enable-mt --disable-numa --without-java --without-go --disable-silent-rules ${UCX_EXTRA_FLAGS} CC="${CC}" CXX="${CXX}" CFLAGS="${UCX_CFLAGS}" && make -j2 -s && make install;
   fi
 
