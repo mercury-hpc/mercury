@@ -56,6 +56,7 @@
 
 /* Addr status bits */
 #define NA_UCX_ADDR_RESOLVED (1 << 0)
+#define NA_UCX_ADDR_CONN_REF (1 << 1) /* Connection reference is held */
 
 /* Timeout (ms) until we give up on connection */
 #define NA_UCX_ADDR_CONN_TIMEOUT (120 * 1000)
@@ -672,6 +673,13 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
 static na_return_t
 na_ucx_addr_map_remove(
     struct na_ucx_map *na_ucx_map, struct na_ucx_addr *na_ucx_addr);
+
+/**
+ * Remove stale incoming addr using addr_key from map and close its EP.
+ * Return false if the entry cannot be replaced.
+ */
+static bool
+na_ucx_addr_map_evict(struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key);
 
 /**
  * Hash packed worker address key.
@@ -1812,7 +1820,8 @@ na_ucp_listener_conn_cb(ucp_conn_request_h conn_request, void *arg)
         .addr = (const struct sockaddr *) &conn_request_attrs.client_address,
         .addrlen = sizeof(conn_request_attrs.client_address)};
 
-    if (na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) == NULL) {
+    if (na_ucx_addr_map_evict(&na_ucx_class->addr_map, &addr_key) &&
+        na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) == NULL) {
         /* Insert new entry and create new address */
         na_return_t ret =
             na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
@@ -2096,11 +2105,12 @@ na_ucp_ep_error_cb(void *arg, ucp_ep_h NA_DEBUG_LOG_USED ep,
         "ep_err_handler(ep=%p) returned (%s) for address (%p)", (void *) ep,
         ucs_status_string(status), (void *) na_ucx_addr);
 
-    /* Mark addr as no longer resolved to force reconnection */
-    hg_atomic_and32(&na_ucx_addr->status, ~NA_UCX_ADDR_RESOLVED);
-
-    /* Will schedule removal of address */
-    na_ucx_addr_ref_decr(na_ucx_addr);
+    /* Mark addr as no longer resolved to force reconnection, and drop the
+     * connection reference unless a stale entry eviction already did */
+    if (hg_atomic_and32(&na_ucx_addr->status,
+            ~(NA_UCX_ADDR_RESOLVED | NA_UCX_ADDR_CONN_REF)) &
+        NA_UCX_ADDR_CONN_REF)
+        na_ucx_addr_ref_decr(na_ucx_addr); /* Will schedule removal */
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2964,6 +2974,7 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
 {
     void *request = NULL;
     na_return_t ret = NA_SUCCESS;
+    bool took_ref = false;
     int rc;
 
     hg_thread_rwlock_wrlock(&na_ucx_map->lock);
@@ -2996,6 +3007,13 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
             "Could not close UCP endpoint");
     }
 
+    /* Retake refcount taken away from previous disconnect, before the new EP
+     * can report an error */
+    took_ref = !(hg_atomic_or32(&na_ucx_addr->status, NA_UCX_ADDR_CONN_REF) &
+                 NA_UCX_ADDR_CONN_REF);
+    if (took_ref)
+        na_ucx_addr_ref_incr(na_ucx_addr);
+
     /* Create new endpoint */
     ret = na_ucp_connect(na_ucx_class->ucp_worker,
         na_ucx_class->self_addr->addr_key.addr, na_ucx_addr->addr_key.addr,
@@ -3014,12 +3032,16 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
     NA_CHECK_SUBSYS_ERROR(
         addr, rc == 0, close, ret, NA_NOMEM, "hg_hash_table_insert() failed");
 
-    /* Retake refcount taken away from previous disconnect */
-    na_ucx_addr_ref_incr(na_ucx_addr);
-
     hg_atomic_or32(&na_ucx_addr->status, NA_UCX_ADDR_RESOLVED);
 
 release:
+    /* No connection, give back the reference unless an EP error already did.
+     * The caller still holds a reference, so this is never the last one. */
+    if (ret != NA_SUCCESS && took_ref &&
+        (hg_atomic_and32(&na_ucx_addr->status, ~NA_UCX_ADDR_CONN_REF) &
+            NA_UCX_ADDR_CONN_REF))
+        na_ucx_addr_ref_decr(na_ucx_addr);
+
     if (!(na_ucx_class->thread_mode & NA_THREAD_MODE_SINGLE))
         hg_atomic_set32(&na_ucx_addr->ep_refcount, 0);
 
@@ -3068,6 +3090,98 @@ unlock:
     hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static bool
+na_ucx_addr_map_evict(struct na_ucx_map *na_ucx_map, ucs_sock_addr_t *addr_key)
+{
+    struct na_ucx_addr *na_ucx_addr;
+    ucp_ep_h ucp_ep = NULL;
+    void *request = NULL;
+    bool evicted = false, conn_ref = false, ep_locked = false;
+    char host_string[NI_MAXHOST];
+    char serv_string[NI_MAXSERV];
+
+    /* Avoid taking the write lock for new addresses */
+    if (na_ucx_addr_map_lookup(na_ucx_map, addr_key) == NULL)
+        return true;
+
+    hg_thread_rwlock_wrlock(&na_ucx_map->lock);
+
+    na_ucx_addr = (struct na_ucx_addr *) hg_hash_table_lookup(
+        na_ucx_map->key_map, (hg_hash_table_key_t) addr_key);
+    if (na_ucx_addr == HG_HASH_TABLE_NULL) {
+        hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
+        return true; /* Already gone */
+    }
+
+    /* Only incoming connections are replaced */
+    if (na_ucx_addr->connect || na_ucx_addr->ucp_ep == NULL)
+        goto unlock;
+
+    /* Do not close the EP while another thread is posting on it. The
+     * connection request is deferred and retried instead */
+    ep_locked =
+        !(na_ucx_addr->na_ucx_class->thread_mode & NA_THREAD_MODE_SINGLE);
+    if (ep_locked && !na_ucx_addr_ep_ref_try_update(&na_ucx_addr->ep_refcount))
+        goto unlock;
+
+    /* Keep addr alive until its EP is closed below. If it is already being
+     * released, its entry goes away soon and the request is retried. */
+    for (;;) {
+        int32_t refcount = hg_atomic_get32(&na_ucx_addr->refcount);
+
+        if (refcount <= 0) {
+            if (ep_locked)
+                hg_atomic_set32(&na_ucx_addr->ep_refcount, 0);
+            goto unlock;
+        }
+        if (hg_atomic_cas32(&na_ucx_addr->refcount, refcount, refcount + 1))
+            break;
+    }
+
+    (void) hg_hash_table_remove(
+        na_ucx_map->key_map, (hg_hash_table_key_t) &na_ucx_addr->addr_key);
+    (void) hg_hash_table_remove(
+        na_ucx_map->ep_map, (hg_hash_table_key_t) na_ucx_addr->ucp_ep);
+
+    /* Error callback is not called after a forced close, so drop the
+     * connection reference here unless the error callback already did */
+    conn_ref = (hg_atomic_and32(&na_ucx_addr->status,
+                    ~(NA_UCX_ADDR_RESOLVED | NA_UCX_ADDR_CONN_REF)) &
+                   NA_UCX_ADDR_CONN_REF) != 0;
+
+    /* Senders now see a NULL EP */
+    ucp_ep = na_ucx_addr->ucp_ep;
+    na_ucx_addr->ucp_ep = NULL;
+    if (ep_locked)
+        hg_atomic_set32(&na_ucx_addr->ep_refcount, 0);
+    evicted = true;
+
+unlock:
+    hg_thread_rwlock_release_wrlock(&na_ucx_map->lock);
+
+    if (!evicted)
+        return false;
+
+    /* Close without holding the map lock, UCP takes the worker lock */
+    na_ucp_ep_close(ucp_ep, true, &request);
+    if (request != NULL)
+        ucp_request_free(request);
+
+    (void) getnameinfo(addr_key->addr, addr_key->addrlen, host_string,
+        sizeof(host_string), serv_string, sizeof(serv_string),
+        NI_NUMERICHOST | NI_NUMERICSERV);
+    NA_LOG_SUBSYS_WARNING(addr, "Replacing stale entry for address (%s:%s)",
+        host_string, serv_string);
+
+    /* Last reference calls map_remove(), must not hold the lock */
+    if (conn_ref)
+        na_ucx_addr_ref_decr(na_ucx_addr);
+    na_ucx_addr_ref_decr(na_ucx_addr);
+
+    return true;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3429,8 +3543,10 @@ na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class)
                 (const struct sockaddr *) &conn_request_attrs.client_address,
             .addrlen = sizeof(conn_request_attrs.client_address)};
 
-        if (na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) ==
-            NULL) {
+        /* Replace the stale entry if it was busy when the request came in */
+        if (na_ucx_addr_map_evict(&na_ucx_class->addr_map, &addr_key) &&
+            na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) ==
+                NULL) {
             NA_LOG_SUBSYS_DEBUG(addr, "Now accepting deffered connection");
 
             /* Insert new entry and create new address */
@@ -3484,7 +3600,7 @@ na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key)
     na_ucx_addr->ucp_ep = NULL;
     hg_atomic_init32(&na_ucx_addr->ep_refcount, 0);
     hg_atomic_init32(&na_ucx_addr->refcount, 1);
-    hg_atomic_init32(&na_ucx_addr->status, 0);
+    hg_atomic_init32(&na_ucx_addr->status, NA_UCX_ADDR_CONN_REF);
     na_ucx_addr->connect = false;
     na_ucx_addr->worker_addr_cached = false;
     na_ucx_addr->worker_addr_key =
