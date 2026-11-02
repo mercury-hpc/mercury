@@ -3351,27 +3351,35 @@ na_ucx_addr_release(struct na_ucx_addr *na_ucx_addr, bool force,
 static unsigned int
 na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class)
 {
+    LIST_HEAD(, na_ucx_addr) list = LIST_HEAD_INITIALIZER(list);
+    struct na_ucx_addr *na_ucx_addr;
     unsigned int count = 0;
 
+    /* Take out the addresses whose EP close completed. Freeing the close
+     * request calls into UCP and must not be done while holding the list
+     * lock. Pending ones stay in the list. */
     hg_thread_spin_lock(&na_ucx_class->addr_close_list.lock);
-    struct na_ucx_addr *na_ucx_addr =
-        LIST_FIRST(&na_ucx_class->addr_close_list.list);
+    na_ucx_addr = LIST_FIRST(&na_ucx_class->addr_close_list.list);
     while (na_ucx_addr != NULL) {
         struct na_ucx_addr *next = LIST_NEXT(na_ucx_addr, close_list_entry);
-        ucs_status_t status =
-            ucp_request_check_status(na_ucx_addr->close_request);
-        if (status != UCS_INPROGRESS) {
-            NA_LOG_SUBSYS_DEBUG(
-                addr, "EP close for addr %p completed", (void *) na_ucx_addr);
-            ucp_request_free(na_ucx_addr->close_request);
-            na_ucx_addr->close_request = NULL;
+        if (ucp_request_check_status(na_ucx_addr->close_request) !=
+            UCS_INPROGRESS) {
             LIST_REMOVE(na_ucx_addr, close_list_entry);
-            na_ucx_addr_free_cb(na_ucx_addr);
-            count++;
+            LIST_INSERT_HEAD(&list, na_ucx_addr, close_list_entry);
         }
         na_ucx_addr = next;
     }
     hg_thread_spin_unlock(&na_ucx_class->addr_close_list.lock);
+
+    while ((na_ucx_addr = LIST_FIRST(&list)) != NULL) {
+        NA_LOG_SUBSYS_DEBUG(
+            addr, "EP close for addr %p completed", (void *) na_ucx_addr);
+        LIST_REMOVE(na_ucx_addr, close_list_entry);
+        ucp_request_free(na_ucx_addr->close_request);
+        na_ucx_addr->close_request = NULL;
+        na_ucx_addr_free_cb(na_ucx_addr);
+        count++;
+    }
 
     return count;
 }
@@ -3380,12 +3388,24 @@ na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class)
 static unsigned int
 na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class)
 {
+    LIST_HEAD(, na_ucx_conn_request) list = LIST_HEAD_INITIALIZER(list);
     struct na_ucx_conn_request *conn_request;
     unsigned int count = 0;
 
+    /* Take the requests out of the list. Accepting or rejecting them calls
+     * into UCP and must not be done while holding the list lock */
     hg_thread_spin_lock(&na_ucx_class->conn_request_list.lock);
+    while ((conn_request = LIST_FIRST(&na_ucx_class->conn_request_list.list)) !=
+           NULL) {
+        LIST_REMOVE(conn_request, entry);
+        LIST_INSERT_HEAD(&list, conn_request, entry);
+    }
+    hg_thread_spin_unlock(&na_ucx_class->conn_request_list.lock);
 
-    conn_request = LIST_FIRST(&na_ucx_class->conn_request_list.list);
+    if (LIST_EMPTY(&list))
+        return 0;
+
+    conn_request = LIST_FIRST(&list);
     while (conn_request != NULL) {
         struct na_ucx_conn_request *next = LIST_NEXT(conn_request, entry);
         ucp_conn_request_attr_t conn_request_attrs = {
@@ -3445,6 +3465,13 @@ na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class)
     }
 
 unlock:
+    /* Put back the requests that are still pending */
+    hg_thread_spin_lock(&na_ucx_class->conn_request_list.lock);
+    while ((conn_request = LIST_FIRST(&list)) != NULL) {
+        LIST_REMOVE(conn_request, entry);
+        LIST_INSERT_HEAD(
+            &na_ucx_class->conn_request_list.list, conn_request, entry);
+    }
     hg_thread_spin_unlock(&na_ucx_class->conn_request_list.lock);
 
     return count;
