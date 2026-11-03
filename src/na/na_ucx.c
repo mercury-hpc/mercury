@@ -3547,7 +3547,7 @@ na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class)
         if (na_ucx_addr_map_evict(&na_ucx_class->addr_map, &addr_key) &&
             na_ucx_addr_map_lookup(&na_ucx_class->addr_map, &addr_key) ==
                 NULL) {
-            NA_LOG_SUBSYS_DEBUG(addr, "Now accepting deffered connection");
+            NA_LOG_SUBSYS_DEBUG(addr, "Now accepting deferred connection");
 
             /* Insert new entry and create new address */
             (void) na_ucx_addr_map_insert(na_ucx_class, &na_ucx_class->addr_map,
