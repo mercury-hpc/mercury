@@ -4942,13 +4942,21 @@ na_ofi_print_auth_key(enum na_ofi_prov_type prov_type,
 static na_return_t
 na_ofi_cxi_find_svc_id(const char *domain_name, uint32_t *svc_id_p)
 {
-    char *device_name = getenv("SLINGSHOT_DEVICES"), *device_next;
-    char *svc_id = getenv("SLINGSHOT_SVC_IDS"), *svc_id_next;
+    const char *device_env = getenv("SLINGSHOT_DEVICES");
+    const char *svc_id_env = getenv("SLINGSHOT_SVC_IDS");
+    char *device_names = NULL, *svc_ids = NULL;
+    char *device_name, *device_next, *svc_id, *svc_id_next;
     int device_idx = 0, svc_id_idx = 0, rc;
     na_return_t ret;
 
-    NA_CHECK_SUBSYS_ERROR(cls, device_name == NULL, error, ret, NA_NOENTRY,
+    /* strtok_r() modifies its input, so tokenize copies and leave the
+     * environment intact for later initializations */
+    NA_CHECK_SUBSYS_ERROR(cls, device_env == NULL, error, ret, NA_NOENTRY,
         "SLINGSHOT_DEVICES is not set");
+    device_names = strdup(device_env);
+    NA_CHECK_SUBSYS_ERROR(cls, device_names == NULL, error, ret, NA_NOMEM,
+        "Could not duplicate SLINGSHOT_DEVICES");
+    device_name = device_names;
     while (strtok_r(device_name, ",", &device_next) != NULL) {
         if (strcmp(device_name, domain_name) == 0)
             break;
@@ -4960,8 +4968,12 @@ na_ofi_cxi_find_svc_id(const char *domain_name, uint32_t *svc_id_p)
     NA_LOG_SUBSYS_DEBUG(
         cls, "Found device name %s, idx=%d", device_name, device_idx);
 
-    NA_CHECK_SUBSYS_ERROR(cls, svc_id == NULL, error, ret, NA_NOENTRY,
+    NA_CHECK_SUBSYS_ERROR(cls, svc_id_env == NULL, error, ret, NA_NOENTRY,
         "SLINGSHOT_SVC_IDS is not set");
+    svc_ids = strdup(svc_id_env);
+    NA_CHECK_SUBSYS_ERROR(cls, svc_ids == NULL, error, ret, NA_NOMEM,
+        "Could not duplicate SLINGSHOT_SVC_IDS");
+    svc_id = svc_ids;
     while (strtok_r(svc_id, ",", &svc_id_next) != NULL) {
         if (svc_id_idx == device_idx)
             break;
@@ -4976,9 +4988,15 @@ na_ofi_cxi_find_svc_id(const char *domain_name, uint32_t *svc_id_p)
     NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Invalid CXI svc_id (%s)", svc_id);
 
+    free(device_names);
+    free(svc_ids);
+
     return NA_SUCCESS;
 
 error:
+    free(device_names);
+    free(svc_ids);
+
     return ret;
 }
 
@@ -4986,12 +5004,17 @@ error:
 static na_return_t
 na_ofi_cxi_find_vni(int idx, uint16_t *vni_p)
 {
-    char *vni = getenv("SLINGSHOT_VNIS"), *vni_next;
+    const char *vni_env = getenv("SLINGSHOT_VNIS");
+    char *vnis = NULL, *vni, *vni_next;
     int vni_idx = 0, rc;
     na_return_t ret;
 
-    NA_CHECK_SUBSYS_ERROR(
-        cls, vni == NULL, error, ret, NA_NOENTRY, "SLINGSHOT_VNIS is not set");
+    NA_CHECK_SUBSYS_ERROR(cls, vni_env == NULL, error, ret, NA_NOENTRY,
+        "SLINGSHOT_VNIS is not set");
+    vnis = strdup(vni_env);
+    NA_CHECK_SUBSYS_ERROR(cls, vnis == NULL, error, ret, NA_NOMEM,
+        "Could not duplicate SLINGSHOT_VNIS");
+    vni = vnis;
     while (strtok_r(vni, ",", &vni_next) != NULL) {
         if (vni_idx == idx)
             break;
@@ -5006,9 +5029,13 @@ na_ofi_cxi_find_vni(int idx, uint16_t *vni_p)
     NA_CHECK_SUBSYS_ERROR(cls, rc != 1, error, ret, NA_PROTONOSUPPORT,
         "Invalid CXI vni (%s)", vni);
 
+    free(vnis);
+
     return NA_SUCCESS;
 
 error:
+    free(vnis);
+
     return ret;
 }
 
