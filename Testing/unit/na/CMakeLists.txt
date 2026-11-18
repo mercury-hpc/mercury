@@ -85,3 +85,13 @@ build_na_test_lookup(lookup_server)
 # Client / server test with all enabled NA plugins
 #add_na_test(simple server client)
 #add_na_test(cancel cancel_server cancel_client)
+
+# A put posted before its UCX EP finishes wireup; only an RDMA transport
+# (e.g., ucx+rc_v) defers the put, so it is not added to the default tests.
+if(NA_USE_UCX)
+  add_executable(na_test_put_before_wireup test_put_before_wireup.c)
+  target_link_libraries(na_test_put_before_wireup na)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(na_test_put_before_wireup)
+  endif()
+endif()

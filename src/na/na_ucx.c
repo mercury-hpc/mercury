@@ -149,6 +149,7 @@ struct na_ucx_addr {
     ucp_ep_h ucp_ep;               /* Currently only one EP per address */
     void *close_request;           /* Close request */
     hg_atomic_int32_t ep_refcount; /* Endpoint users, -1 during replacement */
+    hg_atomic_int32_t ep_gen;      /* Bumped each time the EP is replaced */
     hg_atomic_int32_t refcount;    /* Reference counter */
     hg_atomic_int32_t status;      /* Connection state */
     bool connect;                  /* Issued from a connection request */
@@ -214,6 +215,7 @@ typedef na_return_t (*na_ucp_rma_op_t)(ucp_ep_h ep, void *buf, size_t buf_size,
 struct na_ucx_rma_info {
     na_ucp_rma_op_t ucp_rma_op;
     ucp_ep_h ucp_ep;
+    int32_t ep_gen; /* EP generation of the address at post */
     void *buf;
     size_t buf_size;
     uint64_t remote_addr;
@@ -279,6 +281,7 @@ struct na_ucx_class {
         unexpected_msg_queue;                   /* Unexpected msg queue */
     struct na_ucx_map addr_map;                 /* Address map */
     struct na_ucx_op_queue unexpected_op_queue; /* Unexpected op queue */
+    struct na_ucx_op_queue flush_op_queue;      /* Puts waiting for a flush */
     struct na_ucx_addr_pool addr_pool;          /* Addr pool */
     struct na_ucx_addr_list addr_close_list;    /* List of addresses to close */
     struct na_ucx_conn_request_list
@@ -774,6 +777,12 @@ na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class);
 /* Check connection request list and reject expired entries. */
 static unsigned int
 na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class);
+
+/**
+ * Flush the EPs of completed puts queued by na_ucp_put_cb().
+ */
+static unsigned int
+na_ucx_flush_op_queue_progress(struct na_ucx_class *na_ucx_class);
 
 /**
  * Reset address.
@@ -2489,8 +2498,13 @@ na_ucp_put(ucp_ep_h ep, void *buf, size_t buf_size, uint64_t remote_addr,
         /* Check for immediate completion */
         NA_LOG_SUBSYS_DEBUG(rma, "ucp_put_nbx() completed immediately");
 
-        /* Directly execute callback */
-        na_ucp_put_cb(request, UCS_OK, NULL);
+        /* Not inside UCX progress, so flush now: a queued flush would wait
+         * for a poller that may already be blocked */
+        ret = na_ucp_flush(ep, request);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_SUBSYS_ERROR(rma, "na_ucp_flush() failed");
+            na_ucx_complete((struct na_ucx_op_id *) request, ret);
+        }
     } else
         NA_CHECK_SUBSYS_ERROR(rma, UCS_PTR_IS_ERR(status_ptr), error, ret,
             na_ucs_status_to_na(UCS_PTR_STATUS(status_ptr)),
@@ -2521,9 +2535,15 @@ na_ucp_put_cb(void *request, ucs_status_t status, void NA_UNUSED *user_data)
      * until the flush completes. Gets are unaffected: local completion of a get
      * means the data has already been delivered into the local buffer. */
     if (status == UCS_OK) {
-        /* Assume that the EP remains valid */
-        cb_ret = na_ucp_flush(na_ucx_op_id->info.rma.ucp_ep, na_ucx_op_id);
-        NA_CHECK_SUBSYS_NA_ERROR(rma, done, cb_ret, "na_ucp_flush() failed");
+        /* UCX may run this callback while it replays requests posted before
+         * the EP finished wireup, where starting a flush is not allowed:
+         * flush from na_ucx_poll() once ucp_worker_progress() has returned. */
+        struct na_ucx_op_queue *op_queue =
+            &na_ucx_op_id->addr->na_ucx_class->flush_op_queue;
+
+        hg_thread_spin_lock(&op_queue->lock);
+        TAILQ_INSERT_TAIL(&op_queue->queue, na_ucx_op_id, entry);
+        hg_thread_spin_unlock(&op_queue->lock);
 
         return; /* Completion deferred to na_ucp_flush_cb() */
     } else if (status == UCS_ERR_CANCELED)
@@ -2669,6 +2689,12 @@ na_ucx_class_alloc(void)
         cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
     TAILQ_INIT(&na_ucx_class->unexpected_op_queue.queue);
 
+    /* Initialize flush op queue */
+    rc = hg_thread_spin_init(&na_ucx_class->flush_op_queue.lock);
+    NA_CHECK_SUBSYS_ERROR_NORET(
+        cls, rc != HG_UTIL_SUCCESS, error, "hg_thread_spin_init() failed");
+    TAILQ_INIT(&na_ucx_class->flush_op_queue.queue);
+
     /* Initialize unexpected msg queue */
     rc = hg_thread_spin_init(&na_ucx_class->unexpected_msg_queue.lock);
     NA_CHECK_SUBSYS_ERROR_NORET(
@@ -2746,6 +2772,7 @@ na_ucx_class_free(struct na_ucx_class *na_ucx_class)
     (void) hg_thread_rwlock_destroy(&na_ucx_class->addr_map.lock);
 
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_op_queue.lock);
+    (void) hg_thread_spin_destroy(&na_ucx_class->flush_op_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->unexpected_msg_queue.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->addr_pool.lock);
     (void) hg_thread_spin_destroy(&na_ucx_class->addr_close_list.lock);
@@ -2991,6 +3018,7 @@ na_ucx_addr_map_update(struct na_ucx_class *na_ucx_class,
         /* Close previous EP (force closure) */
         na_ucp_ep_close(na_ucx_addr->ucp_ep, true, &request);
         na_ucx_addr->ucp_ep = NULL;
+        hg_atomic_incr32(&na_ucx_addr->ep_gen);
         /* The request can be ignored as we are force closing */
         NA_CHECK_SUBSYS_ERROR(addr, request != NULL, release, ret, NA_BUSY,
             "Could not close UCP endpoint");
@@ -3376,6 +3404,70 @@ na_ucx_addr_close_list_progress(struct na_ucx_class *na_ucx_class)
 
 /*---------------------------------------------------------------------------*/
 static unsigned int
+na_ucx_flush_op_queue_progress(struct na_ucx_class *na_ucx_class)
+{
+    struct na_ucx_op_queue *op_queue = &na_ucx_class->flush_op_queue;
+    unsigned int count = 0;
+
+    for (;;) {
+        struct na_ucx_op_id *na_ucx_op_id;
+        struct na_ucx_addr *na_ucx_addr;
+        bool multi = !(na_ucx_class->thread_mode & NA_THREAD_MODE_SINGLE);
+        na_return_t ret;
+
+        hg_thread_spin_lock(&op_queue->lock);
+        na_ucx_op_id = TAILQ_FIRST(&op_queue->queue);
+        if (na_ucx_op_id != NULL)
+            TAILQ_REMOVE(&op_queue->queue, na_ucx_op_id, entry);
+        hg_thread_spin_unlock(&op_queue->lock);
+        if (na_ucx_op_id == NULL)
+            break;
+        count++;
+
+        if (hg_atomic_get32(&na_ucx_op_id->status) & NA_UCX_OP_CANCELED) {
+            na_ucx_complete(na_ucx_op_id, NA_CANCELED);
+            continue;
+        }
+
+        /* Hold the EP until the flush is posted, so that a reconnect on
+         * another thread cannot close it in between; the flush may complete
+         * the op, so the address must outlive it too. A failed EP ref means
+         * the EP is being replaced. */
+        na_ucx_addr = na_ucx_op_id->addr;
+        if (multi) {
+            na_ucx_addr_ref_incr(na_ucx_addr);
+            if (!na_ucx_addr_ep_ref_get(&na_ucx_addr->ep_refcount)) {
+                ret = NA_ADDRNOTAVAIL;
+                goto complete;
+            }
+        }
+
+        /* A flush of a reconnected EP would not cover the put; the new EP
+         * may reuse the old handle, so compare generations */
+        if (hg_atomic_get32(&na_ucx_addr->ep_gen) !=
+            na_ucx_op_id->info.rma.ep_gen)
+            ret = NA_ADDRNOTAVAIL;
+        else
+            ret = na_ucp_flush(na_ucx_op_id->info.rma.ucp_ep, na_ucx_op_id);
+
+        if (multi)
+            hg_atomic_decr32(&na_ucx_addr->ep_refcount);
+
+complete:
+        if (ret != NA_SUCCESS) {
+            NA_LOG_SUBSYS_ERROR(
+                rma, "Could not flush EP of put (%s)", NA_Error_to_string(ret));
+            na_ucx_complete(na_ucx_op_id, ret);
+        }
+        if (multi)
+            na_ucx_addr_ref_decr(na_ucx_addr);
+    }
+
+    return count;
+}
+
+/*---------------------------------------------------------------------------*/
+static unsigned int
 na_ucx_conn_request_list_progress(struct na_ucx_class *na_ucx_class)
 {
     struct na_ucx_conn_request *conn_request;
@@ -3454,6 +3546,7 @@ na_ucx_addr_reset(struct na_ucx_addr *na_ucx_addr, ucs_sock_addr_t *addr_key)
 {
     na_ucx_addr->ucp_ep = NULL;
     hg_atomic_init32(&na_ucx_addr->ep_refcount, 0);
+    hg_atomic_init32(&na_ucx_addr->ep_gen, 0);
     hg_atomic_init32(&na_ucx_addr->refcount, 1);
     hg_atomic_init32(&na_ucx_addr->status, 0);
     na_ucx_addr->connect = false;
@@ -3632,6 +3725,7 @@ again:
     NA_UCX_OP_RESET(na_ucx_op_id, context, cb_type, callback, arg, na_ucx_addr);
 
     na_ucx_op_id->info.rma.ucp_ep = na_ucx_addr->ucp_ep;
+    na_ucx_op_id->info.rma.ep_gen = hg_atomic_get32(&na_ucx_addr->ep_gen);
     na_ucx_op_id->info.rma.ucp_rma_op = ucp_rma_op;
     na_ucx_op_id->info.rma.buf =
         (char *) local_mem_handle->desc.base + local_offset;
@@ -5010,6 +5104,12 @@ na_ucx_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
     if (!list_empty)
         return false;
 
+    hg_thread_spin_lock(&na_ucx_class->flush_op_queue.lock);
+    list_empty = TAILQ_EMPTY(&na_ucx_class->flush_op_queue.queue);
+    hg_thread_spin_unlock(&na_ucx_class->flush_op_queue.lock);
+    if (!list_empty)
+        return false;
+
     status = ucp_worker_arm(na_ucx_class->ucp_worker);
     if (status == UCS_ERR_BUSY) {
         /* Events have already arrived */
@@ -5030,6 +5130,7 @@ na_ucx_poll(na_class_t *na_class, na_context_t NA_UNUSED *context,
 {
     struct na_ucx_class *na_ucx_class = NA_UCX_CLASS(na_class);
     unsigned int count = ucp_worker_progress(na_ucx_class->ucp_worker);
+    count += na_ucx_flush_op_queue_progress(na_ucx_class);
     count += na_ucx_addr_close_list_progress(na_ucx_class);
     count += na_ucx_conn_request_list_progress(na_ucx_class);
 
