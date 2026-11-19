@@ -7390,9 +7390,14 @@ na_ofi_cq_process_error(
         ret, NA_FAULT, "Operation ID was completed (%s)",
         na_cb_type_to_string(na_ofi_op_id->type));
 
+    /* fi_cancel() is best effort and some providers (e.g., ofi_rxm) do not
+     * cancel transmit operations. A canceled operation may therefore still
+     * complete through a regular error event, which is then the only event
+     * that will be reported for it: complete it as canceled instead of
+     * dropping it, otherwise the operation never completes. */
     if (hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_ERRORED) &
         NA_OFI_OP_CANCELED)
-        return NA_SUCCESS; /* already handled */
+        na_ret = NA_CANCELED;
 
 #ifdef NA_HAS_DIAG
     na_ofi_cq_process_counters(na_ofi_op_id);
