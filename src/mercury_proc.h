@@ -247,6 +247,16 @@ static HG_INLINE hg_class_t *
 hg_proc_get_class(hg_proc_t proc);
 
 /**
+ * Associate an HG class with the processor without changing its buffer state.
+ * The caller must keep the class alive while the processor uses it.
+ *
+ * \param proc [IN]             abstract processor object
+ * \param hg_class [IN]         HG class
+ */
+static HG_INLINE void
+hg_proc_set_class(hg_proc_t proc, hg_class_t *hg_class);
+
+/**
  * Associate an HG handle with the processor.
  *
  * \param proc [IN]             abstract processor object
@@ -614,6 +624,13 @@ static HG_INLINE hg_class_t *
 hg_proc_get_class(hg_proc_t proc)
 {
     return ((struct hg_proc *) proc)->hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_proc_set_class(hg_proc_t proc, hg_class_t *hg_class)
+{
+    ((struct hg_proc *) proc)->hg_class = hg_class;
 }
 
 /*---------------------------------------------------------------------------*/
